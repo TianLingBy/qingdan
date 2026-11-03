@@ -10,6 +10,7 @@ $productDocs = @(
   'decisions.md'
   '轻单_接口契约第一批_v1_20261103.md'
   '轻单_接口契约第二批_v1_20261103.md'
+  '轻单_接口契约第三批_v1_20261104.md'
   '轻单_业务事实问答_v1_20261103.md'
   '轻单_阻塞问题决策清单_v1_20261103.md'
   'project-context.md'
@@ -30,6 +31,11 @@ $c1 = Get-Content (Join-Path $docs '轻单_接口契约第一批_v1_20261103.md'
 $c2 = Get-Content (Join-Path $docs '轻单_接口契约第二批_v1_20261103.md') -Raw -Encoding utf8
 Assert-True ($c1.Contains('已冻结') -and $c1.Contains('§11')) '第一批契约已冻结且保留开放项 §11'
 Assert-True ($c2.Contains('已冻结') -and $c2.Contains('§4')) '第二批契约已冻结且保留开放项 §4'
+
+$c3 = Get-Content (Join-Path $docs '轻单_接口契约第三批_v1_20261104.md') -Raw -Encoding utf8
+Assert-True ($c3.Contains('操作日志') -and $c3.Contains('API Token')) '第三批契约含操作日志与 API Token'
+Assert-True ($c3.Contains('开放项') -and $c3.Contains('草案')) '第三批为草案并列出开放项'
+Assert-True ($decisions.Contains('D51') -and $decisions.Contains('D52')) 'decisions 含 D51（操作日志）/ D52（AI 友好）'
 
 # 3) 原料区：只放原文，11 篇，frontmatter 五字段齐全
 $rawDir = Join-Path $docs 'raw'

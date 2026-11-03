@@ -71,7 +71,7 @@ git switch -c feat/<模块名>                  # 建分支（已存在就 git s
 
 | 模块（分支名） | 负责范围 | 依赖 | 负责人 |
 |---|---|---|---|
-| `platform`（`feat/platform`） | 登录/入企、租户·公司·员工、权限引擎（D4/D15/D50）、编号（D16/D48）、审计、审批、单据框架（三态/取消级联）、待办流转、打印导出框架、链路视图 | 无（P0，所有模块都等它） | 待认领 |
+| `platform`（`feat/platform`） | 登录/入企、租户·公司·员工、权限引擎（D4/D15/D50）、编号（D16/D48）、审批、单据框架（三态/取消级联）、待办流转、打印导出框架、链路视图、**操作日志（D51）**、**API 与集成（D52：OpenAPI/CLI/MCP/API Token/危险动作开关）**、平台运营后台 | 无（P0，所有模块都等它） | 待认领 |
 | `masterdata`（`feat/masterdata`） | 商品、客户、供应商、加工厂 | platform | 待认领 |
 | `inventory`（`feat/inventory`） | 批次（锁价/占用/可用量/保管人）、库存数量、库存流水、盘点调整 I、成本更正 T1/T2/T3 | platform、masterdata | 待认领 |
 | `purchase`（`feat/purchase`） | A 采购单、S 供应商退货 | platform、masterdata、inventory | 待认领 |
@@ -98,7 +98,7 @@ git switch -c feat/<模块名>                  # 建分支（已存在就 git s
 1. `docs/README.md` —— 文档索引与模块表（5 分钟，知道什么在哪儿）。
 2. `docs/module-<你的模块>.md` —— 你的边界、依赖、开放项、验收标准（最重要）。
 3. `docs/decisions.md` §1 —— **只读你模块检查点「相关文件」列出的 D 编号**。
-4. 对应契约章节：`docs/轻单_接口契约第一批_v1_20261103.md`（A/B/E/C + 批次 + 流水）或 `第二批`（N + 提成 + 定价）。
+4. 对应契约章节：`docs/轻单_接口契约第一批_v1_20261103.md`（A/B/E/C + 批次 + 流水）或 `第二批`（N + 提成 + 定价）；**platform 另读 `docs/轻单_接口契约第三批_v1_20261104.md`（操作日志 / API Token / 通用 API 约定，草案待冻结）**。
 5. `docs/prototype-v0.md` §2 —— 你模块对应页面的职责与状态。
 
 **不需要读**：`docs/raw/`（飞书原文，追溯时才用）、`轻单_阻塞问题决策清单`（讨论过程，结论已在 decisions）、`project-context.md`（除非你要动架构/部署）。
