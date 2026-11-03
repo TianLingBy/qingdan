@@ -45,6 +45,14 @@
 - 开发到某模块的「开放项」时：先拍板 → 追加 `docs/decisions.md` → 同步改契约文档中该条的标记 → 再写代码。
 - 不猜口径：未拍板的写「未定 + TODO」，不要用假设悄悄实现。
 
+## 协作（远程仓库与分支）
+
+- 远程：`https://github.com/TianLingBy/qingdan`（**私有**）。
+- `main` 不直推：每个模块一条 `feat/<模块名>` 分支（如 `feat/platform`），走 PR 合并。
+- PR 必须过 CI：`.github/workflows/test.yml` 在 `windows-latest` 上跑 `./tests/run.ps1`，红的不合并。
+- 一个 PR 只动本模块的写范围；跨模块改动（公共类型、权限、库存/金额口径）必须在 PR 描述里列受影响模块并 @ 对应负责人。
+- 模块检查点 `docs/module-<名>.md` 随 PR 更新，不单独开「只改文档」的 PR；合并前至少一次人工评审（或 `claude-code` 做第二意见）。
+
 ## 路由（引用全局，不重复定义）
 
 全局 `~/.dsh/AGENTS.md` 的「多智能体路由」已规定：

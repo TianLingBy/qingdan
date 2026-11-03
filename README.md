@@ -40,6 +40,13 @@ pwsh -NoProfile -File tests\requirements.test.ps1
 
 1 原料搬运 → 2 上下文 → 3 原型与契约 → 4 分工开发（**当前**）→ 5 合并迭代。
 
+## 远程与协作
+
+- 远程仓库：`https://github.com/TianLingBy/qingdan`（私有，GitHub）。
+- 分支：`main` 只接 PR；每个模块一条 `feat/<模块名>` 分支。
+- CI：`.github/workflows/test.yml`（push main / PR 时在 `windows-latest` 跑 `tests/run.ps1`）。
+- 本地护栏：`install-hooks.ps1` 装的 pre-commit 与 CI 跑同一入口，双保险。
+
 ## 模块与开工顺序
 
 | 顺序 | 模块 | 范围 |
