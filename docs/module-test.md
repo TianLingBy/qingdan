@@ -35,7 +35,7 @@
 - `run.ps1` 用 `$LASTEXITCODE` 判定子测试结果，只对 `pwsh -File` 子进程有效；不要在测试文件里 `exit 0` 提前返回。
 - 仓库暂无 `.gitignore`，出现临时产物时补 `bin/`、`_tmp/`、`*.log`。
 - `.git/hooks/pre-commit` **不受版本控制**：克隆或重装仓库后要手动重装（复制脚本到 `.git/hooks/pre-commit` 并 `chmod +x`），否则 hook 静默消失。临时跳过用 `git commit --no-verify`（会绕过全部检查，只在确有理由时用）。
-- 恢复被 hook 拦下的坏实现时，顺序是「先 `git reset` 再 `git checkout -- <file>`」；只做 `git checkout -- <file>` 会从**暂存区**恢复，等于把坏版本恢复回来。
+- 提交被 hook 阻止后，恢复顺序固定为三步：`git reset` → `git checkout HEAD -- <file>` → 复跑 `tests/run.ps1` 确认绿。只做 `git checkout -- <file>` 会从**暂存区**恢复，等于把坏版本恢复回来。
 
 ## 相关文件
 
