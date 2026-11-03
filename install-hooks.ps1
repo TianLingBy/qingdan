@@ -1,4 +1,4 @@
-﻿# 安装 Git pre-commit hook。
+# 安装 Git pre-commit hook。
 #
 # 为什么需要它：.git/hooks 不进版本控制，clone 之后 hook 是空的，测试等于没有护栏。
 # 跑一次这个脚本，会把仓库里受控的 tools/pre-commit 装到 .git/hooks/pre-commit，
@@ -12,7 +12,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSCommandPath
 Set-Location $root
 
-$src = Join-Path $root 'tools\pre-commit'
+$src = Join-Path (Join-Path $root 'tools') 'pre-commit'
 if (-not (Test-Path $src)) {
   Write-Host "缺少 tools/pre-commit：仓库里没有 hook 源文件，无法安装。" -ForegroundColor Red
   exit 1
@@ -48,7 +48,7 @@ Write-Host "已安装 hook：$dst（SHA-256 $($srcHash.Substring(0,12))…，LF�
 
 # 装上就一定验证一次：跑全量测试
 Write-Host "验证：运行 tests\run.ps1 …"
-& pwsh -NoProfile -File (Join-Path $root 'tests\run.ps1')
+& pwsh -NoProfile -File (Join-Path (Join-Path $root 'tests') 'run.ps1')
 if ($LASTEXITCODE -ne 0) {
   Write-Host "测试未通过。hook 已装上，但当前代码库过不了它——先修测试，否则之后所有提交都会被拦。" -ForegroundColor Red
   exit 1

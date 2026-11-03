@@ -29,7 +29,7 @@
 
 ## 当前状态
 
-进行中（迁移后全量 2 个测试文件 / 185 项断言全绿；hook 已按新源重装并哈希一致）
+进行中（接入测试落地后全量 3 个测试文件 / 231 项断言全绿；hook 已按新源重装并哈希一致）
 
 ## 已完成
 
@@ -37,7 +37,8 @@
 - `tests/assert.ps1`：`Assert-True` / `Assert-Equal` / `Exit-Test`，失败计数走 `$global:`，退出码由 `Exit-Test` 决定。
 - `tests/docs-checkpoint.test.ps1`：模板 7 小节齐全、`AGENTS.md` 登记的模块都有检查点、检查点小节齐全且「当前状态」已填 —— 91 项。
 - `tests/requirements.test.ps1`：迁移完整性（9 份产品文档、两份契约冻结标记、raw 11 篇 + frontmatter、prototype.html、9 模块与 docs/README 映射、calc 脚手架已清、roadmap 阶段 4、hook 可复刻）—— 94 项。
-- 实跑（2026-11-03）：`tests\run.ps1` → `== docs-checkpoint.test.ps1 OK 91 checks` / `== requirements.test.ps1 OK 94 checks` / `ALL PASSED (2 files)` / exit 0。
+- `tests/onboarding.test.ps1`：协作者接入契约（`bootstrap.ps1`/`bootstrap.sh` 存在且真调 hook、ONBOARDING 七节齐全且覆盖 9 模块、4 个 Agent 指针都指向真源、AGENTS/README/docs 索引一致、PR 模板含检查项）—— 46 项。
+- 实跑（2026-11-04）：`tests\run.ps1` → `OK 91 checks` / `OK 46 checks` / `OK 94 checks` / `ALL PASSED (3 files)` / exit 0。
 - 负向验证（迁移前）：临时删掉模块检查点后 `FAIL 模块 test 的检查点存在`、退出码 1，说明测试真会红。
 - 提交前护栏：`tools/pre-commit` 已入库；`install-hooks.ps1` 一键安装（取 `git rev-parse --git-path hooks`、强制 LF、哈希自检、装完跑全量测试）；`.gitattributes` 钉死 LF。迁移后重装：源与已装 SHA-256 一致（`4222BE04…`）。
 

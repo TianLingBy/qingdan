@@ -1,4 +1,4 @@
-﻿# 交接完整性契约测试：需求产物必须真的在工程仓里、模块映射齐全、工程护栏可用。
+# 交接完整性契约测试：需求产物必须真的在工程仓里、模块映射齐全、工程护栏可用。
 # 目的：防止「迁移只在对话里发生过」——归档仓冻结后，这些文件是本仓唯一可用的需求源。
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'assert.ps1')
@@ -85,7 +85,7 @@ Assert-True ($roadmap.Contains('🔄 进行中') -and $roadmap.Contains('阶段 
 Assert-True $roadmap.Contains('阶段 4 交接') 'roadmap 变更记录含交接条目'
 
 # 8) 工程护栏：hook 可复刻（.git/hooks 不进版本控制）
-$hookSrc = Join-Path $root 'tools\pre-commit'
+$hookSrc = Join-Path (Join-Path $root 'tools') 'pre-commit'
 Assert-True (Test-Path $hookSrc) 'tools/pre-commit 存在（hook 源文件已纳入 git）'
 Assert-True (Test-Path (Join-Path $root 'install-hooks.ps1')) 'install-hooks.ps1 存在（新 clone 一键安装）'
 $gitattr = Join-Path $root '.gitattributes'
@@ -93,7 +93,7 @@ Assert-True (Test-Path $gitattr) '.gitattributes 存在（钉死 hook 的 LF 行
 if (Test-Path $gitattr) {
   Assert-True ((Get-Content $gitattr -Raw -Encoding utf8).Contains('tools/pre-commit text eol=lf')) '.gitattributes 声明 tools/pre-commit 用 LF'
 }
-$hookDst = Join-Path $root '.git\hooks\pre-commit'
+$hookDst = Join-Path (Join-Path (Join-Path $root '.git') 'hooks') 'pre-commit'
 if ((Test-Path $hookDst) -and (Test-Path $hookSrc)) {
   $hSrc = (Get-FileHash $hookSrc -Algorithm SHA256).Hash
   $hDst = (Get-FileHash $hookDst -Algorithm SHA256).Hash

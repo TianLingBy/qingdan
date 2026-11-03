@@ -8,10 +8,14 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
 
       - name: 跑全量测试
         shell: pwsh
-        run: ./tests/run.ps1
+        run: pwsh -NoProfile -File ./tests/run.ps1

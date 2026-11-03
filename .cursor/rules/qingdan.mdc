@@ -1,0 +1,15 @@
+---
+description: 轻单工程仓协作规则（模块分支、检查点、测试护栏）
+alwaysApply: true
+---
+
+# 轻单工程仓
+
+规则真源是仓库根的 `AGENTS.md` 与 `docs/ONBOARDING.md`，第一次进入本仓先读这两份。
+
+- 初始化：`pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>`（macOS/Linux：`./bootstrap.sh <模块名>`）。
+- 模块与分支：见 `docs/ONBOARDING.md` §4；一个 PR 只碰本模块写范围。
+- 提交前：`pwsh -NoProfile -File tests/run.ps1` 必须退出码 0。
+- `docs/decisions.md` 与两份接口契约只追加、不改历史结论行；开放项先拍板再写代码。
+- `docs/raw/` 是飞书原文，不要手改。
+- 归档仓 `D:\Desktop\dsh\轻单` 已冻结，不要修改。

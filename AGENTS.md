@@ -22,6 +22,12 @@
   - `internal-trade` → `docs/module-internal-trade.md`
   - `test` → `docs/module-test.md`
 
+## 首次接入（任何 Agent）
+
+- 协作者（Claude Code / Codex / Cursor / Copilot / Gemini 等）统一读 `docs/ONBOARDING.md`，那是唯一入口。
+- 能执行命令就跑 `pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>`（macOS/Linux：`./bootstrap.sh <模块名>`）：装 hook + 全量测试 + 建 `feat/<模块>` 分支，成功标志 `BOOTSTRAP-OK`。
+- Agent 专属指针：`CLAUDE.md`、`GEMINI.md`、`.cursor/rules/qingdan.mdc`、`.github/copilot-instructions.md`——都只指向真源，不另存规则。
+
 ## 文档与真源（新会话先读 `docs/README.md`）
 
 - **口径真源**：`docs/decisions.md`（D1-D50 已拍板；新结论只能追加，不改历史行）。
@@ -49,9 +55,11 @@
 
 - 远程：`https://github.com/TianLingBy/qingdan`（**私有**）。
 - `main` 不直推：每个模块一条 `feat/<模块名>` 分支（如 `feat/platform`），走 PR 合并。
-- PR 必须过 CI：`.github/workflows/test.yml` 在 `windows-latest` 上跑 `./tests/run.ps1`，红的不合并。
+- PR 必须过 CI：`.github/workflows/test.yml` 在 `windows-latest` 与 `ubuntu-latest` 上跑 `./tests/run.ps1`，红的不合并。
 - 一个 PR 只动本模块的写范围；跨模块改动（公共类型、权限、库存/金额口径）必须在 PR 描述里列受影响模块并 @ 对应负责人。
 - 模块检查点 `docs/module-<名>.md` 随 PR 更新，不单独开「只改文档」的 PR；合并前至少一次人工评审（或 `claude-code` 做第二意见）。
+- 协作者接入、模块认领、每模块分支与依赖顺序见 `docs/ONBOARDING.md`；PR 按 `.github/pull_request_template.md` 填。
+- CI 跑 `windows-latest` 与 `ubuntu-latest` 两个平台，macOS/Linux 协作者以 ubuntu 结果为参照。
 
 ## 路由（引用全局，不重复定义）
 

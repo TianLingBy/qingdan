@@ -1,4 +1,4 @@
-﻿# 检查点契约测试：模板小节、AGENTS.md 模块登记、检查点文件三者必须一致。
+# 检查点契约测试：模板小节、AGENTS.md 模块登记、检查点文件三者必须一致。
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'assert.ps1')
 
@@ -12,7 +12,7 @@ $sections = @(
   '## 相关文件'
 )
 
-$template = Join-Path $root 'docs\module-template.md'
+$template = Join-Path (Join-Path $root 'docs') 'module-template.md'
 $agents = Join-Path $root 'AGENTS.md'
 Assert-True (Test-Path $template) 'docs/module-template.md 存在'
 Assert-True (Test-Path $agents) 'AGENTS.md 存在'
@@ -26,7 +26,7 @@ $names = @([regex]::Matches($agentsText, '`([a-z0-9-]+)`\s*→\s*`docs/module-\1
 Assert-True ($names.Count -gt 0) 'AGENTS.md 已登记至少一个模块'
 
 foreach ($n in $names) {
-  $cp = Join-Path $root "docs\module-$n.md"
+  $cp = Join-Path (Join-Path $root 'docs') "module-$n.md"
   Assert-True (Test-Path $cp) "模块 $n 的检查点存在 (docs/module-$n.md)"
   if (-not (Test-Path $cp)) { continue }
 

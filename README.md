@@ -2,6 +2,18 @@
 
 面向中小企业的「订单成本核算 + 进销存」SaaS 工程仓。需求稿真源仓 `D:\Desktop\dsh\轻单` 已于 2026-11-03 迁移完成后冻结，**阶段 4 起开发与文档变更都在本仓**。
 
+## 首次接入（协作者 / 任意 Agent）
+
+```powershell
+git clone https://github.com/TianLingBy/qingdan.git
+cd qingdan
+pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>
+```
+
+一条命令完成：装 pre-commit hook、跑全量测试、建 `feat/<模块名>` 分支。macOS/Linux 用 `./bootstrap.sh <模块名>`。
+
+模块清单、分工与依赖顺序、完成定义（DoD）、失败处置、各 Agent 入口见 [`docs/ONBOARDING.md`](docs/ONBOARDING.md)。
+
 ## clone 之后第一步
 
 ```powershell
