@@ -11,6 +11,7 @@
 - 测试入口：`tests\run.ps1`。
 - 模块列表（新增模块时在这里登记；格式固定为“反引号模块名 → 反引号检查点路径”，检查点测试靠它解析）：
   - `test` → `docs/module-test.md`
+  - `calc` → `docs/module-calc.md`
 
 ## 路由（引用全局，不重复定义）
 
