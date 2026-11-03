@@ -1,0 +1,2556 @@
+openapi: 3.1.0
+
+info:
+  title: 轻单开放 API（Qingdan API v1）
+  version: 0.1.0-draft
+  summary: AI 友好型应用的接口骨架：Web / CLI / MCP 共用同一套 REST 接口（D52）
+  description: |
+    **状态：草案骨架（0.1.0-draft）。** 本文件与《轻单_接口契约第三批_v1_20261104.md》同批冻
+    结；第三批 §5 的 4 项开放项确认前，本文件不作为实现依据。
+
+    **真源**：
+    - `docs/轻单_接口契约第三批_v1_20261104.md`（操作日志 §1 / API Token §2 / 通用 API 约定 §3 / CLI 与 MCP §4）
+    - `docs/轻单_接口契约第一批_v1_20261103.md`（编号与权限 §1、A 单 §3.1、E 单 §3.3、C 单 §3.4、收款记录 §6、批次 §7、库存流水 §8）
+    - `docs/decisions.md` D51（操作日志）/ D52（API-first）/ D52.1（AI 权限不可放大）
+
+    **通用约定（契约第三批 §3）**：
+    - 认证：人类 = 会话 Cookie；机器 = `Authorization: Bearer <token>`；二选一。
+    - 错误体：`{ code, message, details, requestId }`，HTTP 状态码与 `code` 同时给。
+    - 分页：`cursor` / `limit`（默认 50、最大 200），返回 `nextCursor`。
+    - 幂等：写接口支持 `Idempotency-Key`，24h 内重复请求返回首次结果。
+    - 并发：单据/批次写接口要求 `If-Match: <version>`，冲突返回 409。
+    - 预检：写接口支持 `dryRun=true`（只校验不落库）。
+    - 请求 id：`X-Request-Id` 透传并回写，缺省由服务端生成。
+    - 时间 ISO 8601 带时区；金额、数量一律 decimal **字符串**（避免浮点误差）。
+
+    **本骨架的命名决策（契约未规定，需 platform 冻结时一并确认，详见交付报告）**：
+    1. JSON 键名统一 camelCase；契约 §1 的中文字段名到 JSON 键的映射见下表。
+    2. 业务状态枚举保持契约原值：`进行中 / 已完成 / 已取消`、`待确认 / 已结算`、`收款 / 退款`。
+    3. Token scope 的动作采用英文：查=read、建=create、编=update、审=approve、出库=ship、
+       删=delete、看价=view_price、导出=export（契约只给中文动作名，`sales.create` 等示例为英文动词）。
+    4. 错误码 `code` 的枚举为**提案**：契约只约定错误体结构，未枚举 code。
+    5. 扩展端点（auth / settlement-orders / batches / inventory-transactions / employees）契约未定义
+       REST 路径，路径与字段按第一批 §2/§6/§7/§8 映射，命名待 platform 冻结。
+
+    **审计字段映射（契约第三批 §1 → JSON 键）**：
+
+    | 契约字段 | JSON 键 | 契约字段 | JSON 键 |
+    |---|---|---|---|
+    | id | id | 时间 | occurredAt |
+    | 租户 id | tenantId | 公司 id | companyId |
+    | 操作者类型 | actorType | 操作者 id | actorId |
+    | 凭证 id | credentialId | 来源 | source |
+    | 动作 | action | 对象类型 | objectType |
+    | 对象 id | objectId | 变更摘要 | changes |
+    | 结果 | result | 错误码 | errorCode |
+    | 请求 id | requestId | IP / UA | ip / userAgent |
+    | 原因 | reason | 业务事务 id | businessTxnId |
+
+    **写端点扩展字段（实现约束）**：
+    - `x-scope`：调用所需 scope（功能域 × 动作），AI 生效权限 = 绑定员工当前权限 ∩ scope（D52.1）。
+    - `x-audit`：必须落操作日志（D51）；`kind: write|read`，`logOnFailure: true` 表示失败也记，
+      `reason: required|conditional|optional` 对应契约 §1「原因」的必填规则。
+    - `x-ai-policy`：`allowed` / `forbidden-by-default`（危险动作默认拒绝 AI，D52①）。
+    - `x-idempotency`：幂等窗口（写接口 24h）。
+  contact:
+    name: 轻单项目组
+  license:
+    name: 私有项目（未开源）
+
+servers:
+  - url: /api/v1
+    description: 同源相对路径（Web / CLI / MCP 共用；契约第三批 §3「版本」）
+
+security:
+  - sessionCookie: []
+  - bearerToken: []
+
+tags:
+  - name: meta
+    description: 接口真源与版本
+  - name: auth
+    description: 登录 / 登出 / 当前身份
+  - name: audit
+    description: 操作日志（只追加，D51）
+  - name: token
+    description: API Token（机器身份，契约第三批 §2）
+  - name: purchase
+    description: A 采购单（契约第一批 §3.1）
+  - name: sales
+    description: E 销售单与收款记录（契约第一批 §3.3 / §6）
+  - name: settlement
+    description: C 结算单（契约第一批 §3.4）
+  - name: inventory
+    description: 批次与库存流水（契约第一批 §7 / §8）
+  - name: permission
+    description: 员工与权限（D15 / D50）
+
+paths:
+
+  /openapi.json:
+    get:
+      tags: [meta]
+      operationId: getOpenApiDocument
+      summary: 获取本部署的 OpenAPI 3.1 文档
+      description: 契约第三批 §3「文档」：OpenAPI 3.1 是唯一接口真源。返回本 YAML 转换后的 JSON。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: OpenAPI 3.1 文档（JSON）
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-audit:
+        required: false
+        note: 读取接口文档不记日志（D51① 默认值）
+
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: 登录（手机号 + 验证码）
+      description: |
+        人类登录；成功后通过 `Set-Cookie` 发放会话 Cookie（`sessionCookie`）。
+        失败登录同样落操作日志（D51 覆盖清单：失败登录）。
+        AI 不走本接口，AI 用 `Authorization: Bearer <token>`。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 登录成功，返回身份并设置会话 Cookie
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            Set-Cookie:
+              description: '`qingdan_session=<opaque>`；HttpOnly; Secure; SameSite=Lax（Cookie 名待 platform 冻结）'
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+              example:
+                employeeId: 0b8f1d3e-6a2c-4c5e-9f10-1a2b3c4d5e6f
+                tenantId: 7d1c2b3a-4e5f-4a6b-8c9d-0e1f2a3b4c5d
+                name: 张三
+                companyIds:
+                  - 11111111-2222-4333-8444-555555555555
+                permissions:
+                  purchase: [read, create]
+                  sales: [read, create, update]
+                credentialType: session
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: []
+      x-audit:
+        required: true
+        kind: write
+        action: platform.auth.login
+        objectType: 会话
+        logOnFailure: true
+        reason: optional
+      x-ai-policy: not-applicable
+      x-contract: 第三批 §1 覆盖清单（失败登录）
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: 登出（当前会话失效）
+      description: 会话 Cookie 失效；操作日志记一条 `platform.auth.logout`。
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '204':
+          description: 已登出（无响应体）
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: []
+      x-audit:
+        required: true
+        kind: write
+        action: platform.auth.logout
+        objectType: 会话
+        logOnFailure: false
+        reason: optional
+      x-ai-policy: not-applicable
+
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: getCurrentIdentity
+      summary: 当前身份与生效权限
+      description: |
+        返回当前凭证对应的员工、公司集合与生效权限。
+        权限为服务端每次请求实时计算（D52.1②），客户端**不得**缓存用于鉴权。
+        AI 调用时生效权限 = 绑定员工当前权限 ∩ token scope。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: 当前身份
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-audit:
+        required: false
+        note: 普通身份查询不记日志
+      x-contract: D52.1②
+
+  /audit-logs:
+    get:
+      tags: [audit]
+      operationId: listAuditLogs
+      summary: 查询操作日志（只读、只追加）
+      description: |
+        契约第三批 §1。日志只追加，不提供更新 / 删除接口。
+        金额与成本字段按「看价」权限脱敏（D27）。
+        「查看操作日志」本身也记一条读日志（D51 覆盖清单）。
+        普通列表 / 详情查询默认不记日志（D51① 拟定默认，待冻结）。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - name: actorType
+          in: query
+          required: false
+          description: 操作者类型（`platform` 平台开发者 / `employee` 员工 / `ai` AI / `system` 系统任务）
+          schema:
+            $ref: '#/components/schemas/ActorType'
+        - name: source
+          in: query
+          required: false
+          description: 来源（`web` / `cli` / `api` / `mcp` / `job`）
+          schema:
+            $ref: '#/components/schemas/RequestSource'
+        - name: action
+          in: query
+          required: false
+          description: 动作，`功能域.动作`，如 `sales.create`、`settlement.confirm`
+          schema:
+            type: string
+            pattern: '^[a-z][a-z0-9_-]*\.[a-z][a-z0-9_.-]*$'
+        - name: result
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/AuditResult'
+        - name: from
+          in: query
+          required: false
+          description: 时间下限（含），ISO 8601 带时区
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: 时间上限（含），ISO 8601 带时区
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: 操作日志分页结果（按 occurredAt 倒序）
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [platform.read]
+      x-audit:
+        required: true
+        kind: read
+        action: platform.audit.read
+        objectType: 操作日志
+        logOnFailure: false
+        reason: optional
+      x-ai-policy: allowed
+      x-contract: 第三批 §1、D51
+
+  /api-tokens:
+    get:
+      tags: [token]
+      operationId: listApiTokens
+      summary: 列出当前租户的 API Token（永不含明文）
+      description: 明文 token 只在创建时返回一次，此后任何接口都不返回（契约第三批 §2）。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ApiTokenStatus'
+        - name: employeeId
+          in: query
+          required: false
+          description: 按绑定员工过滤
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Token 分页结果
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [platform.read]
+      x-audit:
+        required: false
+        note: Token 列表属敏感读，是否记日志见 D51① 待冻结
+      x-ai-policy: allowed
+      x-contract: 第三批 §2
+    post:
+      tags: [token]
+      operationId: createApiToken
+      summary: 创建 API Token（明文只返回一次）
+      description: |
+        契约第三批 §2 + D52.1①：scope 只能从创建人自己的授权里选，超出直接拒绝创建（422）；
+        不提供租户级「上帝 token」（D52②）。
+        AI 调用时需带 `reason`（意图说明），进操作日志。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiTokenCreateRequest'
+      responses:
+        '201':
+          description: 创建成功，返回含明文 token 的对象（仅此一次）
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiTokenCreated'
+        '200':
+          description: 'dryRun=true 时的预检结果（未落库）'
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DryRunResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [platform.create]
+      x-audit:
+        required: true
+        kind: write
+        action: platform.token.create
+        objectType: API Token
+        logOnFailure: true
+        reason: conditional
+        note: AI 调用或涉及权限授予时必须带 reason
+      x-ai-policy: allowed
+      x-idempotency: 24h
+      x-contract: 第三批 §2、D52.1①
+
+  /api-tokens/{id}:
+    delete:
+      tags: [token]
+      operationId: revokeApiToken
+      summary: 撤销 API Token（危险动作，默认拒绝 AI）
+      description: |
+        撤销后 token 立即失效（契约第三批 §2「可随时撤销」）。
+        删除类危险动作：`reason` 必填，进操作日志；AI 默认禁止直接执行（D52①）。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/Reason'
+        - $ref: '#/components/parameters/DryRun'
+      responses:
+        '200':
+          description: |
+            正常：返回撤销后的 token（`status: revoked`）；
+            `dryRun=true`：返回 `DryRunResult`（未落库）。
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ApiToken'
+                  - $ref: '#/components/schemas/DryRunResult'
+                description: 由 `dryRun` 参数决定返回哪一个
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [platform.delete]
+      x-audit:
+        required: true
+        kind: write
+        action: platform.token.revoke
+        objectType: API Token
+        logOnFailure: true
+        reason: required
+      x-ai-policy: forbidden-by-default
+      x-dangerous: true
+      x-contract: 第三批 §1（危险动作）、§2、D52①
+
+  /purchase-orders:
+    get:
+      tags: [purchase]
+      operationId: listPurchaseOrders
+      summary: 采购单列表（A 单）
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/OrderStatus'
+        - name: supplierId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: 采购单分页结果（只含当前员工公司集合内数据，D15）
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrderPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [purchase.read]
+      x-audit:
+        required: false
+      x-ai-policy: allowed
+      x-contract: 第一批 §3.1
+    post:
+      tags: [purchase]
+      operationId: createPurchaseOrder
+      summary: 新建采购单（支持 dryRun）
+      description: |
+        契约第一批 §3.1：入库即锁批次价 `批次单价 = (货款 + 运费 + 杂费) ÷ 入库数量`（D5）。
+        费用行金额可负（供应商返利等），负数必须填备注（D39）。
+        `dryRun=true` 时只校验并返回将要发生的变更，不落库（契约第三批 §3「预检」）。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurchaseOrderCreateRequest'
+      responses:
+        '201':
+          description: 创建成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '200':
+          description: 'dryRun=true 时的预检结果（未落库）'
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DryRunResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [purchase.create]
+      x-audit:
+        required: true
+        kind: write
+        action: purchase.create
+        objectType: 采购单
+        logOnFailure: true
+        reason: conditional
+        note: AI 写操作必须带 reason（契约第三批 §1「原因」）
+      x-ai-policy: allowed
+      x-idempotency: 24h
+      x-contract: 第一批 §3.1 / §5 / §7
+
+  /purchase-orders/{id}:
+    get:
+      tags: [purchase]
+      operationId: getPurchaseOrder
+      summary: 采购单详情（A 单）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: 采购单详情
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [purchase.read]
+      x-audit:
+        required: false
+      x-ai-policy: allowed
+      x-contract: 第一批 §3.1
+
+  /sales-orders:
+    get:
+      tags: [sales]
+      operationId: listSalesOrders
+      summary: 销售单列表（E 单）
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/OrderStatus'
+        - name: customerId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: handlerId
+          in: query
+          required: false
+          description: 经手人（业务归属，F5）
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: 销售单分页结果
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesOrderPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [sales.read]
+      x-audit:
+        required: false
+      x-ai-policy: allowed
+      x-contract: 第一批 §3.3
+    post:
+      tags: [sales]
+      operationId: createSalesOrder
+      summary: 新建销售单（E 单，支持 dryRun）
+      description: |
+        契约第一批 §3.3：售价随单据（不随批次）；费用行一律 ≥ 0（D39）。
+        改价下限 = 行级加权平均批次成本，破下限需审批（D20）；审批流不在本骨架内，
+        破下限时返回 422 且 `details.requiresApproval = true`（提案，待 platform 冻结）。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SalesOrderCreateRequest'
+      responses:
+        '201':
+          description: 创建成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesOrder'
+        '200':
+          description: 'dryRun=true 时的预检结果（未落库）'
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DryRunResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [sales.create]
+      x-audit:
+        required: true
+        kind: write
+        action: sales.create
+        objectType: 销售单
+        logOnFailure: true
+        reason: conditional
+      x-ai-policy: allowed
+      x-idempotency: 24h
+      x-contract: 第一批 §3.3 / §5 / D20 / D39
+
+  /sales-orders/{id}:
+    get:
+      tags: [sales]
+      operationId: getSalesOrder
+      summary: 销售单详情（E 单，含收款记录）
+      description: 详情内嵌「收款记录」块（契约第一批 §6，D24）。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: 销售单详情
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesOrder'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [sales.read]
+      x-audit:
+        required: false
+        note: 详情含金额，是否按敏感读记日志见 D51① 待冻结
+      x-ai-policy: allowed
+      x-contract: 第一批 §3.3 / §6
+
+  /sales-orders/{id}/complete:
+    post:
+      tags: [sales]
+      operationId: completeSalesOrder
+      summary: 完成销售单（危险动作：需 reason，AI 默认 403）
+      description: |
+        E 单「已完成」后自动生成 C 单草稿，财务确认生效（D19/D29）。
+        危险动作（契约第三批 §1「原因」；D52①）：
+        - `reason` 必填，进操作日志；
+        - AI 默认禁止执行，返回 `403 AI_ACTION_FORBIDDEN`；
+          租户开启「允许 AI 走审批」后仍走人类审批（AI 不得审批自己发起的动作，D52.1③）；
+        - 要求 `If-Match` 乐观锁，版本冲突返回 `409 VERSION_CONFLICT`。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteSalesOrderRequest'
+      responses:
+        '200':
+          description: |
+            正常：返回已完成状态与自动生成的 C 单草稿；
+            `dryRun=true`：返回 `DryRunResult`（未落库）。
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SalesOrderCompleteResult'
+                  - $ref: '#/components/schemas/DryRunResult'
+                description: 由 `dryRun` 参数决定返回哪一个
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [sales.approve]
+      x-audit:
+        required: true
+        kind: write
+        action: sales.complete
+        objectType: 销售单
+        logOnFailure: true
+        reason: required
+        note: 同时写 C 单草稿生成日志
+      x-ai-policy: forbidden-by-default
+      x-dangerous: true
+      x-idempotency: 24h
+      x-approval: 人类审批（AI 不得审批自己发起的动作，D52.1③）
+      x-contract: 第一批 §3.3 / §3.4 / D19 / D29 / D52① / D52.1③
+
+  /sales-orders/{id}/receipts:
+    post:
+      tags: [sales]
+      operationId: addSalesReceipt
+      summary: 新增收款记录（E 单内嵌块，支持 dryRun）
+      description: |
+        契约第一批 §6：方向 `收款 / 退款`，退款为负数行；退款不得写成 E 单费用行（D40）；
+        退款可关联冲正单（R 单）。
+        退款属「冲正」口径时 AI 默认禁止（D52①），由服务端按 direction 判定。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 销售单 id
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceiptCreateRequest'
+      responses:
+        '201':
+          description: 收款记录已追加
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Receipt'
+        '200':
+          description: 'dryRun=true 时的预检结果（未落库）'
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DryRunResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [sales.update]
+      x-audit:
+        required: true
+        kind: write
+        action: sales.receipt.create
+        objectType: 收款记录
+        logOnFailure: true
+        reason: conditional
+        note: 退款方向必填 reason（冲正类危险动作）
+      x-ai-policy: allowed
+      x-idempotency: 24h
+      x-contract: 第一批 §6 / D24 / D34 / D40
+
+  /settlement-orders:
+    get:
+      tags: [settlement]
+      operationId: listSettlementOrders
+      summary: 结算单列表（C 单）
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/SettlementStatus'
+        - name: sourceOrderType
+          in: query
+          required: false
+          description: 来源单类型（E 销售 / N 内部）
+          schema:
+            $ref: '#/components/schemas/SourceOrderType'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: 结算单分页结果（金额受「看价」权限，D27）
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementOrderPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [settlement.read]
+      x-audit:
+        required: false
+      x-ai-policy: allowed
+      x-contract: 第一批 §3.4
+
+  /settlement-orders/{id}/confirm:
+    post:
+      tags: [settlement]
+      operationId: confirmSettlementOrder
+      summary: 结算确认（危险动作：需 reason，AI 默认 403）
+      description: |
+        契约第一批 §3.4：草稿 → 已结算；一期一单一次结算，结算后不可冲正（D2③/D19）。
+        危险动作（D52①「结算确认」）：`reason` 必填；AI 默认禁止，返回 `403 AI_ACTION_FORBIDDEN`；
+        审批只能由人类完成（D52.1③）。金额字段按「看价」权限（D27）。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmSettlementOrderRequest'
+      responses:
+        '200':
+          description: |
+            正常：返回已结算的 C 单；
+            `dryRun=true`：返回 `DryRunResult`（未落库）。
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SettlementOrder'
+                  - $ref: '#/components/schemas/DryRunResult'
+                description: 由 `dryRun` 参数决定返回哪一个
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [settlement.approve]
+      x-audit:
+        required: true
+        kind: write
+        action: settlement.confirm
+        objectType: 结算单
+        logOnFailure: true
+        reason: required
+      x-ai-policy: forbidden-by-default
+      x-dangerous: true
+      x-idempotency: 24h
+      x-approval: 人类审批（AI 不得审批自己发起的动作，D52.1③）
+      x-contract: 第一批 §3.4 / D2③ / D19 / D27 / D52①
+
+  /batches:
+    get:
+      tags: [inventory]
+      operationId: listBatches
+      summary: 批次列表
+      description: 契约第一批 §7：可用量 = 剩余量 − 在途占用 − 待执行占用，是唯一可引用数字。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - name: productId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: availableOnly
+          in: query
+          required: false
+          description: 只看可用量 > 0 的批次
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: 批次分页结果（锁定单价受「看价」权限，D27）
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [inventory.read]
+      x-audit:
+        required: false
+      x-ai-policy: allowed
+      x-contract: 第一批 §7
+
+  /batches/{id}:
+    get:
+      tags: [inventory]
+      operationId: getBatch
+      summary: 批次详情
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: 批次详情
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Batch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [inventory.read]
+      x-audit:
+        required: false
+      x-ai-policy: allowed
+      x-contract: 第一批 §7
+
+  /inventory-transactions:
+    get:
+      tags: [inventory]
+      operationId: listInventoryTransactions
+      summary: 库存流水列表（只追加）
+      description: 契约第一批 §8：只追加，与单据同事务（D2①）。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - name: batchId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: sourceOrderId
+          in: query
+          required: false
+          description: 来源单据 id
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: 库存流水分页结果
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InventoryTransactionPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [inventory.read]
+      x-audit:
+        required: false
+      x-ai-policy: allowed
+      x-contract: 第一批 §8
+
+  /employees:
+    get:
+      tags: [permission]
+      operationId: listEmployees
+      summary: 员工列表（含公司-岗位与个人覆盖）
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: 员工分页结果（仅当前员工可见的公司集合，D15）
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmployeePage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [platform.read]
+      x-audit:
+        required: false
+      x-ai-policy: allowed
+      x-contract: 第一批 §2 / D15 / D50
+
+  /employees/{employeeId}/permissions:
+    put:
+      tags: [permission]
+      operationId: updateEmployeePermissions
+      summary: 修改员工权限（危险动作：需 reason，AI 默认 403）
+      description: |
+        权限三层：岗位并集 ⊕ 个人覆盖（D50）；数据可见范围 = 绑定公司集合（D15）。
+        权限变更属危险动作（D52①）：`reason` 必填；AI 默认禁止，返回 `403 AI_ACTION_FORBIDDEN`；
+        经理可改普通员工、不可改老板 / 财务 / 其他经理（D50，由服务端判定）。
+        注意：本端点契约未定义 REST 路径与请求体，字段按 D15/D50 拟定，待 platform 冻结。
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/DryRun'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PermissionUpdateRequest'
+      responses:
+        '200':
+          description: |
+            正常：返回更新后的员工；
+            `dryRun=true`：返回 `DryRunResult`（未落库）。
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Employee'
+                  - $ref: '#/components/schemas/DryRunResult'
+                description: 由 `dryRun` 参数决定返回哪一个
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [platform.update]
+      x-audit:
+        required: true
+        kind: write
+        action: platform.permission.update
+        objectType: 权限
+        logOnFailure: true
+        reason: required
+      x-ai-policy: forbidden-by-default
+      x-dangerous: true
+      x-idempotency: 24h
+      x-contract: 第一批 §1.2 / §2 / D15 / D50 / D52①
+
+components:
+
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: qingdan_session
+      description: |
+        人类会话 Cookie（契约第三批 §3「认证」）。
+        Cookie 名 `qingdan_session` 为骨架拟定，待 platform 冻结；HttpOnly; Secure; SameSite=Lax。
+    bearerToken:
+      type: http
+      scheme: bearer
+      bearerFormat: API Token
+      description: |
+        机器身份：`Authorization: Bearer <token>`（契约第三批 §2 / §3）。
+        token 绑定员工，生效权限 = 员工当前权限 ∩ token scope（D52.1），每次请求重算、不缓存。
+
+  parameters:
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: 客户端请求关联 id；服务端透传并回写，缺省则生成（契约第三批 §3）
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 写接口幂等键；24h 内重复请求返回首次结果（契约第三批 §3）
+      schema:
+        type: string
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: 单据/批次写接口的乐观锁版本（取上次响应的 ETag / `version`）；冲突 409（契约第三批 §3）
+      schema:
+        type: string
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: 游标分页游标；缺省从第一页开始
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: 每页条数，默认 50、最大 200（契约第三批 §3）
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    DryRun:
+      name: dryRun
+      in: query
+      required: false
+      description: '`true` = 只校验不落库，返回 DryRunResult（契约第三批 §3「预检」）'
+      schema:
+        type: boolean
+        default: false
+    Reason:
+      name: reason
+      in: query
+      required: true
+      description: 危险动作的原因，进操作日志（契约第三批 §1「原因」）
+      schema:
+        type: string
+        minLength: 1
+
+  headers:
+    XRequestId:
+      description: 服务端回写的请求 id（缺省时由服务端生成）
+      schema:
+        type: string
+    ETag:
+      description: 资源版本，对应响应体 `version`；下次写请求放进 `If-Match`
+      schema:
+        type: string
+    RetryAfter:
+      description: 限流后建议重试的秒数（429，契约第三批 §2）
+      schema:
+        type: integer
+
+  responses:
+    Unauthorized:
+      description: 未认证：会话失效或 Token 无效 / 已撤销 / 已过期。
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHENTICATED
+            message: 未登录或会话已失效
+            details: {}
+            requestId: req_01J0EXAMPLE000000000000000
+    Forbidden:
+      description: |
+        无权限（scope 不足 / 公司数据隔离 / 危险动作拒绝 AI）。
+        危险动作拒绝 AI 时 `code = AI_ACTION_FORBIDDEN`（D52①）。
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            scopeDenied:
+              summary: scope 不足
+              value:
+                code: FORBIDDEN
+                message: 当前凭证无此操作权限
+                details:
+                  requiredScope: sales.approve
+                requestId: req_01J0EXAMPLE000000000000001
+            aiDenied:
+              summary: AI 危险动作默认拒绝
+              value:
+                code: AI_ACTION_FORBIDDEN
+                message: 危险动作默认禁止 AI 执行（D52①）
+                details:
+                  action: sales.complete
+                  policy: forbidden-by-default
+                requestId: req_01J0EXAMPLE000000000000002
+    NotFound:
+      description: 资源不存在或不在当前员工可见范围内（不泄露存在性）。
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: NOT_FOUND
+            message: 资源不存在
+            details: {}
+            requestId: req_01J0EXAMPLE000000000000003
+    Conflict:
+      description: |
+        并发冲突或幂等键冲突：
+        `VERSION_CONFLICT`（If-Match 版本不匹配，409）、
+        `IDEMPOTENCY_CONFLICT`（同一 Idempotency-Key 复用于不同请求体）。
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VERSION_CONFLICT
+            message: 单据已被他人修改，请刷新后重试
+            details:
+              expectedVersion: 3
+              currentVersion: 4
+            requestId: req_01J0EXAMPLE000000000000004
+    PreconditionRequired:
+      description: 缺少 `If-Match`（单据/批次写接口要求乐观锁，契约第三批 §3）。提案状态码，待 platform 冻结。
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: PRECONDITION_REQUIRED
+            message: 该接口要求 If-Match
+            details: {}
+            requestId: req_01J0EXAMPLE000000000000005
+    UnprocessableEntity:
+      description: 校验失败（字段级错误见 `details.issues`；`dryRun` 只读校验也用它表达不可执行）。
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: VALIDATION_FAILED
+            message: 参数校验失败
+            details:
+              issues:
+                - field: lines[0].quantity
+                  code: MUST_BE_POSITIVE
+                  message: 数量必须大于 0
+            requestId: req_01J0EXAMPLE000000000000006
+    TooManyRequests:
+      description: 超过限流（每 token / 每会话限流，契约第三批 §2）。
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: RATE_LIMITED
+            message: 请求过于频繁，请稍后重试
+            details:
+              retryAfterSeconds: 30
+            requestId: req_01J0EXAMPLE000000000000007
+    InternalServerError:
+      description: 服务端未分类错误（审计仍会落 fail 记录，D51）。
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/XRequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: 服务端内部错误
+            details: {}
+            requestId: req_01J0EXAMPLE000000000000008
+
+  schemas:
+
+    Error:
+      type: object
+      description: 统一错误体（契约第三批 §3）。
+      required: [code, message, requestId]
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+          default: {}
+          description: 附加信息（字段级 issues、冲突版本等）
+        requestId:
+          type: string
+          description: 与响应头 `X-Request-Id` 一致
+
+    ErrorCode:
+      type: string
+      description: |
+        错误码提案：契约第三批 §3 只约定错误体结构，未枚举 `code`；以下为骨架提案，待 platform 冻结。
+      enum:
+        - UNAUTHENTICATED
+        - FORBIDDEN
+        - AI_ACTION_FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_FAILED
+        - VERSION_CONFLICT
+        - IDEMPOTENCY_CONFLICT
+        - PRECONDITION_REQUIRED
+        - RATE_LIMITED
+        - INTERNAL_ERROR
+
+    ValidationIssue:
+      type: object
+      required: [code, message]
+      properties:
+        field:
+          type: string
+          description: JSON Pointer 或字段名，如 `lines[0].quantity`
+        code:
+          type: string
+          description: 字段级错误码（提案，如 MUST_BE_POSITIVE）
+        message:
+          type: string
+
+    DryRunResult:
+      type: object
+      description: 写接口 `dryRun=true` 的预检结果（只校验不落库，契约第三批 §3）。
+      required: [dryRun, valid]
+      properties:
+        dryRun:
+          type: boolean
+          const: true
+        valid:
+          type: boolean
+          description: 是否可执行；false 时看 errors
+        changes:
+          type: array
+          description: 将要发生的变更（实体 + 操作，具体形状待 platform 冻结）
+          items:
+            type: object
+            additionalProperties: true
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+
+    ActorType:
+      type: string
+      description: 操作者类型（契约第三批 §1，原值为英文枚举）
+      enum:
+        - platform
+        - employee
+        - ai
+        - system
+
+    RequestSource:
+      type: string
+      description: 请求来源（契约第三批 §1）
+      enum:
+        - web
+        - cli
+        - api
+        - mcp
+        - job
+
+    AuditResult:
+      type: string
+      enum:
+        - success
+        - fail
+
+    ScopeAction:
+      type: string
+      description: |
+        8 动作枚举（契约第一批 §1.2：查 / 建 / 编 / 审 / 出库 / 删 / 看价 / 导出）。
+        契约只给中文动作名（示例 `sales.create` 只出现英文动词），英文映射为骨架拟定，待冻结：
+        查=read、建=create、编=update、审=approve、出库=ship、删=delete、看价=view_price、导出=export。
+      enum:
+        - read
+        - create
+        - update
+        - approve
+        - ship
+        - delete
+        - view_price
+        - export
+
+    Scope:
+      type: object
+      description: |
+        Token scope = 功能域 × 动作子集（契约第三批 §2 / 第一批 §1.2）。
+        键为功能域（如 `purchase` / `sales` / `settlement` / `inventory` / `platform`），值为动作数组。
+        AI 生效权限 = 绑定员工当前权限 ∩ scope（D52.1②）。
+      additionalProperties:
+        type: array
+        items:
+          $ref: '#/components/schemas/ScopeAction'
+      examples:
+        - purchase: [read, create]
+          sales: [read, create, view_price]
+
+    AuditLog:
+      type: object
+      description: |
+        操作日志（契约第三批 §1）。只追加、不可改删；业务失败也记（D51）。
+        JSON 键名映射见 info.description 的「审计字段映射」表。
+      required:
+        - id
+        - occurredAt
+        - tenantId
+        - actorType
+        - actorId
+        - source
+        - action
+        - objectType
+        - result
+        - requestId
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: 契约「id」：日志主键，全局唯一
+        occurredAt:
+          type: string
+          format: date-time
+          description: 契约「时间」：服务端时间（UTC 存储，按租户时区展示）
+        tenantId:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            契约「租户 id」：平台侧操作可空（平台级）。
+            ⚠️ 契约 §1 表列为必填、说明写「平台侧可空」，本骨架按说明允许 null，待契约冻结时裁决。
+        companyId:
+          type: [string, 'null']
+          format: uuid
+          description: 契约「公司 id」：单据/档案类操作必填
+        actorType:
+          $ref: '#/components/schemas/ActorType'
+        actorId:
+          type: string
+          description: 契约「操作者 id」：员工 id 或平台账号 id；`system` 用固定标识（契约标 uuid，system 例外）
+        credentialId:
+          type: [string, 'null']
+          format: uuid
+          description: 契约「凭证 id」：AI 调用时为 token id；人类会话可记 session id
+        source:
+          $ref: '#/components/schemas/RequestSource'
+        action:
+          type: string
+          description: 契约「动作」：`功能域.动作`，如 `sales.create`、`settlement.confirm`
+          pattern: '^[a-z][a-z0-9_-]*\.[a-z][a-z0-9_.-]*$'
+        objectType:
+          type: string
+          description: 契约「对象类型」：单据/档案/权限/Token/日志 等
+        objectId:
+          type: [string, 'null']
+          format: uuid
+          description: 契约「对象 id」：目标实体主键
+        changes:
+          type: [object, 'null']
+          additionalProperties: true
+          description: 契约「变更摘要」：变更前/后关键字段；金额与成本按「看价」权限脱敏（D27）
+        result:
+          $ref: '#/components/schemas/AuditResult'
+        errorCode:
+          type: [string, 'null']
+          description: 契约「错误码」：失败时填
+        requestId:
+          type: string
+          description: 契约「请求 id」：透传 `X-Request-Id`，用于全链路关联
+        ip:
+          type: [string, 'null']
+          description: 契约「IP / UA」：来源 IP
+        userAgent:
+          type: [string, 'null']
+          description: 契约「IP / UA」：来源 UA
+        reason:
+          type: [string, 'null']
+          description: |
+            契约「原因」：条件必填——危险动作（删除 / 冲正 / 成本更正 / 结算确认 / 权限变更）
+            与 AI 写操作必填。
+        businessTxnId:
+          type: [string, 'null']
+          description: 契约「业务事务 id」：与业务写入关联，便于对账
+
+    AuditLogPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLog'
+        nextCursor:
+          type: [string, 'null']
+          description: 下一页游标；null 表示最后一页（契约第三批 §3 分页）
+
+    ApiTokenStatus:
+      type: string
+      description: Token 状态（契约第三批 §2）
+      enum:
+        - active
+        - revoked
+        - expired
+
+    ApiToken:
+      type: object
+      description: API Token（契约第三批 §2）。任何接口都不返回明文，明文只在创建时返回一次。
+      required:
+        - id
+        - tenantId
+        - employeeId
+        - name
+        - scope
+        - status
+        - createdBy
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        employeeId:
+          type: string
+          format: uuid
+          description: 绑定员工 id（含专门创建的服务账号员工）
+        name:
+          type: string
+          description: 名称：便于识别人 / Agent / 系统
+        scope:
+          $ref: '#/components/schemas/Scope'
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+          description: 有效期；到期自动失效（status → expired）
+        ipAllowlist:
+          type: [array, 'null']
+          description: IP 白名单；空 = 不限制
+          items:
+            type: string
+        lastUsedAt:
+          type: [string, 'null']
+          format: date-time
+          description: 最后使用时间（每次调用更新，异步，允许延迟）
+        status:
+          $ref: '#/components/schemas/ApiTokenStatus'
+        createdBy:
+          type: string
+          format: uuid
+          description: 创建人（员工 id）
+        createdAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: [string, 'null']
+          format: date-time
+          description: 撤销时间
+
+    ApiTokenCreateRequest:
+      type: object
+      description: 创建 Token 请求。scope 只能从创建人自己的授权里选，超出直接拒绝（D52.1①）。
+      required: [name, employeeId, scope]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        employeeId:
+          type: string
+          format: uuid
+          description: 绑定员工 id（服务账号员工须预先创建）
+        scope:
+          $ref: '#/components/schemas/Scope'
+        expiresAt:
+          type: [string, 'null']
+          format: date-time
+        ipAllowlist:
+          type: [array, 'null']
+          items:
+            type: string
+        reason:
+          type: [string, 'null']
+          description: 条件必填：AI 调用或涉及权限授予时必须填写（进操作日志）
+
+    ApiTokenCreated:
+      allOf:
+        - $ref: '#/components/schemas/ApiToken'
+        - type: object
+          required: [token]
+          properties:
+            token:
+              type: string
+              description: 明文 token，**仅此一次**返回；服务端只存哈希（契约第三批 §2）
+
+    ApiTokenPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiToken'
+        nextCursor:
+          type: [string, 'null']
+
+    DecimalString:
+      type: string
+      description: decimal 字符串（契约第三批 §3：金额 decimal 字符串，避免浮点误差）
+      pattern: '^-?\d{1,15}(\.\d{1,6})?$'
+
+    OrderStatus:
+      type: string
+      description: 单头三态（契约第一批 §1.5 / §10，原值为中文枚举）
+      enum:
+        - 进行中
+        - 已完成
+        - 已取消
+
+    SettlementStatus:
+      type: string
+      description: C 单状态（契约第一批 §3.4 / §10，原值为中文枚举）
+      enum:
+        - 待确认
+        - 已结算
+
+    SourceOrderType:
+      type: string
+      description: C 单来源单类型（契约第一批 §3.4：来源单 E 或 N）
+      enum:
+        - E
+        - N
+
+    ProductLine:
+      type: object
+      description: 商品明细（契约第一批 §5.1）。A 单入库时生成批次，故创建 A 单时 `batchIds` 可不传。
+      required: [productId, quantity, unitPrice, amount]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        batchIds:
+          type: array
+          description: |
+            引用批次 id[]（契约 §5.1 必填；§11 开放项 1 拟定「E/B 必须引用批次」）。
+            A 单创建时批次尚未生成，可不传。
+          items:
+            type: string
+            format: uuid
+        quantity:
+          $ref: '#/components/schemas/DecimalString'
+        unitPrice:
+          $ref: '#/components/schemas/DecimalString'
+          description: 单价——A/B 单为成本，E 单为售价
+        amount:
+          $ref: '#/components/schemas/DecimalString'
+          description: 金额 = 数量 × 单价（服务端复核）
+
+    FeeLine:
+      type: object
+      description: |
+        费用明细（契约第一批 §5.2）。金额：E/B 单 ≥ 0；A 单可负（负数须填备注，D39）。
+      required: [item, quantity, unitPrice, amount]
+      properties:
+        item:
+          type: string
+          description: 费用项：运费 / 杂费 / 加工费等
+        quantity:
+          $ref: '#/components/schemas/DecimalString'
+        unitPrice:
+          $ref: '#/components/schemas/DecimalString'
+        amount:
+          $ref: '#/components/schemas/DecimalString'
+        note:
+          type: [string, 'null']
+          description: 备注；A 单负数费用必填（D39）
+
+    PurchaseOrder:
+      type: object
+      description: A 采购单（契约第一批 §3.1）。入库即锁批次价，成本更正按 T1/T2/T3（D37）。
+      required:
+        - id
+        - code
+        - companyId
+        - supplierId
+        - handlerId
+        - status
+        - lines
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          description: 单号，结构 `类型字母-公司码(4)-日期(8)-流水(4)`（D16，如 `A-0001-20261103-0001`）
+          pattern: '^[ABENCRSI]-\d{4}-\d{8}-\d{4}$'
+        companyId:
+          type: string
+          format: uuid
+          description: 公司归属（数据隔离 D15；契约单头字段表未单列，由单号公司码派生）
+        supplierId:
+          type: string
+          format: uuid
+        handlerId:
+          type: string
+          format: uuid
+          description: 经手人
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductLine'
+        feeLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeeLine'
+        remark:
+          type: [string, 'null']
+        version:
+          type: integer
+          minimum: 1
+          description: 乐观锁版本（对应 ETag / If-Match，契约第三批 §3 并发）
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PurchaseOrderCreateRequest:
+      type: object
+      required: [supplierId, handlerId, lines]
+      properties:
+        companyId:
+          type: string
+          format: uuid
+          description: 公司归属；缺省取当前员工唯一绑定公司（多公司时必须显式传）
+        supplierId:
+          type: string
+          format: uuid
+        handlerId:
+          type: string
+          format: uuid
+          description: 经手人
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ProductLine'
+        feeLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeeLine'
+        remark:
+          type: [string, 'null']
+        reason:
+          type: [string, 'null']
+          description: 条件必填：AI 写操作必须填写（契约第三批 §1「原因」）
+
+    PurchaseOrderPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PurchaseOrder'
+        nextCursor:
+          type: [string, 'null']
+
+    SalesOrder:
+      type: object
+      description: E 销售单（契约第一批 §3.3）；详情内嵌收款记录（§6）。
+      required:
+        - id
+        - code
+        - companyId
+        - customerId
+        - handlerId
+        - status
+        - lines
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          description: 单号（D16，如 `E-0001-20261103-0001`）
+          pattern: '^[ABENCRSI]-\d{4}-\d{8}-\d{4}$'
+        companyId:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        handlerId:
+          type: string
+          format: uuid
+          description: 经手人；业务归属挂 E 单负责人（F5）
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductLine'
+        feeLines:
+          type: array
+          description: 费用行一律 ≥ 0（D39）
+          items:
+            $ref: '#/components/schemas/FeeLine'
+        receipts:
+          type: array
+          description: 收款记录（详情内嵌块，契约第一批 §6）
+          items:
+            $ref: '#/components/schemas/Receipt'
+        remark:
+          type: [string, 'null']
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SalesOrderCreateRequest:
+      type: object
+      required: [customerId, handlerId, lines]
+      properties:
+        companyId:
+          type: string
+          format: uuid
+          description: 公司归属；缺省取当前员工唯一绑定公司
+        customerId:
+          type: string
+          format: uuid
+        handlerId:
+          type: string
+          format: uuid
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ProductLine'
+        feeLines:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeeLine'
+        remark:
+          type: [string, 'null']
+        reason:
+          type: [string, 'null']
+          description: 条件必填：AI 写操作必须填写
+
+    SalesOrderPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SalesOrder'
+        nextCursor:
+          type: [string, 'null']
+
+    CompleteSalesOrderRequest:
+      type: object
+      description: 完成销售单（危险动作，reason 必填）。
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: 完成原因/意图，进操作日志（契约第三批 §1「原因」）
+
+    SalesOrderCompleteResult:
+      type: object
+      description: 完成 E 单后的结果，含自动生成的 C 单草稿（D19/D29）。
+      required: [order, settlementDraft, auditLogId]
+      properties:
+        order:
+          $ref: '#/components/schemas/SalesOrder'
+        settlementDraft:
+          oneOf:
+            - $ref: '#/components/schemas/SettlementOrder'
+            - type: 'null'
+          description: 自动生成的 C 单草稿（status = 待确认）；一期一单一次结算（D19）
+        auditLogId:
+          type: string
+          format: uuid
+          description: 本次操作的操作日志 id（D51）
+
+    Receipt:
+      type: object
+      description: 收款记录（契约第一批 §6）。块内余额 = 收款合计 − 退款合计。
+      required: [id, direction, amount, method, occurredAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        direction:
+          type: string
+          enum:
+            - 收款
+            - 退款
+          description: 方向：退款为负数行
+        amount:
+          $ref: '#/components/schemas/DecimalString'
+          description: 金额；退款为负数
+        method:
+          type: string
+          enum:
+            - 在线支付回调
+            - 线下转账
+            - 原路退款
+            - 冲抵应收
+        occurredAt:
+          type: string
+          format: date-time
+          description: 收款时间
+        reversalOrderId:
+          type: [string, 'null']
+          format: uuid
+          description: 关联冲正单（R 单，退款时选填）
+
+    ReceiptCreateRequest:
+      type: object
+      required: [direction, amount, method, occurredAt]
+      properties:
+        direction:
+          type: string
+          enum:
+            - 收款
+            - 退款
+        amount:
+          $ref: '#/components/schemas/DecimalString'
+          description: 退款必须为负数（D40）
+        method:
+          type: string
+          enum:
+            - 在线支付回调
+            - 线下转账
+            - 原路退款
+            - 冲抵应收
+        occurredAt:
+          type: string
+          format: date-time
+        reversalOrderId:
+          type: [string, 'null']
+          format: uuid
+        reason:
+          type: [string, 'null']
+          description: 条件必填：退款方向或 AI 写操作必须填写（D40 / D52①）
+
+    SettlementOrder:
+      type: object
+      description: C 结算单（契约第一批 §3.4）。结算后不可冲正，走退货（D2③）。
+      required:
+        - id
+        - code
+        - sourceOrderType
+        - sourceOrderId
+        - status
+        - totalSalePrice
+        - totalCost
+        - grossProfit
+        - grossMargin
+        - lossAmount
+        - netProfit
+        - commissionRateSnapshot
+        - commissionAmount
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          description: 单号（D16，如 `C-0001-20261103-0001`）
+          pattern: '^[ABENCRSI]-\d{4}-\d{8}-\d{4}$'
+        sourceOrderType:
+          $ref: '#/components/schemas/SourceOrderType'
+        sourceOrderId:
+          type: string
+          format: uuid
+          description: 来源单（E 或 N）
+        status:
+          $ref: '#/components/schemas/SettlementStatus'
+        totalSalePrice:
+          $ref: '#/components/schemas/DecimalString'
+          description: 总售价
+        totalCost:
+          $ref: '#/components/schemas/DecimalString'
+          description: 总成本
+        grossProfit:
+          $ref: '#/components/schemas/DecimalString'
+          description: 毛利 = 总售价 − 总成本（D5）
+        grossMargin:
+          $ref: '#/components/schemas/DecimalString'
+          description: 毛利率 = 毛利 ÷ 总售价
+        lossAmount:
+          $ref: '#/components/schemas/DecimalString'
+          description: 本单相关损失（D33/D35/D43；金额受「看价」权限 D27）
+        netProfit:
+          $ref: '#/components/schemas/DecimalString'
+          description: 净毛利 = 毛利 − 本单相关损失（D33）
+        commissionRateSnapshot:
+          $ref: '#/components/schemas/DecimalString'
+          description: 提成比例快照（结算时快照，D36）
+        commissionAmount:
+          $ref: '#/components/schemas/DecimalString'
+          description: 提成金额（一期仅报表数字，D11）
+        version:
+          type: integer
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    SettlementOrderPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettlementOrder'
+        nextCursor:
+          type: [string, 'null']
+
+    ConfirmSettlementOrderRequest:
+      type: object
+      description: 结算确认（危险动作，reason 必填）。
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+
+    Batch:
+      type: object
+      description: 批次（契约第一批 §7）。可用量 = 剩余量 − 在途占用 − 待执行占用，是唯一可引用数字。
+      required:
+        - id
+        - batchNo
+        - productId
+        - companyId
+        - custodianId
+        - lockedUnitPrice
+        - inboundQty
+        - referencedQty
+        - remainingQty
+        - inTransitQty
+        - pendingQty
+        - availableQty
+        - version
+      properties:
+        id:
+          type: string
+          format: uuid
+        batchNo:
+          type: string
+          description: 批次号（系统自动取号，与商品经商品 id 关联，D49）
+        productId:
+          type: string
+          format: uuid
+        companyId:
+          type: string
+          format: uuid
+          description: 批次归属（D22）
+        custodianId:
+          type: string
+          format: uuid
+          description: 保管人（实物责任，F5）
+        lockedUnitPrice:
+          $ref: '#/components/schemas/DecimalString'
+          description: 锁定单价（A 单入库或 B 单产出时锁定，D5；受「看价」权限 D27）
+        inboundQty:
+          $ref: '#/components/schemas/DecimalString'
+        referencedQty:
+          $ref: '#/components/schemas/DecimalString'
+        remainingQty:
+          $ref: '#/components/schemas/DecimalString'
+        inTransitQty:
+          $ref: '#/components/schemas/DecimalString'
+          description: 在途占用（N 单在途锁定，D22/D31）
+        pendingQty:
+          $ref: '#/components/schemas/DecimalString'
+          description: 待执行占用（D38/D41）
+        availableQty:
+          $ref: '#/components/schemas/DecimalString'
+        version:
+          type: integer
+          minimum: 1
+
+    BatchPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Batch'
+        nextCursor:
+          type: [string, 'null']
+
+    InventoryTransaction:
+      type: object
+      description: 库存流水（契约第一批 §8）。只追加，与单据同事务（D2①）。
+      required:
+        - id
+        - batchId
+        - changeQty
+        - sourceOrderId
+        - handlerId
+        - occurredAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        batchId:
+          type: string
+          format: uuid
+        changeQty:
+          $ref: '#/components/schemas/DecimalString'
+          description: 变动量，正入负出
+        sourceOrderId:
+          type: string
+          format: uuid
+          description: 来源单据
+        handlerId:
+          type: string
+          format: uuid
+          description: 经手人
+        occurredAt:
+          type: string
+          format: date-time
+
+    InventoryTransactionPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryTransaction'
+        nextCursor:
+          type: [string, 'null']
+
+    CompanyGrant:
+      type: object
+      description: 员工-公司-岗位对（契约第一批 §2 / D15）。
+      required: [companyId]
+      properties:
+        companyId:
+          type: string
+          format: uuid
+        positionIds:
+          type: array
+          description: 岗位 id 集；权限 = 岗位并集（D15）
+          items:
+            type: string
+            format: uuid
+
+    PermissionOverride:
+      type: object
+      description: 个人权限覆盖（D50）。
+      required: [domain, action, granted]
+      properties:
+        domain:
+          type: string
+          description: 功能域（D44），如 `purchase` / `sales` / `settlement`
+        action:
+          $ref: '#/components/schemas/ScopeAction'
+        granted:
+          type: boolean
+
+    Employee:
+      type: object
+      description: 员工（契约第一批 §2）。权限 = 岗位并集 ⊕ 个人覆盖（D15/D50）。
+      required: [id, employeeNo, name, companyGrants]
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeNo:
+          type: string
+          description: 工号：定长 6 位、全租户唯一、不带公司前缀（D48）
+          pattern: '^\d{6}$'
+        name:
+          type: string
+        phone:
+          type: string
+          description: 账号（手机号，唯一）
+          pattern: '^1\d{10}$'
+        companyGrants:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompanyGrant'
+        overrides:
+          type: array
+          description: 个人权限覆盖（D50）
+          items:
+            $ref: '#/components/schemas/PermissionOverride'
+
+    EmployeePage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Employee'
+        nextCursor:
+          type: [string, 'null']
+
+    PermissionUpdateRequest:
+      type: object
+      description: |
+        修改员工权限（D15 / D50）。契约未定义 REST 路径与请求体，本 schema 按 D50 拟定，待 platform 冻结。
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          description: 权限变更原因（危险动作必填，D52①）
+        companyGrants:
+          type: array
+          description: 员工-公司-岗位对全集（替换语义，pending 冻结）
+          items:
+            $ref: '#/components/schemas/CompanyGrant'
+        overrides:
+          type: array
+          description: 个人权限覆盖全集（替换语义，pending 冻结）
+          items:
+            $ref: '#/components/schemas/PermissionOverride'
+
+    LoginRequest:
+      type: object
+      required: [phone, code]
+      properties:
+        phone:
+          type: string
+          description: 手机号
+          pattern: '^1\d{10}$'
+        code:
+          type: string
+          description: 短信验证码（6 位）
+          pattern: '^\d{6}$'
+
+    Identity:
+      type: object
+      description: 当前凭证的身份与生效权限（服务端实时计算，客户端不得缓存用于鉴权，D52.1②）。
+      required: [employeeId, tenantId, name, companyIds, permissions, credentialType]
+      properties:
+        employeeId:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        companyIds:
+          type: array
+          description: 数据可见范围 = 绑定公司集合（D15）
+          items:
+            type: string
+            format: uuid
+        permissions:
+          $ref: '#/components/schemas/Scope'
+          description: 生效权限（岗位并集 ⊕ 个人覆盖；AI 再 ∩ token scope）
+        credentialType:
+          type: string
+          enum:
+            - session
+            - token
+          description: 凭证类型：session = 人类会话；token = API Token（机器/AI）
+        tokenId:
+          type: [string, 'null']
+          format: uuid
+          description: credentialType = token 时为 token id（对应审计「凭证 id」）
