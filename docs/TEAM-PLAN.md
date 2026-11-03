@@ -1,134 +1,146 @@
-# 轻单 · 协作开发计划（1 条 AI 开发线 + 4 位人类开发者）
+# 轻单 · 模块分割与合并计划（1 条主线 + 4 个交付模块）
 
-> **读者**：项目负责人（你）、DSH 智能体团队（我 + 子 Agent）、4 位人类协作开发者。
-> **配套**：`docs/ROLES-AND-BOUNDARIES.md`（谁能做什么/不能做什么、灰区审批、文件级写权限）、`docs/ONBOARDING.md`（接入流程）、`docs/DEV-SETUP.md`（环境与目录）、各模块 `docs/module-<模块>.md`。
-> **模型**：你做「你的模块」，用 DSH 智能体团队开发；另外 4 位人类开发者做其余模块。**两类开发线在同一个仓库、同一套契约、同一套 CI 与 PR 规则下并行**。
-> **状态**：2026-11-04 起草；模块归属与 4 位同事姓名待填（§8），技术栈待 D53 拍板。
+> **读者**：项目主要负责人（你）、DSH 智能体团队、4 位人类协作开发者。
+> **配套**：`docs/ROLES-AND-BOUNDARIES.md`（谁能做什么/不能做什么）、`docs/DEV-SETUP.md`（环境与目录）、各模块 `docs/module-<模块>.md`（子模块检查点）。
+> **模型**：**你 = 项目主要负责人，负责主线模块**（平台 + 销售 + 结算）；**另外 4 位同事各负责 1 个交付模块**，完成后以 PR **合并进主线**来完善产品。
+> **状态**：2026-11-04 定稿（模块划分已定）；模块负责人姓名待填，技术栈待 D53。
 
 ---
 
-## 0. 一页纸看懂
+## 0. 模块划分（5 个交付模块，定稿）
 
-| 开发线 | 谁 | 默认负责模块 | 分支 |
-|---|---|---|---|
-| **AI 线** | 负责人 + DSH 智能体团队（Lead 统一提交） | `platform`（P0 地基）+ `test` 底座 | `feat/platform` |
-| **人类线 1** | 人类开发者 1 | `masterdata` + `purchase` | `feat/masterdata`、`feat/purchase` |
-| **人类线 2** | 人类开发者 2 | `inventory` + `processing` | `feat/inventory`、`feat/processing` |
-| **人类线 3** | 人类开发者 3 | `sales` + `internal-trade` | `feat/sales`、`feat/internal-trade` |
-| **人类线 4** | 人类开发者 4 | `settlement`（含利润报表） | `feat/settlement` |
+| 交付模块 | 负责人 | 包含的代码模块（子模块） | 分支 | 合并顺序 |
+|---|---|---|---|---|
+| **MAIN 主线** | 你（主要负责人）+ DSH 智能体团队 | `platform`、`sales`、`settlement` | `feat/main-platform`、`feat/main-sales`、`feat/main-settlement` | 第 1 个合（地基先合） |
+| **M1 基础数据与采购** | 人类开发者 1 | `masterdata`、`purchase` | `feat/m1-masterdata`、`feat/m1-purchase` | 第 2 批（与 M2 并行） |
+| **M2 库存与盘点** | 人类开发者 2 | `inventory`（批次 / 库存数量 / 流水 / 盘点 I / 成本更正） | `feat/m2-inventory` | 第 2 批（与 M1 并行） |
+| **M3 加工与损耗** | 人类开发者 3 | `processing`（B 单 / 损耗 / 全损耗损失记录 / 归属单） | `feat/m3-processing` | 第 3 批（依赖 M2） |
+| **M4 内部交易与打印** | 人类开发者 4 | `internal-trade`（N 单 / 内部定价 / 在途转司）+ 打印/导出两套版式 | `feat/m4-internal-trade` | 第 3 批（依赖 M2） |
 
-为什么默认把 `platform` 给 AI 线：它是**唯一硬前置**（登录/权限/编号/审计/审批/单据框架/待办/API 层），谁先交付谁解锁其他所有人；同时它是共享写范围，交给一条线独占能避免 4 个人同时改公共层。
-**这个默认不是定死的**：你想做哪个模块都可以换（§8-1），换完我把表改掉。
+**覆盖检查**：9 个代码模块全部有归属——`platform/sales/settlement` 在主线，`masterdata/purchase` 在 M1，`inventory` 在 M2，`processing` 在 M3，`internal-trade` 在 M4；`test` 底座由主线维护。
+**工作量提示**：主线最重（平台是全项目地基 + 销售结算链）；M4 相对轻（内部交易 + 打印），有余力可以帮 M2 做盘点或承包部署脚本。
 
-## 1. 模块与写范围（互斥）
+## 1. 五个交付模块的边界与验收
 
-| 模块 | 开发线 | 写范围（代码/文档） | 硬依赖 |
-|---|---|---|---|
-| `platform` | AI 线 | `apps/api/src/platform/**`、`packages/contracts/**`、`docs/module-platform.md` | 无（P0） |
-| `test` | AI 线 | `tests/**`（`run.ps1` 不改）、`docs/module-test.md` | 无 |
-| `masterdata` | 人类 1 | `apps/api/src/modules/masterdata/**`、`apps/web/src/pages/masterdata/**`、`docs/module-masterdata.md` | platform |
-| `purchase` | 人类 1 | 同上（purchase）、A 单与 S 退货接口 | platform、masterdata、inventory |
-| `inventory` | 人类 2 | 批次/库存/流水/盘点与成本更正 | platform、masterdata |
-| `processing` | 人类 2 | B 单、损耗、损失记录 | platform、masterdata、inventory |
-| `sales` | 人类 3 | E 单、收款、在线支付、R 客户退货 | platform、masterdata、inventory |
-| `internal-trade` | 人类 3 | N 单、内部定价、在途锁定/转司 | platform、masterdata、inventory |
-| `settlement` | 人类 4 | C 单、提成、利润报表 | sales、processing、internal-trade |
+### MAIN 主线（你 + AI 团队）
+- **包含**：`platform`（登录入企、租户/公司/员工、权限引擎、编号、审批、单据框架、待办、操作日志、API Token、OpenAPI/CLI/MCP）；`sales`（E 单、改价下限、收款记录、在线支付模式 A、R 客户退货）；`settlement`（C 单、提成、利润报表）。
+- **对外契约**：`packages/contracts`（唯一契约包）、`/api/v1`、审计写入、权限判定——**全项目共享，只有主线能改**。
+- **验收**：platform 验收清单全绿 + 审计 100% 写操作 + AI 权限不放大（D52.1）+ 销售结算数字与手工核算一致。
+- **合并**：主线自己就是主干，PR 合并到 `main`，必须有 1 位人类评审（涉及平台层）。
 
-**规则**：
-- 一条线同一时间只推**一个模块**，另一个模块的分支可以空着；避免自己两个分支互相 rebase。
-- **跨线改动**（`packages/contracts`、`apps/api/src/platform`、数据库迁移、AGENTS/decisions）必须先在 Issue 声明 + PR 列出受影响模块，不能直接改。
-- 代码目录与表前缀按模块隔离；**禁止跨模块 import、禁止直读别人的表**（ESLint + 评审双重检查）。
+### M1 基础数据与采购（人类开发者 1）
+- **包含**：`masterdata`（商品/客户/供应商/加工厂、默认售价）、`purchase`（A 采购单、S 供应商退货、费用行正负规则）。
+- **依赖**：`platform`（权限/编号/审计）、`inventory`（批次入库锁价）。
+- **验收**：A 单入库锁价公式与 D5 一致；A 单费用行可负须备注；S 只退钱；主数据编号不作全局检索键（D49）。
+- **合并**：PR 通过「共鸣测试」后合入 `main`。
 
-## 2. AI 线与人类线怎么协作（这是新增的关键部分）
+### M2 库存与盘点（人类开发者 2）
+- **包含**：批次（锁价/已引用/剩余/在途占用/待执行占用/可用量/保管人）、库存数量四列、库存流水、盘点调整 I、成本更正 T1/T2/T3。
+- **依赖**：`platform`、`masterdata`；被 `purchase/sales/processing/internal-trade` 依赖。
+- **验收**：可用量唯一可引用（D38）；提交占用/取消释放/出库转已引用（D41）；流水只追加；成本更正审批人 D42。
+- **合并**：PR 通过后合入 `main`，**M3/M4 必须等 M2 的批次接口合并**。
 
-| 事项 | AI 线 | 人类线 |
+### M3 加工与损耗（人类开发者 3）
+- **包含**：B 单（材料投入 ≥1、辅料、加工费、运杂费、损耗、可售量、全损耗、损失记录、归属单）。
+- **依赖**：`platform`、`masterdata`、`inventory`（引用批次/产出批次）。
+- **验收**：成本公式 `(材料+辅料+加工费+运杂费) ÷ 可售量`；可售量=0 走全损耗二次确认不产批次；费用行 ≥0；只能引本公司批次（D22）。
+- **合并**：PR 通过后合入 `main`。
+
+### M4 内部交易与打印（人类开发者 4）
+- **包含**：N 单（发出/接收公司、内部价、在途量、签收转司）、内部定价记录；打印/导出两套标准版式（销售单客户联、加工单发厂联）。
+- **依赖**：`platform`、`masterdata`、`inventory`（在途占用/转司）；不依赖 M3。
+- **验收**：在途期间批次仍归发出方且可用量锁定（D31）；签收解锁转司；跨公司链路只显节点（D25）；打印两套版式可导出。
+- **合并**：PR 通过后合入 `main`。
+
+## 2. 合并方式（怎么"合进来"）
+
+1. **一模块一 PR**：每个交付模块最后收成 1 个（或少数几个）PR，标题写「M2 库存与盘点：合并入库」。
+2. **合并前必过三道**：
+   - CI 绿（windows + ubuntu）＋ `tests/run.ps1` 绿；
+   - **共鸣测试**：用主线提供的 stub server / contracts 跑本模块端到端用例（证明接口对得上，不是各自 mock 自嗨）；
+   - 模块检查点「验收标准」逐条打勾。
+3. **合并顺序**：主线地基 → M1 ∥ M2 → M3 ∥ M4 → 主线 settlement 收口。
+4. **合并冲突处理**：谁的模块文件冲突谁修；共享文件（contracts/platform）冲突由主线主导。
+5. **合并不等于交付**：合并后主线跑一次全链路回归（A→批次→B→E→C→R），数字对不上就回退该模块 PR。
+
+## 3. 人机协作规则（0.5 页）
+
+| 事项 | 主线（你 + AI 团队） | 4 个交付模块（人类） |
 |---|---|---|
-| 分支 | `feat/platform`（一个模块一条） | `feat/<模块名>` |
-| 提交 | 由 Lead 统一提交并推送（子 Agent 只写文件不提交） | 自己提交并推送 |
-| PR | Lead 开 PR，**至少 1 位人类评审**（涉及契约/权限/审计必须） | 自己开 PR，Lead 或另一位人类评审 |
-| 合并 | CI 绿 + 1 approve | 同左 |
-| 契约包 | AI 线维护 `packages/contracts`，人类可提 PR 改 | 只能提 PR，不能直接改 |
-| 每日同步 | Lead 在 Issue/群里贴「分支 + 提交 + 测试结果」 | 每日 15 分钟文字同步 |
-| 阻塞 | 4 小时无解升级到 Lead | 同左；口径问题找 Lead 拍板 |
+| 分支 | `feat/main-*` | `feat/m1-*` … `feat/m4-*` |
+| 提交 | Lead 统一提交（子 Agent 只写文件） | 自己提交推送 |
+| PR | Lead 开，人类评审 | 自己开，Lead 或另一位人类评审 |
+| 共享文件 | `packages/contracts`、`platform` 由主线独占 | 只能提 PR + 写影响面 |
+| 合并 | 为主线，人类评审后合 | 三道门禁后合 |
+| 阻塞 | 找 Lead | 4 小时升级到 Lead / 负责人 |
 
-**人机互评是强制的**：平台层的任何改动（权限、审计、编号、单据框架）都要人类评审一次——人类是"第二双眼睛"，避免 AI 团队自己写、自己信。
-
-## 3. 依赖顺序（谁能先动、谁必须等）
+## 4. 依赖顺序
 
 ```
-platform ──► masterdata ──► inventory ──► purchase ──┐
-     │                        │              processing ─┼──► settlement
-     │                        └──────────────► sales ───┘
-     └──────────────────────────────────────► internal-trade ──► settlement
+MAIN.platform ──► M1.masterdata ──► M2.inventory ──► M3.processing ─┐
+     │                  │                │                          ├──► MAIN.settlement
+     │                  │                └──► M4.internal-trade ─────┘
+     └──────────────────┴──► MAIN.sales（E 单要引 M2 批次）
 ```
 
-- **platform 是唯一硬前置**：AI 线交付「权限判定 + 编号 + 审计 + 单据框架 + contracts 包」之前，人类线**不写业务代码**，只做 §4 的准备。
-- settlement 等 sales/processing/internal-trade 的接口稳定后再开。
+- **platform 是唯一硬前置**：主线第 1 周交付 contracts + 权限 + 编号 + 审计 + 单据框架，四个模块才能写业务代码。
+- 在那之前，四个模块做 §5 的准备工作（用例清单/状态机/字段表），不干等。
 
-## 4. 第 1 周（所有人都有活儿，不互相等死）
+## 5. 第 1 周任务（不互相等）
 
-**AI 线（Lead）**
-- 建骨架：`apps/api`、`apps/web`、`packages/contracts|cli|mcp`、`pnpm-workspace.yaml`、tsconfig、ESLint（含跨模块 import 拦截）。
-- 先发 `packages/contracts` 的「动作枚举 + 错误码 + 金额类型 + 路由注册表」，handler 可以先 501。
-- 写权限判定的 SQL 与 `ctx.authz`；审计写入（outbox + 追加器）第一版。
-- 把 api-designer 报的 10 处契约缺口补进第三批契约并申请冻结。
+**主线（你 + AI 团队）**：建骨架（apps/api、apps/web、packages/contracts|cli|mcp）、发 contracts 骨架（handler 可 501）、权限判定 SQL + `ctx.authz`、审计写入第一版；把 api-designer 报的 10 处契约缺口补进第三批并冻结。
+**M1**：masterdata 字段表 + 校验 + OpenAPI 片段；purchase 的 A/S 用例清单（费用行正负、入库锁价）。
+**M2**：把「四列 + 占用生命周期」写成状态机与并发用例清单；列出批次表结构与索引。
+**M3**：B 单用例清单（全损耗、可售量为 0、链式引用）；确认与 M2 的批次接口签名。
+**M4**：N 单在途/转司状态机；内部价口径（第二批 §4-1）先给建议；打印两套版式字段清单。
 
-**人类 1**：读契约第一批 §2（主数据）与 §3.1/§4；产出 masterdata 字段表、校验规则、OpenAPI 片段；下周直接进 masterdata。
-**人类 2**：读 §7/§8（批次/流水）与 §3.2（B 单）；把「可用量四列 / 提交占用 / 取消释放 / 出库转已引用」写成状态机表与测试用例清单（含并发）。
-**人类 3**：读 §3.3/§3.4/§6（E/C/收款）；把「改价下限按行」「仅退款两型重算」「提成快照」写成 Given/When/Then；确认 R 单与 C 单重算的接口边界。
-**人类 4**：读 §3.4/§9 与 D35/D40/D43；把 C 单的「本单相关损失 / 净毛利 / 未归属损失下钻」写成计算规则表；顺便认领打印/导出框架的版式需求。
+第 1 周末：主线主持 1 小时评审，冻结 contracts 签名与四份用例清单。
 
-第 1 周末：Lead 主持 1 小时评审，确认 contracts 签名与四人用例清单，之后接口尽量不再变。
+## 6. 里程碑（7 周）
 
-## 5. 里程碑（按 5 条线并行重排）
+| 里程碑 | 目标 | 主责 |
+|---|---|---|
+| **M0（第 0 周）** | 骨架 + contracts + D53 拍板 + 契约第三批冻结 | 主线 |
+| **M1（第 1 周）** | platform 核心可用（登录/权限/编号/审计/审批/框架/待办） | 主线 |
+| **M2（第 2 周）** | M1 主数据 + M2 库存基础 | 人类 1、2 |
+| **M3（第 3 周）** | M1 采购 A/S、M2 盘点与成本更正 | 人类 1、2 |
+| **M4（第 4 周）** | M3 加工、M4 内部交易 | 人类 3、4 |
+| **M5（第 5 周）** | 主线 销售 E + 收款/支付 + R 退货 | 主线 |
+| **M6（第 6 周）** | 主线 结算 C + 提成 + 利润报表；四模块合并回归 | 主线 + 全员 |
+| **M7（第 7 周）** | 联调、性能、部署、备份、验收 | 全员 |
 
-| 里程碑 | 目标 | 主责 | 验收 |
-|---|---|---|---|
-| **M0（第 0 周）** | 前置清空 | Lead | D53 拍板、契约第三批冻结、骨架可 `pnpm install && pnpm -r build`、`tests/run.ps1` 绿 |
-| **M1（第 1 周）** | platform 核心可用 | AI 线 | 登录/权限三层/编号/审计/审批骨架/单据框架/待办；`GET /api/v1/openapi.json` 可访问 |
-| **M2（第 2 周）** | 主数据 + 库存基础 | 人类 1、2 | masterdata CRUD + 默认售价；批次入库/四列/流水/盘点 |
-| **M3（第 3 周）** | 单据主链 | 人类 1、2 | A → 批次 → B → 新批次 全链路 |
-| **M4（第 4 周）** | 销售与收款 | 人类 3 | E 单 + 收款记录 + 在线支付 + R 退货 |
-| **M5（第 5 周）** | 内部交易 + 结算 | 人类 3、4 | 跨公司调货闭环；C 单与手工核算一致 |
-| **M6（第 6 周）** | 报表 + 打印 + 集成 | 人类 4 + AI 线 | 利润报表下钻、两套版式、CLI/MCP 端到端 |
-| **M7（第 7 周）** | 联调验收 | 全员 | 端到端用例、部署、只读备份、验收签字 |
-
-> 按全职估；兼职按比例顺延，里程碑顺序不变。
-
-## 6. 开工就绪（DoR）
+## 7. 开工就绪（DoR）
 
 - [ ] 模块检查点已认领（写负责人与日期）
 - [ ] 该模块「开放项」已拍板并追加 `docs/decisions.md`
-- [ ] 依赖模块的接口已在 `packages/contracts` 里有签名（可以是 501 实现）
+- [ ] 依赖模块的接口已在 `packages/contracts` 有签名
 - [ ] 契约章节已冻结（第一/二批已冻结；第三批待冻结）
 - [ ] 页面描述在 `docs/prototype-v0.md` 里
 
-## 7. 完成定义（DoD）
+## 8. 完成定义（DoD）
 
 - [ ] 模块检查点「验收标准」逐条通过
-- [ ] `tests/<模块>.test.ps1` 全绿，覆盖契约里的每条规则
-- [ ] 端点都在 OpenAPI 里，且实际响应能过 schema 校验（双向断言）
-- [ ] 所有写操作产生操作日志（D51），AI 调用带 token/来源/reason
-- [ ] 权限按 D4/D15/D50/D52.1 服务端判定；AI 不能拿到比人更大的权限
+- [ ] `tests/<模块>.test.ps1` 全绿，覆盖契约每条规则
+- [ ] 端点都在 OpenAPI 里且实际响应能过 schema 校验
+- [ ] 所有写操作产生操作日志（D51）
+- [ ] 权限服务端判定；AI 不能拿到比人更大的权限（D52.1）
 - [ ] 无跨模块 import、无直读他人表
-- [ ] PR 已评审合并，`main` 上 `tests/run.ps1` 绿
-- [ ] `docs/roadmap.md` 与模块检查点已更新
+- [ ] 共鸣测试通过、PR 已评审合并、`main` 上 `tests/run.ps1` 绿
 
-## 8. 当前阻塞与待你拍板
+## 9. 当前阻塞
 
-| # | 事项 | 需要谁 | 状态 |
+| # | 事项 | 谁 | 状态 |
 |---|---|---|---|
-| 1 | **AI 线做哪几个模块**（默认 platform + test，可换） | 你 | 🟡 待确认 |
-| 2 | 4 位人类同事的姓名 + 各自模块 | 你 | ⬜ 待填 |
-| 3 | 技术栈 D53（ADR 推荐 TS 全栈；U1 租户隔离 / U2 金额精度 / U3 主键 是不可逆项） | 你 | 🟡 待拍板 |
-| 4 | 契约第三批冻结（API 骨架已发现 10 处缺口/矛盾，见 `docs/api/openapi.yaml` 报告） | Lead + AI 线 | 🟡 待补 |
-| 5 | 代码骨架（apps/packages） | AI 线 | ⬜ M0 |
-| 6 | D51①② / D52①② 四个默认值 | 你 | 🟡 有默认值可直接开工 |
+| 1 | 4 位同事姓名与模块归属（按 §0 默认即可） | 你 | 🟡 待填 |
+| 2 | 技术栈 D53（ADR 推荐 TS 全栈；U1/U2/U3 不可逆） | 你 | 🟡 待拍板 |
+| 3 | 契约第三批 10 处缺口（API 骨架已暴露） | 主线 | 🟡 待补 |
+| 4 | 代码骨架（apps/packages） | 主线 | ⬜ M0 |
+| 5 | D51①② / D52①② 四个默认值 | 你 | 🟡 有默认值可先开工 |
 
-## 9. 沟通物放在哪
+## 10. 沟通物
 
-- 口径：`docs/decisions.md`（唯一真源，只追加）
-- 契约：`docs/轻单_接口契约第一批/第二批/第三批`
+- 口径：`docs/decisions.md`；契约：`docs/轻单_接口契约第一批/第二批/第三批`
 - 进度：`docs/module-<模块>.md` + `docs/roadmap.md`
-- 任务板：GitHub Issues（label：`module:<名>`、`line:ai` / `line:human1..4`、`blocked`、`needs-decision`）
-- 环境：`docs/DEV-SETUP.md`；接入：`docs/ONBOARDING.md`
+- 任务板：GitHub Issues（label：`main` / `m1` / `m2` / `m3` / `m4`、`blocked`、`needs-decision`）
+- 接入：`docs/ONBOARDING.md`；环境：`docs/DEV-SETUP.md`；边界：`docs/ROLES-AND-BOUNDARIES.md`
+- **给其他成员的智能体团队建议**：见 `docs/ROLES-AND-BOUNDARIES.md` §10（采不采用自定，附风险与收益）。

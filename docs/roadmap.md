@@ -99,6 +99,8 @@
 
 ## 变更记录
 
+- **2026-11-04 模块划分定稿（5 个交付模块）**：主要负责人负责**主线**（`platform` + `sales` + `settlement`）；4 位人类开发者各负责 1 个交付模块——**M1** 主数据与采购（`masterdata`+`purchase`）、**M2** 库存与盘点（`inventory`）、**M3** 加工与损耗（`processing`）、**M4** 内部交易与打印（`internal-trade`+打印版式）；四模块以 PR **合并进主线**完善产品，合并前必过 CI + 共鸣测试 + 验收清单。同时 `ROLES-AND-BOUNDARIES.md` 新增 §10：建议其他成员搭同款智能体团队（附收益/风险与「采不采用自定」）。
+
 - **2026-11-04 需求追加（D51/D52）**：负责人追加两条硬需求——① **平台、老板、员工、AI 的每一次操作都留日志**；② **应用完全支持 AI 操控**。落地：decisions 追加 D51（操作日志）/D52（AI 友好 API-first）；原型页面 20 → 22（+操作日志、+API 与集成）；新增 `docs/轻单_接口契约第三批_v1_20261104.md`（🟡 草案，含 4 项开放项，platform 开工前冻结）；`module-platform` 扩范围与验收；AGENTS 增加 API-first / 审计 / AI 同权约定；`tests/requirements.test.ps1` 断言第三批。
 
 - **2026-11-03 阶段 4 交接（本仓首次提交）**：需求稿从归档仓迁入（decisions / 两份契约 / prototype-v0 / project-context / roadmap / 业务事实问答 / 阻塞问题决策清单 / raw-protocol + `raw/` 11 篇 + `prototype.html`）；模块切分为 8 业务模块 + `test`，登记 `AGENTS.md` 并各生成 `docs/module-*.md`（目标/范围/依赖/开放项/验收/进度）；新增 `tests/requirements.test.ps1` 锁迁移完整性；删除 calc 脚手架；归档仓冻结只读。

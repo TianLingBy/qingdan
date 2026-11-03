@@ -11,22 +11,24 @@ Assert-True (Test-Path $plan) 'docs/TEAM-PLAN.md 存在（四人协作计划）'
 if (Test-Path $plan) {
   $p = Get-Content $plan -Raw -Encoding utf8
   foreach ($s in @(
-      '## 0. 一页纸看懂',
-      '## 1. 模块与写范围',
-      '## 2. AI 线与人类线怎么协作',
-      '## 3. 依赖顺序',
-      '## 4. 第 1 周',
-      '## 5. 里程碑',
-      '## 6. 开工就绪',
-      '## 7. 完成定义',
-      '## 8. 当前阻塞',
-      '## 9. 沟通物放在哪'
+      '## 0. 模块划分',
+      '## 1. 五个交付模块的边界与验收',
+      '## 2. 合并方式',
+      '## 3. 人机协作规则',
+      '## 4. 依赖顺序',
+      '## 5. 第 1 周任务',
+      '## 6. 里程碑',
+      '## 7. 开工就绪',
+      '## 8. 完成定义',
+      '## 9. 当前阻塞',
+      '## 10. 沟通物'
     )) { Assert-True $p.Contains($s) "TEAM-PLAN 含小节 $s" }
 
-  foreach ($line in @('AI 线', '人类线 1', '人类线 2', '人类线 3', '人类线 4')) {
-    Assert-True $p.Contains($line) "TEAM-PLAN 有 $line 的分工"
+  foreach ($line in @('MAIN 主线', 'M1 基础数据与采购', 'M2 库存与盘点', 'M3 加工与损耗', 'M4 内部交易与打印')) {
+    Assert-True $p.Contains($line) "TEAM-PLAN 有 $line 的交付模块"
   }
-  Assert-True ($p.Contains('feat/platform') -and $p.Contains('packages/contracts')) 'TEAM-PLAN 写明 AI 线分支与契约包归属'
+  Assert-True ($p.Contains('共鸣测试') -and $p.Contains('合并')) 'TEAM-PLAN 写明模块合并方式（共鸣测试）'
+  Assert-True ($p.Contains('feat/main-platform') -and $p.Contains('packages/contracts')) 'TEAM-PLAN 写明主线分支与契约包归属'
   foreach ($m in @('platform', 'masterdata', 'inventory', 'purchase', 'processing', 'sales', 'internal-trade', 'settlement')) {
     Assert-True $p.Contains($m) "TEAM-PLAN 覆盖模块 $m"
   }
@@ -43,19 +45,22 @@ if (Test-Path $roles) {
   $rb = Get-Content $roles -Raw -Encoding utf8
   foreach ($s in @(
       '## 0. 谁能做什么',
-      '## 1. 五条开发线与写范围',
+      '## 1. 五个交付模块与写范围',
       '## 2. 能做',
       '## 3. 不能做',
       '## 4. 需要批准才能做',
       '## 5. 文件级',
       '## 6. 冲突与仲裁',
       '## 7. 违规怎么处理',
-      '## 8. 与"产品权限"的区别'
+      '## 8. 与"产品权限"的区别',
+      '## 9. 一页速查',
+      '## 10. 给其他成员的智能体团队建议'
     )) { Assert-True $rb.Contains($s) "ROLES 含小节 $s" }
 
-  foreach ($line in @('负责人', 'Lead', 'AI 线', '人类线 1', '人类线 4')) {
-    Assert-True $rb.Contains($line) "ROLES 覆盖角色 $line"
+  foreach ($line in @('负责人', 'Lead', 'MAIN 主线', 'M1 基础数据与采购', 'M4 内部交易与打印')) {
+    Assert-True $rb.Contains($line) "ROLES 覆盖角色/模块 $line"
   }
+  Assert-True ($rb.Contains('收益') -and $rb.Contains('风险') -and $rb.Contains('采不采用')) 'ROLES 给出智能体团队的收益/风险/自选建议'
   foreach ($red in @('不直接 push `main`', '不跨模块 import', '不 `git commit --no-verify`', '不改 `docs/decisions.md` 历史结论行', '不手改 `docs/raw/`')) {
     Assert-True $rb.Contains($red) "ROLES 写明红线：$red"
   }

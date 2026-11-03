@@ -17,15 +17,15 @@
 
 ---
 
-## 1. 五条开发线与写范围
+## 1. 五个交付模块与写范围
 
-| 开发线 | 负责模块 | 可写目录（代码） | 可写文档 |
+| 交付模块 | 负责子模块 | 可写目录（代码） | 可写文档 |
 |---|---|---|---|
-| **AI 线** | `platform`、`test` 底座 | `apps/api/src/platform/**`、`packages/contracts/**`、`packages/cli/**`、`packages/mcp/**`、`tests/**`（`run.ps1` 除外） | `docs/module-platform.md`、`docs/module-test.md`、契约与决策（追加） |
-| **人类线 1** | `masterdata`、`purchase` | `apps/api/src/modules/masterdata/**`、`.../purchase/**`、`apps/web/src/pages/masterdata/**`、`.../purchase/**` | `docs/module-masterdata.md`、`docs/module-purchase.md` |
-| **人类线 2** | `inventory`、`processing` | `.../modules/inventory/**`、`.../processing/**` 及对应前端页面 | `docs/module-inventory.md`、`docs/module-processing.md` |
-| **人类线 3** | `sales`、`internal-trade` | `.../modules/sales/**`、`.../internal-trade/**` 及对应前端页面 | `docs/module-sales.md`、`docs/module-internal-trade.md` |
-| **人类线 4** | `settlement`（含利润报表） | `.../modules/settlement/**` 及对应前端页面 | `docs/module-settlement.md` |
+| **MAIN 主线**（负责人 + AI 团队） | `platform`、`sales`、`settlement`、`test` 底座 | `apps/api/src/platform/**`、`.../modules/sales/**`、`.../modules/settlement/**`、`packages/contracts/**`、`packages/cli/**`、`packages/mcp/**`、`tests/**`（`run.ps1` 由 Lead 管） | `module-platform/sales/settlement/test`、契约与决策（追加） |
+| **M1 基础数据与采购**（人类 1） | `masterdata`、`purchase` | `.../modules/masterdata/**`、`.../modules/purchase/**` 及对应前端页面 | `docs/module-masterdata.md`、`docs/module-purchase.md` |
+| **M2 库存与盘点**（人类 2） | `inventory` | `.../modules/inventory/**` 及对应前端页面 | `docs/module-inventory.md` |
+| **M3 加工与损耗**（人类 3） | `processing` | `.../modules/processing/**` 及对应前端页面 | `docs/module-processing.md` |
+| **M4 内部交易与打印**（人类 4） | `internal-trade` + 打印/导出 | `.../modules/internal-trade/**`、打印版式相关前端资源 | `docs/module-internal-trade.md` |
 
 > `apps/api/src/platform/**` 与 `packages/contracts/**` 是**共享写范围**：AI 线独占维护，人类线要改只能提 PR。
 
@@ -147,3 +147,46 @@
 - 提交前 → `pwsh -NoProfile -File tests\run.ps1` 绿；不绿不许提交。
 - 交付 → PR + CI 绿 + 1 人评审 + 检查点更新。
 - 不确定能不能做 → 先问，不要先做。
+
+## 10. 给其他成员的智能体团队建议（可选，采不采用自定）
+
+> 你（负责人）用 DSH 智能体团队做主线；4 位同事**可以**照同样方式给自己配一个「Lead + 2-3 个子 Agent」的团队。下面是推荐做法与真实风险，收益/风险自己权衡，采用与否不影响本仓库的任何规则——纯人工开发同样能跑通（bootstrap / hook / CI / PR 模板都不是为 AI 特制的）。
+
+### 10.1 推荐怎么配（最小可用）
+
+| 角色 | 干什么 | 注意 |
+|---|---|---|
+| Lead（1 个） | 读契约与检查点、拆任务、提交、开 PR、跑测试 | 只有 Lead 提交；子 Agent 不直接 commit |
+| 实现 Agent（1-2 个） | 在自己模块的写范围内写代码/测试 | 一次只给一个文件或目录 |
+| 自检 Agent（1 个） | 跑 `tests/run.ps1`、无头浏览器/契约校验、写验收报告 | 只读，不改业务文件 |
+
+接入方式与本仓库现成能力一致：`docs/ONBOARDING.md` 一条命令初始化 → 按 `docs/module-<模块>.md` 写 → 提交前 `tests/run.ps1` → PR 模板。
+
+### 10.2 收益（实测到的）
+
+- **并行**：文档、测试、前端页面、契约校验可以同时推进；主线这轮 3 个子 Agent 并行产出 ADR（396 行）、OpenAPI（23 个操作）、原型两页。
+- **自检强**：子 Agent 愿意跑无头浏览器、YAML 解析、$ref 断链检查这些"人懒得做"的验证（本轮实测 0 JS 异常、311 处 $ref 0 断链）。
+- **上下文不中断**：长任务拆给子 Agent，主线不用扛全部上下文；每个子 Agent 只读自己需要的文档。
+- **写范围好管**：一个文件只给一个 Agent，冲突面小；本轮 3 个并行者只改了 3 个文件。
+
+### 10.3 风险（必须接受才用）
+
+| 风险 | 说明 | 缓解 |
+|---|---|---|
+| 幻觉/自嗨 | 会写"已完成"但没验证 | 一切以命令输出为准；子 Agent 必须贴自检命令与输出 |
+| 越界改文件 | 写范围是建议不是锁 | Lead 集成前 `git status` + diff 全量核对；越界按文件回退 |
+| 契约被改坏 | AI 可能"顺手"改契约 | 契约/共享文件只允许提 PR + 人审（见 §5） |
+| 上下文与成本 | 每个子 Agent 都要重读文档，慢且耗 token | 只给最小必读集；一次只派一个文件；不派"顺便看看" |
+| 评审依赖人 | AI 自审不可信 | 平台层 PR 必须人类评审（§2） |
+| 密钥/数据外泄 | 把凭证贴进 prompt 就进日志了 | 仓库不放密钥；凭证只走环境变量；子 Agent 不接触生产数据 |
+| 团队节奏被拖 | 等 Agent 会打乱每日同步 | 设定超时：Agent 卡住 10 分钟就自己接手或换方法 |
+
+### 10.4 建议的落地路径
+
+1. **先试点 2 天**：挑一个边界清晰的小任务（例如给自己的模块补 3 条契约测试），看产出质量与耗时。
+2. **只给写范围**：每次派活写死"只允许改哪些文件、不许 commit"。
+3. **人做提交闸门**：子 Agent 只写，Lead 跑测试后统一提交。
+4. **强制人审**：自己审或请另一位同事审，AI 不能自己批自己。
+5. **一周复盘**：算一下"省了多少时间 / 多花了多少评审时间"，决定是否继续。
+6. **不采用也完全 OK**：所有文档、钩子、CI、PR 模板对纯人工开发一样适用，没有任何强制依赖。
+

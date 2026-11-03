@@ -8,7 +8,7 @@
 | 文档 | 状态 | 说明 |
 |---|---|---|
 | `ROLES-AND-BOUNDARIES.md` | 🔄 活跃 | **分工与边界**：谁能做什么/不能做什么（红线 14 条）、灰区审批、文件级写权限矩阵、冲突仲裁、违规处理 |
-| `TEAM-PLAN.md` | 🔄 活跃 | **5 条开发线协作计划**（1 AI 线 + 4 人类线）：模块归属与写范围、人机互评、第 1 周任务、DoR/DoD、当前阻塞 |
+| `TEAM-PLAN.md` | 🔄 活跃 | **模块分割与合并计划（定稿）**：1 条主线（platform/sales/settlement）+ 4 个交付模块（M1-M4），含写范围、合并门禁（共鸣测试）、第 1 周任务、里程碑、DoR/DoD |
 | `DEV-SETUP.md` | 🔄 活跃 | **环境与仓库骨架**：Node 24 / pnpm 11 / PostgreSQL 17、目录边界规则、本地运行、测试分层、排错 |
 | `adr-0001-tech-stack.md` | 🟡 待拍板 | 技术栈 ADR（D53 候选）：TS 全栈 vs .NET vs Python，含 12 项未决 |
 | `api/openapi.yaml` | 🟡 草案 | 接口描述骨架（OpenAPI 3.1）；`api/cli.md` 为 CLI 命令表 |
