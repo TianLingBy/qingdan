@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   轻单工程仓一键初始化：装 hook、跑全量测试，可选建模块分支。幂等，可重复跑。
 
@@ -9,7 +9,7 @@
 .PARAMETER Module
   可选。模块名（platform / masterdata / inventory / purchase / processing / sales /
   internal-trade / settlement / test）。给了就校验 docs/module-<Module>.md 存在，
-  并建/切 feat/<Module> 分支。
+  并建/切该模块的交付分支（见 docs/TEAM-PLAN.md §0，如 platform → feat/main-platform）。
 
 .EXAMPLE
   pwsh -NoProfile -File bootstrap.ps1
@@ -61,7 +61,19 @@ if ($Module) {
     Fail "模块不存在：$Module。可选：$($available -join ', ')"
   }
 
-  $branch = "feat/$Module"
+  # 交付模块分支映射（与 docs/TEAM-PLAN.md §0 一致）
+  $branchMap = @{
+    'platform'       = 'main-platform'
+    'sales'          = 'main-sales'
+    'settlement'     = 'main-settlement'
+    'masterdata'     = 'm1-masterdata'
+    'purchase'       = 'm1-purchase'
+    'inventory'      = 'm2-inventory'
+    'processing'     = 'm3-processing'
+    'internal-trade' = 'm4-internal-trade'
+  }
+  if (-not $branchMap.ContainsKey($Module)) { Fail "模块 $Module 没有登记交付分支（见 docs/TEAM-PLAN.md §0）" }
+  $branch = 'feat/' + $branchMap[$Module]
   Step "准备分支 $branch"
   $existing = @(git branch --list $branch)
   if ($existing.Count -gt 0) {

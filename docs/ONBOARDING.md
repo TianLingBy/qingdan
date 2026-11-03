@@ -57,11 +57,11 @@ macOS / Linux：
 git clone https://github.com/TianLingBy/qingdan.git
 cd qingdan
 ./bootstrap.sh                 # 只做环境
-./bootstrap.sh platform        # 环境 + 建 feat/platform 分支
+./bootstrap.sh platform        # 环境 + 建 feat/main-platform 分支
 ```
 
 脚本做的事（**幂等，可以重复跑**）：
-① 校验在仓库根 → ② 校验 pwsh 7 / git → ③ 调 `install-hooks.ps1` 装 hook 并跑全量测试 → ④ 带 `-Module` 时校验模块存在并建/切 `feat/<模块>` → ⑤ 打印认领清单与必读顺序。
+① 校验在仓库根 → ② 校验 pwsh 7 / git → ③ 调 `install-hooks.ps1` 装 hook 并跑全量测试 → ④ 带 `-Module` 时校验模块存在并建/切**交付分支**（如 `masterdata` → `feat/m1-masterdata`，映射见 `docs/TEAM-PLAN.md` §0） → ⑤ 打印认领清单与必读顺序。
 
 成功标志：最后一行是 `BOOTSTRAP-OK`。
 

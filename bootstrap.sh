@@ -22,7 +22,18 @@ pwsh -NoProfile -File "$ROOT/install-hooks.ps1" || fail "hook 安装或测试未
 
 if [ -n "$MODULE" ]; then
   [ -f "$ROOT/docs/module-$MODULE.md" ] || fail "模块不存在：$MODULE（见 docs/ONBOARDING.md §4 的表格）"
-  branch="feat/$MODULE"
+  case "$MODULE" in
+    platform)       suffix="main-platform" ;;
+    sales)          suffix="main-sales" ;;
+    settlement)     suffix="main-settlement" ;;
+    masterdata)     suffix="m1-masterdata" ;;
+    purchase)       suffix="m1-purchase" ;;
+    inventory)      suffix="m2-inventory" ;;
+    processing)     suffix="m3-processing" ;;
+    internal-trade) suffix="m4-internal-trade" ;;
+    *) fail "模块 $MODULE 没有登记交付分支（见 docs/TEAM-PLAN.md §0）" ;;
+  esac
+  branch="feat/$suffix"
   step "准备分支 $branch"
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     git switch "$branch" >/dev/null

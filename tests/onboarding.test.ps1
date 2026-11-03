@@ -14,7 +14,7 @@ if (Test-Path $bootPs1) {
   Assert-True $b.Contains('install-hooks.ps1') 'bootstrap.ps1 会装 hook'
   Assert-True $b.Contains('PSVersion') 'bootstrap.ps1 校验 PowerShell 版本'
   Assert-True $b.Contains('BOOTSTRAP-OK') 'bootstrap.ps1 有成功标志'
-  Assert-True $b.Contains('feat/') 'bootstrap.ps1 会建 feat/<模块> 分支'
+  Assert-True ($b.Contains('feat/') -and $b.Contains('branchMap')) 'bootstrap.ps1 会按交付模块建 feat/<交付分支>'
   Assert-True ($b.Contains('module-') -and $b.Contains('Module')) 'bootstrap.ps1 校验模块检查点'
 }
 if (Test-Path $bootSh) {
