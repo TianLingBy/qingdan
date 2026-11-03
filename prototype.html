@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>轻单 · 可点击原型 v1（20 页新 IA）</title>
+<title>轻单 · 可点击原型 v1（22 页新 IA）</title>
 <style>
   :root{
     --bg:#f5f6f8; --panel:#fff; --line:#e3e6ea; --text:#1f2328; --dim:#6b7280;
@@ -90,11 +90,40 @@
   .perm-table input[type=checkbox]:disabled{cursor:not-allowed;opacity:.4}
   .perm-table .na{color:var(--dim);opacity:.45;font-size:12px}
   .perm-table tr:hover td{background:var(--brand-soft)}
+  /* ===== 21 操作日志 / 22 API 与集成 ===== */
+  .table-wrap{overflow-x:auto;border-radius:8px}
+  .filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .filters label{font-size:12.5px;color:var(--dim)}
+  .filters select{padding:4px 8px;font-size:12.5px}
+  .filters button{padding:4px 10px;font-size:12.5px}
+  .ro-note{background:var(--bad-soft);border:1px solid #fecaca;color:#7f1d1d;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:10px}
+  .ro-note b{color:var(--bad)}
+  .integrations{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+  .int-card h4{margin:0 0 4px;font-size:14px}
+  .int-card p{margin:0;color:var(--dim);font-size:12.5px}
+  .code-line{display:flex;gap:8px;align-items:flex-start;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:10px 12px;font:12.5px/1.55 Consolas,"SFMono-Regular",Menlo,monospace;margin-top:10px;white-space:pre-wrap;word-break:break-all}
+  .code-line code{flex:1;white-space:pre-wrap;word-break:break-all}
+  .code-line button{flex:none;background:#1e293b;border-color:#334155;color:#e2e8f0;padding:2px 9px;font-size:12px}
+  .code-line button:hover{background:#334155}
+  .switch{display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;font-size:13px}
+  .switch input{appearance:none;-webkit-appearance:none;width:38px;height:21px;border-radius:20px;background:#d1d5db;position:relative;transition:.15s;cursor:pointer;flex:none;margin:0;border:none;outline:none}
+  .switch input:checked{background:var(--brand)}
+  .switch input::after{content:'';position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;transition:.15s}
+  .switch input:checked::after{transform:translateX(17px)}
+  .switch input:disabled{opacity:.45;cursor:not-allowed}
+  .switch input:focus-visible{box-shadow:0 0 0 3px var(--brand-soft)}
+  .scope-list{display:flex;gap:8px 16px;flex-wrap:wrap;margin:8px 0}
+  .scope-list label{font-size:13px;display:inline-flex;gap:4px;align-items:center;cursor:pointer}
+  .scope-list input{width:15px;height:15px;accent-color:var(--brand)}
+  .form-row{display:flex;flex-direction:column;gap:4px;margin:10px 0;font-size:13px}
+  .form-row>label{color:var(--dim)}
+  .form-row input,.form-row select,.form-row textarea{padding:6px 9px;border:1px solid var(--line);border-radius:6px;font:inherit;background:var(--panel)}
+  .token-plain{font:13px/1.5 Consolas,monospace;background:#0f172a;color:#e2e8f0;padding:10px 12px;border-radius:8px;word-break:break-all;margin:10px 0}
 </style>
 </head>
 <body>
 <header>
-  <div class="logo">轻单<small>可点击原型 v1 · 20 页新 IA · 假数据</small></div>
+  <div class="logo">轻单<small>可点击原型 v1 · 22 页新 IA · 假数据</small></div>
   <div class="grow"></div>
   <div class="role-box">
     <span class="muted">以身份查看：</span>
@@ -113,7 +142,7 @@
 const ROLES = ['老板','经理','销售/售后','采购','质检','理货','拣货','财务'];
 
 // 每个功能域的默认权限（按岗位）。这里用「动作集合」表达，原型按它渲染按钮显隐。
-// 领域 key 对应 20 页 IA 的功能域（D44）。
+// 领域 key 对应 22 页 IA 的功能域（D44；D51/D52 追加操作日志、API 与集成）。
 const DOMAINS = {
   'a':    {label:'采购单 A'},
   'b':    {label:'加工单 B'},
@@ -134,7 +163,9 @@ const DOMAINS = {
   'emp':  {label:'员工'},
   'perm': {label:'权限设置'},
   'co':   {label:'公司管理'},
-  'profit':{label:'利润报表'}
+  'profit':{label:'利润报表'},
+  'audit':{label:'操作日志'},
+  'api':  {label:'API 与集成'}
 };
 
 // 岗位能力：动作集合。老板全权；经理近乎全权但「权限设置」由老板独占；其余按 D44/D47 落。
@@ -190,6 +221,10 @@ function capsOf(role, dom){
       c.view = (role==='销售/售后'||isMgr||isFin||role==='老板'); c.edit = (role==='销售/售后'||role==='采购'||allOp); break;
     case 'supp': // 供应商：采购/经理/老板可见（销售岗不可见 D4.1）
       c.view = (role==='采购'||isMgr||role==='老板'); c.edit = (role==='采购'||allOp); break;
+    case 'audit': // 操作日志：老板/经理/财务可查；日志内金额另有「操作日志」域看价（原型假设，待拍板）
+      c.view = (role==='老板'||isMgr||isFin); c.price = (role==='老板'||isMgr); c.export = (role==='老板'||isMgr); break;
+    case 'api': // API 与集成：老板/经理可查；Token 新建/撤销与危险动作开关默认仅老板（原型假设，待拍板）
+      c.view = (role==='老板'||isMgr); c.create = role==='老板'; c.edit = role==='老板'; break;
     default: break;
   }
   return c;
@@ -298,6 +333,34 @@ const DB = {
     {code:'BJ01', name:'北京公司', head:'张老板'},
     {code:'TJ01', name:'天津公司', head:'李经理'},
     {code:'SH01', name:'上海公司', head:'徐总'}
+  ],
+  // API Token（D52：绑定员工，scope = 功能域 × 动作子集；明文只在创建时显示一次，服务端只存哈希）
+  tokens: [
+    {id:'tk_01', name:'财务对账机器人', emp:'000008', scope:['结算单 · 查','结算单 · 导出','利润报表 · 查'], expiry:'2027-03-31', lastUsed:'2026-11-04 09:12', status:'有效', ip:'203.0.113.24'},
+    {id:'tk_02', name:'MCP · 销售助手', emp:'000003', scope:['销售单 · 查','销售单 · 建','销售单 · 编','商品 · 查','库存数量 · 查'], expiry:'2026-12-31', lastUsed:'2026-11-04 09:58', status:'有效', ip:'不限制'},
+    {id:'tk_03', name:'CLI · 采购批处理', emp:'000004', scope:['采购单 · 查','采购单 · 建','采购单 · 编','采购单 · 导出'], expiry:'', lastUsed:'2026-11-03 14:05', status:'有效', ip:'198.51.100.7'},
+    {id:'tk_04', name:'盘点脚本（旧）', emp:'000005', scope:['盘点 · 查','库存流水 · 查'], expiry:'2026-10-01', lastUsed:'2026-09-28 11:20', status:'已过期', ip:'不限制'},
+    {id:'tk_05', name:'测试 Token（已撤销）', emp:'000002', scope:['销售单 · 查'], expiry:'', lastUsed:'2026-10-30 17:31', status:'已撤销', ip:'不限制'}
+  ],
+  // 操作日志（D51：只追加、不可改删；覆盖登录/权限变更/写操作/导出/看金额/看日志/AI/平台；业务失败也记）
+  auditLogs: [
+    {at:'2026-11-04 10:12:03', actorType:'员工', actor:'张老板', source:'Web', action:'权限设置.修改岗位权限', code:'perm.edit', obj:'采购岗位 · 编辑/审批', amount:null, result:'成功', err:'', reqId:'req_7f3a91c2', cat:'权限与 Token', reason:'复核“采购不能自审”规则（危险动作，原因必填）'},
+    {at:'2026-11-04 09:58:47', actorType:'AI', actor:'王销售（委托：AI 销售助手）', source:'MCP', action:'销售单.新建草稿', code:'sales.create', obj:'销售单 / E-BJ01-20261104-001', amount:4600, result:'成功', err:'', reqId:'req_a1b2c3d4', cat:'AI 调用', reason:'客户口头补单，AI 生成草稿待王销售确认'},
+    {at:'2026-11-04 09:58:12', actorType:'AI', actor:'王销售（委托：AI 销售助手）', source:'MCP', action:'库存数量.查', code:'inventory.read', obj:'可用量 / P-1001', amount:null, result:'失败', err:'E403 scope 不含 inventory.read', reqId:'req_9e8d7c6b', cat:'AI 调用', reason:''},
+    {at:'2026-11-04 09:31:20', actorType:'员工', actor:'吴财务', source:'Web', action:'结算单.确认结算', code:'settlement.confirm', obj:'结算单 C-BJ01-20261103-001', amount:4600, result:'成功', err:'', reqId:'req_55aa10d9', cat:'写入', reason:'财务核对无误，确认结算（危险动作）'},
+    {at:'2026-11-04 09:20:05', actorType:'员工', actor:'王销售', source:'Web', action:'利润报表.查看金额', code:'profit.price', obj:'利润报表 / 2026-11', amount:6660, result:'成功', err:'', reqId:'req_31ff0aa2', cat:'敏感读', reason:''},
+    {at:'2026-11-04 08:59:44', actorType:'员工', actor:'赵采购', source:'CLI', action:'采购单.导出 CSV', code:'purchase.export', obj:'采购单 / 2026-11-03 批次', amount:null, result:'成功', err:'', reqId:'req_c10b2f17', cat:'敏感读', reason:''},
+    {at:'2026-11-04 08:15:02', actorType:'员工', actor:'李经理', source:'Web', action:'登录', code:'auth.login', obj:'会话 / 北京公司', amount:null, result:'失败', err:'E401 密码错误（连续 2 次）', reqId:'req_0a9b8c7d', cat:'登录', reason:''},
+    {at:'2026-11-03 18:47:39', actorType:'员工', actor:'吴财务', source:'Web', action:'客户退货.审批', code:'returns.approve', obj:'客户退货 R-BJ01-20261103-001', amount:320, result:'成功', err:'', reqId:'req_44de1b6a', cat:'写入', reason:'退货退款，审批通过（危险动作）'},
+    {at:'2026-11-03 18:40:11', actorType:'AI', actor:'吴财务（委托：财务对账机器人）', source:'API', action:'结算单.导出 CSV', code:'settlement.export', obj:'结算单 / 2026-11-03', amount:3600, result:'成功', err:'', reqId:'req_ee12031c', cat:'AI 调用', reason:''},
+    {at:'2026-11-03 17:02:58', actorType:'员工', actor:'李经理', source:'Web', action:'操作日志.查看', code:'audit.view', obj:'操作日志 / 全部', amount:null, result:'成功', err:'', reqId:'req_7712aa09', cat:'敏感读', reason:''},
+    {at:'2026-11-03 16:35:10', actorType:'平台', actor:'平台运营（platform#0007）', source:'Web', action:'企业.暂停计费', code:'platform.billing.pause', obj:'企业 / 北京公司', amount:null, result:'成功', err:'', reqId:'req_pla00017', cat:'系统', reason:'欠费 3 天，平台运营后台操作'},
+    {at:'2026-11-03 15:20:31', actorType:'系统', actor:'system', source:'Job', action:'审计归档', code:'job.archive', obj:'操作日志 / 2026-10', amount:null, result:'成功', err:'', reqId:'req_job88a01', cat:'系统', reason:'到期归档不物理删除（D51②）'},
+    {at:'2026-11-03 14:05:22', actorType:'员工', actor:'张老板', source:'Web', action:'API Token.新建', code:'token.create', obj:'Token / 财务对账机器人', amount:null, result:'成功', err:'', reqId:'req_tok00031', cat:'权限与 Token', reason:'财务对账自动化'},
+    {at:'2026-11-03 11:30:45', actorType:'员工', actor:'赵采购', source:'Web', action:'采购单.新建', code:'purchase.create', obj:'采购单 A-BJ01-20261103-003', amount:720, result:'成功', err:'', reqId:'req_19ac7f3e', cat:'写入', reason:''},
+    {at:'2026-11-03 10:12:44', actorType:'员工', actor:'王销售', source:'Web', action:'销售单.提交（破下限）', code:'sales.create', obj:'销售单 / E-BJ01-20261103-001', amount:12800, result:'失败', err:'E422 售价低于批次成本，需老板/经理审批', reqId:'req_f0011223', cat:'写入', reason:''},
+    {at:'2026-11-02 09:03:12', actorType:'员工', actor:'孙质检', source:'Web', action:'商品成本.查看', code:'product.cost.read', obj:'商品 / P-1001', amount:8.6, result:'成功', err:'', reqId:'req_88aa2210', cat:'敏感读', reason:''},
+    {at:'2026-11-01 16:44:07', actorType:'AI', actor:'赵采购（委托：CLI 批处理）', source:'CLI', action:'采购单.新建', code:'purchase.create', obj:'采购单 A-BJ01-20261101-002', amount:5040, result:'成功', err:'', reqId:'req_7bcd0e41', cat:'AI 调用', reason:'批量补录历史采购单'}
   ]
 };
 
@@ -331,11 +394,33 @@ const NAV = [
     ['perm','权限设置','perm'],
     ['co','公司管理','co']
   ]},
+  {group:'系统', items:[
+    ['audit','操作日志','audit'],
+    ['api','API 与集成','api']
+  ]},
   {group:'报表', items:[['profit','利润报表','profit']]},
   {group:'', items:[]}
 ];
 
-const state = {role:'老板', page:'home', modal:null, detail:null, reqView:false, collapsed:new Set(), permRole:'老板', permOverride:{}, permDim:'role', permEmp:'000001', personOverride:{}};
+// ===== 21 操作日志 / 22 API 与集成 的静态配置 =====
+// 22 页接入示例：OpenAPI / CLI / MCP 各一行（纯静态文案，复制按钮走 clipboard + 降级）
+const API_BLOCKS = [
+  {k:'OpenAPI 3.1', tag:'唯一接口真源', desc:'GET /api/v1/openapi.json 产出 OpenAPI 3.1 文档；Web / CLI / MCP 都按它生成客户端，不允许只在前端实现业务逻辑（D52）。', cmd:'curl -H "Authorization: Bearer $QD_TOKEN" https://api.qingdan.example.com/api/v1/openapi.json'},
+  {k:'CLI', tag:'qingdan', desc:'qingdan <功能域> <动作> [--json] [--dry-run] [--reason "..."]；退出码 0 成功 / 2 用法错误 / 3 无权限 / 4 校验失败 / 5 并发冲突。', cmd:'qingdan sales create --customer C-001 --json --dry-run --reason "补录 11-03 销售单"'},
+  {k:'MCP', tag:'Agent 接入', desc:'MCP Server 的每个工具与一个 REST 接口一对一，权限与 Web 完全一致，不绕过服务端权限与审计；写操作必须带 reason。', cmd:'npx @qingdan/mcp-server --token "$QD_TOKEN" --scope sales.read,sales.write'}
+];
+// 新建 Token 时可勾选的 scope 预设（功能域 × 动作子集）
+const TOKEN_SCOPES = ['销售单 · 查','销售单 · 建','销售单 · 编','采购单 · 查','采购单 · 建','采购单 · 编','采购单 · 导出','结算单 · 查','结算单 · 导出','结算单 · 确认','库存数量 · 查','库存流水 · 查','盘点 · 查','利润报表 · 查','操作日志 · 查','API Token · 管'];
+const SCOPE_DOM = {'销售单':'e','采购单':'a','结算单':'c','库存数量':'qty','库存流水':'flow','盘点':'stock','利润报表':'profit','操作日志':'audit','API Token':'api'};
+const SCOPE_ACT = {'查':'view','建':'create','编':'edit','导出':'export','确认':'approve','管':'edit'};
+// D52.1①：token scope 不得超出创建人自己的授权
+function scopeAllowedForCreator(scope){
+  const parts = String(scope).split(' · ');
+  const dom = SCOPE_DOM[parts[0]], act = SCOPE_ACT[parts[1]];
+  return !!(dom && act && capsOf(state.role, dom)[act]);
+}
+
+const state = {role:'老板', page:'home', modal:null, detail:null, reqView:false, collapsed:new Set(), permRole:'老板', permOverride:{}, permDim:'role', permEmp:'000001', personOverride:{}, auditFilter:{actor:'全部', source:'全部', action:'全部', result:'全部', period:'全部时间'}, aiDanger:false, lastTokenPlain:null};
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -366,7 +451,9 @@ const DOMAIN_ACTIONS = {
   'emp':  ['view','create','edit','del','export'],               // 员工
   'perm': ['view','edit'],                                       // 权限设置
   'co':   ['view','create','edit','del','export'],               // 公司管理
-  'profit':['view','export']                                     // 利润报表（只读）
+  'profit':['view','export'],                                    // 利润报表（只读）
+  'audit': ['view','export'],                                    // 操作日志（只读，可导出；无编辑/删除动作）
+  'api':   ['view','create','edit']                              // API 与集成（Token 新建/撤销）
 };
 // 读取某岗位某功能域的实际权限（优先取手动勾改覆盖值，否则用 capsOf 出厂默认）
 function permOf(role, dom){
@@ -469,6 +556,14 @@ function roleBanner(dom){
   const c = capsOf(state.role, dom);
   const rights = ['查','新建','编辑','审批','出库','删除','看价','导出'].filter((k,i)=>[c.view,c.create,c.edit,c.approve,c.ship,c.del,c.price,c.export][i]).join(' / ') || '无操作权限';
   return `<div class="hint">当前身份 <b>${state.role}</b> 对「${DOMAINS[dom].label}」可用：<b>${rights}</b>${c.price?'':'　<span style="color:#b45309">（金额/成本受「看价」权限隐藏）</span>'}</div>`;
+}
+// 只列出该功能域「能力上支持」且当前身份具备的动作（21/22 页用；老板不再显示未支持的动作）
+function rightsOf(dom){
+  const c = capsOf(state.role, dom);
+  const names = {view:'查',create:'新建',edit:'编辑',approve:'审批',ship:'出库',del:'删除',export:'导出'};
+  const list = (DOMAIN_ACTIONS[dom] || []).filter(k => c[k]).map(k => names[k]);
+  if(c.price) list.push('看价');
+  return list.join(' / ') || '无操作权限';
 }
 function tbl(cols, rows, rowAttrs){
   if(!rows.length) return '<div class="empty">暂无数据</div>';
@@ -738,6 +833,124 @@ const pages = {
         <div class="muted" style="margin:6px 0">C 单净毛利之和 ≠ 报表净毛利，差额 = 未归属损失（D26/D35），点击下钻：</div>
         <button class="primary" data-act="lossDetail">查看未归属损失明细</button></div>`;
   },
+  audit(){
+    const c = capsOf(state.role,'audit');
+    const f = state.auditFilter;
+    const now = new Date('2026-11-04T10:30:00');
+    const todayStr = '2026-11-04';
+    const parseAt = s => new Date(String(s).replace(' ','T'));
+    const daysOf = {'今天':0,'近 3 天':3,'近 7 天':7,'近 30 天':30};
+    const inPeriod = x => {
+      if(f.period === '全部时间') return true;
+      if(f.period === '今天') return String(x.at).slice(0,10) === todayStr;
+      const d = daysOf[f.period] || 30;
+      return parseAt(x.at).getTime() >= now.getTime() - d * 86400000;
+    };
+    const rows = DB.auditLogs.filter(x =>
+      (f.actor === '全部' || x.actorType === f.actor) &&
+      (f.source === '全部' || x.source === f.source) &&
+      (f.action === '全部' || x.cat === f.action) &&
+      (f.result === '全部' || x.result === f.result) &&
+      inPeriod(x)
+    ).sort((a,b) => a.at < b.at ? 1 : -1);
+    const opts = (arr, cur) => arr.map(v => `<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('');
+    const actorCls = {'员工':'tag','AI':'tag doing','平台':'tag pending','系统':'tag draft'};
+    // 无「看价」权限 → 金额列脱敏（D27）；日志内金额由「操作日志」域看价控制（原型假设，见页首提示）
+    const amt = x => x.amount == null
+      ? '<span class="muted">—</span>'
+      : (c.price ? money(x.amount) : '<span class="muted" title="无日志看价权限，金额按 D27 脱敏">¥ ••••</span>');
+    const resultCell = x => x.result === '成功'
+      ? '<span class="tag done">成功</span>'
+      : `<span class="tag dead">失败</span>${x.err ? ` <span class="muted" style="font-size:11.5px">${esc(x.err)}</span>` : ''}`;
+    const body = rows.length ? `<div class="table-wrap"><table>
+      <caption style="caption-side:top;text-align:left;padding:0 0 8px;color:#7f1d1d;font-size:12.5px;font-weight:600">🔒 操作日志只追加、不可改删（D51）：本页没有编辑 / 删除入口，系统也不提供更新或删除接口</caption>
+      <thead><tr>${['时间','操作者类型','操作者','来源','动作','对象','金额','结果','请求 id'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(x => `<tr>
+        <td>${esc(x.at)}</td>
+        <td><span class="${actorCls[x.actorType]||'tag'}">${esc(x.actorType)}</span></td>
+        <td>${esc(x.actor)}</td>
+        <td>${esc(x.source)}</td>
+        <td>${esc(x.action)}<div class="muted" style="font-size:11.5px">${esc(x.code)}${x.reason ? ` · <span title="${esc(x.reason)}" style="cursor:help">⚠ 原因</span>` : ''}</div></td>
+        <td>${esc(x.obj)}</td>
+        <td class="money">${amt(x)}</td>
+        <td>${resultCell(x)}</td>
+        <td><span class="muted" style="font-family:Consolas,monospace;font-size:12px">${esc(x.reqId)}</span></td>
+      </tr>`).join('')}</tbody></table></div>`
+      : `<div class="empty">没有符合条件的操作日志（当前筛选 0 条）。操作日志只追加、不可改删；放宽筛选条件再试。</div>`;
+    return pageHead('操作日志','平台 / 员工 / AI 的全量审计（D51）：登录登出、权限与岗位变更、个人权限覆盖、全部写操作、导出、查看敏感金额、查看日志本身都会留痕；业务失败也落一条。') +
+      `<div class="hint">当前身份 <b>${esc(state.role)}</b> 对「操作日志」可用：<b>${rightsOf('audit')}</b>（只读页：无编辑 / 删除动作）</div>` +
+      (c.price ? '' : '<div class="hint">当前身份没有<b>日志内金额</b>的看价权限，金额列显示为掩码（D27 口径在审计视图的落地）。原型假设：日志金额由「操作日志」功能域自身的看价控制，待拍板。</div>') +
+      `<div class="filters">
+        <label>操作者类型</label><select id="afActor">${opts(['全部','员工','AI','平台','系统'], f.actor)}</select>
+        <label>来源</label><select id="afSource">${opts(['全部','Web','CLI','API','MCP','Job'], f.source)}</select>
+        <label>动作</label><select id="afAction">${opts(['全部','写入','敏感读','登录','权限与 Token','AI 调用','系统'], f.action)}</select>
+        <label>结果</label><select id="afResult">${opts(['全部','成功','失败'], f.result)}</select>
+        <label>时间段</label><select id="afPeriod">${opts(['全部时间','今天','近 3 天','近 7 天','近 30 天'], f.period)}</select>
+        <button data-act="afReset">重置筛选</button>
+      </div>` +
+      `<div class="toolbar">
+        <button ${c.export?'':'disabled'} data-act="auditExport">导出筛选结果（CSV）</button>
+        <span class="muted" style="font-size:12.5px">筛选后 ${rows.length} 条 / 全部 ${DB.auditLogs.length} 条；导出本身也会写一条操作日志（D51）</span>
+      </div>` + body;
+  },
+  api(){
+    const c = capsOf(state.role,'api');
+    const readonly = !(c.create || c.edit);
+    const statusCls = {'有效':'tag done','已过期':'tag pending','已撤销':'tag dead'};
+    const tokenRows = DB.tokens.map(t => {
+      const emp = empOf(t.emp);
+      return {t, cells:[
+        `<b>${esc(t.name)}</b><div class="muted" style="font-size:11.5px">IP 白名单：${esc(t.ip || '不限制')}</div>`,
+        `${esc(emp ? emp.name : '—')}<div class="muted" style="font-size:11.5px">${esc(t.emp)} · ${esc(emp ? emp.role : '')}</div>`,
+        t.scope.map(s=>`<span class="tag draft" style="margin:1px 2px 1px 0">${esc(s)}</span>`).join(''),
+        t.expiry || '<span class="muted">长期（季度复核）</span>',
+        esc(t.lastUsed || '—'),
+        `<span class="${statusCls[t.status] || 'tag'}">${esc(t.status)}</span>`,
+        `<button data-act="tokenRevoke" data-tok="${esc(t.id)}" ${(c.edit && t.status === '有效') ? '' : 'disabled'}>撤销</button>`
+      ]};
+    });
+    return pageHead('API 与集成','AI 友好型应用（D52）：所有业务能力先有服务层用例 + REST 接口，Web / CLI / MCP 只是客户端；OpenAPI 3.1 是接口真源。AI 用 API Token 认证，权限与人类同权、不放大（D52.1）。') +
+      `<div class="hint">当前身份 <b>${esc(state.role)}</b> 对「API 与集成」可用：<b>${rightsOf('api')}</b></div>` +
+      (readonly ? `<div class="hint">当前身份「${esc(state.role)}」对本页<b>只读</b>：可查看 Token 与接入方式，但不能新建 / 撤销 Token、不能调整「AI 危险动作」开关。原型假设：Token 管理默认仅老板可操作，待拍板。</div>` : '') +
+      `<div class="card">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <b>API Token</b>
+          <span class="muted" style="font-size:12.5px">绑定员工；生效权限 = 员工当前权限 ∩ token scope，每次请求重算（D52.1）</span>
+          <div class="grow"></div>
+          <button class="primary" data-act="tokenNew" ${c.create?'':'disabled'}>+ 新建 Token</button>
+        </div>
+        <div class="table-wrap">${tbl(['名称','绑定员工','scope','有效期','最后使用','状态','操作'], tokenRows)}</div>
+        <div class="muted" style="font-size:12px;margin-top:8px">明文 token 只在创建时返回一次，服务端只存哈希；撤销立即生效、不可恢复。每 token 单独限流，超限返回 429 + Retry-After（契约第三批 §2）。</div>
+      </div>` +
+      `<div class="card"><b>三种接入方式</b>
+        <div class="muted" style="font-size:12.5px;margin:4px 0 10px">REST 是唯一能力入口；Web / CLI / MCP 都是薄客户端，同一动作三种入口的行为、错误码与日志字段必须一致（D52 / 契约第三批 §4）。</div>
+        <div class="integrations">${API_BLOCKS.map((b,i)=>`<div class="kpi int-card">
+          <h4>${esc(b.k)} <span class="tag draft">${esc(b.tag)}</span></h4>
+          <p>${esc(b.desc)}</p>
+          <div class="code-line"><code>${esc(b.cmd)}</code><button data-act="copy" data-idx="${i}">复制</button></div>
+        </div>`).join('')}</div>
+      </div>` +
+      `<div class="card">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <b>AI 危险动作</b>
+          <label class="switch"><input type="checkbox" id="aiDanger" ${state.aiDanger?'checked':''} ${c.edit?'':'disabled'}><span>${state.aiDanger?'已开启':'默认关闭'}</span></label>
+          <span class="${state.aiDanger?'tag pending':'tag done'}">${state.aiDanger?'AI 可发起，走人工审批':'AI 一律不得执行'}</span>
+        </div>
+        <div class="muted" style="font-size:12.5px;margin-top:8px">
+          危险动作 = <b>删除 / 冲正 / 成本更正 / 结算确认 / 权限变更</b>。默认<b>禁止 AI 直接执行</b>，也不允许 AI 走审批（D52① 拟定默认值，🟡 待确认）。
+          租户可开启「允许 AI 走审批」：开启后 AI 仍只能<b>发起</b>，必须带 <code>reason</code>，且审批必须由人类完成——<b>AI 不能审批自己发起的动作，也不能担任任何审批人</b>（D52.1③）。
+          ${state.aiDanger?'<br><b style="color:#b45309">当前已开启：危险动作会进入人工审批队列，审批人只能是员工。</b>':''}
+        </div>
+      </div>` +
+      `<div class="card"><b>AI 权限不放大（D52.1）</b>
+        <ul style="margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--dim);line-height:1.8">
+          <li>生效权限 = 绑定员工<b>当前权限</b>（岗位并集 ⊕ 个人覆盖）<b>∩</b> token scope；每请求重新判定，不缓存授权。</li>
+          <li>创建 token 时 scope 只能从创建人自己的授权里选，超出直接拒绝创建；不提供租户级「上帝 token」。</li>
+          <li>员工停用 / 权限或岗位变更 / 公司集合变更 → 下一次请求立即生效；员工停用则 token 立即作废。</li>
+          <li>审计同时记「token 创建人」与「AI 操作者」，可反查是谁把权限委托给了 AI；审批只能由人类完成。</li>
+        </ul>
+      </div>`;
+  },
   board(){
     return pageHead('业务全流程图','可视化定位 = 手段；一期做业务全流程图（D7），实时看板与集团看板二期。全员可见。') +
       '<div class="card">' +
@@ -775,6 +988,108 @@ function openLossDetail(){
   </div></div>`;
 }
 
+// ============ 22 API 与集成：Token 弹层与假数据交互 ============
+// 写一条操作日志（与页面同结构；演示「Token 新建/撤销也进审计」D51）
+function addAudit(actorType, actor, source, action, code, obj, amount, result, err, cat, reason){
+  DB.auditLogs.unshift({
+    at:'2026-11-04 10:31:00', actorType, actor, source, action, code, obj,
+    amount: amount == null ? null : amount, result, err: err || '',
+    reqId: 'req_' + Math.random().toString(36).slice(2, 10), cat, reason: reason || ''
+  });
+}
+function openTokenNew(){
+  if(!capsOf(state.role,'api').create){ toast('当前身份不能新建 Token'); return; }
+  const empOpts = DB.employees.map(e=>`<option value="${e.code}">${e.code} · ${esc(e.name)}（${esc(e.role)}）</option>`).join('');
+  const scopeBoxes = TOKEN_SCOPES.map(s=>`<label><input type="checkbox" data-tkscope value="${esc(s)}"> ${esc(s)}</label>`).join('');
+  state.modal = 'tokenNew';
+  $('#modalRoot').innerHTML = `<div class="modal-mask"><div class="modal" style="width:min(720px,100%)">
+    <h3>新建 API Token</h3>
+    <div class="muted" style="font-size:12.5px">机器身份，绑定员工。scope 只能从你（创建人）自己的授权里选，超出将被拒绝（D52.1①）；明文只在创建后显示一次。</div>
+    <div class="form-row"><label>名称</label><input id="tkName" placeholder="如：财务对账机器人 / MCP · 销售助手"></div>
+    <div class="form-row"><label>绑定员工（生效权限 = 该员工当前权限 ∩ scope）</label><select id="tkEmp">${empOpts}</select></div>
+    <div class="form-row"><label>scope（功能域 × 动作子集）</label><div class="scope-list">${scopeBoxes}</div></div>
+    <div class="form-row"><label>有效期（留空 = 长期，需季度复核）</label><input id="tkExpiry" type="date"></div>
+    <div class="form-row"><label>IP 白名单（可选，逗号分隔；留空 = 不限制）</label><input id="tkIp" placeholder="203.0.113.24, 198.51.100.7"></div>
+    <div class="form-row"><label>用途 / 原因（必填，进操作日志）</label><input id="tkReason" placeholder="如：财务对账自动化"></div>
+    <footer><button data-act="closeModal">取消</button><button class="primary" data-act="tokenSubmit">创建 Token</button></footer>
+  </div></div>`;
+}
+function openTokenCreated(plain, name, empCode){
+  const emp = empOf(empCode);
+  state.modal = 'tokenCreated';
+  $('#modalRoot').innerHTML = `<div class="modal-mask"><div class="modal">
+    <h3>Token 创建成功</h3>
+    <div class="hint" style="background:var(--warn-soft)">明文<b>只显示这一次</b>，关闭后无法再查看；服务端只存哈希。</div>
+    <div class="token-plain" id="tokenPlain">${esc(plain)}</div>
+    <dl class="kv">
+      <dt>名称</dt><dd>${esc(name)}</dd>
+      <dt>绑定员工</dt><dd>${esc(emp ? emp.name : '—')}（${esc(emp ? emp.role : '')}）</dd>
+      <dt>审计</dt><dd>已写一条「API Token.新建」操作日志（含原因与 token 创建人）</dd>
+    </dl>
+    <footer><button data-act="copyToken">复制 token</button><button class="primary" data-act="closeModal">我已保存</button></footer>
+  </div></div>`;
+}
+function createToken(){
+  if(!capsOf(state.role,'api').create){ toast('当前身份不能新建 Token'); return; }
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const name = val('tkName').trim();
+  const emp = val('tkEmp');
+  const scope = [...document.querySelectorAll('input[data-tkscope]:checked')].map(x=>x.value);
+  const expiry = val('tkExpiry');
+  const ip = val('tkIp').trim();
+  const reason = val('tkReason').trim();
+  if(!name){ toast('请填写 Token 名称'); return; }
+  if(!scope.length){ toast('至少勾选一个 scope'); return; }
+  if(!reason){ toast('新建 Token 属敏感操作，必须填写用途 / 原因'); return; }
+  const over = scope.filter(s => !scopeAllowedForCreator(s));
+  if(over.length){ toast('scope 超出创建人授权，已拒绝创建：' + over[0]); return; }
+  const plain = 'qd_live_' + Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,10);
+  const id = 'tk_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+  DB.tokens.unshift({id, name, emp, scope, expiry, lastUsed:'—', status:'有效', ip: ip || '不限制'});
+  addAudit('员工', ROLE_OPERATOR[state.role], 'Web', 'API Token.新建', 'token.create', 'Token / ' + name, null, '成功', '', '权限与 Token', reason);
+  state.lastTokenPlain = plain;
+  openTokenCreated(plain, name, emp);
+}
+function openTokenRevoke(id){
+  const t = DB.tokens.find(x=>x.id===id);
+  if(!t){ toast('Token 不存在'); return; }
+  if(t.status !== '有效'){ toast('该 Token 已失效，无需撤销'); return; }
+  if(!capsOf(state.role,'api').edit){ toast('当前身份不能撤销 Token'); return; }
+  const emp = empOf(t.emp);
+  state.modal = 'tokenRevoke';
+  $('#modalRoot').innerHTML = `<div class="modal-mask"><div class="modal">
+    <h3>撤销 Token：${esc(t.name)}</h3>
+    <div class="muted" style="font-size:12.5px">绑定员工 ${esc(emp ? emp.name : '—')}；scope：${esc(t.scope.join('、'))}。撤销<b>立即生效</b>、不可恢复，该 token 之后的所有请求返回 401。</div>
+    <div class="form-row"><label>撤销原因（必填，进操作日志）</label><input id="tkRevokeReason" placeholder="如：脚本迁移完成 / 员工离职"></div>
+    <footer><button data-act="closeModal">取消</button><button class="primary" data-act="tokenRevokeSubmit" data-tok="${esc(t.id)}">确认撤销</button></footer>
+  </div></div>`;
+}
+function revokeToken(id){
+  const t = DB.tokens.find(x=>x.id===id);
+  if(!t) return;
+  if(!capsOf(state.role,'api').edit){ toast('当前身份不能撤销 Token'); return; }
+  const el = document.getElementById('tkRevokeReason');
+  const reason = el ? el.value.trim() : '';
+  if(!reason){ toast('撤销 Token 属敏感操作，必须填写原因'); return; }
+  t.status = '已撤销';
+  addAudit('员工', ROLE_OPERATOR[state.role], 'Web', 'API Token.撤销', 'token.revoke', 'Token / ' + t.name, null, '成功', '', '权限与 Token', reason);
+  state.modal = null; $('#modalRoot').innerHTML = '';
+  toast('已撤销：' + t.name);
+  render();
+}
+function copyText(text){
+  const ok = () => toast('已复制到剪贴板');
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); ok(); } catch(e) { toast('复制失败，请手动选择文本'); }
+    ta.remove();
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, fallback);
+  else fallback();
+}
+
 function render(){
   renderNav();
   $('#view').innerHTML = (pages[state.page] || pages.home)();
@@ -809,7 +1124,20 @@ document.addEventListener('click', e => {
   const act = el.dataset.act;
   if(act === 'qtyDetail'){ openQtyDetail(el.dataset.code); return; }
   if(act === 'lossDetail'){ openLossDetail(); return; }
-  if(act === 'closeModal'){ state.modal=null; $('#modalRoot').innerHTML=''; return; }
+  if(act === 'closeModal'){ state.modal=null; $('#modalRoot').innerHTML=''; render(); return; }
+  // ===== 21 操作日志 =====
+  if(act === 'auditExport'){ toast('原型：导出为假动作；导出动作本身会写一条操作日志（D51）。'); return; }
+  if(act === 'afReset'){
+    state.auditFilter = {actor:'全部', source:'全部', action:'全部', result:'全部', period:'全部时间'};
+    render(); return;
+  }
+  // ===== 22 API 与集成 =====
+  if(act === 'tokenNew'){ openTokenNew(); return; }
+  if(act === 'tokenSubmit'){ createToken(); return; }
+  if(act === 'tokenRevoke'){ openTokenRevoke(el.dataset.tok); return; }
+  if(act === 'tokenRevokeSubmit'){ revokeToken(el.dataset.tok); return; }
+  if(act === 'copy'){ copyText(API_BLOCKS[Number(el.dataset.idx)].cmd); return; }
+  if(act === 'copyToken'){ copyText(state.lastTokenPlain || ''); return; }
   if(act === 'nop'){ toast('这一页是静态原型，按钮只演示显隐，不接后端。'); return; }
 });
 
@@ -838,6 +1166,18 @@ document.addEventListener('change', e => {
     else state.personOverride[emp][dom][act] = e.target.checked;
     render(); return;
   }
+  // ===== 21 操作日志筛选 =====
+  if(e.target.matches('#afActor')){ state.auditFilter.actor = e.target.value; render(); return; }
+  if(e.target.matches('#afSource')){ state.auditFilter.source = e.target.value; render(); return; }
+  if(e.target.matches('#afAction')){ state.auditFilter.action = e.target.value; render(); return; }
+  if(e.target.matches('#afResult')){ state.auditFilter.result = e.target.value; render(); return; }
+  if(e.target.matches('#afPeriod')){ state.auditFilter.period = e.target.value; render(); return; }
+  // ===== 22 AI 危险动作开关（默认关；无权限只读） =====
+  if(e.target.matches('#aiDanger')){
+    if(!capsOf(state.role,'api').edit){ render(); return; } // 越权切换不生效
+    state.aiDanger = e.target.checked;
+    render(); return;
+  }
 });
 
 // 维度切换（岗位 / 员工）
@@ -859,12 +1199,12 @@ function toast(msg){
 $('#btnHelp').addEventListener('click', ()=>{
   $('#modalRoot').innerHTML = `<div class="modal-mask"><div class="modal">
     <h3>这是一份什么</h3>
-    <p class="muted" style="font-size:13px">轻单可点击原型 v1，按 D1-D50 拍板后的 <b>20 页新 IA</b> 重排。单文件、假数据、不连后端。</p>
+    <p class="muted" style="font-size:13px">轻单可点击原型 v1，按 D1-D52.1 拍板后的 <b>22 页新 IA</b> 重排。单文件、假数据、不连后端。</p>
     <dl class="kv">
-      <dt>能验证</dt><dd>六类单据骨架、20 页范围、7 块导航、切换身份后的菜单与按钮显隐、四列库存与可用量、利润报表与未归属损失下钻、本人创建订单可见完整金额、权限设置页按岗位/员工双维度配置（员工个人级覆盖 D50）</dd>
-      <dt>不能验证</dt><dd>性能、并发、真实数据量、离线行为、后端逻辑、字段级校验</dd>
-      <dt>已落实口径</dt><dd>D1-D50（第七轮）；尤其 D38 四列、D40 仅退款两型、D43 利润报表、D45 集团看板一期不做、D50 员工个人级权限覆盖</dd>
-      <dt>仍待定</dt><dd>契约两批冻结（字段级规格）、M1 真实订单数字（L9）</dd>
+      <dt>能验证</dt><dd>六类单据骨架、22 页范围、8 块导航、切换身份后的菜单与按钮显隐、四列库存与可用量、利润报表与未归属损失下钻、本人创建订单可见完整金额、权限设置页按岗位/员工双维度配置（员工个人级覆盖 D50）、操作日志只追加 + 多条件筛选 + 金额脱敏（D51）、API Token 假数据新建/撤销与三种接入示例、AI 危险动作开关默认关（D52/D52.1）</dd>
+      <dt>不能验证</dt><dd>性能、并发、真实数据量、离线行为、后端逻辑、字段级校验、真实 OpenAPI/CLI/MCP 调用</dd>
+      <dt>已落实口径</dt><dd>D1-D52.1；尤其 D38 四列、D40 仅退款两型、D43 利润报表、D45 集团看板一期不做、D50 员工个人级权限覆盖、D51 操作日志只追加、D52 接口真源与 Token、D52.1 AI 权限不放大</dd>
+      <dt>仍待定</dt><dd>契约第三批冻结（D51①/②、D52①/② 为拟定默认值）、操作日志页可见角色与日志金额看价口径（原型假设，待拍板）、M1 真实订单数字（L9）</dd>
       <dt>UI 会持续改</dt><dd>本原型是划改底稿，界面、字段、交互都会按你的反馈继续迭代，不是最终定稿</dd>
     </dl>
     <footer><button class="primary" data-act="closeModal">知道了</button></footer>
@@ -879,6 +1219,9 @@ if(qs.get('dim') === 'emp') state.permDim = 'emp';
 if(qs.get('emp') && DB.employees.some(x=>x.code===qs.get('emp'))) state.permEmp = qs.get('emp');
 const hashPage = location.hash.replace('#','');
 if(hashPage && pages[hashPage]) state.page = hashPage;
+// 深链进入无权页面 → 回工作台（与导航可见性同一套权限判定，避免绕过菜单）
+const initItem = NAV.flatMap(g=>g.items).find(i=>i[0]===state.page);
+if(initItem && initItem[2] && !capsOf(state.role, initItem[2]).view) state.page = 'home';
 $('#roleSel').value = state.role;
 $('#roleSel').addEventListener('change', e=>{
   state.role = e.target.value; state.reqView = false;
@@ -886,7 +1229,7 @@ $('#roleSel').addEventListener('change', e=>{
   if(item && item[2] && !capsOf(state.role, item[2]).view) state.page = 'home';
   render();
 });
-document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ state.modal=null; $('#modalRoot').innerHTML=''; } });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ state.modal=null; $('#modalRoot').innerHTML=''; render(); } });
 const modalRoot = document.createElement('div'); modalRoot.id='modalRoot'; document.body.appendChild(modalRoot);
 render();
 </script>
