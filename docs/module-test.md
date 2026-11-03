@@ -33,6 +33,7 @@
 - 契约测试只保证「检查点存在且填写规范」，**不保证业务正确**；业务正确性靠各模块自己的 `*.test.ps1`（如 `calc.test.ps1`）。`run.ps1` 直接识别 `*.test.ps1`，无需改框架。
 - 测试脚本是 `.ps1` 且依赖 pwsh 7；用 5.1 跑必须带 UTF-8 BOM（本目录已加），否则中文被按 GBK 解码会报 `The string is missing the terminator`。
 - `run.ps1` 用 `$LASTEXITCODE` 判定子测试结果，只对 `pwsh -File` 子进程有效；不要在测试文件里 `exit 0` 提前返回。
+- hook 依赖 PATH 上能找到 `pwsh`：系统级+用户级 PATH 已含 WindowsApps 别名，实测登录态 PATH 可解析；若某终端 PATH 被裁剪到找不到 pwsh，hook 会**报错阻止提交**而不是静默放行（实测 `COMMIT_EXIT=1`、提交数不变）。
 - 仓库暂无 `.gitignore`，出现临时产物时补 `bin/`、`_tmp/`、`*.log`。
 - `.git/hooks/pre-commit` **不受版本控制**：克隆或重装仓库后要手动重装（复制脚本到 `.git/hooks/pre-commit` 并 `chmod +x`），否则 hook 静默消失。临时跳过用 `git commit --no-verify`（会绕过全部检查，只在确有理由时用）。
 - 提交被 hook 阻止后，恢复顺序固定为三步：`git reset` → `git checkout HEAD -- <file>` → 复跑 `tests/run.ps1` 确认绿。只做 `git checkout -- <file>` 会从**暂存区**恢复，等于把坏版本恢复回来。
