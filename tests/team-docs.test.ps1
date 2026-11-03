@@ -111,4 +111,26 @@ foreach ($f in @('TEAM-PLAN.md', 'DEV-SETUP.md', 'adr-0001-tech-stack.md')) {
 $agents = Get-Content (Join-Path $root 'AGENTS.md') -Raw -Encoding utf8
 Assert-True $agents.Contains('TEAM-PLAN.md') 'AGENTS.md 指向四人协作计划'
 
+# 1.2) 模块检查点必须标注「所属交付模块」，且与 TEAM-PLAN §0 对齐
+$moduleMap = [ordered]@{
+  'platform'       = 'MAIN 主线'
+  'sales'          = 'MAIN 主线'
+  'settlement'     = 'MAIN 主线'
+  'masterdata'     = 'M1 基础数据与采购'
+  'purchase'       = 'M1 基础数据与采购'
+  'inventory'      = 'M2 库存与盘点'
+  'processing'     = 'M3 加工与损耗'
+  'internal-trade' = 'M4 内部交易与打印'
+  'test'           = 'MAIN 主线'
+}
+foreach ($m in $moduleMap.Keys) {
+  $f = Join-Path $docs "module-$m.md"
+  Assert-True (Test-Path $f) "模块检查点存在：module-$m.md"
+  if (Test-Path $f) {
+    $txt = Get-Content $f -Raw -Encoding utf8
+    Assert-True $txt.Contains('所属交付模块') "module-$m 标注了所属交付模块"
+    Assert-True $txt.Contains($moduleMap[$m]) "module-$m 归属 $($moduleMap[$m])"
+  }
+}
+
 Exit-Test

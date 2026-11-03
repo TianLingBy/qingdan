@@ -1,5 +1,7 @@
 # 模块：test（测试底座）
 
+> 所属交付模块：**MAIN 主线**（Lead 维护，不单独开分支）
+
 ## 目标
 
 给项目一个可一键运行、可平滑扩展的测试入口：新增模块只补「检查点 + 自己的业务测试」，不改测试框架。验收标准 = `pwsh -NoProfile -File tests\run.ps1` 退出码 0。
@@ -29,7 +31,7 @@
 
 ## 当前状态
 
-进行中（接入与协作文档测试落地后全量 4 个测试文件 / 324 项断言全绿；hook 已按新源重装并哈希一致）
+进行中（接入与协作文档测试落地后全量 4 个测试文件 / 351 项断言全绿；hook 已按新源重装并哈希一致）
 
 ## 已完成
 
@@ -38,8 +40,8 @@
 - `tests/docs-checkpoint.test.ps1`：模板 7 小节齐全、`AGENTS.md` 登记的模块都有检查点、检查点小节齐全且「当前状态」已填 —— 91 项。
 - `tests/requirements.test.ps1`：迁移完整性（10 份产品文档（含第三批草案）、两批契约冻结标记 + 第三批草案标记、raw 11 篇 + frontmatter、prototype.html、9 模块与 docs/README 映射、calc 脚手架已清、roadmap 阶段 4、hook 可复刻）—— 99 项。
 - `tests/onboarding.test.ps1`：协作者接入契约（`bootstrap.ps1`/`bootstrap.sh` 存在且真调 hook、ONBOARDING 七节齐全且覆盖 9 模块、4 个 Agent 指针都指向真源、AGENTS/README/docs 索引一致、PR 模板含检查项）—— 46 项。
-- `tests/team-docs.test.ps1`：协作分工契约（TEAM-PLAN 五条开发线与写范围、ROLES-AND-BOUNDARIES 能做/不能做/红线/灰区审批/文件级矩阵、DEV-SETUP 环境与目录、ADR 五节齐全、三份文档互相索引）—— 88 项。
-- 实跑（2026-11-04）：`tests\run.ps1` → `OK 91 checks` / `OK 46 checks` / `OK 99 checks` / `OK 88 checks` / `ALL PASSED (4 files)` / exit 0。
+- `tests/team-docs.test.ps1`：协作分工契约（TEAM-PLAN 五条开发线与写范围、ROLES-AND-BOUNDARIES 能做/不能做/红线/灰区审批/文件级矩阵、DEV-SETUP 环境与目录、ADR 五节齐全、三份文档互相索引）—— 115 项。
+- 实跑（2026-11-04）：`tests\run.ps1` → `OK 91 checks` / `OK 46 checks` / `OK 99 checks` / `OK 115 checks` / `ALL PASSED (4 files)` / exit 0。
 - 负向验证（迁移前）：临时删掉模块检查点后 `FAIL 模块 test 的检查点存在`、退出码 1，说明测试真会红。
 - 提交前护栏：`tools/pre-commit` 已入库；`install-hooks.ps1` 一键安装（取 `git rev-parse --git-path hooks`、强制 LF、哈希自检、装完跑全量测试）；`.gitattributes` 钉死 LF。迁移后重装：源与已装 SHA-256 一致（`4222BE04…`）。
 
