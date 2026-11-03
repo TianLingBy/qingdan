@@ -27,6 +27,7 @@
 - 测试用 PATH 上的 node（当前 v18.20.8），不需要切 nvm；若以后用 ES module 语法要同步改加载方式。
 - `require('./calc.js')` 按 cwd 解析，测试里必须 `Push-Location $root`，否则从别处跑会 `MODULE_NOT_FOUND`。
 - 浮点没有精度处理（`add(0.1,0.2)` 不等于 `0.3`）；真要处理得引十进制库，现在不做。
+- `tests/calc.test.ps1` 用内联 `node -e` 桥接 JS，断言一多字符串会难读；到那时抽 `tests/calc.node.js` 或换 JS 测试框架——现在 5 条断言，不值得为此引一整个 npm 依赖树。
 
 ## 相关文件
 

@@ -17,6 +17,7 @@
 - 负向验证通过：临时副本删掉 `docs/module-test.md` 后 → `FAIL 模块 test 的检查点存在` / 退出码 1，说明测试真会红。
 - 业务测试接入验证：新增 `tests/calc.test.ps1` 后 `run.ps1` 无需改动即自动纳入，全量 → `ALL PASSED (2 files)` / `OK 28 checks` / 退出码 0。
 - 业务测试负向验证：临时副本把 `calc.js` 的 `a + b` 改成 `a - b` → 3 项 FAIL / 退出码 1，说明业务断言真能抓到 bug。
+- `pre-commit` hook（`.git/hooks/pre-commit`）：提交前跑 `tests/run.ps1`，失败即阻止提交。已用「临时分支上把 `a + b` 改成 `a - b`」实测 → `COMMIT_EXIT=1`、提交数 `2 → 2` 未变、输出 `pre-commit: 测试未通过，提交已阻止。`
 
 ## 进行中
 
@@ -25,7 +26,7 @@
 ## 下一步
 
 - 业务模块开始时按 `<模块>.test.ps1` 命名接入，不改 `run.ps1`。
-- 需要时再加 CI 或 git hook 调用 `tests\run.ps1`。
+- 需要时再加 CI —— 等有远端之后（本地 hook 已覆盖提交前拦截）。
 
 ## 已知问题 / 坑
 
@@ -33,6 +34,8 @@
 - 测试脚本是 `.ps1` 且依赖 pwsh 7；用 5.1 跑必须带 UTF-8 BOM（本目录已加），否则中文被按 GBK 解码会报 `The string is missing the terminator`。
 - `run.ps1` 用 `$LASTEXITCODE` 判定子测试结果，只对 `pwsh -File` 子进程有效；不要在测试文件里 `exit 0` 提前返回。
 - 仓库暂无 `.gitignore`，出现临时产物时补 `bin/`、`_tmp/`、`*.log`。
+- `.git/hooks/pre-commit` **不受版本控制**：克隆或重装仓库后要手动重装（复制脚本到 `.git/hooks/pre-commit` 并 `chmod +x`），否则 hook 静默消失。临时跳过用 `git commit --no-verify`（会绕过全部检查，只在确有理由时用）。
+- 恢复被 hook 拦下的坏实现时，顺序是「先 `git reset` 再 `git checkout -- <file>`」；只做 `git checkout -- <file>` 会从**暂存区**恢复，等于把坏版本恢复回来。
 
 ## 相关文件
 
