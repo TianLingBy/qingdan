@@ -36,6 +36,7 @@ $c3 = Get-Content (Join-Path $docs '轻单_接口契约第三批_v1_20261104.md'
 Assert-True ($c3.Contains('操作日志') -and $c3.Contains('API Token')) '第三批契约含操作日志与 API Token'
 Assert-True ($c3.Contains('开放项') -and $c3.Contains('草案')) '第三批为草案并列出开放项'
 Assert-True ($decisions.Contains('D51') -and $decisions.Contains('D52')) 'decisions 含 D51（操作日志）/ D52（AI 友好）'
+Assert-True $decisions.Contains('D52.1') 'decisions 含 D52.1（AI 权限不可放大）'
 
 # 3) 原料区：只放原文，11 篇，frontmatter 五字段齐全
 $rawDir = Join-Path $docs 'raw'
