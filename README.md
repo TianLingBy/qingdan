@@ -41,7 +41,7 @@ pwsh -NoProfile -File tests\requirements.test.ps1
 | `docs/decisions.md` | **已拍板口径唯一索引（D1-D50）**，每阶段开发前必读 |
 | `docs/轻单_接口契约第一批_v1_20261103.md` | A/B/E/C 主链 + 批次 + 库存流水（已冻结） |
 | `docs/轻单_接口契约第二批_v1_20261103.md` | N 单 + 提成 + 内部定价（已冻结） |
-| `docs/prototype-v0.md` | 原型规格：20 页 IA、权限矩阵、数据模型 |
+| `docs/prototype-v0.md` | 原型规格：22 页 IA、权限矩阵、数据模型 |
 | `prototype.html` | 可点击原型（单文件，双击即开） |
 | `docs/module-*.md` | 每个模块的长期检查点（目标/范围/依赖/开放项/验收/进度） |
 | `docs/raw/` | 飞书原文，**只搬不改写**；协议见 `docs/raw-protocol.md` |

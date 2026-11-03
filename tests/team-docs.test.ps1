@@ -11,19 +11,22 @@ Assert-True (Test-Path $plan) 'docs/TEAM-PLAN.md 存在（四人协作计划）'
 if (Test-Path $plan) {
   $p = Get-Content $plan -Raw -Encoding utf8
   foreach ($s in @(
-      '## 1. 分工',
-      '## 2. 依赖顺序',
-      '## 3. 里程碑',
+      '## 0. 一页纸看懂',
+      '## 1. 模块与写范围',
+      '## 2. AI 线与人类线怎么协作',
+      '## 3. 依赖顺序',
       '## 4. 第 1 周',
-      '## 5. 协作节奏',
+      '## 5. 里程碑',
       '## 6. 开工就绪',
       '## 7. 完成定义',
-      '## 8. 当前阻塞'
+      '## 8. 当前阻塞',
+      '## 9. 沟通物放在哪'
     )) { Assert-True $p.Contains($s) "TEAM-PLAN 含小节 $s" }
 
-  foreach ($dev in @('Dev A', 'Dev B', 'Dev C', 'Dev D')) {
-    Assert-True $p.Contains($dev) "TEAM-PLAN 有 $dev 的分工"
+  foreach ($line in @('AI 线', '人类线 1', '人类线 2', '人类线 3', '人类线 4')) {
+    Assert-True $p.Contains($line) "TEAM-PLAN 有 $line 的分工"
   }
+  Assert-True ($p.Contains('feat/platform') -and $p.Contains('packages/contracts')) 'TEAM-PLAN 写明 AI 线分支与契约包归属'
   foreach ($m in @('platform', 'masterdata', 'inventory', 'purchase', 'processing', 'sales', 'internal-trade', 'settlement')) {
     Assert-True $p.Contains($m) "TEAM-PLAN 覆盖模块 $m"
   }
