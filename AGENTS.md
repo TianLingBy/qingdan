@@ -62,7 +62,7 @@
 - PR 必须过 CI：`.github/workflows/test.yml` 在 `windows-latest` 与 `ubuntu-latest` 上跑 `./tests/run.ps1`，红的不合并。
 - 一个 PR 只动本模块的写范围；跨模块改动（公共类型、权限、库存/金额口径）必须在 PR 描述里列受影响模块并 @ 对应负责人。
 - 模块检查点 `docs/module-<名>.md` 随 PR 更新，不单独开「只改文档」的 PR；合并前至少一次人工评审（或 `claude-code` 做第二意见）。
-- 协作者接入、模块认领、每模块分支与依赖顺序见 `docs/ONBOARDING.md`；PR 按 `.github/pull_request_template.md` 填。
+- 协作者接入、模块认领、每模块分支与依赖顺序见 `docs/ONBOARDING.md`；**4 人人类开发者看 `docs/TEAM-PLAN.md`（分工/里程碑/DoR/DoD）与 `docs/DEV-SETUP.md`（环境/目录）**；PR 按 `.github/pull_request_template.md` 填。
 - CI 跑 `windows-latest` 与 `ubuntu-latest` 两个平台，macOS/Linux 协作者以 ubuntu 结果为参照。
 
 ## 路由（引用全局，不重复定义）

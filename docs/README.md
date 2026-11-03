@@ -7,6 +7,14 @@
 
 | 文档 | 状态 | 说明 |
 |---|---|---|
+| `TEAM-PLAN.md` | 🔄 活跃 | **4 人人类协作计划**：分工（谁做哪几个模块）、依赖顺序、7 周里程碑、第 1 周任务、节奏、DoR/DoD、当前阻塞 |
+| `DEV-SETUP.md` | 🔄 活跃 | **环境与仓库骨架**：Node 24 / pnpm 11 / PostgreSQL 17、目录边界规则、本地运行、测试分层、排错 |
+| `adr-0001-tech-stack.md` | 🟡 待拍板 | 技术栈 ADR（D53 候选）：TS 全栈 vs .NET vs Python，含 12 项未决 |
+| `api/openapi.yaml` | 🟡 草案 | 接口描述骨架（OpenAPI 3.1）；`api/cli.md` 为 CLI 命令表 |
+| `ONBOARDING.md` | 🔄 活跃 | **唯一入口**：一键初始化、分工与分支、必读最小集、DoD、常见失败、各 Agent 入口 |
+
+| 文档 | 状态 | 说明 |
+|---|---|---|
 | `ONBOARDING.md` | 🔄 活跃 | **协作者唯一入口**：一键初始化（`bootstrap.ps1` / `bootstrap.sh`）、分工与分支、必读最小集、DoD、常见失败、各 Agent 入口 |
 | `../AGENTS.md` | 🔄 活跃 | 规则真源：阶段/检查点/开发约定/协作/测试/禁止事项 |
 
