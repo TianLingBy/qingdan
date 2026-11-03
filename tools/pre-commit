@@ -1,0 +1,19 @@
+#!/bin/sh
+# 提交前跑全量测试；失败则阻止提交。
+# 注意：.git/hooks 不受版本控制，克隆后需重新安装（命令见 docs/raw/README.md 同级的 AGENTS.md「测试」节）。
+# 临时跳过：git commit --no-verify
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+PWSH=$(command -v pwsh)
+if [ -z "$PWSH" ]; then
+  echo "pre-commit: 找不到 pwsh，无法跑测试（装 PowerShell 7，或临时 git commit --no-verify）。" >&2
+  exit 1
+fi
+
+if ! "$PWSH" -NoProfile -File tests/run.ps1; then
+  echo "pre-commit: 测试未通过，提交已阻止（临时跳过：git commit --no-verify）。" >&2
+  exit 1
+fi
+
+echo "pre-commit: 测试通过。"

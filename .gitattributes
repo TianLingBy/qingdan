@@ -1,0 +1,9 @@
+# Git 属性：这条不是可选项
+# core.autocrlf=true（本机就是 true）会让 git 在 checkout 时把文本转成 CRLF。
+# hook 是 sh 脚本，shebang 后若带 \r，Git Bash / sh 会报
+#   "/bin/sh: ./pre-commit: /bin/sh^M: bad interpreter"
+# 所以 hook 必须钉死 LF，且不受本机 autocrlf 影响。
+# 本文件自己也钉 LF：带 \r 的属性行会让匹配规则失效。
+.gitattributes   text eol=lf
+tools/pre-commit text eol=lf
+*.sh             text eol=lf
