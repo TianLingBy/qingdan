@@ -36,6 +36,33 @@ if (Test-Path $plan) {
   Assert-True ($p.Contains('DoR') -and $p.Contains('DoD')) 'TEAM-PLAN 写明 DoR 与 DoD'
 }
 
+# 1.1) 分工与边界：谁能做 / 不能做 / 灰区审批 / 文件级矩阵
+$roles = Join-Path $docs 'ROLES-AND-BOUNDARIES.md'
+Assert-True (Test-Path $roles) 'docs/ROLES-AND-BOUNDARIES.md 存在（分工与边界）'
+if (Test-Path $roles) {
+  $rb = Get-Content $roles -Raw -Encoding utf8
+  foreach ($s in @(
+      '## 0. 谁能做什么',
+      '## 1. 五条开发线与写范围',
+      '## 2. 能做',
+      '## 3. 不能做',
+      '## 4. 需要批准才能做',
+      '## 5. 文件级',
+      '## 6. 冲突与仲裁',
+      '## 7. 违规怎么处理',
+      '## 8. 与"产品权限"的区别'
+    )) { Assert-True $rb.Contains($s) "ROLES 含小节 $s" }
+
+  foreach ($line in @('负责人', 'Lead', 'AI 线', '人类线 1', '人类线 4')) {
+    Assert-True $rb.Contains($line) "ROLES 覆盖角色 $line"
+  }
+  foreach ($red in @('不直接 push `main`', '不跨模块 import', '不 `git commit --no-verify`', '不改 `docs/decisions.md` 历史结论行', '不手改 `docs/raw/`')) {
+    Assert-True $rb.Contains($red) "ROLES 写明红线：$red"
+  }
+  Assert-True ($rb.Contains('packages/contracts') -and $rb.Contains('提 PR')) 'ROLES 写明共享文件只能提 PR'
+  Assert-True ($rb.Contains('D52.1') -or $rb.Contains('产品权限')) 'ROLES 区分开发边界与产品权限'
+}
+
 # 2) 开发环境：前置 / 安装 / 目录 / 运行 / 测试 / 分支 / 排错 / 缺口
 $setup = Join-Path $docs 'DEV-SETUP.md'
 Assert-True (Test-Path $setup) 'docs/DEV-SETUP.md 存在（环境与仓库骨架）'

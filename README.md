@@ -38,7 +38,8 @@ pwsh -NoProfile -File tests\requirements.test.ps1
 |---|---|
 | `AGENTS.md` | 项目规则（阶段、检查点、开发约定、路由、测试、禁止事项）。**新会话先读它** |
 | `docs/README.md` | 文档索引与阅读顺序（含模块表） |
-| `docs/decisions.md` | **已拍板口径唯一索引（D1-D50）**，每阶段开发前必读 |
+| `docs/ROLES-AND-BOUNDARIES.md` | 分工与边界：谁能做什么/不能做什么、文件级写权限矩阵 |
+| `docs/decisions.md` | **已拍板口径唯一索引（D1-D52.1）**，每阶段开发前必读 |
 | `docs/轻单_接口契约第一批_v1_20261103.md` | A/B/E/C 主链 + 批次 + 库存流水（已冻结） |
 | `docs/轻单_接口契约第二批_v1_20261103.md` | N 单 + 提成 + 内部定价（已冻结） |
 | `docs/prototype-v0.md` | 原型规格：22 页 IA、权限矩阵、数据模型 |

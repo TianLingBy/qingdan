@@ -17,8 +17,9 @@
 
 如果你是被邀请来的**人类协作开发者**（本项目 4 人小组），除了本文件，还必须读这两份：
 
-1. `docs/TEAM-PLAN.md` —— 你负责哪几个模块、里程碑、第 1 周具体做什么、DoR/DoD、评审与升级规则。
-2. `docs/DEV-SETUP.md` —— 本机环境（Node 24 / pnpm 11 / PostgreSQL 17）、仓库骨架与目录边界、本地起服务、测试分层。
+1. `docs/ROLES-AND-BOUNDARIES.md` —— 谁能做什么、不能做什么、灰区谁批、文件级写权限（先看这份，避免越界）。
+2. `docs/TEAM-PLAN.md` —— 你负责哪几个模块、第 1 周具体做什么、DoR/DoD、人机互评与升级规则。
+3. `docs/DEV-SETUP.md` —— 本机环境（Node 24 / pnpm 11 / PostgreSQL 17）、仓库骨架与目录边界、本地起服务、测试分层。
 
 技术栈按 `docs/adr-0001-tech-stack.md` 的推荐方案（TypeScript 全栈），D53 拍板前视为待定。
 
