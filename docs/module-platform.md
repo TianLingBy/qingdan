@@ -56,7 +56,7 @@
   - **apps/api**：Fastify 5 + `X-Request-Id`(UUIDv7, ALS) + 统一错误体 + 安全头；路由**只从注册表生成**（health/openapi.json 已实现，其余 501）；纯 SQL 前向迁移 `0001_platform_core.sql`（13 张表、`numeric(18,6)` 金额域、`qingdan_app` 普通角色 + 11 张表 ENABLE/FORCE RLS + `tenant_isolation`、`audit_log` 只授 INSERT）；审计 outbox 追加器（失败即阻断）、并发安全取号（类型 × 年月键）、权限判定一条 SQL（岗位并集 ⊕ 个人覆盖，老板短路，token scope 交集）；PGlite(PG18) 上 43 个用例绿。
   - **apps/web**：React 19 + Vite + Tailwind 4 + TanStack Router/Query；22 页路由壳（对齐 `prototype-v0` 页 1-22）；api client（统一错误体）；D56 浏览器基线（`build.target=['chrome111','edge111']` + browserslist）。
   - **packages/cli / packages/mcp**：同一注册表生成命令树（`qingdan <domain> <action>`，退出码按 D54）与 MCP 工具表（`qingdan_<operationId>` 1:1，危险动作默认拒绝/可配走审批）。
-  - **测试与 CI**：`tests/testbase.test.ps1`（P0-1 底座自检：BOM + Exit-Test）、`tests/workspace.test.ps1`（`pnpm -r build/test` 门禁）、`tests/platform-spec.test.ps1`（P0-2 包装）；CI 双平台加 Node 24 + pnpm 11 + `pnpm install --frozen-lockfile`，新增 ubuntu + `postgres:18` 集成 job。
+  - **测试与 CI**：`tests/testbase.test.ps1`（P0-1 底座自检：BOM + Exit-Test）、`tests/workspace.test.ps1`（`pnpm -r build/test` 门禁）、`tests/platform-spec.test.ps1`（P0-2 包装）；CI 双平台加 Node 24 + pnpm 11 + `pnpm install --frozen-lockfile`，新增 ubuntu + `postgres:18` 集成 job（**PR #1 三个 job 实测全绿**：windows 1m31s / ubuntu 1m22s / integration 45s）。
 
 ## 进行中
 
