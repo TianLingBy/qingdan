@@ -7,6 +7,7 @@ alwaysApply: true
 
 规则真源是仓库根的 `AGENTS.md` 与 `docs/ONBOARDING.md`，第一次进入本仓先读这两份。
 
+- 第 0 步先核验「你是谁」：向带你入伙的人确认【中文姓名 / GitHub 账号 / 负责模块】，再用 `gh api user --jq .login`、`docs/members/<姓名>.md`、`docs/module-<模块>.md` 顶部「负责人」三处交叉核对；核验没过不许领任务、不许写代码（完整处置表见 `docs/ONBOARDING.md` §0.0）。
 - 初始化：`pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>`（macOS/Linux：`./bootstrap.sh <模块名>`）。
 - 模块与分支：见 `docs/ONBOARDING.md` §4；一个 PR 只碰本模块写范围。
 - 提交前：`pwsh -NoProfile -File tests/run.ps1` 必须退出码 0。

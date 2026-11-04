@@ -33,6 +33,7 @@
 
 ## 首次接入（任何 Agent）
 
+- 第 0 步先核验「你是谁」：向带你入伙的人确认【中文姓名 / GitHub 账号 / 负责模块】，再用 `gh api user --jq .login`、`docs/members/<姓名>.md`、`docs/module-<模块>.md` 顶部「负责人」三处交叉核对；核验没过不许领任务、不许写代码（完整处置表见 `docs/ONBOARDING.md` §0.0）。
 - 协作者（Claude Code / Codex / Cursor / Copilot / Gemini 等）统一读 `docs/ONBOARDING.md`，那是唯一入口。
 - 能执行命令就跑 `pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>`（macOS/Linux：`./bootstrap.sh <模块名>`）：装 hook + 全量测试 + 建 `feat/<模块>` 分支，成功标志 `BOOTSTRAP-OK`。
 - Agent 专属指针：`CLAUDE.md`、`GEMINI.md`、`.cursor/rules/qingdan.mdc`、`.github/copilot-instructions.md`——都只指向真源，不另存规则。

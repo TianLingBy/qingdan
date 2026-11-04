@@ -30,6 +30,7 @@
 - **商品 5 端点（D62）**：`GET/POST /api/v1/products`、`GET/PATCH/DELETE /api/v1/products/{id}`，归 `masterdata`；顺带把「路由归属模块化」做进 `packages/contracts`（`module` 字段 + `routesOfModule` + `apps/api/src/modules/index.ts` 的 `MOUNTED_MODULE_KEYS`）。
 - **开源准备**：AGPL-3.0 落地（`LICENSE` + `package.json` license，D61 记录私有仓开发/公开仓历史从零/文档三级分类/发布前敏感扫描）；CLI 文档对齐注册表；CI 口令改仓库 secret `PG_TEST_PASSWORD`（未配置时回退本地默认值）。
 - **流程类**：CI 里 PGlite 测试按文件串行（不再偶发 Hook 超时）；`.claude/settings.json` 授权 Claude Code 写文件（外部改动已登记）；合并权分级（普通 PR 由 Lead 自合并，严重变更交负责人，见 `docs/AGENT-TEAM.md` §6.1）。
+- **身份核验门禁**：`docs/ONBOARDING.md` 新增 §0.0「第 0 步：核验你是谁」（问 3 个问题 + 3 处交叉核对 + 处置表）与 §4.1「领任务」；`AGENTS.md`、`CLAUDE.md`、`GEMINI.md`、`.cursor/rules/qingdan.mdc`、`.github/copilot-instructions.md` 各加一条第 0 步指针；`docs/members/README.md` 同步该节并修正梁海俊状态为「档案已合并（#13）」。**原因**：协作者的 Agent clone 完不知道自己要干嘛，会直接瞎改。
 
 ## 3. 任务板（GitHub Issues，仓库里能看到）
 

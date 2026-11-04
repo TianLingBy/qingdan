@@ -13,6 +13,7 @@
 
 ## 首次进入本仓（人类协作者）
 
+0. 第 0 步先核验「你是谁」：向带你入伙的人确认【中文姓名 / GitHub 账号 / 负责模块】，再用 `gh api user --jq .login`、`docs/members/<姓名>.md`、`docs/module-<模块>.md` 顶部「负责人」三处交叉核对；核验没过不许领任务、不许写代码（完整处置表见 `docs/ONBOARDING.md` §0.0）。
 1. 读 `docs/ONBOARDING.md`（一次性初始化 + 分工 + DoD）；
 2. 执行 `pwsh -NoProfile -File bootstrap.ps1 -Module <你的模块>`；
 3. 读 `docs/module-<你的模块>.md`（边界、开放项、验收标准）；
