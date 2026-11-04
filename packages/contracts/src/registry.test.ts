@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { ROUTES } from './routes.js';
-import { defineRoute, validateRegistry } from './registry.js';
+import { defineRoute, routesOfModule, validateRegistry } from './registry.js';
+import { MODULE_KEYS } from './modules.js';
 
 describe('注册表自检', () => {
-  it('自检无错误（operationId / 路径 / 功能域 / 重复）', () => {
+  it('自检无错误（operationId / 路径 / 功能域 / 模块 / 重复）', () => {
     expect(validateRegistry(ROUTES)).toEqual([]);
+  });
+
+  it('每条路由都声明了合法归属模块（D62）', () => {
+    for (const r of ROUTES) expect(MODULE_KEYS, r.operationId).toContain(r.module);
+  });
+
+  it('defineRoute 的模块默认是 platform；routesOfModule 按模块切分', () => {
+    const r = defineRoute({ operationId: 'sales.create', method: 'POST', path: '/api/v1/x', domain: 'sales', action: 'create', summary: 'x' });
+    expect(r.module).toBe('platform');
+    expect(routesOfModule(ROUTES, 'platform').some((x) => x.operationId.startsWith('product.'))).toBe(false);
+    expect(routesOfModule(ROUTES, 'masterdata').length).toBeGreaterThan(0);
   });
 
   it('端点数与 operationId 唯一', () => {

@@ -33,7 +33,7 @@
 
 ## 当前状态
 
-阻塞中（等待主线 #15 确认商品契约签名与业务模块路由挂载，2026-11-04）
+可开工（2026-11-04 主线已收口 Issue #15）
 
 ## 已完成
 
@@ -41,15 +41,15 @@
 
 ## 进行中
 
-- 首个垂直切片已确定为商品资料的列表/检索、新增、详情、修改、停用。
-- 截至 2026-11-04，`packages/contracts/src/routes.ts` 尚未登记 `product.*` 端点；
-  当前 platform 路由循环也会接管所有 `ROUTES`，需主线先收口模块路由挂载边界。
+- 商品契约已登记 5 个端点：`product.list.read`、`product.create`、`product.detail.read`、`product.update`、`product.delete`。
+- `Product` 实体已登记完整字段；`productNo` 按 D49 为自由文本、可空、不唯一且不作检索主键，`defaultSalePrice` 按 D27 在无看价权限时返回 null，金额按 D54 使用 decimal 字符串。
+- 商品路由的 `module=masterdata`，masterdata 已接线；platform 不再遍历整张路由表接管业务端点。
 
 ## 下一步
 
-- 等待主线完成 Issue #15：商品 Zod 契约、OpenAPI 注册与模块路由挂载。
-- 前置合入后先写测试，再实现商品迁移、repo、usecase 与 `/api/v1/products` 端点；
-  随后按同一模式补客户、供应商、加工厂。
+- 实现 `apps/api/src/modules/masterdata/{routes.ts,usecases/,repo.ts,schema.ts}` 及对应数据库迁移。
+- 先写测试，再实现用例；测试以 `products.test.ts` 的签名为准。
+- 商品切片完成后，按同一模块边界补客户、供应商、加工厂。
 
 ## 已知问题 / 坑
 

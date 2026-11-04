@@ -16,13 +16,28 @@ export interface OpenApiDocument extends Json {
 
 export const CONTRACT_VERSION = '1.0.0';
 
-/** 递归收集 $defs 并去掉 $schema（D57 ①：注册 id 导出的引用要重写为 components.schemas）。 */
-function toJsonSchema(schema: z.ZodType, hoisted: Map<string, Json>): Json {
+/**
+ * 递归收集 $defs 并去掉 $schema（D57 ①：注册 id 导出的引用要重写为 components.schemas）。
+ *
+ * zod v4 对被 globalRegistry 登记过的 schema 会把根发射成 `{ $ref: '#/$defs/Product' }`：
+ * - 写 `components.schemas` 时必须展开（否则 Product 变成指向自己的自引用）；
+ * - 路由里的响应/请求体则保留根 `$ref`，由 rewriteRefs 改写成 components.schemas 引用。
+ */
+function toJsonSchema(schema: z.ZodType, hoisted: Map<string, Json>, expandRoot = false): Json {
   const out = z.toJSONSchema(schema, { target: 'draft-2020-12', io: 'output' }) as Json;
   const { $schema: _ignored, $defs, ...rest } = out as Json & { $defs?: Record<string, Json> };
   if ($defs) {
     for (const [k, v] of Object.entries($defs)) {
       if (!hoisted.has(k)) hoisted.set(k, v as Json);
+    }
+  }
+  if (expandRoot) {
+    const rootRef = rest.$ref;
+    const name = typeof rootRef === 'string' ? /^#\/(?:\$)?defs\/(.+)$/.exec(rootRef)?.[1] : undefined;
+    const target = name && $defs ? $defs[name] : undefined;
+    if (target) {
+      const { $ref: _rootRef, ...siblings } = rest;
+      return { ...(target as Json), ...siblings };
     }
   }
   return rest;
@@ -59,9 +74,9 @@ export function buildOpenApiDocument(routes: readonly RouteDef[]): OpenApiDocume
   const schemas: Record<string, Json> = {};
 
   for (const entity of ENTITIES) {
-    schemas[entity.name] = toJsonSchema(entity.schema, hoisted);
+    schemas[entity.name] = toJsonSchema(entity.schema, hoisted, true);
   }
-  schemas.ApiErrorBody ??= toJsonSchema(ApiErrorBodySchema, hoisted);
+  schemas.ApiErrorBody ??= toJsonSchema(ApiErrorBodySchema, hoisted, true);
 
   const paths: Record<string, Json> = {};
   for (const route of routes) {
@@ -90,6 +105,7 @@ export function buildOpenApiDocument(routes: readonly RouteDef[]): OpenApiDocume
       parameters,
       responses,
       'x-scope': route.scope,
+      'x-module': route.module,
       'x-audit': { kind: route.audit.kind, required: route.audit.required },
       'x-ai-policy': { policy: route.ai.policy, reasonRequired: route.ai.reasonRequired },
       'x-mcp-tool': mcpToolName(route),

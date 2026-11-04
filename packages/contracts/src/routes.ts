@@ -5,12 +5,16 @@ import { ApiTokenCreatedSchema, ApiTokenSchema, EmployeeSummarySchema } from './
 import { AuditLogSchema } from './audit.js';
 import { ScopeMatrixSchema } from './authz.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
+import { PRODUCT_ROUTES } from './products.js';
 
 /**
- * 平台端点注册表（M0 骨架范围）。
+ * 端点注册表（全量真源）。
  *
  * 一期规则（D54 缺口 10）：全部端点先在注册表登记签名，handler 允许先返 501。
- * 业务模块的端点在各自模块开工时登记；本文件只放 `platform` 内核已冻结的那批。
+ * **模块归属**（D62）：每条路由带 `module`，各模块只挂自己的那批；
+ *   - `platform` 内核已冻结的端点在下方直接登记；
+ *   - 业务模块的端点在各自文件里定义（如 `products.ts` 的 `PRODUCT_ROUTES`），
+ *     再汇总进本表——注册表仍是全量真源，OpenAPI/CLI/MCP 都从这里发射。
  */
 
 const LoginInput = z.object({
@@ -186,6 +190,8 @@ export const ROUTES: readonly RouteDef[] = [
     dryRun: true,
     request: { body: PermissionOverrideInput },
   }),
+  // —— masterdata 模块：商品资料首切（Issue #15，2026-11-04）——
+  ...PRODUCT_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;
