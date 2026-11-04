@@ -7,6 +7,7 @@ import { ScopeMatrixSchema } from './authz.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
 import { PRODUCT_ROUTES } from './products.js';
 import { CUSTOMER_ROUTES } from './customers.js';
+import { SUPPLIER_ROUTES } from './suppliers.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -195,6 +196,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...PRODUCT_ROUTES,
   // —— masterdata 模块：客户资料（契约第一批 §2，2026-11-04）——
   ...CUSTOMER_ROUTES,
+  // —— masterdata 模块：供应商资料（契约第一批 §2，2026-11-04）——
+  ...SUPPLIER_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;
