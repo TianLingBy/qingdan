@@ -99,6 +99,7 @@
 
 ## 变更记录
 
+- **2026-11-04 开工前置规则落纸（成员档案）**：负责人要求「先确认身份再领任务」，且成员**必须自己落盘**自己的档案。新增 `docs/members/`：`README.md`（规则 + 现有成员表）、`_template.md`（档案模板）、四份待本人确认的档案（温汇敏 / 赖皓妍 / 李祖怡 / 梁海俊）。`TEAM-PLAN.md` 新增 **§0.2 开工前置**：确认身份 → 落盘档案 → 登记模块负责人 → 领任务 → 才动代码，明确「**档案没合并 = 没开工**」、禁止口头认领、禁止留空开工。`ONBOARDING.md` §0.1 同步加入该顺序，并顺手把环境里的 PostgreSQL 17 更正为 **18**（D57）。
 - **2026-11-04 后端分工调整**：负责人确认**后端由「负责人 + 梁海俊」共同开发**（不是梁海俊一人扛）。梁海俊负责 `masterdata` / `inventory` / `processing` / `internal-trade` 的后端用例；负责人负责 `platform` 内核 / `purchase` / `sales` / `settlement` 并同在后端协作。协作规则同步写进 `docs/TEAM-PLAN.md` §0.1：接口与表结构先由主线出、两人共用同一份 `packages/contracts`、同一文件同时只有一人改、共用分支由负责人合并、提交前必须本地跑 `tests\run.ps1`。
 - **2026-11-04 暂停开工，等人员到位**：负责人指示「先别干活，等分工好后、其他成员加入后再开始」。当前状态：**决策与前置全部收口**（D53 技术栈 / D54 契约第三批冻结 / D55 技术底座 / D56 Win10 兼容 / D57 spike 结论），U12 spike 已完成；**工程骨架 `apps/`、`packages/` 尚未创建，未写任何业务代码**。恢复开工的条件：4 位成员（温汇敏 / 赖皓妍 / 李祖怡 / 梁海俊）按 `docs/TEAM-PLAN.md` §0.1 认领到位后，从「搭骨架 + 补测试三件套」开始。
 - **2026-11-04 U12 spike 完成（D57）**：实测三条技术命门 **9/9 通过**（脚本 `tools/spike-0001-pipeline.mjs`，报告 [spike-0001-tech-pipeline.md](spike-0001-tech-pipeline.md)）。Zod 4 → JSON Schema 2020-12 可用但**默认全内联**（`$ref`=0），契约注册表必须注册 id 再重写 `$defs`；PGlite 在 Windows 可跑，实测为 **PostgreSQL 18.6**（不是 17），故**生产库版本改为 PG 18**；**RLS 被 superuser 绕过**（即便 `force`），应用账号必须非 superuser/非 BYPASSRLS，否则 D55 的 RLS 兜底形同虚设。三条约束落 D57。

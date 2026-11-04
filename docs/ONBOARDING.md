@@ -19,9 +19,12 @@
 
 1. `docs/ROLES-AND-BOUNDARIES.md` —— 谁能做什么、不能做什么、灰区谁批、文件级写权限（先看这份，避免越界）。
 2. `docs/TEAM-PLAN.md` —— 你负责哪几个模块、第 1 周具体做什么、DoR/DoD、人机互评与升级规则。
-3. `docs/DEV-SETUP.md` —— 本机环境（Node 24 / pnpm 11 / PostgreSQL 17）、仓库骨架与目录边界、本地起服务、测试分层。
+3. `docs/DEV-SETUP.md` —— 本机环境（Node 24 / pnpm 11 / PostgreSQL 18）、仓库骨架与目录边界、本地起服务、测试分层。
+4. `docs/members/README.md` —— **成员档案规则**：先确认身份、再领任务，**必须把自己的档案 `docs/members/<姓名>.md` 落盘并提交 PR**，档案没合并等于没开工。
 
-技术栈按 `docs/adr-0001-tech-stack.md` 的推荐方案（TypeScript 全栈），D53 拍板前视为待定。
+技术栈已拍板 **D53 = TypeScript 全栈**（Node 24 + Fastify 5 + Drizzle + PostgreSQL 18 + React 19/Vite），详见 `docs/adr-0001-tech-stack.md`。
+
+**开工顺序（不可颠倒）**：确认身份 → 落盘成员档案 → 在 `docs/module-<模块>.md` 登记负责人 → 领任务 → 才动代码。
 
 ## 1. 硬前置
 
