@@ -158,3 +158,33 @@ git switch -c feat/<模块名>                  # 建分支（已存在就 git s
 - 仓库所有者 / 总负责：`TianLingBy`（GitHub）。
 - 口径问题：先查 `docs/decisions.md`；查不到就在 PR 说明里写「需要拍板：问题 + 两个候选方案」，不要自己发明。
 - 提 issue / PR 时写清：模块名 + 执行过的命令 + 完整报错输出。
+
+## 10. 给成员（及他们的 Agent）的开局指令
+
+### 10.1 前提（缺一不可，先由仓库所有者做）
+
+1. **仓库是私有的**：所有者必须在 GitHub → Settings → Collaborators 里把成员的 GitHub 账号加为 **write** 权限（否则 `git push` 403）。
+2. **本机环境**：Git、PowerShell 7（`pwsh`，5.1 不行）、Node 24、pnpm 11。缺 Node 24 时 `bootstrap.ps1` 会提示。
+3. **不要用共享 token**：每个人用自己的 GitHub 账号登录（`gh auth login` 或 Windows 凭据管理器），**不要把 PAT 写进文档、聊天记录或仓库**。
+
+### 10.2 三条命令（人类自己敲）
+
+```powershell
+git clone https://github.com/TianLingBy/qingdan.git D:\Work\qingdan
+cd D:\Work\qingdan
+pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>    # 模块名见 §4，成功标志 BOOTSTRAP-OK
+```
+
+### 10.3 复制给对方的 Agent 的开局指令
+
+> 你是「轻单」项目的协作者 Agent，工作目录是刚 clone 的仓库根（Windows，PowerShell 7）。
+> 第一步先读三份文件：`AGENTS.md`（项目规则真源）、`docs/ONBOARDING.md`（接入流程）、`docs/members/README.md`（成员档案规则），再读 `docs/TEAM-PLAN.md` §0.1 与 `docs/ROLES-AND-BOUNDARIES.md`（分工与红线）。
+> **开工顺序不可颠倒**：① 先和我确认我的身份（我是谁、负责哪个模块、能改什么、不能改什么）；② 把我的档案落到 `docs/members/<我的中文姓名>.md`（复制 `docs/members/_template.md` 填满，含 `install-hooks.ps1` 与 `tests\run.ps1` 的真实输出行）；③ 在 `docs/module-<模块>.md` 顶部登记「负责人：我｜接手日期」；④ 提交 PR（`chore(members): 登记 <姓名> 的成员档案`）并等我确认；⑤ **档案合并之后**才领任务、写代码。
+> 铁律：不改 `packages/contracts/**`、`platform` 内核（审计/编号/单据框架/待办/Token）、`docs/decisions.md`；不碰别人模块的目录与检查点；每次提交前跑 `tests\run.ps1` 并贴真实输出；技术栈已定 D53（TypeScript 全栈，Node 24 + Fastify 5 + Drizzle + PostgreSQL 18 + React 19/Vite），不要再讨论选型。
+> 有任何口径疑问，先查 `docs/decisions.md`（D1-D57），查不到就停下来问我，**不要用假设继续实现**。
+
+### 10.4 到位验收（负责人检查三件事）
+
+1. `docs/members/<姓名>.md` 已合并且无空白项；
+2. `docs/module-<模块>.md` 顶部有「负责人 + 日期」；
+3. 对方贴出 `ALL PASSED (N files)` 的真实输出行与退出码。
