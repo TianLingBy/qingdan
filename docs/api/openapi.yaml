@@ -1942,6 +1942,325 @@ paths:
       x-requires-if-match: '"<version>"'
       x-mcp-tool: qingdan_customer_delete
 
+  /suppliers:
+    get:
+      tags: [supplier]
+      operationId: supplier.list.read
+      summary: 供应商列表（按名称/联系人检索；普通读不记审计，D49 不按编号全局搜）
+      parameters:
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [启用, 停用]
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: 成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Supplier'
+                  nextCursor:
+                    type: [string, 'null']
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [supplier.read]
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_supplier_list_read
+
+    post:
+      tags: [supplier]
+      operationId: supplier.create
+      summary: 新增供应商（编号自由文本可空；供应商无金额字段，D49）
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [companyId, name]
+              additionalProperties: false
+              properties:
+                companyId:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                suppliedMaterials:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 64
+                  default: []
+                supplierNo:
+                  type: [string, 'null']
+                  maxLength: 64
+                contactName:
+                  type: [string, 'null']
+                  maxLength: 64
+                contactPhone:
+                  type: [string, 'null']
+                  maxLength: 32
+                status:
+                  type: string
+                  enum: [启用, 停用]
+      responses:
+        '201':
+          description: 成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [supplier.create]
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+        action: supplier.create
+        objectType: 供应商
+        logOnFailure: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_supplier_create
+
+  /suppliers/{id}:
+    get:
+      tags: [supplier]
+      operationId: supplier.detail.read
+      summary: 供应商详情（D15 跨公司不可见）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: 成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [supplier.read]
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_supplier_detail_read
+
+    patch:
+      tags: [supplier]
+      operationId: supplier.update
+      summary: 修改供应商（强 ETag If-Match）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                suppliedMaterials:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    minLength: 1
+                    maxLength: 64
+                supplierNo:
+                  type: [string, 'null']
+                  maxLength: 64
+                contactName:
+                  type: [string, 'null']
+                  maxLength: 64
+                contactPhone:
+                  type: [string, 'null']
+                  maxLength: 32
+                status:
+                  type: string
+                  enum: [启用, 停用]
+      responses:
+        '200':
+          description: 成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [supplier.update]
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+        action: supplier.update
+        objectType: 供应商
+        logOnFailure: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-requires-if-match: '"<version>"'
+      x-mcp-tool: qingdan_supplier_update
+
+    delete:
+      tags: [supplier]
+      operationId: supplier.delete
+      summary: 停用供应商（软删除，不做物理删除；危险动作，AI 默认禁止）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [supplier.delete]
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+        action: supplier.delete
+        objectType: 供应商
+        logOnFailure: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-requires-if-match: '"<version>"'
+      x-mcp-tool: qingdan_supplier_delete
+
 components:
 
   securitySchemes:
@@ -3450,6 +3769,55 @@ components:
         creditTermDays:
           type: [integer, 'null']
           minimum: 0
+        status:
+          type: string
+          enum: [启用, 停用]
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Supplier:
+      type: object
+      required:
+        - id
+        - tenantId
+        - companyId
+        - supplierNo
+        - name
+        - contactName
+        - contactPhone
+        - suppliedMaterials
+        - status
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        supplierNo:
+          type: [string, 'null']
+        name:
+          type: string
+        contactName:
+          type: [string, 'null']
+        contactPhone:
+          type: [string, 'null']
+        suppliedMaterials:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
         status:
           type: string
           enum: [启用, 停用]
