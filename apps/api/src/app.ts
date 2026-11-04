@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { registerPlatformRoutes } from './modules/platform/routes.js';
+import { registerAuthPlugin } from './platform/auth/plugin.js';
 import { loadConfig, type AppConfig } from './platform/config.js';
 import type { Database } from './platform/db/client.js';
 import { registerAuditContext } from './platform/http/audit-context.js';
@@ -48,9 +49,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   registerRequestId(app, options.requestIdFactory ? { factory: options.requestIdFactory } : {});
   registerAuditContext(app);
+  registerAuthPlugin(app, { config });
   registerSecurityHeaders(app);
   registerErrorHandling(app);
-  registerPlatformRoutes(app, { version: options.version ?? APP_VERSION });
+  registerPlatformRoutes(app, { version: options.version ?? APP_VERSION, config });
 
   return app;
 }

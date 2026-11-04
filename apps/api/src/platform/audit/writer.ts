@@ -75,6 +75,20 @@ function valuesOf(event: AuditEvent, id: string): unknown[] {
 const PLACEHOLDERS = '($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)';
 
 /**
+ * 无租户上下文（tenant_id IS NULL）的日志走 SECURITY DEFINER 函数：
+ * audit_log 对 qingdan_app 是 FORCE RLS，未设 app.tenant_id 时直接 INSERT 会被拒。
+ * 函数只接受 tenant_id IS NULL 的行；有租户的日志仍走 outbox 两段式。
+ */
+const UNSCOPED_CALL = `SELECT audit_append_unscoped(${Array.from(
+  { length: 20 },
+  (_, index) => `$${index + 1}`,
+).join(', ')})`;
+
+async function appendAuditUnscoped(client: SqlClient, event: AuditEvent, id: string): Promise<void> {
+  await client.query(UNSCOPED_CALL, valuesOf(event, id));
+}
+
+/**
  * 在业务事务内写 outbox。**不捕获异常**：调用方事务因此回滚，业务随之失败。
  */
 export async function appendAudit(tx: SqlClient, event: AuditEvent): Promise<string> {
@@ -128,11 +142,43 @@ export async function flushAuditOutbox(
 }
 
 /**
+ * 记录一条**已发生的**操作日志（无业务写入需要同事务绑定，如登录 / 登出）。
+ *
+ * 语义与 `withAudit` 一致：
+ *   有租户 → 事务内设置 `app.tenant_id` 写 outbox → 提交后 `flushAuditOutbox`；
+ *   无租户（如未知手机号的失败登录）→ 走 `audit_append_unscoped`（SECURITY DEFINER）。
+ * 任一步失败都抛出，绝不静默丢日志（D55⑤）。
+ */
+export async function recordAudit(db: Database, event: AuditEvent): Promise<string> {
+  const id = event.id ?? uuidv7();
+  const auditEvent = { ...event, id };
+
+  if (event.tenantId === null) {
+    await appendAuditUnscoped(db, auditEvent, id);
+    return id;
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.query("SELECT set_config('app.tenant_id', $1, true)", [event.tenantId]);
+    await appendAudit(tx, auditEvent);
+  });
+  await flushAuditOutbox(db, id, event.tenantId);
+  return id;
+}
+
+/**
  * 直接写一条 `result='fail'` 的日志（无业务事务的失败路径）。
+ *
+ * `tenant_id IS NULL` 时同样走 SECURITY DEFINER 函数，否则 FORCE RLS 会拒绝。
  */
 export async function recordAuditFailure(db: Database, event: AuditEvent): Promise<string> {
   const id = event.id ?? uuidv7();
-  const values = valuesOf({ ...event, result: 'fail' }, id);
+  const failed = { ...event, result: 'fail' as const };
+  if (event.tenantId === null) {
+    await appendAuditUnscoped(db, failed, id);
+    return id;
+  }
+  const values = valuesOf(failed, id);
   await db.query(`INSERT INTO audit_log ${INSERT_COLUMNS} VALUES ${PLACEHOLDERS}`, values);
   return id;
 }
@@ -149,6 +195,10 @@ export async function withAudit<T>(
 ): Promise<T> {
   const auditId = event.id ?? uuidv7();
   const value = await db.transaction(async (tx) => {
+    // 有租户的日志：outbox 同样受 FORCE RLS 约束，必须先设置 app.tenant_id。
+    if (event.tenantId) {
+      await tx.query("SELECT set_config('app.tenant_id', $1, true)", [event.tenantId]);
+    }
     const result = await work(tx);
     await appendAudit(tx, { ...event, id: auditId });
     return result;

@@ -24,6 +24,14 @@ export const EnvSchema = z.object({
   HOST: z.string().trim().min(1).default('0.0.0.0'),
   DATABASE_URL: optionalString,
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
+  /** 一期不发短信（D54④）：非生产环境用固定验证码；production 未接服务商时端点返回 501。 */
+  LOGIN_DEV_CODE: z.string().trim().min(1).default('000000'),
+  /** 会话闲置滑动续期窗口（D59⑦）。 */
+  SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(7),
+  /** 业务日 / 取号月键 / 工号日期统一按该时区（D59④）。 */
+  APP_TIMEZONE: z.string().trim().min(1).default('Asia/Shanghai'),
+  /** 对外基址；空 = 按请求 Host 推断同源（D59⑧ 同源校验）。 */
+  PUBLIC_BASE_URL: optionalString,
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -34,6 +42,11 @@ export interface AppConfig {
   readonly host: string;
   readonly databaseUrl: string | undefined;
   readonly logLevel: Env['LOG_LEVEL'];
+  readonly loginDevCode: string;
+  readonly sessionTtlDays: number;
+  readonly appTimezone: string;
+  /** 空串 = 未配置，按请求 Host 推断同源。 */
+  readonly publicBaseUrl: string;
 }
 
 /**
@@ -54,6 +67,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     host: value.HOST,
     databaseUrl: value.DATABASE_URL,
     logLevel: value.LOG_LEVEL,
+    loginDevCode: value.LOGIN_DEV_CODE,
+    sessionTtlDays: value.SESSION_TTL_DAYS,
+    appTimezone: value.APP_TIMEZONE,
+    publicBaseUrl: value.PUBLIC_BASE_URL ?? '',
   });
 }
 
@@ -72,6 +89,10 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     host: '127.0.0.1',
     databaseUrl: undefined,
     logLevel: 'silent',
+    loginDevCode: '000000',
+    sessionTtlDays: 7,
+    appTimezone: 'Asia/Shanghai',
+    publicBaseUrl: '',
     ...overrides,
   });
 }
