@@ -84,7 +84,7 @@
 | `C:\Users\32800\.codex\config.toml`（仓库外） | **2026-11-04 追加 `[projects.'d:\desktop\dsh\qingdan'] trust_level = "trusted"`**（只让 Codex 对本项目免信任询问，不动其他配置）；改动前备份 `config.toml.bak-20261104` | Codex 当「杂项手」要在本仓写文档/脚本，未信任目录会被拦 | 删掉这 3 行即回滚；完整还原用 `Copy-Item config.toml.bak-20261104 config.toml -Force` |
 | `C:\Users\32800\.codex\config.toml`（仓库外） | **2026-11-04 追加 `[sandbox_workspace_write] network_access = true`**，让 Codex 沙箱能访问外网（复测 HTTP 200）。同日曾把 `web_search` 改成 `live` 验证，确认在 DeepSeek provider 下无效，已回退 `disabled`。备份：`config.toml.bak-20261104-network`、`config.toml.bak-20261104-search` | 负责人要求「要什么装什么」：Codex 当杂项手，调研类任务需要能上网 | 删掉这 3 行即回滚；完整还原用 `Copy-Item config.toml.bak-20261104-network config.toml -Force` |
 | `~/.dsh/AGENTS.md`（全局记忆，仓库外） | **2026-11-04「交互规则」节追加「长等待必须先汇报」**（当日两次修订）：**不是不许等**，而是需要用户久等时先吭一声——单步预计 >15s 先说「等什么、多久、为什么」；能后台跑就后台跑，等待期间仍可对话；派外部 CLI 前说明「已派，约 20–45 秒」 | 负责人反馈回复间隔忽长忽短；并澄清「不是不给你睡，而是要我久等时要汇报」 | 删除该条即回滚 |
-| `C:\Users\32800\.dsh\dsh-im-connect\ack-watcher.mjs` + HKCU Run 项 `QingdanAckWatcher`（仓库外） | **2026-11-04 新增「收到」自动回执守望程序**：监听 gateway.log 的「已注入」行，一有新消息就用 QQ 群主动消息接口回一句「收到」（实测 HTTP 200）；登录自启用 HKCU\...\Run 免管理员；当前后台进程 PID 1604 | 负责人要求：不靠记忆、不靠模型，收到消息就自动回「收到」；模型额度用光时也能回，作为存活信号 | 结束进程 + `reg delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v QingdanAckWatcher /f` 即回滚 |
+| `C:\Users\32800\.dsh\dsh-im-connect\ack-watcher.mjs`（仓库外，**已撤回**） | 2026-11-04 曾新增「收到」自动回执守望程序，同日**按负责人澄清撤回**：已杀进程、删 HKCU Run 项 `QingdanAckWatcher`、删除脚本。原因：负责人要的是「模型额度用光 → 收不到收到 → 去充钱」的存活信号，程序代发会让信号失效 | 撤回理由见左；「收到」必须由模型亲自发 | 已执行完毕，无残留（脚本与注册项均已删除） |
 
 ## 相关文件
 
