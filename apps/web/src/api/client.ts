@@ -44,6 +44,8 @@ export interface ApiRequestOptions {
   body?: unknown;
   headers?: Readonly<Record<string, string>>;
   signal?: AbortSignal;
+  /** 请求超时毫秒数，默认 `DEFAULT_TIMEOUT_MS`（15000）。 */
+  timeoutMs?: number;
   /** 写操作的幂等键（D54）；有值才发送。 */
   idempotencyKey?: string;
   /** 写操作的原因说明（AI / 危险动作必须带，D52）。 */
@@ -62,6 +64,10 @@ export interface ApiClientOptions {
 }
 
 export const DEFAULT_API_BASE_URL = '/api/v1';
+/** 浏览器来源标识；服务端据此把审计 source 记为 `web`（D51 / D54 §9-4）。 */
+export const WEB_CLIENT = 'web';
+/** 默认请求超时（D54 通用 API 约定）。 */
+export const DEFAULT_TIMEOUT_MS = 15_000;
 
 function resolveDefaultBaseUrl(): string {
   const fromEnv = (import.meta.env as ImportMetaEnv | undefined)?.VITE_API_BASE;
@@ -151,6 +157,24 @@ export function parseApiErrorBody(
   });
 }
 
+/** 合并外部 signal 与超时 signal（不用 AbortSignal.any：Chrome 116+ 才有，包内基线是 111）。 */
+function combineSignals(signal: AbortSignal | undefined, timeoutSignal: AbortSignal): AbortSignal {
+  if (!signal) {
+    return timeoutSignal;
+  }
+  const controller = new AbortController();
+  const forward = (source: AbortSignal) => () => controller.abort(source.reason);
+  if (signal.aborted) {
+    controller.abort(signal.reason);
+  } else if (timeoutSignal.aborted) {
+    controller.abort(timeoutSignal.reason);
+  } else {
+    signal.addEventListener('abort', forward(signal), { once: true });
+    timeoutSignal.addEventListener('abort', forward(timeoutSignal), { once: true });
+  }
+  return controller.signal;
+}
+
 async function readPayload(response: Response): Promise<unknown> {
   const text = await response.text();
   if (text.length === 0) {
@@ -181,37 +205,74 @@ export class ApiClient {
   }
 
   async request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-    const { method = 'GET', query, body, headers, signal, idempotencyKey, reason } = options;
+    const {
+      method = 'GET',
+      query,
+      body,
+      headers,
+      signal,
+      timeoutMs = DEFAULT_TIMEOUT_MS,
+      idempotencyKey,
+      reason,
+    } = options;
     const url = buildRequestUrl(this.baseUrl, path, query);
     const requestId = this.newRequestId();
 
-    const finalHeaders: Record<string, string> = {
-      Accept: 'application/json',
-      'X-Request-Id': requestId,
-    };
+    const finalHeaders = new Headers();
+    finalHeaders.set('Accept', 'application/json');
+    // 调用方自定义头先写，保留头最后 set()：大小写不敏感且不会被覆盖/重复（D54）。
+    for (const [key, value] of Object.entries(headers ?? {})) {
+      finalHeaders.set(key, value);
+    }
+    finalHeaders.set('X-Request-Id', requestId);
+    finalHeaders.set('X-Client', WEB_CLIENT);
     if (body !== undefined) {
-      finalHeaders['Content-Type'] = 'application/json';
+      finalHeaders.set('Content-Type', 'application/json');
     }
     const token = this.getToken();
     if (token) {
-      finalHeaders.Authorization = `Bearer ${token}`;
+      finalHeaders.set('Authorization', `Bearer ${token}`);
     }
     if (idempotencyKey) {
-      finalHeaders['Idempotency-Key'] = idempotencyKey;
+      finalHeaders.set('Idempotency-Key', idempotencyKey);
     }
     if (reason) {
-      finalHeaders['X-Reason'] = reason;
+      finalHeaders.set('X-Reason', reason);
     }
-    Object.assign(finalHeaders, headers ?? {});
 
     const doFetch = this.fetchImpl ?? fetch;
-    // 网络层失败（断网 / abort）不是统一错误体，原样抛出保持可辨识
-    const response = await doFetch(url, {
-      method,
-      headers: finalHeaders,
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
-    });
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const combinedSignal = combineSignals(signal, timeoutSignal);
+
+    let response: Response;
+    try {
+      response = await doFetch(url, {
+        method,
+        headers: finalHeaders,
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: combinedSignal,
+      });
+    } catch (error) {
+      // 网络层失败不是统一错误体，归一为 ApiError，避免调用方拿到原生 TypeError。
+      if (timeoutSignal.aborted) {
+        throw new ApiError({
+          code: 'TIMEOUT',
+          message: `请求超时（${timeoutMs}ms）`,
+          status: 0,
+          requestId,
+        });
+      }
+      if (signal?.aborted) {
+        throw new ApiError({ code: 'REQUEST_ABORTED', message: '请求已取消', status: 0, requestId });
+      }
+      throw new ApiError({
+        code: 'NETWORK_ERROR',
+        message: '网络请求失败，请检查连接后重试',
+        status: 0,
+        details: error instanceof Error ? error.message : error,
+        requestId,
+      });
+    }
 
     if (!response.ok) {
       const payload = await readPayload(response);
