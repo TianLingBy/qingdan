@@ -29,6 +29,8 @@ pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>
 完成标志：成员档案填满、已在模块文档登记负责人、贴出 `tests\run.ps1` 的真实成功输出，并提交 PR。
 PR 标题写：`chore(members): 登记 <姓名> 的成员档案`。
 合并规则见 PR 模板与 `ROLES-AND-BOUNDARIES`。
+- CI 三项全绿后，**你自己点合并**（网页绿色 Merge pull request → Squash and merge），不需要等负责人；
+- 若属于严重变更（契约/迁移/权限/跨模块），在 PR 上打 `需批准` 标记并 @TianLingBy，等他批。
 
 ## 第 3 步：之后怎么接活
 
