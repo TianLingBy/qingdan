@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/*
+ * 浏览器基线见 docs/decisions.md D56：
+ * Win10 22H2 + Edge（Chromium/Edge 111 级别）；不支持 IE11 与兼容模式。
+ * 样式只写在 Tailwind 工具类里，这里只放全局基础样式。
+ */
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family:
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      "Microsoft YaHei",
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}

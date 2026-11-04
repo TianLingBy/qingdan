@@ -1,4 +1,4 @@
-# 检查点契约测试：模板小节、AGENTS.md 模块登记、检查点文件三者必须一致。
+﻿# 检查点契约测试：模板小节、AGENTS.md 模块登记、检查点文件三者必须一致。
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'assert.ps1')
 

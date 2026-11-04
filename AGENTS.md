@@ -9,8 +9,9 @@
 - 项目：**轻单**（工程仓）。需求稿真源仓 `D:\Desktop\dsh\轻单` 已于 2026-11-03 迁移完成后冻结为只读历史；**阶段 4 起所有开发与文档变更都在本仓**。
 - 项目根：`D:\Desktop\dsh\Qingdan`（与本项目相关的会话，cwd 都应是这个目录；派发外部代理时工作目录随之固定）。
 - 当前阶段：**4 分工开发**（阶段路线见 `docs/roadmap.md`）。
-- 技术栈：**已定（D53，2026-11-04）**——TypeScript 单一语言全栈（Node 24 + Fastify 5 + Drizzle + PostgreSQL 17 + React 19/Vite），`packages/contracts` 一套 Zod 注册表发射 OpenAPI 3.1 / CLI / MCP；多端（Web / Electron 桌面 / Capacitor 移动）复用同一份前端与同一套 `/api/v1`。依据 `docs/adr-0001-tech-stack.md`；**ADR 未决项 U1-U5 与 U12 spike 仍未拍板**，写第一行业务代码前必须收口。
-- 测试入口：`tests\run.ps1`。
+- 技术栈：**已定（D53/D55/D56/D57，2026-11-04）**——TypeScript 单一语言全栈（Node 24 LTS + Fastify 5 + Drizzle + PostgreSQL 18 + React 19/Vite + pnpm 11），`packages/contracts` 一套 Zod 注册表发射 OpenAPI 3.1 / CLI / MCP；多端（Web / Electron 桌面 / Capacitor 移动）复用同一份前端与同一套 `/api/v1`。依据 `docs/adr-0001-tech-stack.md`；U1-U5 已由 **D55** 收口、U12 spike 已由 **D57** 收口、Windows 10 兼容由 **D56** 收口。
+- **工程骨架已建立（M0，2026-11-04）**：`apps/api`（Fastify 5 + Drizzle，唯一部署物）、`apps/web`（React SPA）、`packages/contracts|cli|mcp`；pnpm workspace 根 `package.json` + `pnpm-workspace.yaml` + `tsconfig.base.json` + `eslint.config.js`。业务模块固定结构 = `apps/api/src/modules/<模块>/{routes.ts,usecases/,repo.ts,schema.ts}`（`platform` 已落地作样板），**禁止跨模块 import、禁止直读他人表**。
+- 测试入口：`tests\run.ps1`（PowerShell 契约测试）；TypeScript 层用 `pnpm -r build` / `pnpm -r test`（已在 `tests/workspace.test.ps1` 里包装成门禁）。
 - 模块列表（新增模块时在这里登记；格式固定为“反引号模块名 → `docs/module-<模块名>.md`”，检查点测试靠它解析）：
   - `platform` → `docs/module-platform.md`
   - `masterdata` → `docs/module-masterdata.md`
@@ -30,8 +31,8 @@
 
 ## 文档与真源（新会话先读 `docs/README.md`）
 
-- **口径真源**：`docs/decisions.md`（D1-D53 已拍板；新结论只能追加，不改历史行）。
-- **字段真源**：`docs/轻单_接口契约第一批_v1_20261103.md`、`docs/轻单_接口契约第二批_v1_20261103.md`（已冻结；§11 / §4 各 5 项开放项由开发阶段拍板）、`docs/轻单_接口契约第三批_v1_20261104.md`（🟡 草案，platform 开工前冻结；操作日志 / API Token / 通用 API 约定）。
+- **口径真源**：`docs/decisions.md`（D1-D57 已拍板；新结论只能追加，不改历史行）。
+- **字段真源**：`docs/轻单_接口契约第一批_v1_20261103.md`、`docs/轻单_接口契约第二批_v1_20261103.md`（已冻结；§11 / §4 各 5 项开放项由开发阶段拍板）、`docs/轻单_接口契约第三批_v1_20261104.md`（✅ 已冻结，D54；操作日志 / API Token / 通用 API 约定）。**接口真源以 `packages/contracts` 的 Zod 注册表为准**，`docs/api/openapi.yaml` 是按 D54 对齐的描述文件。
 - **原型**：`docs/prototype-v0.md`（22 页 IA、数据模型）+ `prototype.html`（可点击原型）。
 - **业务事实**：`docs/轻单_业务事实问答_v1_20261103.md`（F1-F10）；决策过程：`docs/轻单_阻塞问题决策清单_v1_20261103.md`。
 - **原料**：`docs/raw/` 只搬不改写，协议见 `docs/raw-protocol.md`。

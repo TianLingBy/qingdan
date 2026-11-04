@@ -1,5 +1,7 @@
 # 模块：platform（平台底座）
 
+> 负责人：主线（负责人 + DSH 智能体团队）｜接手日期：2026-11-04
+
 > 所属交付模块：**MAIN 主线**（负责人 + DSH 智能体团队）｜分支 `feat/main-platform`
 
 > 阶段 4 的 P0 模块：其余 7 个业务模块都依赖它，先做完再并行。
@@ -23,7 +25,7 @@
 
 ## 开放项
 
-- **技术栈与多端收敛方式：已定**（`docs/decisions.md` **D53** + `docs/adr-0001-tech-stack.md`）：TypeScript 单一语言全栈（Node 24 LTS + Fastify 5 + Drizzle + PostgreSQL 17 + React 19/Vite），`packages/contracts` 一套 Zod 注册表发射 OpenAPI 3.1 / CLI / MCP；桌面 Electron、移动 Capacitor 均为外壳复用同一份前端。**D53 未随附的遗留项仍需在写第一行业务代码前拍板**：U1 租户隔离强度、U2 金额精度与舍入、U3 主键方案、U4 Node 版本统一、U5 审计失败是否阻断，以及 U12 的 2 小时 spike（Zod4→OpenAPI 管线 / PGlite 在 Windows / Fastify5+Drizzle）。
+- **技术栈与多端收敛方式：已定**（`docs/decisions.md` **D53** + `docs/adr-0001-tech-stack.md`）：TypeScript 单一语言全栈（Node 24 LTS + Fastify 5 + Drizzle + PostgreSQL 18 + React 19/Vite），`packages/contracts` 一套 Zod 注册表发射 OpenAPI 3.1 / CLI / MCP；桌面 Electron、移动 Capacitor 均为外壳复用同一份前端。**D53 未随附的遗留项已于 2026-11-04 收口**：U1-U5 → **D55**（共享表 + tenant_id + 核心表 RLS / 金额 numeric(18,6) 全程不舍入 / UUIDv7 应用侧生成 / Node 24 + pnpm 11 / 审计失败即阻断）；U12 spike → **D57**（Zod4→OpenAPI 可用但需注册 id 后重写引用；PGlite 实测 PG 18；应用账号不得 superuser/BYPASSRLS）；Windows 10 兼容 → **D56**（锁浏览器基线，不降版本）。
 - 运营后台（手动计费配置、企业停用，D1）纳入本模块：**平台侧操作也必须进操作日志**（D51）。
 - **接口契约第三批（操作日志 + API Token + 通用 API 约定）：✅ 已冻结（2026-11-04）**。§5 四项、§7 十处缺口、§8 五问均已裁定，结论见 `docs/decisions.md` **D54**。开工时需按 D54 同步清掉 `docs/api/openapi.yaml` / `docs/api/cli.md` 里残留的「待 platform 冻结 / 提案」标记。
 
@@ -43,22 +45,27 @@
 
 ## 当前状态
 
-未开始（等模块切分确认 + 技术选型 ADR）
+🔄 **进行中**：**M0 工程骨架已建立（2026-11-04）**——monorepo（`apps/api`、`apps/web`、`packages/contracts|cli|mcp`）、契约注册表发射 OpenAPI 3.1、CLI 命令树、MCP 工具表、迁移与审计/取号/权限判定内核、CI 双平台全部打通（全量门禁 `tests\run.ps1` 绿）。**业务端点仍全部返回 501**：登录、会话、Token、审计查询、权限覆盖写入尚未实现（M1 范围）。
 
 ## 已完成
 
 - 模块边界、页面与功能域映射已登记（本文件 + `docs/README.md` 模块表）。
+- **M0 骨架（2026-11-04）**：
+  - **契约包**：22 个功能域 + 8 动作词表；11 个封闭错误码（HTTP ↔ CLI 退出码）；`packages/contracts` 的 Zod 注册表登记 10 个平台端点，`buildOpenApiDocument()` 发射 OpenAPI 3.1（实体注册 id、`$ref` 重写、`x-scope`/`x-audit`/`x-ai-policy`/`x-mcp-tool`），CI 断言「路径数 = 注册表端点数」「components.schemas = 注册实体数」。
+  - **口径锁定测试（P0-2）**：`packages/contracts/src/spec-lock.test.ts` 把 D16 编号 / D50 三层 / D21 取消级联 / D51 审计 100% / D52.1 AI 不可放大 变成断言（不再只是文档存在性检查）。
+  - **apps/api**：Fastify 5 + `X-Request-Id`(UUIDv7, ALS) + 统一错误体 + 安全头；路由**只从注册表生成**（health/openapi.json 已实现，其余 501）；纯 SQL 前向迁移 `0001_platform_core.sql`（13 张表、`numeric(18,6)` 金额域、`qingdan_app` 普通角色 + 11 张表 ENABLE/FORCE RLS + `tenant_isolation`、`audit_log` 只授 INSERT）；审计 outbox 追加器（失败即阻断）、并发安全取号（类型 × 年月键）、权限判定一条 SQL（岗位并集 ⊕ 个人覆盖，老板短路，token scope 交集）；PGlite(PG18) 上 43 个用例绿。
+  - **apps/web**：React 19 + Vite + Tailwind 4 + TanStack Router/Query；22 页路由壳（对齐 `prototype-v0` 页 1-22）；api client（统一错误体）；D56 浏览器基线（`build.target=['chrome111','edge111']` + browserslist）。
+  - **packages/cli / packages/mcp**：同一注册表生成命令树（`qingdan <domain> <action>`，退出码按 D54）与 MCP 工具表（`qingdan_<operationId>` 1:1，危险动作默认拒绝/可配走审批）。
+  - **测试与 CI**：`tests/testbase.test.ps1`（P0-1 底座自检：BOM + Exit-Test）、`tests/workspace.test.ps1`（`pnpm -r build/test` 门禁）、`tests/platform-spec.test.ps1`（P0-2 包装）；CI 双平台加 Node 24 + pnpm 11 + `pnpm install --frozen-lockfile`，新增 ubuntu + `postgres:18` 集成 job。
 
 ## 进行中
 
-- 无。
+- **M1（下一步）**：登录闭环（后台建号 + 手机号/验证码 + 会话 Cookie）、会话解析、API Token 增删查、审计查询端点、权限覆盖写入（`PATCH /employees/{id}/permissions`）——即把 10 个已登记端点的 501 逐个换成真实用例。
 
 ## 下一步
 
-- **先确认并冻结接口契约第三批**（操作日志 / API Token / 通用 API 约定，4 项开放项见 §5）。
-- 确认模块切分与模块名（本文件与 `docs/README.md`）。
-- 出技术栈 ADR，拍板后追加 `docs/decisions.md` D53。
-- 搭工程骨架：目录约定、配置、本地开发与测试入口。
+- 按 `docs/TEAM-PLAN.md` §5 第 1 周：把 `ctx.authz`（权限判定）接到 HTTP 层，实现登录/会话/Token 三个闭环，跑通「CLI 登录 → 查看 → 一个写操作 → 审计落库」端到端。
+- 待裁决：① 审计查询端点的读权限（当前 `audit_log` 对应用角色只授 INSERT，需定只读视图或专角色）；② 单号日期/月键时区（N2，当前 UTC）与取号粒度（N1 候选①、允许跳号 N3①）；③ 老板判定字段 `employee.is_owner`（domain-model §1.3 仍标 ⬜）。
 
 ## 已知问题 / 坑
 
@@ -66,6 +73,9 @@
 - 「看价」是数据可见性不是操作（D4）：别塞进动作表格；金额字段的兜底过滤要全链一致（D27 损失金额同口径）。
 - 流水号按月重置：跨月 0 点并发取号必须有用例。
 - 权限基础在 platform，但每个业务模块的「动作→接口」映射各自实现：接口鉴权只认 platform 的判定结果，不认前端传的菜单。
+- **审计表只授 INSERT 与「日志查询」天然冲突**（M0 实测）：`audit_log` 只给 `qingdan_app` INSERT 是 D51「不可改删」的物理保证，但 `GET /audit-logs` 需要读——M1 需定口径（专用只读角色 / 只读视图 / 单独审计库），不要在这一步把 UPDATE/DELETE 授回去。
+- **RLS 只在非 superuser 下成立**（D57 ③）：本地测试必须 `set role`，生产连接账号不得是 superuser / BYPASSRLS，否则隔离形同虚设。
+- **取号允许跳号**（N3①）：事务回滚会留下空洞，属已接受口径；不要为「连续」加锁表。
 
 ## 相关文件
 
