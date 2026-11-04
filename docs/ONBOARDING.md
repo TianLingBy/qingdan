@@ -58,17 +58,17 @@ Agent 看不到邀请邮件、也看不到群聊，它默认**不知道自己代
 
 ## 1. 硬前置：先装软件，再 clone
 
-**必装 7 项**（完整版本依据、下载地址、验证命令见 [`docs/DEV-SETUP.md`](DEV-SETUP.md) §1「必装软件清单」）：
+**6 项必装 + 1 项可选**（完整版本依据、下载地址、验证命令见 [`docs/DEV-SETUP.md`](DEV-SETUP.md) §1「软件清单」）：
 
 | # | 软件 | 命令名 | 版本 | 下载 |
 |---|---|---|---|---|
 | 1 | Git（Windows 用 Git for Windows，勾选 Git Credential Manager） | `git` | ≥ 2.40 | <https://git-scm.com/download/win> |
-| 2 | GitHub CLI | `gh` | ≥ 2.60 | <https://cli.github.com/> |
-| 3 | Node.js | `node` | **24 LTS（24.x）** | <https://nodejs.org/en/download> |
-| 4 | pnpm | `pnpm` | **11.x** | `corepack enable` 或 `npm i -g pnpm@11.28.10` |
-| 5 | PowerShell 7（**不是**系统自带 `powershell` 5.1） | `pwsh` | ≥ 7.0 | <https://aka.ms/powershell-release?tag=stable> |
-| 6 | PostgreSQL | `psql` | **18** | <https://www.postgresql.org/download/windows/> |
-| 7 | 编辑器（建议 VS Code + ESLint/Prettier 插件） | — | 任意 | <https://code.visualstudio.com/> |
+| 2 | Node.js | `node` | **24 LTS（24.x）** | <https://nodejs.org/en/download> |
+| 3 | pnpm | `pnpm` | **11.x** | `corepack enable` 或 `npm i -g pnpm@11.28.10` |
+| 4 | PowerShell 7（**不是**系统自带 `powershell` 5.1） | `pwsh` | ≥ 7.0 | <https://aka.ms/powershell-release?tag=stable> |
+| 5 | PostgreSQL | `psql` | **18** | <https://www.postgresql.org/download/windows/> |
+| 6 | 编辑器（建议 VS Code + ESLint/Prettier 插件） | — | 任意 | <https://code.visualstudio.com/> |
+| 可选 | GitHub CLI（装了更省事，不装用网页一样能完成，见 §11） | `gh` | ≥ 2.60 | <https://cli.github.com/> |
 
 **权限前置**：仓库是私有的，你的 GitHub 账号必须已被负责人加为 **write** 协作者并**接受邀请**，否则 `git clone` 会报 **404 / Repository not found**（GitHub 对无权限账号统一返回 404，不是 403）。
 
@@ -78,15 +78,17 @@ Agent 看不到邀请邮件、也看不到群聊，它默认**不知道自己代
 node -v                 # v24.x
 pnpm -v                 # 11.x
 git --version           # 2.4x+
-gh --version            # 2.6x+
 pwsh -v                 # 7.x —— 在 5.1 里跑这行会报错，正说明你没装 PS7
+
+# 以下只为可选工具 gh，有 gh 才做
+gh --version            # 2.6x+
 gh auth login           # 浏览器登录「被邀请的那个」GitHub 账号
 gh api user --jq '.login'                          # 确认当前身份
-gh api repos/TianLingBy/qingdan --jq '.permissions' # 期望 push:true；404 见下
+gh api repos/TianLingBy/qingdan --jq '.permissions' # 有 gh 才做；期望 push:true；404 见下
 ```
 
 - 没有 pwsh 7 时：Windows `winget install --id Microsoft.PowerShell -e`；macOS `brew install --cask powershell`；Ubuntu 走微软官方 apt 源。**不要用 5.1 兜底**——本仓 `.ps1` 带 BOM，但 5.1 仍会在部分场景按 GBK 解码中文报 `The string is missing the terminator`。
-- `gh api repos/TianLingBy/qingdan` 报 **404**：说明当前登录的账号不是被邀请的那个。依次做 `gh auth login`（换账号）→ `cmdkey /delete:git:https://github.com`（清 Windows 旧凭据）→ 仍不行就把 `gh api user --jq '.login'` 的输出发给负责人核对，需要时用正确账号重发邀请。
+- **没有 gh**：用浏览器打开 <https://github.com/TianLingBy/qingdan>，能打开就说明有权限（打不开＝账号不对或没被邀请）。有 gh 时，`gh api repos/TianLingBy/qingdan` 报 **404** 说明当前登录的账号不是被邀请的那个；依次做 `gh auth login`（换账号）→ `cmdkey /delete:git:https://github.com`（清 Windows 旧凭据）→ 仍不行就把 `gh api user --jq '.login'` 的输出发给负责人核对，需要时用正确账号重发邀请。
 
 ## 2. 一键初始化（推荐，所有 Agent 都能照抄）
 

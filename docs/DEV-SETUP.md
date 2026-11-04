@@ -6,24 +6,24 @@
 
 ---
 
-## 1. 前置条件：必装软件清单（先装齐，再 clone）
+## 1. 前置条件：软件清单（6 项必装 + 1 项可选；先装齐必装项，再 clone）
 
-> **这一节是「开工第 0 步」。** 表里的 7 项装不齐，后面会出现三类假故障：`git clone` 报 404（其实是登录的账号不对）、`pnpm` 版本冲突（大版本不对）、`.ps1` 中文报错（用的是 5.1）。
+> **这一节是「开工第 0 步」。** 表里的 6 项必装装不齐，后面会出现三类假故障：`git clone` 报 404（其实是登录的账号不对）、`pnpm` 版本冲突（大版本不对）、`.ps1` 中文报错（用的是 5.1）。GitHub CLI（`gh`）是可选工具。
 > **版本基准**：下表「实测版本」是 2026-11-04 在负责人 Windows 机器上 `--version` 的真实输出。成员机器可以更新，但 **Node 必须 24.x、pnpm 必须 11.x**——`package.json` 的 `engines` 会硬校验，不符合直接报错。
 
 | # | 软件 | 版本要求 | 实测版本 | 下载地址 | 为什么必须有 | 验证命令 |
 |---|---|---|---|---|---|---|
 | 1 | **Git**（Windows 用 Git for Windows） | ≥ 2.40 | 2.53.0.windows.2 | <https://git-scm.com/download/win> ／ `winget install --id Git.Git -e` | 拉代码、建分支、提交。**安装时务必勾选 Git Credential Manager**，否则私有仓每次操作都要重输密码 | `git --version` |
-| 2 | **GitHub CLI（命令名 `gh`）** | ≥ 2.60 | 2.97.0 | <https://cli.github.com/> ／ `winget install --id GitHub.cli -e` | ① `gh auth login` 一次配好私有仓身份与凭据；② `gh api` 自查真实权限；③ 建 PR。**排查「404 打不开仓库」的第一工具** | `gh --version` |
-| 3 | **Node.js** | **24 LTS（24.x）** | 24.22.0 | <https://nodejs.org/en/download> ／ `winget install --id OpenJS.NodeJS.24 -e`（`package.json` 的 `engines.node` 是 `">=24 <25"`；LTS 别名会随时间漂移到 26，装错版本会被 `engines` 拒绝） | 全部代码的构建与运行环境；`engines.node = ">=24 <25"` | `node -v` |
-| 4 | **pnpm** | **11.x** | 11.28.10 | `corepack enable`（Node 自带）或 `npm i -g pnpm@11.28.10` | 仓库用 `packageManager: pnpm@11.28.10` 锁版本；**大版本不对会 store 冲突** | `pnpm -v` |
-| 5 | **PowerShell 7**（命令名 `pwsh`） | ≥ 7.0 | 7.6.9 | <https://aka.ms/powershell-release?tag=stable> ／ `winget install --id Microsoft.PowerShell -e` | 所有 `.ps1`（测试、hook、bootstrap）的运行时。**不要用系统自带 5.1**，它按 GBK 解码中文脚本会报 `The string is missing the terminator` | `pwsh -v` |
-| 6 | **PostgreSQL** | **18** | 18.x | <https://www.postgresql.org/download/windows/> ／ `winget install --id PostgreSQL.PostgreSQL.18 -e` | 本地开发库；CI integration job 用 `postgres:18`。D57 实测 PGlite 0.5.15 = PG 18.6，主版本必须一致 | `psql --version` |
-| 7 | **编辑器** | 任意 | VS Code | <https://code.visualstudio.com/> | 建议装 ESLint / Prettier / EditorConfig 插件（配置随骨架提交） | — |
+| 2 | **Node.js** | **24 LTS（24.x）** | 24.22.0 | <https://nodejs.org/en/download> ／ `winget install --id OpenJS.NodeJS.24 -e`（`package.json` 的 `engines.node` 是 `">=24 <25"`；LTS 别名会随时间漂移到 26，装错版本会被 `engines` 拒绝） | 全部代码的构建与运行环境；`engines.node = ">=24 <25"` | `node -v` |
+| 3 | **pnpm** | **11.x** | 11.28.10 | `corepack enable`（Node 自带）或 `npm i -g pnpm@11.28.10` | 仓库用 `packageManager: pnpm@11.28.10` 锁版本；**大版本不对会 store 冲突** | `pnpm -v` |
+| 4 | **PowerShell 7**（命令名 `pwsh`） | ≥ 7.0 | 7.6.9 | <https://aka.ms/powershell-release?tag=stable> ／ `winget install --id Microsoft.PowerShell -e` | 所有 `.ps1`（测试、hook、bootstrap）的运行时。**不要用系统自带 5.1**，它按 GBK 解码中文脚本会报 `The string is missing the terminator` | `pwsh -v` |
+| 5 | **PostgreSQL** | **18** | 18.x | <https://www.postgresql.org/download/windows/> ／ `winget install --id PostgreSQL.PostgreSQL.18 -e` | 本地开发库；CI integration job 用 `postgres:18`。D57 实测 PGlite 0.5.15 = PG 18.6，主版本必须一致 | `psql --version` |
+| 6 | **编辑器** | 任意 | VS Code | <https://code.visualstudio.com/> | 建议装 ESLint / Prettier / EditorConfig 插件（配置随骨架提交） | — |
+| 可选 | **GitHub CLI（命令名 `gh`）** | ≥ 2.60 | 2.97.0 | <https://cli.github.com/> ／ `winget install --id GitHub.cli -e` | 装了更省事：可用 `gh auth login` 配身份、`gh api` 自查权限、`gh` 建 PR；不装用网页一样能完成（见 [`docs/ONBOARDING.md`](ONBOARDING.md) §11） | `gh --version`（有 gh 才做） |
 
 **不需要装**：Docker（只有 L3 并发测试可选使用）、Redis、消息队列、Java / Python 运行时。
 
-macOS / Linux 对应命令：`brew install git gh node pnpm postgresql@18`、`brew install --cask powershell`；Ubuntu 用微软官方 apt 源装 `powershell`，`gh` 走官方 apt 源，PostgreSQL 用 `postgresql-18`。
+macOS / Linux 必装项对应命令：`brew install git node pnpm postgresql@18`、`brew install --cask powershell`；Ubuntu 用微软官方 apt 源装 `powershell`，PostgreSQL 用 `postgresql-18`。GitHub CLI（`gh`）是可选项，想装再走官方安装源。
 
 ### 1.1 装完先跑这段自检（逐行复制执行）
 
@@ -31,18 +31,21 @@ macOS / Linux 对应命令：`brew install git gh node pnpm postgresql@18`、`br
 node -v                 # 期望 v24.x
 pnpm -v                 # 期望 11.x
 git --version           # 期望 2.4x 或更新
-gh --version            # 期望 2.6x 或更新
 pwsh -v                 # 期望 7.x（在 5.1 里跑这行会报错，正说明你没装 PS7）
 psql --version          # 期望 18.x（只影响 L3 真库测试，不阻塞前三个门禁）
 
+# 以下只为可选工具 gh，有 gh 才做
+gh --version            # 期望 2.6x 或更新
 gh auth status                    # 期望：Logged in to github.com account <你的账号>
 gh api user --jq '.login'         # 确认当前 git/gh 用的是哪个 GitHub 账号
-gh api repos/TianLingBy/qingdan --jq '.permissions'
+gh api repos/TianLingBy/qingdan --jq '.permissions' # 有 gh 才做
 # 期望输出：{"admin":false,"maintain":false,"pull":true,"push":true,"triage":true}
 # 若这里报 404 → 见 §7 FAQ 第一行：登录的账号不是被邀请进仓库的那个
 ```
 
-**四条都要对上才算环境就绪**：Node 24.x、pnpm 11.x、pwsh 7.x、`gh api` 能读到本仓库权限。
+没有 gh 也能检查仓库权限：用浏览器打开 <https://github.com/TianLingBy/qingdan>，能打开就说明有权限；打不开＝账号不对或没被邀请。
+
+**四条（不含 gh 那条）都要对上才算环境就绪**：Node 24.x、pnpm 11.x、pwsh 7.x、能访问本仓库（有 gh 时以 `gh api` 结果为准，没有 gh 时以浏览器能打开为准）。
 
 ## 2. 第一次安装（clone 之后）
 

@@ -38,9 +38,24 @@
 
 **顺序不能颠倒**：⓿ 装齐本机软件 → ① 确认身份 → ② 把档案落盘 → ③ 登记模块负责人 → ④ 领任务 → ⑤ 才动代码。
 
-0. **装齐软件（第 0 步，装不齐后面全跑不动）**：按 [`docs/DEV-SETUP.md`](DEV-SETUP.md) §1 的《必装软件清单》装 **Git、GitHub CLI（`gh`）、Node.js 24 LTS、pnpm 11、PowerShell 7、PostgreSQL 18、编辑器**七项，然后跑 §1.1 的自检命令：`node -v`=`v24.x`、`pnpm -v`=`11.x`、`pwsh -v`=`7.x`、`gh api repos/TianLingBy/qingdan --jq '.permissions'` 返回 `push:true`。**这四条不过，不要开始 clone**——`git clone` 报 404 基本都是登录账号不对，不是负责人没给权限（见 `docs/DEV-SETUP.md` §7 第一行）。
+0. **准备软件（第 0 步，装不齐后面全跑不动）**：按 [`docs/DEV-SETUP.md`](DEV-SETUP.md) §1 的软件清单装 **Git、Node.js 24 LTS、pnpm 11、PowerShell 7、PostgreSQL 18、编辑器**六项必装。**GitHub CLI（`gh`）为可选**：装了更省事，不装用网页一样能完成（见 [`docs/ONBOARDING.md`](ONBOARDING.md) §11）。然后跑 §1.1 的自检命令：`node -v`=`v24.x`、`pnpm -v`=`11.x`、`pwsh -v`=`7.x`；仓库权限可运行 `gh api repos/TianLingBy/qingdan --jq '.permissions'` 检查（**有 gh 才做**），没有 gh 就用浏览器打开 <https://github.com/TianLingBy/qingdan>，能打开就说明有权限（打不开＝账号不对或没被邀请）。**这四条（不含 gh 那条）不过，不要开始 clone**——`git clone` 报 404 基本都是登录账号不对，不是负责人没给权限（见 `docs/DEV-SETUP.md` §7 第一行）。
 
 1. **确认身份**：读 §0.1 与 `docs/ROLES-AND-BOUNDARIES.md`，说清「我是谁、负责哪个模块、能改什么、不能改什么、谁评审我」。**身份有歧义先问负责人，禁止边猜边写。**
+
+**（a）怎么核验（三问 + 三处交叉核对）**
+
+- 先问带你入伙的人三个问题：我的中文姓名？我的 GitHub 账号（login）？我负责哪个模块（用 §0 的模块名）？
+- 再依次核对下面三处，**三处全对才算核验通过**：
+  1. `gh api user --jq .login` 的输出等于你报的 GitHub 账号；没有 `gh` 就去 GitHub 个人主页看用户名。
+  2. `docs/members/<中文姓名>.md` 存在，且该档案 PR 已合并。
+  3. `docs/module-<模块>.md` 顶部「负责人」写着你的名字，或明确写「待认领」。
+
+**（b）核验没过就停（三条硬规矩）**
+
+- 账号对不上 → 停下换账号，不许用别人账号提交。
+- 档案不存在或未合并 → 只能先做档案 PR，**不许碰业务代码**。
+- 模块「待认领」或别人已认领 → 报负责人指定，**不许自己挑模块开工**。
+
 2. **落盘档案（硬性）**：复制 `docs/members/_template.md` → **`docs/members/<你的中文姓名>.md`**，逐项填满（含环境自检的真实输出行），提交 PR。**档案没合并进仓库 = 没开工**：此前提交的代码与业务文档一律不受理。
 3. **登记模块检查点**：在同一 PR 内，到 `docs/module-<模块>.md` 顶部写「**负责人：<姓名>｜接手日期：YYYY-MM-DD**」。
 4. **领任务**：在 GitHub Issues 对应 label（`main` / `m1` / `m2` / `m3` / `m4`）下认领，并在自己档案的「我的第一个任务」里写明任务编号与完成标志。
@@ -55,6 +70,18 @@
 - 用同一个分支两人同时改同一个文件（见 §0.1 协作规则）。
 
 **校验口径**：`docs/members/README.md` 的「现有成员」表全部 ✅ + 各 `docs/module-<模块>.md` 顶部都有负责人与日期，才算全员开工就绪。
+
+### 身份核验 → 分工对照表
+
+| 姓名 | GitHub | 负责模块 | 核验状态 | 现在能领的活 |
+|---|---|---|---|---|
+| 负责人 + DSH 团队 | TianLingBy | 主线 platform / contracts / purchase / sales / settlement / test | — 不适用（仓库所有者） | 全部主线 |
+| 梁海俊 | Vince-Leong | masterdata / inventory / processing / internal-trade 后端 | ✅ 已核验（档案 #13 已合并） | 可领后端业务用例 |
+| 温汇敏 | 2696708617-web | platform 的账号/权限部分 | ⏳ 待本人（Issue #10 档案未合并） | ❌ 暂不可领，先落档案 |
+| 赖皓妍 | karryL921 | apps/web 全部页面视觉与适配 | ⏳ 待本人（**仓库邀请尚未接受**，档案未合并） | ❌ 暂不可领（#3/#4/#5/#6 全部挂起） |
+| 李祖怡 | lozy66 | 八类单据详情页、流转展示、打印导出 | ⏳ 待本人（档案未合并） | ❌ 暂不可领，先落档案 |
+
+**核验状态不是 ✅ 的人，他的 issue 谁都不能代领；要动就先由负责人书面指定代做，并在 issue 里写明。**
 
 ## 1. 五个交付模块的边界与验收
 
