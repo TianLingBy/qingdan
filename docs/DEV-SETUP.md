@@ -15,7 +15,7 @@
 |---|---|---|---|---|---|---|
 | 1 | **Git**（Windows 用 Git for Windows） | ≥ 2.40 | 2.53.0.windows.2 | <https://git-scm.com/download/win> ／ `winget install --id Git.Git -e` | 拉代码、建分支、提交。**安装时务必勾选 Git Credential Manager**，否则私有仓每次操作都要重输密码 | `git --version` |
 | 2 | **GitHub CLI（命令名 `gh`）** | ≥ 2.60 | 2.97.0 | <https://cli.github.com/> ／ `winget install --id GitHub.cli -e` | ① `gh auth login` 一次配好私有仓身份与凭据；② `gh api` 自查真实权限；③ 建 PR。**排查「404 打不开仓库」的第一工具** | `gh --version` |
-| 3 | **Node.js** | **24 LTS（24.x）** | 24.22.0 | <https://nodejs.org/en/download> ／ `winget install --id OpenJS.NodeJS.LTS -e` | 全部代码的构建与运行环境；`engines.node = ">=24 <25"` | `node -v` |
+| 3 | **Node.js** | **24 LTS（24.x）** | 24.22.0 | <https://nodejs.org/en/download> ／ `winget install --id OpenJS.NodeJS.24 -e`（`package.json` 的 `engines.node` 是 `">=24 <25"`；LTS 别名会随时间漂移到 26，装错版本会被 `engines` 拒绝） | 全部代码的构建与运行环境；`engines.node = ">=24 <25"` | `node -v` |
 | 4 | **pnpm** | **11.x** | 11.28.10 | `corepack enable`（Node 自带）或 `npm i -g pnpm@11.28.10` | 仓库用 `packageManager: pnpm@11.28.10` 锁版本；**大版本不对会 store 冲突** | `pnpm -v` |
 | 5 | **PowerShell 7**（命令名 `pwsh`） | ≥ 7.0 | 7.6.9 | <https://aka.ms/powershell-release?tag=stable> ／ `winget install --id Microsoft.PowerShell -e` | 所有 `.ps1`（测试、hook、bootstrap）的运行时。**不要用系统自带 5.1**，它按 GBK 解码中文脚本会报 `The string is missing the terminator` | `pwsh -v` |
 | 6 | **PostgreSQL** | **18** | 18.x | <https://www.postgresql.org/download/windows/> ／ `winget install --id PostgreSQL.PostgreSQL.18 -e` | 本地开发库；CI integration job 用 `postgres:18`。D57 实测 PGlite 0.5.15 = PG 18.6，主版本必须一致 | `psql --version` |

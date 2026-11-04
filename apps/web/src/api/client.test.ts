@@ -110,10 +110,10 @@ describe('ApiClient 请求行为', () => {
     expect(result).toEqual({ items: [] });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe('/api/v1/products?page=1');
-    const headers = calls[0]?.init.headers as Record<string, string>;
-    expect(headers['X-Request-Id']).toBe('req-fixed');
-    expect(headers.Accept).toBe('application/json');
-    expect(headers.Authorization).toBeUndefined();
+    const headers = new Headers(calls[0]?.init.headers);
+    expect(headers.get('x-request-id')).toBe('req-fixed');
+    expect(headers.get('accept')).toBe('application/json');
+    expect(headers.get('authorization')).toBeNull();
     expect(calls[0]?.init.method).toBe('GET');
   });
 
@@ -131,10 +131,81 @@ describe('ApiClient 请求行为', () => {
 
     await client.post('/purchase-orders', { supplierId: 's1' }, { idempotencyKey: 'k-1' });
 
-    const headers = captured as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer token-123');
-    expect(headers['Idempotency-Key']).toBe('k-1');
-    expect(headers['Content-Type']).toBe('application/json');
+    const headers = new Headers(captured);
+    expect(headers.get('authorization')).toBe('Bearer token-123');
+    expect(headers.get('idempotency-key')).toBe('k-1');
+    expect(headers.get('content-type')).toBe('application/json');
+  });
+
+  it('每个请求都带 X-Client: web（审计来源 D51/D54）', async () => {
+    let captured: HeadersInit | undefined;
+    const client = new ApiClient({
+      baseUrl: '/api/v1',
+      fetchImpl: async (_input, init) => {
+        captured = init?.headers;
+        return jsonResponse({ items: [] }, 200);
+      },
+    });
+
+    await client.get('/products');
+
+    expect(new Headers(captured).get('x-client')).toBe('web');
+  });
+
+  it('调用方 headers 不能覆盖保留头（大小写不敏感）', async () => {
+    let captured: HeadersInit | undefined;
+    const client = new ApiClient({
+      baseUrl: '/api/v1',
+      getToken: () => 'token-real',
+      newRequestId: () => 'req-reserved',
+      fetchImpl: async (_input, init) => {
+        captured = init?.headers;
+        return jsonResponse({ ok: true }, 201);
+      },
+    });
+
+    await client.post(
+      '/purchase-orders',
+      { supplierId: 's1' },
+      {
+        idempotencyKey: 'k-1',
+        reason: 'manual',
+        headers: {
+          authorization: 'Bearer forged',
+          'x-request-id': 'forged',
+          'X-Client': 'cli',
+          'Content-Type': 'text/plain',
+          'Idempotency-Key': 'forged',
+          'X-Reason': 'forged',
+        },
+      },
+    );
+
+    const headers = new Headers(captured);
+    expect(headers.get('authorization')).toBe('Bearer token-real');
+    expect(headers.get('x-request-id')).toBe('req-reserved');
+    expect(headers.get('x-client')).toBe('web');
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.get('idempotency-key')).toBe('k-1');
+    expect(headers.get('x-reason')).toBe('manual');
+  });
+
+  it('超时抛出统一 ApiError，不漏出原生错误', async () => {
+    const client = new ApiClient({
+      baseUrl: '/api/v1',
+      newRequestId: () => 'req-timeout',
+      fetchImpl: (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        }),
+    });
+
+    await expect(client.get('/slow', { timeoutMs: 10 })).rejects.toMatchObject({
+      name: 'ApiError',
+      code: 'TIMEOUT',
+      status: 0,
+      requestId: 'req-timeout',
+    });
   });
 
   it('非 2xx 抛 ApiError，并保留统一错误体', async () => {
