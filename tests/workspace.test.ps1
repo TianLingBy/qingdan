@@ -26,7 +26,7 @@ if ($nodeExe -and (Test-Path $nodeExe)) {
 
 Assert-True ([bool]($nodeExe -and (Test-Path $nodeExe))) "找到 Node 可执行文件：$nodeExe"
 if (-not $nodeMajor) {
-  Write-Host "FAIL 无法确定 Node 版本（$nodeExe）" -ForegroundColor Red
+  Assert-True $false "无法确定 Node 版本（$nodeExe）；本测试不允许静默通过"
   Exit-Test
 }
 Assert-True ($nodeMajor -eq 24) "Node 主版本为 24（实际 $nodeMajor）"
@@ -48,8 +48,7 @@ if ($pnpmCmd -and $pnpmCmd.Source) {
 }
 
 if (-not $pnpmPath) {
-  Write-Host 'FAIL 找不到 pnpm：Get-Command pnpm 无结果，且 D:\tools\pnpm11 下既无 pnpm.cmd 也无 pnpm.cjs' -ForegroundColor Red
-  Write-Host '      需先装 pnpm 11（或用 corepack enable），本测试不允许静默跳过。' -ForegroundColor Red
+  Assert-True $false '找不到 pnpm（Get-Command pnpm 无结果，且 D:\tools\pnpm11 下无 pnpm.cmd / pnpm.cjs）；需先装 pnpm 11，本测试不允许静默跳过'
   Exit-Test
 }
 Assert-True (Test-Path $pnpmPath) "pnpm 可执行路径存在（$pnpmKind）：$pnpmPath"
@@ -73,7 +72,7 @@ if ($pnpmKind -eq 'cjs') {
 }
 Assert-True ($pnpmVersion -match '^11\.') "pnpm 主版本为 11（实际输出 [$pnpmVersion]）"
 if ($pnpmVersion -notmatch '^11\.') {
-  Write-Host 'FAIL pnpm 版本不是 11.x，pnpm 10 会与仓库 store 冲突，先切到 pnpm 11。' -ForegroundColor Red
+  Assert-True $false "pnpm 版本不是 11.x（实际 [$pnpmVersion]），pnpm 10 会与仓库 store 冲突"
   Exit-Test
 }
 

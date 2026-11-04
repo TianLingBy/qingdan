@@ -275,8 +275,11 @@ END
 $role$;
 
 GRANT USAGE ON SCHEMA public TO qingdan_app;
+
+-- tenant 表是隔离根：应用角色只读（新增/停用租户属平台级操作，由平台角色执行，M1 落地）。
+GRANT SELECT ON tenant TO qingdan_app;
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON
-  tenant,
   company,
   employee,
   position,
@@ -327,16 +330,12 @@ BEGIN
 END
 $rls$;
 
--- audit_log 的 tenant_id 可空（平台级操作，契约第三批 §1）；空值放行、非空按租户隔离。
+-- audit_log：应用角色只能写/读「本租户」行。
+-- 平台级日志（tenant_id 为空）不向应用角色放行——否则一旦授了 SELECT 就变成跨租户读；
+-- 平台日志由平台角色写入，属 M1 待办（见 docs/module-platform.md 待裁决第 1 条）。
 ALTER TABLE audit_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON audit_log;
 CREATE POLICY tenant_isolation ON audit_log
-  USING (
-    tenant_id IS NULL
-    OR tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid
-  )
-  WITH CHECK (
-    tenant_id IS NULL
-    OR tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid
-  );
+  USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+  WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid);

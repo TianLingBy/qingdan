@@ -27,9 +27,12 @@ function monthKey(date: Date): string {
   return `${year}${month}`;
 }
 
-/** 单据流水的计数键：按「类型 + 年月」分开（domain-model §3.2 N1 候选①，容量更宽松）。 */
-export function documentScopeKey(type: DocumentType, date: Date): string {
-  return `document:${type}:${monthKey(date)}`;
+/**
+ * 单据流水的计数键：按「公司 + 类型 + 年月」分开（D16：流水按公司、单公司月内 9999）。
+ * 公司维度不可省——否则同租户两家公司会共享流水号，违反 D16 且跨公司撞号。
+ */
+export function documentScopeKey(type: DocumentType, date: Date, companyId: string): string {
+  return `document:${companyId}:${type}:${monthKey(date)}`;
 }
 
 interface DocumentSequenceRow {
@@ -47,7 +50,7 @@ export async function takeDocumentNo(
   companyId: string,
   date: Date,
 ): Promise<string> {
-  const scopeKey = documentScopeKey(type, date);
+  const scopeKey = documentScopeKey(type, date, companyId);
   const result = await tx.query<DocumentSequenceRow>(
     `WITH company_row AS (
        SELECT id, tenant_id, code AS company_code

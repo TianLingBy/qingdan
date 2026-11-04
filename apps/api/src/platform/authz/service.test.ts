@@ -123,6 +123,16 @@ describe('权限判定（D15 / D50 / D52.1，三层合并 + token 交集）', ()
     expect(result!.companyIds).toEqual([COMPANY_A, COMPANY_B].sort());
   });
 
+  it('老板全权限免配：scope 覆盖全部功能域 × 全部动作（D15 / F8）', async () => {
+    const result = await computeAuthz(test.database, { employeeId: EMP_OWNER, tenantId: TENANT });
+    expect(result).not.toBeNull();
+    // 22 个功能域全部可读；每个域 8 个动作齐全（老板不依赖岗位绑定）
+    expect(result!.scope).toHaveLength(22);
+    for (const entry of result!.scope) {
+      expect(entry.actions).toHaveLength(8);
+    }
+  });
+
   it('token scope 交集：只保留 scope 内动作，且不能放大员工权限', async () => {
     const tokenScope: ScopeMatrix = [
       { domain: 'sales', actions: ['read', 'approve'] },

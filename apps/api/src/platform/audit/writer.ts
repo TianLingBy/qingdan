@@ -85,18 +85,45 @@ export async function appendAudit(tx: SqlClient, event: AuditEvent): Promise<str
 
 /**
  * 提交后把 outbox 行搬到 audit_log（幂等：已存在则跳过，再删除 outbox 行）。
- * 失败直接抛出；找不到 outbox 行也视作「已被搬过」，幂等返回。
+ *
+ * 失败直接抛出；**搬 0 行也抛出**（D55⑤：宁可 500，不许日志静默丢失）。
+ * 必须在同一事务内设置 `app.tenant_id`——否则 RLS 下 outbox 一行都读不到，
+ * 旧实现会把「读 0 行」当成「已被搬过」，导致业务成功而日志消失。
  */
-export async function flushAuditOutbox(db: Database, auditId: string): Promise<void> {
+export async function flushAuditOutbox(
+  db: Database,
+  auditId: string,
+  tenantId: string | null,
+): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.query(
+    if (tenantId) {
+      await tx.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+    }
+    const tenantFilter = tenantId ? 'AND tenant_id = $2' : 'AND tenant_id IS NULL';
+    const params = tenantId ? [auditId, tenantId] : [auditId];
+
+    const inserted = await tx.query<{ id: string }>(
       `INSERT INTO audit_log ${INSERT_COLUMNS}
        SELECT ${COLUMN_LIST} FROM audit_outbox
-       WHERE id = $1
-       ON CONFLICT (id) DO NOTHING`,
-      [auditId],
+       WHERE id = $1 ${tenantFilter}
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id`,
+      params,
     );
-    await tx.query('DELETE FROM audit_outbox WHERE id = $1', [auditId]);
+    const deleted = await tx.query<{ id: string }>(
+      `DELETE FROM audit_outbox WHERE id = $1 ${tenantFilter} RETURNING id`,
+      params,
+    );
+
+    // 幂等路径：outbox 行已经不存在，且 audit_log 里已有该 id ⇒ 之前搬过，正常返回。
+    if (deleted.rows.length === 0 && inserted.rows.length === 0) {
+      const existing = await tx.query<{ id: string }>('SELECT id FROM audit_log WHERE id = $1', [auditId]);
+      if (existing.rows.length === 0) {
+        throw new Error(
+          `审计搬运失败：outbox 与 audit_log 都找不到 ${auditId}（可能是租户不匹配或数据被删）`,
+        );
+      }
+    }
   });
 }
 
@@ -127,6 +154,6 @@ export async function withAudit<T>(
     return result;
   });
   // F2：业务已提交，这里失败无法回滚业务，但绝不吞异常（上层返回 500 + 告警/对账）。
-  await flushAuditOutbox(db, auditId);
+  await flushAuditOutbox(db, auditId, event.tenantId);
   return value;
 }

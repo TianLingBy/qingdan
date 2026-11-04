@@ -1,5 +1,7 @@
 import {
+  ACTION_KEYS,
   AppError,
+  DOMAIN_KEYS,
   ScopeMatrixSchema,
   allowsScope,
   type ScopeMatrix,
@@ -41,6 +43,7 @@ interface PermissionRow {
 interface AuthzQueryRow {
   company_ids: string[] | null;
   permissions: PermissionRow[] | null;
+  is_owner: boolean;
 }
 
 const AUTHZ_SQL = `WITH emp AS (
@@ -88,7 +91,8 @@ SELECT
   (
     SELECT coalesce(json_agg(json_build_object('domain', domain, 'action', action)), '[]'::json)
     FROM final_permission
-  ) AS permissions
+  ) AS permissions,
+  (SELECT is_owner FROM emp) AS is_owner
 FROM emp`;
 
 /**
@@ -100,6 +104,30 @@ export async function computeAuthz(db: SqlClient, input: AuthzInput): Promise<Au
   if (!row) return null;
 
   const companyIds = (row.company_ids ?? []).map(String).sort();
+
+  // 老板 = 全权限免配（D15 / F8）：不依赖岗位绑定，直接给全量域 × 动作。
+  if (row.is_owner) {
+    const ownerScope = DOMAIN_KEYS.map((domain) => ({
+      domain,
+      actions: [...ACTION_KEYS],
+    })) as ScopeMatrix;
+    const narrowed = input.tokenScope
+      ? ownerScope
+          .map((entry) => ({
+            ...entry,
+            actions: entry.actions.filter((action) => allowsScope(input.tokenScope!, entry.domain, action)),
+          }))
+          .filter((entry) => entry.actions.length > 0)
+      : ownerScope;
+    const parsedOwner = ScopeMatrixSchema.safeParse(narrowed);
+    if (!parsedOwner.success) {
+      throw new AppError('INTERNAL_ERROR', '老板全量权限不符合契约域/动作取值', {
+        employeeId: input.employeeId,
+        tenantId: input.tenantId,
+      });
+    }
+    return { companyIds, scope: parsedOwner.data };
+  }
 
   const byDomain = new Map<string, string[]>();
   for (const permission of row.permissions ?? []) {

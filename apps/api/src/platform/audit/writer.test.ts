@@ -91,12 +91,21 @@ describe('审计追加器（outbox → audit_log）', () => {
     await test.database.transaction(async (tx) => {
       auditId = await appendAudit(tx, baseEvent({ id: '01900000-0000-7000-8000-0000000000e1' }));
     });
-    await flushAuditOutbox(test.database, auditId);
-    await flushAuditOutbox(test.database, auditId);
+    await flushAuditOutbox(test.database, auditId, null);
+    await flushAuditOutbox(test.database, auditId, null);
 
     const logs = await test.database.query<{ n: number }>('SELECT count(*)::int AS n FROM audit_log');
     expect(logs.rows[0]!.n).toBe(1);
     const outbox = await test.database.query<{ n: number }>('SELECT count(*)::int AS n FROM audit_outbox');
     expect(outbox.rows[0]!.n).toBe(0);
+  });
+
+  it('搬运时租户不匹配 → 抛错，不再静默成功（D55⑤）', async () => {
+    const auditId = await test.database.transaction((tx) =>
+      appendAudit(tx, baseEvent({ id: '01900000-0000-7000-8000-0000000000e2' })),
+    );
+    await expect(
+      flushAuditOutbox(test.database, auditId, '01900000-0000-7000-8000-0000000000ff'),
+    ).rejects.toThrow(/审计搬运失败/);
   });
 });

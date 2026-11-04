@@ -62,7 +62,7 @@ describe('取号服务（D16 / D48）', () => {
   });
 
   it('月流水用完 9999 → 显式失败（禁止回绕）', async () => {
-    const scopeKey = documentScopeKey('B', NOV);
+    const scopeKey = documentScopeKey('B', NOV, COMPANY);
     await test.database.query(
       `INSERT INTO number_sequence (tenant_id, scope_key, last_value) VALUES ($1, $2, 9999)
        ON CONFLICT (tenant_id, scope_key) DO UPDATE SET last_value = 9999`,
@@ -90,5 +90,12 @@ describe('取号服务（D16 / D48）', () => {
     await expect(
       test.database.transaction((tx) => takeEmployeeNo(tx, '01900000-0000-7000-8000-00000000beef')),
     ).rejects.toThrow(/租户不存在/);
+  });
+
+  it('取号键含公司：不同公司互不影响（D16 单公司月内 9999）', () => {
+    const a = documentScopeKey('A', NOV, COMPANY);
+    const b = documentScopeKey('A', NOV, '01900000-0000-7000-8000-0000000000aa');
+    expect(a).not.toBe(b);
+    expect(a).toContain('document:');
   });
 });
