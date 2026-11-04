@@ -6,18 +6,43 @@
 
 ---
 
-## 1. 前置条件
+## 1. 前置条件：必装软件清单（先装齐，再 clone）
 
-| 依赖 | 版本 | 说明 |
-|---|---|---|
-| git | 任意较新 | 私有仓，需先被邀请（write 权限） |
-| PowerShell 7+ | `pwsh` ≥ 7 | 测试与 hook 依赖；**不要用 5.1** |
-| Node.js | **24 LTS** | 本机已有 `%LOCALAPPDATA%\nvm\v24.22.0`；PATH 默认可能是 18，注意切换 |
-| pnpm | **11.x** | 本机副本 `D:\tools\pnpm11`；仓库里用 `packageManager` 字段锁版本 |
-| PostgreSQL | **18** | 本地开发库；CI 的 integration job 用 `postgres:18` 容器。D57 实测 PGlite 0.5.15 = PG **18.6**，测试与生产主版本必须一致 |
-| 编辑器 | 任意 | 建议 VS Code + ESLint/Prettier 插件（配置随骨架一起提交） |
+> **这一节是「开工第 0 步」。** 表里的 7 项装不齐，后面会出现三类假故障：`git clone` 报 404（其实是登录的账号不对）、`pnpm` 版本冲突（大版本不对）、`.ps1` 中文报错（用的是 5.1）。
+> **版本基准**：下表「实测版本」是 2026-11-04 在负责人 Windows 机器上 `--version` 的真实输出。成员机器可以更新，但 **Node 必须 24.x、pnpm 必须 11.x**——`package.json` 的 `engines` 会硬校验，不符合直接报错。
 
-不需要：Docker（除 L3 并发测试可选）、Redis、消息队列。
+| # | 软件 | 版本要求 | 实测版本 | 下载地址 | 为什么必须有 | 验证命令 |
+|---|---|---|---|---|---|---|
+| 1 | **Git**（Windows 用 Git for Windows） | ≥ 2.40 | 2.53.0.windows.2 | <https://git-scm.com/download/win> ／ `winget install --id Git.Git -e` | 拉代码、建分支、提交。**安装时务必勾选 Git Credential Manager**，否则私有仓每次操作都要重输密码 | `git --version` |
+| 2 | **GitHub CLI（命令名 `gh`）** | ≥ 2.60 | 2.97.0 | <https://cli.github.com/> ／ `winget install --id GitHub.cli -e` | ① `gh auth login` 一次配好私有仓身份与凭据；② `gh api` 自查真实权限；③ 建 PR。**排查「404 打不开仓库」的第一工具** | `gh --version` |
+| 3 | **Node.js** | **24 LTS（24.x）** | 24.22.0 | <https://nodejs.org/en/download> ／ `winget install --id OpenJS.NodeJS.LTS -e` | 全部代码的构建与运行环境；`engines.node = ">=24 <25"` | `node -v` |
+| 4 | **pnpm** | **11.x** | 11.28.10 | `corepack enable`（Node 自带）或 `npm i -g pnpm@11.28.10` | 仓库用 `packageManager: pnpm@11.28.10` 锁版本；**大版本不对会 store 冲突** | `pnpm -v` |
+| 5 | **PowerShell 7**（命令名 `pwsh`） | ≥ 7.0 | 7.6.9 | <https://aka.ms/powershell-release?tag=stable> ／ `winget install --id Microsoft.PowerShell -e` | 所有 `.ps1`（测试、hook、bootstrap）的运行时。**不要用系统自带 5.1**，它按 GBK 解码中文脚本会报 `The string is missing the terminator` | `pwsh -v` |
+| 6 | **PostgreSQL** | **18** | 18.x | <https://www.postgresql.org/download/windows/> ／ `winget install --id PostgreSQL.PostgreSQL.18 -e` | 本地开发库；CI integration job 用 `postgres:18`。D57 实测 PGlite 0.5.15 = PG 18.6，主版本必须一致 | `psql --version` |
+| 7 | **编辑器** | 任意 | VS Code | <https://code.visualstudio.com/> | 建议装 ESLint / Prettier / EditorConfig 插件（配置随骨架提交） | — |
+
+**不需要装**：Docker（只有 L3 并发测试可选使用）、Redis、消息队列、Java / Python 运行时。
+
+macOS / Linux 对应命令：`brew install git gh node pnpm postgresql@18`、`brew install --cask powershell`；Ubuntu 用微软官方 apt 源装 `powershell`，`gh` 走官方 apt 源，PostgreSQL 用 `postgresql-18`。
+
+### 1.1 装完先跑这段自检（逐行复制执行）
+
+```powershell
+node -v                 # 期望 v24.x
+pnpm -v                 # 期望 11.x
+git --version           # 期望 2.4x 或更新
+gh --version            # 期望 2.6x 或更新
+pwsh -v                 # 期望 7.x（在 5.1 里跑这行会报错，正说明你没装 PS7）
+psql --version          # 期望 18.x（只影响 L3 真库测试，不阻塞前三个门禁）
+
+gh auth status                    # 期望：Logged in to github.com account <你的账号>
+gh api user --jq '.login'         # 确认当前 git/gh 用的是哪个 GitHub 账号
+gh api repos/TianLingBy/qingdan --jq '.permissions'
+# 期望输出：{"admin":false,"maintain":false,"pull":true,"push":true,"triage":true}
+# 若这里报 404 → 见 §7 FAQ 第一行：登录的账号不是被邀请进仓库的那个
+```
+
+**四条都要对上才算环境就绪**：Node 24.x、pnpm 11.x、pwsh 7.x、`gh api` 能读到本仓库权限。
 
 ## 2. 第一次安装（clone 之后）
 
@@ -130,7 +155,10 @@ pwsh -NoProfile -File tests\run.ps1 -Filter '*api*'   # 只跑某类
 
 | 现象 | 原因 | 处理 |
 |---|---|---|
-| `pre-commit: 找不到 pwsh` | PATH 无 PS7 | 装 PowerShell 7 |
+| **`git clone` 报 404 / `Repository not found`** | 本机 git/gh 登录的 GitHub 账号**不是**被邀请进仓库的那个。私有仓对无权限账号一律返回 404（不是 403），所以看起来像「权限没开」 | ① `gh api user --jq '.login'` 看当前身份；② 换账号：`gh auth login` 用被邀请的账号登录；③ 清旧凭据：`cmdkey /delete:git:https://github.com`；④ 仍 404 就让负责人用正确账号重发邀请。**别只看浏览器能打开就以为命令行也对**——两者凭据可以不同 |
+| `pre-commit: 找不到 pwsh` | PATH 无 PS7 | 装 PowerShell 7（§1 第 5 项） |
+| `gh: 不是内部或外部命令` | 没装 GitHub CLI，或装完没重开终端 | 装 gh（§1 第 2 项）后**重开终端**再验证 |
+| `git clone` 卡住几十分钟 | 网络到 github.com 不通 | 先 `gh api repos/TianLingBy/qingdan` 判断是网络还是身份；不通就换网络/代理，别反复重试 |
 | `The string is missing the terminator` | 用 5.1 跑 `.ps1` | 一律 `pwsh`；新 `.ps1` 带 BOM |
 | `pnpm` 版本冲突 | 系统 pnpm 与 `packageManager` 不一致 | 用 `D:\tools\pnpm11` 或 `corepack enable` |
 | 数据库连不上 | 未设 `DATABASE_URL` 或服务未起 | 按 §2 设置；`psql -c 'select 1'` 验证 |
