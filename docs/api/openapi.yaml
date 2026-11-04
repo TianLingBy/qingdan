@@ -1206,17 +1206,45 @@ paths:
 
   /employees:
     get:
-      tags: [permission]
-      operationId: listEmployees
-      summary: 员工列表（含公司-岗位与个人覆盖）
+      tags: [employee]
+      operationId: platform.employee.read
+      summary: 员工列表（普通读不记审计；老板见全租户，非老板仅绑定公司集合）
+      description: |
+        数据可见范围（D15）：老板 = 全租户员工；非老板 = 绑定公司集合（`principal.companyIds`）
+        内至少有一条任职记录的员工，服务端判定。响应只回摘要 `EmployeeSummary`，手机号只给
+        `phoneMasked`（前 3 位 + `****` + 后 4 位），完整手机号不出服务端。
+        普通读不记审计（D54②）。
       parameters:
         - $ref: '#/components/parameters/XRequestId'
         - name: companyId
           in: query
           required: false
+          description: 按公司过滤；与调用者可见范围取交集，范围外返回空列表
           schema:
             type: string
             format: uuid
+        - name: positionId
+          in: query
+          required: false
+          description: 按岗位过滤
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          description: 员工状态
+          schema:
+            type: string
+            enum: [在职, 停用]
+        - name: keyword
+          in: query
+          required: false
+          description: 关键词，匹配姓名 / 工号 / 手机号后 4 位
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -1228,18 +1256,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EmployeePage'
+                $ref: '#/components/schemas/EmployeeSummaryPage'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '429':
           $ref: '#/components/responses/TooManyRequests'
-      x-scope: [platform.read]
+      x-scope: [employee.read]
       x-audit:
+        kind: none
         required: false
       x-ai-policy: allowed
-      x-contract: 第一批 §2 / D15 / D50
+      x-contract: 第一批 §2 / D15 / D50 / D54②
 
   /employees/{employeeId}/permissions:
     put:
@@ -2529,6 +2558,57 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Employee'
+        nextCursor:
+          type: [string, 'null']
+
+    EmployeeSummary:
+      type: object
+      description: 员工列表摘要（D15 / D50）。手机号只回脱敏值，完整号码不出服务端。
+      required: [id, employeeNo, name, status, isOwner, phoneMasked, companies]
+      properties:
+        id:
+          type: string
+          format: uuid
+        employeeNo:
+          type: string
+          description: 工号：定长 6 位、全租户唯一、不带公司前缀（D48）
+          pattern: '^\d{6}$'
+        name:
+          type: string
+        status:
+          type: string
+          enum: [在职, 停用]
+        isOwner:
+          type: boolean
+        phoneMasked:
+          type: string
+          description: 前 3 位 + `****` + 后 4 位，如 `100****0001`
+          pattern: '^\d{3}\*{4}\d{4}$'
+        companies:
+          type: array
+          items:
+            type: object
+            required: [companyId, companyName, positionId, positionName]
+            properties:
+              companyId:
+                type: string
+                format: uuid
+              companyName:
+                type: string
+              positionId:
+                type: string
+                format: uuid
+              positionName:
+                type: string
+
+    EmployeeSummaryPage:
+      type: object
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EmployeeSummary'
         nextCursor:
           type: [string, 'null']
 

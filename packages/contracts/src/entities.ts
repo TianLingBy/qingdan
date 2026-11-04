@@ -33,9 +33,34 @@ z.globalRegistry.add(ApiTokenCreatedSchema, { id: 'ApiTokenCreated' });
 
 z.globalRegistry.add(ApiErrorBodySchema, { id: 'ApiErrorBody' });
 
+/** 员工列表里的公司-岗位对（D15：一人多岗 + 公司隔离）。 */
+const EmployeeCompanySchema = z.object({
+  companyId: z.string(),
+  companyName: z.string(),
+  positionId: z.string(),
+  positionName: z.string(),
+});
+
+/**
+ * 员工列表摘要（D15 / D50）：列表只回脱敏手机号，完整手机号不出服务端。
+ * `phoneMasked` 形如 `100****0001`（前 3 位 + `****` + 后 4 位）。
+ */
+export const EmployeeSummarySchema = z.object({
+  id: z.string(),
+  employeeNo: z.string(),
+  name: z.string(),
+  status: z.enum(['在职', '停用']),
+  isOwner: z.boolean(),
+  phoneMasked: z.string(),
+  companies: z.array(EmployeeCompanySchema),
+});
+export type EmployeeSummary = z.infer<typeof EmployeeSummarySchema>;
+z.globalRegistry.add(EmployeeSummarySchema, { id: 'EmployeeSummary' });
+
 export const ENTITIES = [
   { name: 'AuditLog', schema: AuditLogSchema },
   { name: 'ApiToken', schema: ApiTokenSchema },
   { name: 'ApiTokenCreated', schema: ApiTokenCreatedSchema },
   { name: 'ApiErrorBody', schema: ApiErrorBodySchema },
+  { name: 'EmployeeSummary', schema: EmployeeSummarySchema },
 ] as const;
