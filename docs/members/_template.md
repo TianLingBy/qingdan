@@ -13,6 +13,7 @@
 | 负责的代码模块 | `<例如：masterdata、inventory>` |
 | 分支名 | `<例如：feat/m2-inventory>` |
 | 负责人 / 评审人 | `<谁评审你的 PR>` |
+| GitHub 账号 | `<your-github-login>` |
 | 接手日期 | `<YYYY-MM-DD>` |
 
 ## 写范围
