@@ -45,6 +45,9 @@ if (Test-Path $onboarding) {
   Assert-True ($o.Contains('claude mcp add') -and $o.Contains('--transport http')) 'ONBOARDING 给出 Claude Code 配 GitHub MCP 的命令'
   Assert-True ($o.Contains('codex mcp add') -and $o.Contains('--bearer-token-env-var GITHUB_PAT')) 'ONBOARDING 给出 Codex 配 GitHub MCP 的命令'
   Assert-True ($o.Contains('GITHUB_PAT') -and $o.Contains('不进仓库')) 'ONBOARDING 规定 token 不进仓库'
+  # 不限定客户端：先问自己的 Agent，再按通用三要素填；不能写成「只有这两家能用」
+  Assert-True ($o.Contains('不规定') -and $o.Contains('问你自己的 Agent')) 'ONBOARDING 声明 GitHub MCP 不限定客户端，先问自己的 Agent'
+  Assert-True ($o.Contains('Streamable HTTP') -and $o.Contains('Authorization: Bearer')) 'ONBOARDING 给出与客户端无关的通用三要素'
 
   $modules = @('platform', 'masterdata', 'inventory', 'purchase', 'processing', 'sales', 'internal-trade', 'settlement', 'test')
   foreach ($m in $modules) {

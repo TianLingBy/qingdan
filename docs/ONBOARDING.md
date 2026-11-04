@@ -175,6 +175,22 @@ git switch -c feat/<模块名>                  # 建分支（已存在就 git s
 
 **为什么**：不配的话，Agent 只能一条条敲 `gh` 命令，或者反过来问你「PR 号是多少」。配好之后它能自己列 PR、读 diff、发评论、改 issue 状态。**Agent 报「GitHub MCP 未配置 / 我这边没有 github 工具」就是这一步没做**——不是权限问题，是客户端没装。
 
+**适用范围（先读这段）**：本仓**不规定**每个人用哪个 Agent、用哪套工作流。你用什么工具、怎么用它，由你自己决定。本节只规定一件事——**在你选定的那个 Agent 里，GitHub MCP 必须配通**，因为「读 issue / 看 PR / 发评论」是所有协作方式的共同前提。
+
+**所以开工前第一件事不是照抄命令，而是问你自己的 Agent**：
+
+> 「你支持 MCP 吗？怎么配一个 HTTP（Streamable HTTP / 远程）类型的 MCP server？配好之后我怎么确认它连上了？」
+
+拿到它的回答再动手；同一件事不同 Agent 叫法不一样（MCP server / connector / 工具接入），按它说的走。下面给的命令只是**我们实测过的两个客户端**的写法，其余客户端按它自己的答案来；通用授权方式见下表。
+
+**通用三要素**（所有客户端都一样，只是填的地方不同）：
+
+| 要素 | 值 |
+|---|---|
+| 传输方式 | HTTP / Streamable HTTP（不是 stdio） |
+| 端点 | `https://api.githubcopilot.com/mcp/` |
+| 认证 | 请求头 `Authorization: Bearer <你的 PAT>`，PAT 从环境变量 `GITHUB_PAT` 取，不写死 |
+
 **第 1 步：确认 `gh` 登录的是被邀请的那个账号**
 
 ```powershell
@@ -193,7 +209,9 @@ $env:GITHUB_PAT.Length -gt 20     # 重开终端后验证，期望 True
 - 要最小权限就改用 fine-grained PAT：只选 `qingdan` 一个仓库，权限给 Issues: Read and write、Pull requests: Read and write、Contents: Read、Metadata: Read。
 - **token 不进仓库、不进聊天记录、不写进任何文档**；一旦泄露立刻去 GitHub 撤销重发。
 
-**第 3 步：按你的客户端配一次**（端点固定 `https://api.githubcopilot.com/mcp/`）
+**第 3 步：按你 Agent 的回答配一次**（端点固定 `https://api.githubcopilot.com/mcp/`）
+
+下面是**实测过**的两个客户端。用别的客户端（Gemini CLI、Copilot CLI、Cline、Continue、Windsurf、opencode、各种 IDE 插件……）就先按第 0 步问它，再照它的文档填上面那三要素；不要因为下面没有你的客户端就跳过这一步。
 
 Claude Code：
 
@@ -215,9 +233,9 @@ Cursor / VS Code Copilot：写项目级配置（Cursor 是仓库根的 `.cursor/
 {"mcpServers":{"github":{"url":"https://api.githubcopilot.com/mcp/","headers":{"Authorization":"Bearer ${env:GITHUB_PAT}"}}}}
 ```
 
-**第 4 步：验收到位（三条都要过）**
+**第 4 步：验收到位（三条都要过，与客户端无关）**
 
-1. `claude mcp list` / `codex mcp list` 里出现 `github`，状态不是 `failed`；
+1. 用你那套客户端的查看命令（如 `claude mcp list` / `codex mcp list`，别的客户端有它自己的列表页/`list` 命令）里出现 `github`，状态不是 `failed`；
 2. 让 Agent 执行一次「列出本仓开放 PR」，能返回列表 → 说明私有仓读得到、token 有权限；
 3. 把 `GITHUB_PAT` 清空再试一次，应当报错 → 说明它真的在用 token，不是匿名访问。
 
@@ -264,7 +282,7 @@ pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>    # 模块名见 §4，
 > **开工顺序不可颠倒**：① 先和我确认我的身份（我是谁、负责哪个模块、能改什么、不能改什么）；② 把我的档案落到 `docs/members/<我的中文姓名>.md`（复制 `docs/members/_template.md` 填满，含 `install-hooks.ps1` 与 `tests\run.ps1` 的真实输出行）；③ 在 `docs/module-<模块>.md` 顶部登记「负责人：我｜接手日期」；④ 提交 PR（`chore(members): 登记 <姓名> 的成员档案`）并等我确认；⑤ **档案合并之后**才领任务、写代码。
 > 铁律：不改 `packages/contracts/**`、`platform` 内核（审计/编号/单据框架/待办/Token）、`docs/decisions.md`；不碰别人模块的目录与检查点；每次提交前跑 `tests\run.ps1` 并贴真实输出；技术栈已定 D53（TypeScript 全栈，Node 24 + Fastify 5 + Drizzle + PostgreSQL 18 + React 19/Vite），不要再讨论选型。
 > 有任何口径疑问，先查 `docs/decisions.md`（D1-D57），查不到就停下来问我，**不要用假设继续实现**。
-> 开工前先确认你自己的 GitHub MCP 已配好（见 `docs/ONBOARDING.md` §8.1）：`claude mcp list` 或 `codex mcp list` 里能看到 `github` 且不是 `failed`，否则你读不到 issue 与 PR，只能靠我人工转述。
+> 开工前先确认**你自己用的那个 Agent**里 GitHub MCP 已配好（见 `docs/ONBOARDING.md` §8.1，不限定客户端）：能看到 `github` 且不是 `failed`、能列出本仓开放 PR，否则你读不到 issue 与 PR，只能靠我人工转述。
 
 ### 10.4 到位验收（负责人检查三件事）
 
