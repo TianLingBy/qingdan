@@ -73,6 +73,7 @@
 - 一个 PR 只动本模块的写范围；跨模块改动（公共类型、权限、库存/金额口径）必须在 PR 描述里列受影响模块并 @ 对应负责人。
 - 模块检查点 `docs/module-<名>.md` 随 PR 更新，不单独开「只改文档」的 PR。
 - **合并权分级（2026-11-04 负责人拍板）**：普通 PR（文档、单模块内实现与测试、脚本/CI 微调，且 CI 三项全绿）由 Lead 直接 squash 合并，**不再逐次请示**；严重变更必须先把 PR 链接交负责人定夺——清单见 `docs/AGENT-TEAM.md` §6.1。
+  > 团队成员（非 Lead）同样适用：普通改动 CI 绿后自行 squash 合并；严重变更打 `需批准` 标记等负责人。详见 `docs/ROLES-AND-BOUNDARIES.md` 的「合并权」一节。
 - 协作者接入、模块认领、每模块分支与依赖顺序见 `docs/ONBOARDING.md`；**4 人人类开发者看 `docs/TEAM-PLAN.md`（分工/里程碑/DoR/DoD）与 `docs/DEV-SETUP.md`（环境/目录）**；PR 按 `.github/pull_request_template.md` 填。
 - CI 跑 `windows-latest` 与 `ubuntu-latest` 两个平台，macOS/Linux 协作者以 ubuntu 结果为参照。
 
@@ -89,7 +90,7 @@
 
 1. 任务必须**自包含**（对方看不到本会话上下文）：绝对路径 + 目标 + **写范围** + 依据的 D 编号 + **验收命令** + 禁止事项。
 2. 写范围写死「只允许改 X」；跨模块共享文件（`packages/contracts`、`apps/api/src/platform`、`docs/decisions.md`）未经明确授权不许动。
-3. 单次派发硬超时 **180 秒**，大活拆小分次派；跑不完就拆。
+3. 单次派发有 **900 秒硬上限**；派发后 180 秒开始体检，连续 120 秒无输出且 CPU 无增长即判卡死并自动续跑一次（dsh-agent-conductor 本地补丁）。大活仍要拆小。
 4. 派发前不确定范围先 `dryRun: true` 核对 cwd 与 argv。
 5. 子代理/外部代理**只写不提交**；提交、推送、开 PR 归 Lead，验收以「命令退出码 + 输出关键行」为准，不认「已完成」自述。
 
