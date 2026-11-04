@@ -17,10 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: 安装 pnpm 11
+      # pnpm 版本由根 package.json 的 packageManager 字段锁定（pnpm@11.28.10），此处不再重复指定，
+      # 否则 action 会报 “Multiple versions of pnpm specified”。
+      - name: 安装 pnpm（版本读 packageManager）
         uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
       - name: 安装 Node 24
         uses: actions/setup-node@v4
@@ -59,10 +59,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: 安装 pnpm 11
+      # pnpm 版本由根 package.json 的 packageManager 字段锁定（pnpm@11.28.10），此处不再重复指定，
+      # 否则 action 会报 “Multiple versions of pnpm specified”。
+      - name: 安装 pnpm（版本读 packageManager）
         uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
       - name: 安装 Node 24
         uses: actions/setup-node@v4
