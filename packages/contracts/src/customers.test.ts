@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { ROUTES } from './routes.js';
 import {
   CUSTOMER_ROUTES,
@@ -6,6 +7,7 @@ import {
   CustomerSchema,
   CustomerUpdateInputSchema,
 } from './customers.js';
+import { ENTITIES } from './entities.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { routesOfModule } from './registry.js';
 
@@ -82,6 +84,20 @@ describe('客户契约（masterdata）', () => {
     // 反向锁：客户没有金额/看价逻辑，防止「顺手加列」。
     expect(keys).not.toContain('defaultSalePrice');
     expect(keys).not.toContain('balance');
+  });
+
+  it('Customer 实体已登记（ENTITIES / globalRegistry / components.schemas 三处一致）', () => {
+    expect(ENTITIES.map((e) => e.name)).toContain('Customer');
+    expect(z.globalRegistry.has(CustomerSchema)).toBe(true);
+    expect(z.globalRegistry.get(CustomerSchema)?.id).toBe('Customer');
+
+    const doc = buildOpenApiDocument(ROUTES);
+    const customer = doc.components.schemas.Customer as { properties: Record<string, unknown> };
+    expect(customer).toBeDefined();
+    expect(customer.properties).toHaveProperty('customerNo');
+    expect(customer.properties).toHaveProperty('creditTermDays');
+    // 反向锁：客户无金额/看价逻辑，防止「顺手加列」。
+    expect(customer.properties).not.toHaveProperty('defaultSalePrice');
   });
 
   it('customerNo 自由文本可空（D49）；creditTermDays 为整数天、>=0、可空', () => {
