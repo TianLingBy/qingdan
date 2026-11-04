@@ -6,7 +6,7 @@
 > **口径真源**：`轻单_项目上下文说明_v1_20261103.md`（L1/L2）+ 本文件（更晚的决定覆盖更早的）。
 > **冲突处理**：本文件与 v1 §8「已确认的 14 条规则」并存；冲突时以本文件为准，并记入本文「口径冲突」节。
 > **标记**：✅ 已拍板（可依赖）／🟡 已给推荐方向、待负责人最终确认（**不得当规格用**）／⬜ 未开始。
-> **最近更新**：2026-11-04（**新增 D51 操作日志 / D52 AI 友好型（API-first）/ D52.1 AI 权限不可放大**；可依赖至 D52.1；其中 D51①/②、D52①/② 是 🟡 待确认的默认值）
+> **最近更新**：2026-11-04（已拍板至 **D58**：D51 操作日志 / D52 AI 友好型 / D52.1 AI 权限不可放大 / D53 技术栈 / D54 契约第三批冻结 / D55 技术底座 / D56 Win10 浏览器基线 / D57 U12 spike / D58 M0 接口技术项）
 
 ---
 
@@ -94,6 +94,7 @@
 | D55 | **技术底座五项默认值**（收口 ADR-0001 U1-U5） | **① 多租户隔离**：共享库 + 共享表 + `tenant_id` 复合索引，`audit` / 单据等核心表**启用 RLS** 兜底（`current_setting('app.tenant_id')`）；不做 schema-per-tenant / db-per-tenant。**② 金额与精度**：存储 `numeric(18,6)`；聚合与毛利计算**全程用未舍入值**，仅在展示与对外契约边界四舍五入到 2 位。**③ 主键**：`UUIDv7`（时间有序），应用侧生成（PG 17 无内置 `uuidv7()`）。**④ 运行时**：统一 **Node.js 24 LTS + pnpm 11**，用 `engines` + `packageManager` 锁死，CI 固定 `setup-node@24`；本机 PATH 上的 Node 18 需切换。**⑤ 审计失败语义**：审计写入失败 → **阻断业务**（返回 500 + 告警），**不接受**「审计失败但业务成功」（D51 全量要求的必然推论）（2026-11-04 负责人确认） | 全部表结构、索引、备份、CI、审计 |
 | D56 | **Windows 10 兼容基线**（收口负责人 2026-11-04 提出的老机器兼容顾虑） | **前提**：产品是对外云 SaaS（D1），**后端、数据库、Node 运行时全部跑在我们云端**，租户电脑只跑一个浏览器 → **技术栈版本与租户机器无关，不需要为兼容而降低 Node/Fastify/PostgreSQL 版本**。**真正要锁的是浏览器基线**：① Web 端以 **Windows 10 22H2 + Microsoft Edge** 为最低基线——微软明确 Edge 与 WebView2 在 Win10 22H2 上**至少支持到 2028-10**（与 ESU 结束时间对齐，且**无需加入 ESU 即可继续获得 Edge 更新**，来源：[Microsoft Edge 支持的操作系统](https://learn.microsoft.com/zh-cn/DeployEdge/microsoft-edge-supported-operating-systems)），Edge 随 Windows 自动更新，实际版本远高于最低值；② 前端构建锁 `browserslist` + Vite `build.target`（Chromium/Edge 111 级别，React 19 本身不再支持 IE），CI 加 target 校验；③ **不支持 IE11 与浏览器「兼容模式」**（360 / QQ 浏览器须切极速模式），条款写进入驻说明；④ 桌面端 Electron 仅支持 **Win10 1809+ / Win11**，Win7/8 不做（与 Edge 109 起的平台要求一致）；⑤ 老机器性能另设预算（首屏体积、动画克制），不靠降版本解决。**待确认**：租户当前是否仍有 IE11 或「兼容模式」使用者（若有，需在入驻时强制引导升级） | 前端工程、桌面端、入驻流程、CI |
 | D57 | **技术管线实测结论 + 三条工程约束**（收口 ADR-0001 U12） | 2026-11-04 实测 **9/9 通过**（脚本 `tools/spike-0001-pipeline.mjs`，报告 `docs/spike-0001-tech-pipeline.md`）；环境 Node 24.22.0 + zod 4.6.7 + fastify 5.12.8 + drizzle-orm 0.45.4 + PGlite 0.5.15 + uuid 14.0.3。**① 契约注册表必须注册 id**：Zod 4 `z.toJSONSchema(target:'draft-2020-12')` 可用且方言正确，但**默认全部内联**（实测 `$ref` 数 = 0），必须用 `z.globalRegistry` 给实体注册 id，导出后把 `$defs/<id>` 重写为 `#/components/schemas/<id>`，CI 断言「components.schemas 数量 = 注册表实体数」。**② 生产数据库版本改为 PostgreSQL 18**（原 ADR 写 17）：PGlite 0.5.15 实测为 **PG 18.6**，测试与生产**主版本必须一致**，否则 ADR R4「PGlite 与真 PG 语义差异」会变成常态。**③ 应用连接账号不得是 superuser、不得有 BYPASSRLS**：实测 superuser 即便 `force row level security` 也绕过 RLS（tenant=A 仍看到 2 行），改用普通角色 `set role` 后只看到 1 行——D55 的 RLS 兜底只有在此前提下才成立，测试与生产都必须用专用角色（2026-11-04 Lead 实测后定） | 全部模块、schema、CI、测试、部署 |
+| D58 | **M0 骨架补记的两项接口技术项**（D54「技术项（Lead 定）」的落地补充，2026-11-04） | **① 错误码增第 11 个 NOT_IMPLEMENTED（HTTP 501 / CLI 退出码 1，封闭枚举）**：一期先在 packages/contracts 注册全部端点签名，handler 允许先返 501（D54 缺口 10），因此 501 必须是一个合法错误码，否则统一错误体会被 schema 拒绝；docs/api/openapi.yaml 的 ErrorCode 同步为 11 项。**② 新增请求头 X-Reason 承载「危险动作 / AI 写操作」的 reason**（与 body 解耦；X-Request-Id / X-Client / Idempotency-Key / If-Match / ETag 一并冻结在 packages/contracts/src/http.ts 的 HEADERS 常量）——D54 只定了「必须带 reason」，未定传输通道，本项补齐；X-Client → 审计 source 映射与缺省值 pi 同在此处实现 | 接口契约、CLI/MCP、全部写接口、审计 |
 
 ---
 
