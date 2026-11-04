@@ -47,7 +47,7 @@ jobs:
           - "5432:5432"
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: ${{ secrets.PG_TEST_PASSWORD || 'postgres' }}
           POSTGRES_DB: qingdan_test
         options: >-
           --health-cmd "pg_isready -U postgres -d qingdan_test"
@@ -55,7 +55,8 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      QINGDAN_TEST_DB: postgres://postgres:postgres@127.0.0.1:5432/qingdan_test
+      # 开源仓库不保存 CI 口令；未配置仓库 secret 时回退到临时测试库默认口令。
+      QINGDAN_TEST_DB: postgres://postgres:${{ secrets.PG_TEST_PASSWORD || 'postgres' }}@127.0.0.1:5432/qingdan_test
     steps:
       - uses: actions/checkout@v5
 

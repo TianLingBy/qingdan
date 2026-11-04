@@ -39,6 +39,8 @@ pwsh -NoProfile -File tests\run.ps1   # 全量门禁，退出码 0 才算过
 
 数据库（二选一）：
 
+> 下述示例中的 `postgres` 是本地开发默认口令，不是生产凭证。
+
 ```powershell
 # 本地服务（推荐开发时用）
 # 装 PostgreSQL 18 后建库：createdb qingdan_dev
