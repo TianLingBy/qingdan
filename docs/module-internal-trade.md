@@ -1,6 +1,7 @@
 # 模块：internal-trade（内部交易）
 
 > 所属交付模块：**M4 内部交易与打印**（人类开发者 4）｜分支 `feat/m4-internal-trade`
+> **负责人（internal-trade）**：梁海俊｜接手日期：2026-11-04
 
 ## 目标
 
