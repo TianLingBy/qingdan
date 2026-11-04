@@ -1,0 +1,107 @@
+import { MODULE_KEYS, ROUTES, modulesOf, routesOfModule } from '@qingdan/contracts';
+import type { FastifyInstance } from 'fastify';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { buildApp } from '../app.js';
+import { testConfig } from '../platform/config.js';
+import { MOUNTED_MODULE_KEYS } from './index.js';
+
+/**
+ * 路由挂载边界（Issue #15 / D62）。
+ *
+ * 核心不变量：**注册表里出现的每个模块都必须已接线**；platform 只挂自己的路由，
+ * 业务模块（masterdata）的端点不得被 platform 的循环顺手接管。
+ */
+
+const PRODUCT_CASES = [
+  { method: 'GET', url: '/api/v1/products', operationId: 'product.list.read' },
+  { method: 'POST', url: '/api/v1/products', operationId: 'product.create', payload: { name: '测试商品' } },
+  { method: 'GET', url: '/api/v1/products/prod-1', operationId: 'product.detail.read' },
+  {
+    method: 'PATCH',
+    url: '/api/v1/products/prod-1',
+    operationId: 'product.update',
+    payload: { name: '改名' },
+  },
+  { method: 'DELETE', url: '/api/v1/products/prod-1', operationId: 'product.delete' },
+] as const;
+
+describe('路由挂载边界（platform / masterdata）', () => {
+  let app: FastifyInstance;
+
+  beforeAll(() => {
+    app = buildApp({ config: testConfig(), version: '9.9.9' });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('ROUTES 里的每个 module 都已接线（无孤儿路由），并列出其余未接线模块', () => {
+    const mounted = new Set<string>(MOUNTED_MODULE_KEYS);
+    const registered = modulesOf(ROUTES);
+    const orphans = registered.filter((module) => !mounted.has(module));
+
+    expect(orphans, `ROUTES 里出现但未接线的模块：${orphans.join(', ') || '（无）'}`).toEqual([]);
+
+    // 契约登记的全部模块中，尚未接线的模块（随模块开发逐项减少，改动时请显式更新）。
+    const notYetMounted = MODULE_KEYS.filter((module) => !mounted.has(module));
+    expect(notYetMounted).toEqual([
+      'inventory',
+      'purchase',
+      'processing',
+      'sales',
+      'settlement',
+      'internal-trade',
+      'test',
+    ]);
+  });
+
+  it('5 个商品端点全部由 masterdata 挂载 → 501 NOT_IMPLEMENTED，operationId 正确', async () => {
+    for (const testCase of PRODUCT_CASES) {
+      const response = await app.inject({
+        method: testCase.method,
+        url: testCase.url,
+        headers: { 'if-match': '"1"' },
+        ...('payload' in testCase ? { payload: testCase.payload } : {}),
+      });
+
+      expect(response.statusCode, `${testCase.method} ${testCase.url}`).toBe(501);
+      const body = response.json() as {
+        code: string;
+        message: string;
+        details?: Record<string, unknown>;
+      };
+      expect(body.code).toBe('NOT_IMPLEMENTED');
+      expect(body.message).toContain(testCase.operationId);
+      expect(body.details).toMatchObject({ operationId: testCase.operationId });
+    }
+  });
+
+  it("routesOfModule(ROUTES, 'platform') 不含任何 product.* 路由", () => {
+    const platformRoutes = routesOfModule(ROUTES, 'platform');
+    expect(platformRoutes.map((route) => route.operationId).filter((id) => id.startsWith('product.'))).toEqual(
+      [],
+    );
+    expect(platformRoutes.every((route) => route.module === 'platform')).toBe(true);
+  });
+
+  it('GET /api/v1/openapi.json 的商品操作带 x-module=masterdata', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/v1/openapi.json' });
+    expect(response.statusCode).toBe(200);
+
+    const document = response.json() as {
+      paths: Record<string, Record<string, { operationId: string; 'x-module'?: string }>>;
+    };
+    const products = document.paths['/api/v1/products'];
+    expect(products?.get?.operationId).toBe('product.list.read');
+    expect(products?.get?.['x-module']).toBe('masterdata');
+    expect(products?.post?.operationId).toBe('product.create');
+    expect(products?.post?.['x-module']).toBe('masterdata');
+  });
+
+  it('platform 端点仍正常挂载：GET /api/v1/health → 200', async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/v1/health' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: 'ok', version: '9.9.9' });
+  });
+});

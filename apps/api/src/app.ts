@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
-import { registerPlatformRoutes } from './modules/platform/routes.js';
+import { registerModules } from './modules/index.js';
 import { registerAuthPlugin } from './platform/auth/plugin.js';
 import { loadConfig, type AppConfig } from './platform/config.js';
 import type { Database } from './platform/db/client.js';
@@ -58,7 +58,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerAuthPlugin(app, { config });
   registerSecurityHeaders(app);
   registerErrorHandling(app);
-  registerPlatformRoutes(app, { version: options.version ?? APP_VERSION, config });
+  registerModules(app, { version: options.version ?? APP_VERSION, config });
 
   return app;
 }

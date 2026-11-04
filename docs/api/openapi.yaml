@@ -56,6 +56,7 @@ info:
       `reason: required|conditional|optional` 对应契约 §1「原因」的必填规则。
     - `x-ai-policy`：`allowed` / `forbidden-by-default`（危险动作默认拒绝 AI，D52①）。
     - `x-idempotency`：幂等窗口（写接口 24h）。
+    - `x-module`：每个 operation 的归属模块（D62），值必须属于 `MODULE_KEYS` 白名单。
   contact:
     name: 轻单项目组
   license:
@@ -80,6 +81,8 @@ tags:
     description: 操作日志（只追加，D51）
   - name: token
     description: API Token（机器身份，契约第三批 §2）
+  - name: product
+    description: 商品资料（契约第一批 §2，D49）
   - name: purchase
     description: A 采购单（契约第一批 §3.1）
   - name: sales
@@ -1352,6 +1355,283 @@ paths:
       x-idempotency: 24h
       x-contract: 第一批 §1.2 / §2 / D15 / D50 / D52①
 
+  /products:
+    get:
+      tags: [product]
+      operationId: product.list.read
+      summary: 商品列表（按名称/别名检索；普通读不记审计，D49 不按编号全局搜）
+      description: |
+        返回调用者可见公司范围内的商品分页（D15：跨公司不可见）。
+        `keyword` 只匹配名称与别名，**不按 `productNo` 全局检索**（D49：编号是自由文本、
+        可空、不唯一）；`status=停用` 的商品不出现在单据选对象弹窗。
+        普通读不记审计（D54②）。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - name: companyId
+          in: query
+          required: false
+          description: 按公司过滤；与调用者可见范围取交集，范围外返回空列表
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          description: 商品状态
+          schema:
+            type: string
+            enum: [启用, 停用]
+        - name: keyword
+          in: query
+          required: false
+          description: 关键词，只匹配名称与别名（D49；不搜编号）
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: 商品分页结果（默认售价受看价权限管，无权限时为 null，D27）
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [product.read]
+      x-module: masterdata
+      x-audit:
+        required: false
+      x-ai-policy:
+        policy: allow
+      x-contract: 契约第一批 §2 / Issue #15
+
+    post:
+      tags: [product]
+      operationId: product.create
+      summary: 新增商品（编号自由文本可空；默认售价受看价权限管，D4.1/D49）
+      description: |
+        `productNo` 为自由文本编号，可空、不唯一、后台不改写（D49）；定位商品用 id / 名称 / 别名。
+        `defaultSalePrice` 为 decimal 字符串（D54），最多 6 位小数；写默认售价需 `product.view_price`（D27）。
+        商品**不得包含任何成本字段**：成本挂批次（D5）。
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreateInput'
+      responses:
+        '201':
+          description: 创建成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [product.create]
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+        action: product.create
+        objectType: 商品
+        logOnFailure: true
+      x-ai-policy:
+        policy: allow
+      x-contract: 契约第一批 §2 / Issue #15
+
+  /products/{id}:
+    get:
+      tags: [product]
+      operationId: product.detail.read
+      summary: 商品详情（无看价权限时默认售价返回 null，D27）
+      description: |
+        无 `product.view_price` 权限时 `defaultSalePrice` 返回 `null`（字段保留，前端不必猜键是否存在，D27）。
+        响应头回 `ETag: "<version>"`，客户端写操作放进 `If-Match`。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: 商品详情
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [product.read]
+      x-module: masterdata
+      x-audit:
+        required: false
+      x-ai-policy:
+        policy: allow
+      x-contract: 契约第一批 §2 / Issue #15
+
+    patch:
+      tags: [product]
+      operationId: product.update
+      summary: 修改商品（强 ETag If-Match；改默认售价需看价权限）
+      description: |
+        强 ETag：必须带 `If-Match: "<version>"`（取自详情响应头 `ETag`），缺失 428、不匹配 409
+        （D60③ 同款）。`companyId` 不可改（换公司 = 新商品）；至少修改一个字段。
+        修改默认售价需 `product.view_price`（D27）。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdateInput'
+      responses:
+        '200':
+          description: 修改成功，返回更新后的商品
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [product.update]
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+        action: product.update
+        objectType: 商品
+        logOnFailure: true
+      x-ai-policy:
+        policy: allow
+      x-requires-if-match: '"<version>"'
+      x-contract: 契约第一批 §2 / Issue #15
+
+    delete:
+      tags: [product]
+      operationId: product.delete
+      summary: 停用商品（软删除，不做物理删除；危险动作，AI 默认禁止）
+      description: |
+        停用 = 软删除（`status: 停用`），不做物理删除；停用后不出现在单据选对象弹窗。
+        危险动作（D52①）：AI 默认禁止，`reasonRequired: true`。
+        强 ETag：必须带 `If-Match: "<version>"`（取自详情响应头 `ETag`），缺失 428、不匹配 409。
+        响应回停用后的实体，客户端拿新 `version` 继续并发写（区别于 token.revoke 的 204）。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 停用成功，返回停用后的商品
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [product.delete]
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+        action: product.delete
+        objectType: 商品
+        logOnFailure: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-requires-if-match: '"<version>"'
+      x-contract: 契约第一批 §2 / Issue #15
+
 components:
 
   securitySchemes:
@@ -1878,7 +2158,7 @@ components:
         version:
           type: integer
           minimum: 1
-          description: 乐观锁版本（撤销时放进 `If-Match: "<version>"`；列表接口回读，避免客户端猜版本）
+          description: '乐观锁版本（撤销时放进 `If-Match: "<version>"`；列表接口回读，避免客户端猜版本）'
         createdBy:
           type: string
           format: uuid
@@ -1963,6 +2243,154 @@ components:
       enum:
         - E
         - N
+
+    Product:
+      type: object
+      description: |
+        商品资料（契约第一批 §2 / Issue #15，D49）。
+        - `productNo`：自由文本编号，**可空、不唯一、不作检索主键**（D49）；定位商品用 id / 名称 / 别名；
+        - `defaultSalePrice`：decimal 字符串（D54）；调用者无 `product.view_price` 权限时返回 `null`（D27）；
+        - 金额一律 decimal **字符串**（D54），不用 number，避免浮点误差；
+        - **不包含任何成本字段**：成本挂批次（D5），商品表出现成本列即违纪。
+      required:
+        - id
+        - tenantId
+        - companyId
+        - productNo
+        - name
+        - aliases
+        - specification
+        - unit
+        - status
+        - defaultSalePrice
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+          description: 公司隔离（D15）：商品属于某一个公司，跨公司不可见
+        productNo:
+          type: [string, 'null']
+          description: 自由文本编号，可空、不唯一、不作检索主键（D49）
+        name:
+          type: string
+        aliases:
+          type: array
+          description: 别名，检索用（D49 允许按名称/别名查，但不把编号当检索键）
+          items:
+            type: string
+        specification:
+          type: [string, 'null']
+        unit:
+          type: string
+        status:
+          type: string
+          enum: [启用, 停用]
+        defaultSalePrice:
+          type: [string, 'null']
+          description: decimal 字符串（D54）；无 `product.view_price` 权限时为 null（D27）
+        version:
+          type: integer
+          description: 乐观锁版本；写接口用强 ETag `"<version>"`（D60③ 同款）
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProductPage:
+      type: object
+      description: 商品分页结果（游标分页，契约第三批 §3）
+      required: [items, nextCursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+        nextCursor:
+          type: [string, 'null']
+
+    ProductCreateInput:
+      type: object
+      description: 新增商品请求体（契约第一批 §2 / Issue #15）。`productNo` 可空（D49）；不含成本字段（D5）。
+      required: [companyId, name, unit]
+      properties:
+        companyId:
+          type: string
+          format: uuid
+          description: 公司隔离（D15）：创建时必须显式给出归属公司
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        unit:
+          type: string
+          minLength: 1
+          maxLength: 16
+        productNo:
+          type: [string, 'null']
+          maxLength: 64
+          description: 自由文本编号，可空、不唯一（D49）
+        aliases:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        specification:
+          type: [string, 'null']
+          maxLength: 128
+        status:
+          type: string
+          enum: [启用, 停用]
+        defaultSalePrice:
+          type: [string, 'null']
+          pattern: '^\d{1,12}(\.\d{1,6})?$'
+          description: decimal 字符串，最多 6 位小数（D54）；写入需 `product.view_price`（D27）
+
+    ProductUpdateInput:
+      type: object
+      description: |
+        修改商品请求体（契约第一批 §2 / Issue #15）。全字段可选、至少要改一个；
+        `companyId` 不可改（换公司 = 新商品）；不含成本字段（D5）。
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        unit:
+          type: string
+          minLength: 1
+          maxLength: 16
+        productNo:
+          type: [string, 'null']
+          maxLength: 64
+          description: 自由文本编号，可空、不唯一（D49）
+        aliases:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        specification:
+          type: [string, 'null']
+          maxLength: 128
+        status:
+          type: string
+          enum: [启用, 停用]
+        defaultSalePrice:
+          type: [string, 'null']
+          pattern: '^\d{1,12}(\.\d{1,6})?$'
+          description: decimal 字符串，最多 6 位小数（D54）；修改需 `product.view_price`（D27）
 
     ProductLine:
       type: object
