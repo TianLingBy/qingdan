@@ -29,10 +29,10 @@
 | **温汇敏** | 账号管理 **+ 权限** | `platform` 的**员工 / 岗位 / 权限设置 / 公司管理**（原型页 16/17/18）+ **权限引擎（权限判定规则与实现、三层生效：岗位并集 ⊕ 个人覆盖 ∩ 公司集合、看价）** + 登录与后台建号 | `module-platform.md`（**账号域 + 权限域归她**；主线保留审计、编号、单据框架、待办、API Token） |
 | **赖皓妍** | UI 界面设计优化 | `apps/web` 的**全部页面视觉、组件库、交互与老浏览器适配**（D56 基线），不含业务判定 | 不占模块检查点，走 `feat/ui` 分支按页面分批 PR |
 | **李祖怡** | 单据 | 八类单据（**A/B/E/N/C/R/S/I**）的**详情页、状态流转展示、打印与导出两套版式** | 横跨 `purchase`/`processing`/`sales`/`internal-trade` 的**展示层** |
-| **梁海俊** | 其他 | 上面三条未认领的后端业务：`masterdata`（商品/客户/供应商/加工厂）、`inventory`（批次/库存/盘点/成本更正）、`processing`（B 单/损耗）、`internal-trade`（N 单/转司）的业务用例。**`purchase`（A/S 单）已于 2026-11-04 移交主线**，不再由他承担 | M1(部分)/M2/M3/M4 中除「账号域」「权限域」「展示层」外的部分 |
-| **你 + DSH 智能体团队** | 主线 | `platform` 内核、`packages/contracts`、`sales`、`settlement`、`test` 底座 | `module-platform/sales/settlement/test.md` |
+| **梁海俊** | 其他 **（后端，与负责人共同开发）** | 后端业务用例：`masterdata`（商品/客户/供应商/加工厂）、`inventory`（批次/库存/盘点/成本更正）、`processing`（B 单/损耗）、`internal-trade`（N 单/转司）。**`purchase`（A/S 单）已于 2026-11-04 移交主线**。**后端不是他一个人扛**：负责人同在后端（见下一行），接口与表结构两人先对齐再写 | M1(部分)/M2/M3/M4 中除「账号域」「权限域」「展示层」外的部分 |
+| **你 + DSH 智能体团队** | 主线 **（同时参与后端）** | `platform` 内核（审计/编号/单据框架/待办/Token）、`packages/contracts`、`purchase`（A/S 单）、`sales`、`settlement`、`test` 底座；**与梁海俊共同承担后端**，负责先出接口签名与表结构，再各自实现 | `module-platform/purchase/sales/settlement/test.md` |
 
-**红线（沿用 `ROLES-AND-BOUNDARIES.md`）**：`packages/contracts`、`platform` 的**审计写入 / 编号 / 单据框架 / 待办 / API Token**、`docs/decisions.md` **只有主线能改**；其他人要动，先提 PR 到主线评审。**权限域已明确归温汇敏**（判定规则 + 权限设置页 + 三层生效），但她**不得绕过 `packages/contracts` 直接改契约**，权限判定的契约签名与测试护具由主线提供——`tests/platform-spec.test.ps1`（P0-2）会锁住 D50/D15/D4 的口径，防止实现漂移。**工作量提示**：梁海俊承接「主数据 + 库存 + 加工 + 内部交易」的后端，仍是最宽的一条；若吃紧，把 `processing` 或 `internal-trade` 移交主线。
+**红线（沿用 `ROLES-AND-BOUNDARIES.md`）**：`packages/contracts`、`platform` 的**审计写入 / 编号 / 单据框架 / 待办 / API Token**、`docs/decisions.md` **只有主线能改**；其他人要动，先提 PR 到主线评审。**权限域已明确归温汇敏**（判定规则 + 权限设置页 + 三层生效），但她**不得绕过 `packages/contracts` 直接改契约**，权限判定的契约签名与测试护具由主线提供——`tests/platform-spec.test.ps1`（P0-2）会锁住 D50/D15/D4 的口径，防止实现漂移。**工作量提示**：后端由**负责人 + 梁海俊两人共同开发**（2026-11-04 负责人确认），梁海俊负责主数据/库存/加工/内部交易，负责人负责平台内核/采购/销售/结算并**在同一套接口与表结构上协作**。两人协作规则：① 接口签名与表结构先由主线（负责人 + AI）出，梁海俊在同一份 `packages/contracts` 上实现，**不许各自另造字段**；② 同一文件同一时间只由一人改，改动前先在 PR/群内说一声；③ 每个模块一支分支（`feat/m2-inventory` 等），**共用分支由负责人合并**，梁海俊提交前必须本地跑 `tests\run.ps1`。
 
 ## 1. 五个交付模块的边界与验收
 
