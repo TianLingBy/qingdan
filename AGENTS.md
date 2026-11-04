@@ -4,13 +4,22 @@
 > 加载链：`~/.dsh/AGENTS.md`（全局）→ 本文件（项目根）→ 更深层目录的 AGENTS.md（若有）。
 > 越具体越优先：本项目规则与全局冲突时，以本项目为准。
 
+## 团队（本目录下所有会话都生效）
+
+- 三套 harness：**DSH = 中间人/负责人**（拆任务、评估并安装所需工具、派活、验收、提交）｜**代码活 → Claude Code**｜**杂项 → Codex**；三者都接 DeepSeek。
+- **生效范围**：凡 cwd 在本仓库（含 `apps/**`、`packages/**` 等子目录）新建的会话，**第一个请求起就按本文件 + `docs/AGENT-TEAM.md` 执行**，不需要用户再交代一次；用户口头指令与本文冲突时，先按本文再做，除非用户明确改规则。
+- **派活方式**：`conductor_dispatch(agent:"claude-code" | "codex", task:"<自包含任务>")`；任务必须带绝对路径、写范围、依据的 D 编号、验收命令。硬规则见本文「路由」节。
+- **子团队**：Claude Code 用 `.claude/agents/`（`coder` / `tester` / `reviewer`）；Codex 的 `multi_agent` 已开启。**同一文件同一时间只许一个代理写**，子代理只写不提交。
+- 真源：`docs/AGENT-TEAM.md`（角色表、派活模板、技能/MCP 按需装流程、边界）。
+
 ## 项目信息
 
 - 项目：**轻单**（工程仓）。需求稿真源仓 `D:\Desktop\dsh\轻单` 已于 2026-11-03 迁移完成后冻结为只读历史；**阶段 4 起所有开发与文档变更都在本仓**。
 - 项目根：`D:\Desktop\dsh\Qingdan`（与本项目相关的会话，cwd 都应是这个目录；派发外部代理时工作目录随之固定）。
 - 当前阶段：**4 分工开发**（阶段路线见 `docs/roadmap.md`）。
-- 技术栈：**已定（D53，2026-11-04）**——TypeScript 单一语言全栈（Node 24 + Fastify 5 + Drizzle + PostgreSQL 17 + React 19/Vite），`packages/contracts` 一套 Zod 注册表发射 OpenAPI 3.1 / CLI / MCP；多端（Web / Electron 桌面 / Capacitor 移动）复用同一份前端与同一套 `/api/v1`。依据 `docs/adr-0001-tech-stack.md`；**ADR 未决项 U1-U5 与 U12 spike 仍未拍板**，写第一行业务代码前必须收口。
-- 测试入口：`tests\run.ps1`。
+- 技术栈：**已定（D53/D55/D56/D57，2026-11-04）**——TypeScript 单一语言全栈（Node 24 LTS + Fastify 5 + Drizzle + PostgreSQL 18 + React 19/Vite + pnpm 11），`packages/contracts` 一套 Zod 注册表发射 OpenAPI 3.1 / CLI / MCP；多端（Web / Electron 桌面 / Capacitor 移动）复用同一份前端与同一套 `/api/v1`。依据 `docs/adr-0001-tech-stack.md`；U1-U5 已由 **D55** 收口、U12 spike 已由 **D57** 收口、Windows 10 兼容由 **D56** 收口。
+- **工程骨架已建立（M0，2026-11-04）**：`apps/api`（Fastify 5 + Drizzle，唯一部署物）、`apps/web`（React SPA）、`packages/contracts|cli|mcp`；pnpm workspace 根 `package.json` + `pnpm-workspace.yaml` + `tsconfig.base.json` + `eslint.config.js`。业务模块固定结构 = `apps/api/src/modules/<模块>/{routes.ts,usecases/,repo.ts,schema.ts}`（`platform` 已落地作样板），**禁止跨模块 import、禁止直读他人表**。
+- 测试入口：`tests\run.ps1`（PowerShell 契约测试）；TypeScript 层用 `pnpm -r build` / `pnpm -r test`（已在 `tests/workspace.test.ps1` 里包装成门禁）。
 - 模块列表（新增模块时在这里登记；格式固定为“反引号模块名 → `docs/module-<模块名>.md`”，检查点测试靠它解析）：
   - `platform` → `docs/module-platform.md`
   - `masterdata` → `docs/module-masterdata.md`
@@ -30,8 +39,8 @@
 
 ## 文档与真源（新会话先读 `docs/README.md`）
 
-- **口径真源**：`docs/decisions.md`（D1-D53 已拍板；新结论只能追加，不改历史行）。
-- **字段真源**：`docs/轻单_接口契约第一批_v1_20261103.md`、`docs/轻单_接口契约第二批_v1_20261103.md`（已冻结；§11 / §4 各 5 项开放项由开发阶段拍板）、`docs/轻单_接口契约第三批_v1_20261104.md`（🟡 草案，platform 开工前冻结；操作日志 / API Token / 通用 API 约定）。
+- **口径真源**：`docs/decisions.md`（D1-D58 已拍板；新结论只能追加，不改历史行）。
+- **字段真源**：`docs/轻单_接口契约第一批_v1_20261103.md`、`docs/轻单_接口契约第二批_v1_20261103.md`（已冻结；§11 / §4 各 5 项开放项由开发阶段拍板）、`docs/轻单_接口契约第三批_v1_20261104.md`（✅ 已冻结，D54；操作日志 / API Token / 通用 API 约定）。**接口真源以 `packages/contracts` 的 Zod 注册表为准**，`docs/api/openapi.yaml` 是按 D54 对齐的描述文件。
 - **原型**：`docs/prototype-v0.md`（22 页 IA、数据模型）+ `prototype.html`（可点击原型）。
 - **业务事实**：`docs/轻单_业务事实问答_v1_20261103.md`（F1-F10）；决策过程：`docs/轻单_阻塞问题决策清单_v1_20261103.md`。
 - **原料**：`docs/raw/` 只搬不改写，协议见 `docs/raw-protocol.md`。
@@ -65,18 +74,24 @@
 - 协作者接入、模块认领、每模块分支与依赖顺序见 `docs/ONBOARDING.md`；**4 人人类开发者看 `docs/TEAM-PLAN.md`（分工/里程碑/DoR/DoD）与 `docs/DEV-SETUP.md`（环境/目录）**；PR 按 `.github/pull_request_template.md` 填。
 - CI 跑 `windows-latest` 与 `ubuntu-latest` 两个平台，macOS/Linux 协作者以 ubuntu 结果为参照。
 
-## 路由（引用全局，不重复定义）
+## 路由（三套 harness 分工，真源 `docs/AGENT-TEAM.md`）
 
-全局 `~/.dsh/AGENTS.md` 的「多智能体路由」已规定：
+**2026-11-04 起团队重建**：DSH 是中间人，代码活交给 Claude Code，杂项交给 Codex；三者都走 DeepSeek。
 
-- 深度编码、代码审查、架构第二意见 → `conductor_dispatch(agent:"claude-code")`
-- 边界清晰、可验证的实现类任务 → `conductor_dispatch(agent:"codex")`
-- 探索性讨论、需求澄清、写文档 → 自己做，不派发
+- **DSH（Lead / 中间人）**：接负责人指令 → 拆任务 → 评估并安装所需技能/MCP/联网工具 → 派活 → 跑验收 → 统一提交/开 PR → 汇报。不自己闷头写业务代码（简单改动除外）。
+- **代码活 → `conductor_dispatch(agent:"claude-code")`**：实现、改代码、重构、写测试、代码审查。项目级子代理定义在 `.claude/agents/`（`coder` / `tester` / `reviewer`），它可以自建子团队。
+- **杂项 → `conductor_dispatch(agent:"codex")`**：文档撰写/整理、资料整理、脚本与配置、CI、批量改名、Office 文档、环境排错。Codex 的 `multi_agent` 已开启，可以自建子团队。
+- **探索性讨论、需求澄清、口径裁定** → 自己做，不派发；**联网调研**默认用 DSH 自带的 web 工具（Codex 的 `web_search` 当前关闭，需要时单次 `-c web_search="live"` 或先由 DSH 查好再给事实材料）。
 
-项目内追加两条：
+派发硬规则（每次都要满足）：
 
-- 派发任务的提示里必须写项目根的绝对路径，并说明「只改本模块相关文件」。
-- 派发前若不确定范围，先 `dryRun: true` 核对 cwd 与 argv。
+1. 任务必须**自包含**（对方看不到本会话上下文）：绝对路径 + 目标 + **写范围** + 依据的 D 编号 + **验收命令** + 禁止事项。
+2. 写范围写死「只允许改 X」；跨模块共享文件（`packages/contracts`、`apps/api/src/platform`、`docs/decisions.md`）未经明确授权不许动。
+3. 单次派发硬超时 **180 秒**，大活拆小分次派；跑不完就拆。
+4. 派发前不确定范围先 `dryRun: true` 核对 cwd 与 argv。
+5. 子代理/外部代理**只写不提交**；提交、推送、开 PR 归 Lead，验收以「命令退出码 + 输出关键行」为准，不认「已完成」自述。
+
+需要新能力（新 MCP / 新技能 / 联网）时：先说清「为什么需要、装哪、怎么卸」，装完登记到 `docs/roadmap.md`「外部依赖」表。
 
 ## 测试
 

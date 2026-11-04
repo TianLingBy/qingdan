@@ -7,3 +7,19 @@
 .gitattributes   text eol=lf
 tools/pre-commit text eol=lf
 *.sh             text eol=lf
+
+# PowerShell 脚本钉 LF（P0-1 测试校验 BOM；行尾统一避免「整文件 diff」与跨平台差异）。
+# 注意：BOM 由脚本自身携带，与行尾无关（write/edit 工具会丢 BOM，改完必须补）。
+*.ps1            text eol=lf
+*.psm1           text eol=lf
+
+# 跨平台主链文本统一 LF（CI 在 ubuntu 跑，文档/源码保持同一份行尾）
+*.ts             text eol=lf
+*.tsx            text eol=lf
+*.json           text eol=lf
+*.md             text eol=lf
+*.yml            text eol=lf
+*.yaml           text eol=lf
+*.sql            text eol=lf
+*.css            text eol=lf
+*.html           text eol=lf

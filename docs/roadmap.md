@@ -16,12 +16,12 @@
 | 1 原料 | 飞书知识空间搬入 `docs/raw/`，只搬不改写 | ✅ 完成 |
 | 2 上下文 | `docs/project-context.md`（已知/推断/未知三层）+ 原型规格 `docs/prototype-v0.md` | ✅ 完成 |
 | 3 原型与契约 | 可点击原型 `prototype.html` → 用户划改 → 冻结数据模型与接口契约 | ✅ 完成（**决策已收口 D1-D50**；原型已按 20 页新 IA 重排；契约两批已冻结，含 10 项开放项交同事开发阶段定） |
-| 4 分工开发 | 模块登记进 `AGENTS.md`，每模块一份 `docs/module-<名>.md`，并行开发 | 🔄 进行中（9 个模块已登记，**技术栈 D53 已拍板**；P0 `platform` 待开工，前置 = 契约第三批冻结 + ADR 未决项 U1-U5/U12） |
+| 4 分工开发 | 模块登记进 `AGENTS.md`，每模块一份 `docs/module-<名>.md`，并行开发 | 🔄 进行中（9 个模块已登记，**技术栈 D53 + 底座 D55/D56/D57 已收口**；**M0 工程骨架 2026-11-04 已建立**，P0 `platform` 进入 M1 实现） |
 | 5 合并迭代 | 合并回主干，再扩展或修改功能 | ⬜ 未开始 |
 
 ## 当前状态
 
-**阶段 4 进行中（2026-11-03 交接）**：需求稿已从归档仓 `D:\Desktop\dsh\轻单` 迁入本仓 `docs/`（产品文档 9 份 + `raw/` 11 篇 + `prototype.html`），归档仓冻结只读；模块切分为 8 个业务模块 + `test`（见 `docs/README.md` 模块表与 `AGENTS.md` 模块登记）；开工顺序 = 技术选型 ADR（`docs/decisions.md` D53）→ 冻结接口契约第三批 → `platform`。2026-11-04 追加 **D51 操作日志 / D52 AI 友好型**：日志全量只追加，AI 通过 API Token 与人类同权，页面 20→22。**2026-11-04 技术栈已拍板 D53**：TypeScript 单一语言全栈（Node 24 + Fastify 5 + Drizzle + PostgreSQL 17 + React 19/Vite），多端（Web / Electron / Capacitor）复用同一份前端与同一套 `/api/v1`；剩余前置 = 契约第三批冻结 + ADR 未决项 U1-U5（租户隔离 / 金额精度 / 主键 / Node 版本 / 审计失败语义）与 U12 的 2 小时 spike。
+**阶段 4 进行中（2026-11-04 M0 骨架已建立）**：monorepo 落地（`apps/api` Fastify5 + Drizzle + PG18、`apps/web` React19 + Vite + Tailwind4、`packages/contracts` Zod 注册表 → OpenAPI 3.1 / CLI / MCP），迁移 `0001_platform_core.sql`（13 表 + RLS + 只追加审计）、并发取号、权限判定一条 SQL、统一错误体与 `X-Request-Id` 全部就位；全量门禁 `tests\run.ps1` 绿（7 个测试文件，其中 vitest 130 例：contracts 39 / api 43 / web 26 / cli 17 / mcp 5），CI 加 Node 24 + pnpm 11 与 ubuntu + `postgres:18` 集成 job。**10 个平台端点已登记但 handler 仍 501** → 下一步 M1 实现登录/会话/Token/审计查询/权限覆盖。此前 2026-11-03 交接：需求稿已从归档仓 `D:\Desktop\dsh\轻单` 迁入本仓 `docs/`，归档仓冻结只读；模块切分为 8 个业务模块 + `test`；D51/D52/D52.1（操作日志 + AI 友好）与 D54（契约第三批冻结）、D55（技术底座五项）、D56（Win10 浏览器基线）、D57（U12 spike 三条工程约束）均已落 `docs/decisions.md`。
 
 阶段 3 已收口，历史状态如下：**决策层已收口**：2026-11-03 项目负责人分七轮把 **D1-D50** 全部拍板（对外 SaaS / 六类单据全量进一期 / 预设岗位+自定义岗位 / 单头三态+行状态 / 成本随批次锁定 / 报价单删+货物位置二期 / 可视化=业务全流程图 / 流转表驱动待办 / 客户在线支付 / 编码固定结构 / C 单生成时机 / 取消级联 / 批次归属 / 损失报表口径 / 错账路径 / 损失归属 / 重开提成 / 成本更正 / 库存可用量 / 费用行正负 / 仅退款重算 / 待执行占用 / 成本更正审批 / 利润报表 / 功能域清单 / 集团看板一期不做 / 20 页重排 / 矩阵特殊值映射 / 个人编号 / 业务档案编号边界 / 员工个人级权限覆盖 等），结论见 `docs/decisions.md`。
 真源口径已定（D0）：v1 交接文档是 L1/L2 口径真源，仓库 `docs/` 是产出层；`roadmap.md` 原「原型已交付」的表述按 D0 修正为「原型已产出、待按新 IA 重排」。
@@ -47,7 +47,8 @@
 
 ## 进行中
 
-- **阶段 4 交接（2026-11-03）**：9 个模块检查点已落 `docs/module-*.md`；开工顺序 platform →（masterdata ∥ inventory）→（purchase ∥ processing）→（sales ∥ internal-trade）→ settlement；技术栈仍空（`docs/project-context.md` §8-3），是 `platform` 开工的唯一硬前置。
+- **阶段 4 · M0 骨架（2026-11-04 完成）**：`apps/api`、`apps/web`、`packages/contracts|cli|mcp` 五包落地；契约注册表发射 OpenAPI 3.1（10 端点，handler 可 501）、CLI 命令树、MCP 工具表；迁移/审计 outbox/并发取号/权限判定内核 + PGlite(PG18) 用例；测试三件套（P0-1 底座自检、P0-2 口径锁定、workspace 门禁）与双平台 CI。**M1 待做**：登录闭环、会话、API Token、审计查询、权限覆盖写入 → 把 10 个 501 逐个换成真实用例。
+- **阶段 4 交接（2026-11-03）**：9 个模块检查点已落 `docs/module-*.md`；开工顺序 platform →（masterdata ∥ inventory）→（purchase ∥ processing）→（sales ∥ internal-trade）→ settlement。
 - **业务事实已收齐（2026-11-03）**：F1-F10 由负责人口述完毕，全部落 `docs/轻单_业务事实问答_v1_20261103.md`；由此派生的设计约束已收口进 `decisions.md` §5（行业中立、损耗报废无残值、保管人字段、客户退货两类型、内部交易=调货在途、打印无锚点 → 系统自设两套版式）。
 - **决策已扩到 D50**：新增 D9 冲正单据（六类骨架）、D10 v1 降 L2、D11 客户在线支付 + 商户号模式 A、D12 到期处理、D13 不留密码、D14 手机号占用拒绝、D15 公司×岗位绑定、D16 编码固定结构、D17 行业中立、D18 单据链路视图、D19-D28（C 单生成时机 / 改价下限取数 / 取消级联 / 批次归属与跨司引用 / 微信授权收尾 / 收款台账位置 / 跨司链路 / 损失报表口径 / 损失可见性 / 含税口径）、D29-D34（N 单 C 单时机 / 错账路径不设调整单 J / 在途批次锁定 / 费用行跳过下限 / C 单损失净毛利展示 / 退款负数行记账）、D35-D39（C 单损失归属 / 重开提成 / 成本侧更正 / 库存可用量 / 费用行正负）、D40-D47（仅退款重算 / 待执行占用 / 成本更正审批 / 利润报表 / 功能域清单 / 集团看板一期不做 / 20 页重排 / 矩阵特殊值映射）、D48（个人编号 6 位全局唯一）、D49（业务档案编号边界：商品/客户/供应商/加工厂编号不定结构、不作检索主键）、D50（员工个人级权限覆盖：经理/老板给单员工增减权限、叠加岗位并集之上、经理不可改老板/财务/其他经理）。
 - **二期评估备忘**：**调整单 J（红字冲销）**（D30）——一期错账用 R/收款记录/取消重开承接，成本侧录错锁定留日志；J 列为二期第一批评估项。
@@ -60,7 +61,7 @@
 1. ~~按 20 页新 IA 重排可点击原型~~ ✅ 已重排（`prototype.html` v1，待划改）。
 2. ~~写字段级规格 + ER 图 → 接口契约两批冻结~~ ✅ 已冻结。
 3. ~~模块切分 + 登记 + 生成检查点 + 迁文档入工程仓~~ ✅ 2026-11-03 完成（8 业务模块 + test；9 份产品文档 + raw 11 篇 + prototype.html 已迁入；归档仓冻结）。
-4. ~~**P0 `platform` 开工前置**：出技术栈 ADR（后端/前端/数据库/多端收敛）→ 追加 `docs/decisions.md` D53~~ ✅ 2026-11-04 拍板 **D53 = ADR-0001 方案 A（TS 单一语言全栈）**。**剩余前置**：① ADR 未决项 U1-U5 拍板；② U12 的 2 小时 spike 并留 `docs/spike-0001-*.md`；③ 契约第三批冻结；④ 搭工程骨架（`apps/api`、`apps/web`、`packages/contracts|cli|mcp`）。
+4. ~~**P0 `platform` 开工前置**：出技术栈 ADR（后端/前端/数据库/多端收敛）→ 追加 `docs/decisions.md` D53~~ ✅ 2026-11-04 拍板 **D53 = ADR-0001 方案 A（TS 单一语言全栈）**；U1-U5 → **D55**、U12 spike → **D57**、Win10 兼容 → **D56**；契约第三批 → **D54 冻结**。**② M0 工程骨架 ✅ 2026-11-04 已建立**（`apps/api`、`apps/web`、`packages/contracts|cli|mcp` + 迁移 + 测试三件套 + CI）。**下一步 = M1**：登录/会话/Token/审计查询/权限覆盖，把 platform 的 501 逐个实现。
 5. **各模块开工前置**：开发到某模块时先拍板其「开放项」（契约第一批 §11 / 第二批 §4），结果追加 `decisions.md` 并同步契约标记，再写代码。
 
 ## 已知问题 / 坑
@@ -78,6 +79,12 @@
 | `D:\Desktop\dsh\daliy\feishu-wiki-export\feishu-wiki-export.cjs`（原始位置，仓库外、不在 git） | ① `docSourceUrl()` 增加 `node.nodeToken` 兜底，修真搬时 frontmatter `source` 恒为空；② 同空间同名文档写入时用 `node_token` 尾 8 位区分，修 11 篇落成 10 个文件的静默覆盖。改动日期 2026-11-03 | 不修则搬进来的原料违反「缺 source 视为不可追溯」，且会丢文档 | 手工把这两处改回原样即回滚；**回滚后重搬会复发这两个问题**。备份：同目录 `feishu-wiki-export.cjs.bak-20261103`（改动后的快照，防误删用，不是回滚点） |
 | `tools\feishu-wiki-export.cjs`（仓库内受控副本，已纳入 git） | 与原始位置同一份内容（SHA-256 一致），已过 `--self-test` | 让搬运工具进版本控制，避免继续依赖仓库外、无备份的文件 | `git rm tools/feishu-wiki-export.cjs` 即可；之后回到原始位置运行 |
 | `~/.dsh/AGENTS.md`（全局记忆，仓库外） | 2026-11-03 新增「会话总结格式」小节；同日追加「必须同时给一句话总结」（块外一行 + 可复制纯文本块） | 用户 2026-11-03 要求跨会话生效 | 删除该小节即回滚 |
+| `~/.dsh/AGENTS.md`（全局记忆，仓库外） | **2026-11-04 新增「交互规则」小节**：① 收到用户消息先回「收到」再干活（本会话 + 之后群里新建的对话都生效）；② 每次回复的总结用大白话，术语顺带一句人话解释（**同日用户重申细化**：「收到」必须是第一句且立刻输出，不先思考、不先调工具） | 用户 2026-11-04 明确要求跨会话长期生效 | 删除该小节即回滚；不影响其他小节 |
+| `~/.dsh/AGENTS.md`（全局记忆，仓库外） | **2026-11-04 重写「多智能体路由」节**：改为三套 harness 分工——DSH 中间人 / 代码活→Claude Code / 杂项→Codex；写明派发硬规则（任务自包含、写范围、180s 超时、只写不提交、验收看命令输出） | 负责人指令：重新搭建智能体团队，三套 harness 都接 DeepSeek | 恢复为 2026-11-03 版「多智能体路由」五条即回滚 |
+| `C:\Users\32800\.codex\config.toml`（仓库外） | **2026-11-04 追加 `[projects.'d:\desktop\dsh\qingdan'] trust_level = "trusted"`**（只让 Codex 对本项目免信任询问，不动其他配置）；改动前备份 `config.toml.bak-20261104` | Codex 当「杂项手」要在本仓写文档/脚本，未信任目录会被拦 | 删掉这 3 行即回滚；完整还原用 `Copy-Item config.toml.bak-20261104 config.toml -Force` |
+| `C:\Users\32800\.codex\config.toml`（仓库外） | **2026-11-04 追加 `[sandbox_workspace_write] network_access = true`**，让 Codex 沙箱能访问外网（复测 HTTP 200）。同日曾把 `web_search` 改成 `live` 验证，确认在 DeepSeek provider 下无效，已回退 `disabled`。备份：`config.toml.bak-20261104-network`、`config.toml.bak-20261104-search` | 负责人要求「要什么装什么」：Codex 当杂项手，调研类任务需要能上网 | 删掉这 3 行即回滚；完整还原用 `Copy-Item config.toml.bak-20261104-network config.toml -Force` |
+| `~/.dsh/AGENTS.md`（全局记忆，仓库外） | **2026-11-04「交互规则」节追加「长等待必须先汇报」**（当日两次修订）：**不是不许等**，而是需要用户久等时先吭一声——单步预计 >15s 先说「等什么、多久、为什么」；能后台跑就后台跑，等待期间仍可对话；派外部 CLI 前说明「已派，约 20–45 秒」 | 负责人反馈回复间隔忽长忽短；并澄清「不是不给你睡，而是要我久等时要汇报」 | 删除该条即回滚 |
+| `C:\Users\32800\.dsh\dsh-im-connect\ack-watcher.mjs`（仓库外，**已撤回**） | 2026-11-04 曾新增「收到」自动回执守望程序，同日**按负责人澄清撤回**：已杀进程、删 HKCU Run 项 `QingdanAckWatcher`、删除脚本。原因：负责人要的是「模型额度用光 → 收不到收到 → 去充钱」的存活信号，程序代发会让信号失效 | 撤回理由见左；「收到」必须由模型亲自发 | 已执行完毕，无残留（脚本与注册项均已删除） |
 
 ## 相关文件
 
@@ -99,6 +106,7 @@
 
 ## 变更记录
 
+- **2026-11-04 M0 工程骨架建立（恢复开工）**：负责人指示「按检查点继续」后，从「搭骨架 + 补测试三件套」开工，落地 **pnpm monorepo 五包**：`apps/api`（Fastify 5 + Drizzle + PG18：`X-Request-Id`/UUIDv7 ALS、统一错误体、只从注册表生成路由、`0001_platform_core.sql` 13 表 + `qingdan_app` 普通角色 + 11 表 ENABLE/FORCE RLS + `audit_log` 只授 INSERT、审计 outbox 追加器、并发取号、权限判定一条 SQL）、`apps/web`（React 19 + Vite + Tailwind 4 + TanStack Router/Query，22 页路由壳，D56 基线 `chrome111/edge111`）、`packages/contracts`（22 功能域 × 8 动作词表、11 个封闭错误码、10 个平台端点注册表、OpenAPI 3.1 发射器、编号/取消级联/AI 边界口径）、`packages/cli`、`packages/mcp`（同源生成，危险动作默认拒绝）。**验证**：`pnpm -r build` 与 `pnpm -r test` 退出码 0（vitest 130 例：contracts 39 / api 43 / web 26 / cli 17 / mcp 5）；接口技术项补记为 **D58**（第 11 个错误码 `NOT_IMPLEMENTED`=501、新增 `X-Reason` 头）；`pwsh -NoProfile -File tests\run.ps1` → `ALL PASSED (7 files)`、exit 0；真实监听冒烟 `/api/v1/health` 200、`/api/v1/auth/me` 501 统一错误体、`/api/v1/nope` 404、CLI 走真实后端成功 0 / 失败 1。**测试三件套**：`tests/testbase.test.ps1`(P0-1)、`packages/contracts/src/spec-lock.test.ts` + `tests/platform-spec.test.ps1`(P0-2)、`tests/workspace.test.ps1`。**CI**：windows+ubuntu 加 Node 24/pnpm 11/`--frozen-lockfile`，新增 ubuntu + `postgres:18` 集成 job（`tests/db-concurrency.test.ps1` 未落地前按 `hashFiles` 守卫跳过）。**CI 已在真 runner 验证**：PR #1 三个 job 全绿——`test (windows-latest)` 1m31s、`test (ubuntu-latest)` 1m22s、`integration (ubuntu-latest, PostgreSQL 18)` 45s。**未验证**：本机未连真 PostgreSQL（迁移/审计/取号只在 PGlite PG18 跑过）、登录/Token/审计查询端点仍 501、4 位成员档案仍待本人确认（`docs/members/README.md` 状态 ⬜，不阻塞主线骨架）。
 - **2026-11-04 开工前置规则落纸（成员档案）**：负责人要求「先确认身份再领任务」，且成员**必须自己落盘**自己的档案。新增 `docs/members/`：`README.md`（规则 + 现有成员表）、`_template.md`（档案模板）、四份待本人确认的档案（温汇敏 / 赖皓妍 / 李祖怡 / 梁海俊）。`TEAM-PLAN.md` 新增 **§0.2 开工前置**：确认身份 → 落盘档案 → 登记模块负责人 → 领任务 → 才动代码，明确「**档案没合并 = 没开工**」、禁止口头认领、禁止留空开工。`ONBOARDING.md` §0.1 同步加入该顺序，并顺手把环境里的 PostgreSQL 17 更正为 **18**（D57）。
 - **2026-11-04 后端分工调整**：负责人确认**后端由「负责人 + 梁海俊」共同开发**（不是梁海俊一人扛）。梁海俊负责 `masterdata` / `inventory` / `processing` / `internal-trade` 的后端用例；负责人负责 `platform` 内核 / `purchase` / `sales` / `settlement` 并同在后端协作。协作规则同步写进 `docs/TEAM-PLAN.md` §0.1：接口与表结构先由主线出、两人共用同一份 `packages/contracts`、同一文件同时只有一人改、共用分支由负责人合并、提交前必须本地跑 `tests\run.ps1`。
 - **2026-11-04 暂停开工，等人员到位**：负责人指示「先别干活，等分工好后、其他成员加入后再开始」。当前状态：**决策与前置全部收口**（D53 技术栈 / D54 契约第三批冻结 / D55 技术底座 / D56 Win10 兼容 / D57 spike 结论），U12 spike 已完成；**工程骨架 `apps/`、`packages/` 尚未创建，未写任何业务代码**。恢复开工的条件：4 位成员（温汇敏 / 赖皓妍 / 李祖怡 / 梁海俊）按 `docs/TEAM-PLAN.md` §0.1 认领到位后，从「搭骨架 + 补测试三件套」开始。

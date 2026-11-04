@@ -8,6 +8,7 @@ on:
 
 jobs:
   test:
+    name: test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -16,6 +17,69 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # pnpm 版本由根 package.json 的 packageManager 字段锁定（pnpm@11.28.10），此处不再重复指定，
+      # 否则 action 会报 “Multiple versions of pnpm specified”。
+      - name: 安装 pnpm（版本读 packageManager）
+        uses: pnpm/action-setup@v4
+
+      - name: 安装 Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
       - name: 跑全量测试
         shell: pwsh
         run: pwsh -NoProfile -File ./tests/run.ps1
+
+  # L3：并发 / 锁 / 取号 / 真 PostgreSQL 语义。只在 ubuntu 跑，PG 用 18（D57）。
+  # tests/db-concurrency.test.ps1 尚未落地时，测试步骤自动跳过（不误报绿灯为已覆盖）。
+  integration:
+    name: integration (ubuntu-latest, PostgreSQL 18)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qingdan_test
+        options: >-
+          --health-cmd "pg_isready -U postgres -d qingdan_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      QINGDAN_TEST_DB: postgres://postgres:postgres@127.0.0.1:5432/qingdan_test
+    steps:
+      - uses: actions/checkout@v5
+
+      # pnpm 版本由根 package.json 的 packageManager 字段锁定（pnpm@11.28.10），此处不再重复指定，
+      # 否则 action 会报 “Multiple versions of pnpm specified”。
+      - name: 安装 pnpm（版本读 packageManager）
+        uses: pnpm/action-setup@v4
+
+      - name: 安装 Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 并发 / 锁 / 取号（真 PG）
+        shell: pwsh
+        if: hashFiles('tests/db-concurrency.test.ps1') != ''
+        run: pwsh -NoProfile -File ./tests/db-concurrency.test.ps1
+
+      - name: 说明（db-concurrency.test.ps1 尚未落地）
+        if: hashFiles('tests/db-concurrency.test.ps1') == ''
+        run: |
+          echo "tests/db-concurrency.test.ps1 不存在：L3 integration 测试待该文件落地后由上面的步骤自动启用。"
+          echo "本 job 目前只验证 postgres:18 服务与依赖安装可用。"

@@ -10,9 +10,10 @@
 | `ROLES-AND-BOUNDARIES.md` | 🔄 活跃 | **分工与边界**：谁能做什么/不能做什么（红线 14 条）、灰区审批、文件级写权限矩阵、冲突仲裁、违规处理 |
 | `TEAM-PLAN.md` | 🔄 活跃 | **模块分割与合并计划（定稿）**：1 条主线（platform/sales/settlement）+ 4 个交付模块（M1-M4），含写范围、合并门禁（共鸣测试）、第 1 周任务、里程碑、DoR/DoD |
 | `DEV-SETUP.md` | 🔄 活跃 | **环境与仓库骨架**：Node 24 / pnpm 11 / PostgreSQL 17、目录边界规则、本地运行、测试分层、排错 |
-| `adr-0001-tech-stack.md` | 🟡 待拍板 | 技术栈 ADR（D53 候选）：TS 全栈 vs .NET vs Python，含 12 项未决 |
-| `api/openapi.yaml` | 🟡 草案 | 接口描述骨架（OpenAPI 3.1）；`api/cli.md` 为 CLI 命令表 |
+| `adr-0001-tech-stack.md` | ✅ 已接受 | 技术栈 ADR（方案 A 已由 D53 拍板；U1-U5 → D55、U12 → D57、Win10 → D56 均已收口） |
+| `api/openapi.yaml` | ✅ 已冻结 | 接口描述骨架（OpenAPI 3.1，1.0.0；2026-11-04 按 D54 去提案标记）；`api/cli.md` 为 CLI 命令表 |
 | `ONBOARDING.md` | 🔄 活跃 | **唯一入口**：一键初始化、分工与分支、必读最小集、DoD、常见失败、各 Agent 入口 |
+| `AGENT-TEAM.md` | 🔄 活跃 | **智能体团队（三套 harness）**：DSH 中间人 / 代码活→Claude Code / 杂项→Codex；派活模板、技能与 MCP「按需装」流程、子团队规则、边界 |
 
 | 文档 | 状态 | 说明 |
 |---|---|---|
@@ -23,10 +24,10 @@
 
 | 文档 | 状态 | 说明 |
 |---|---|---|
-| `decisions.md` | 🔄 活跃 | **已拍板口径唯一索引（D1-D50 + F 类派生约束 §5）**，每阶段开发前必读；结论只追加不改写 |
+| `decisions.md` | 🔄 活跃 | **已拍板口径唯一索引（D1-D58 + F 类派生约束 §5）**，每阶段开发前必读；结论只追加不改写 |
 | `轻单_接口契约第一批_v1_20261103.md` | ✅ 已冻结 | A/B/E/C 主链 + 批次 + 库存流水；§11 开放项 5 项交开发阶段定 |
 | `轻单_接口契约第二批_v1_20261103.md` | ✅ 已冻结 | N 单 + 提成 + 内部定价；§4 开放项 5 项交开发阶段定 |
-| `轻单_接口契约第三批_v1_20261104.md` | 🟡 草案（未冻结） | 操作日志 + API Token + 通用 API 约定（D51/D52）；**platform 开工前必须确认 §5 四项并冻结** |
+| `轻单_接口契约第三批_v1_20261104.md` | ✅ 已冻结 | 操作日志 + API Token + 通用 API 约定（D51/D52）；D54 逐条裁定后已冻结 |
 | `轻单_业务事实问答_v1_20261103.md` | 🔄 活跃 | F1-F10 已收齐；后续新业务事实追加在此 |
 | `project-context.md` | 🔄 活跃 | 项目上下文/L1 指令相关（技术栈未定见 §8-3） |
 | `prototype-v0.md` | 🔄 活跃 | 22 页 IA、权限矩阵复原、数据模型 v0 |
@@ -39,7 +40,7 @@
 
 | 模块 | 负责范围 | 状态 |
 |---|---|---|
-| `module-platform.md` | 登录/入企、租户·公司·员工、权限引擎、编号、审计、审批、单据框架、待办、打印导出框架 | 未开始（P0） |
+| `module-platform.md` | 登录/入企、租户·公司·员工、权限引擎、编号、审计、审批、单据框架、待办、打印导出框架 | 🔄 M0 骨架已建立（2026-11-04），M1 实现在做 |
 | `module-masterdata.md` | 商品、客户、供应商、加工厂 | 未开始（P1） |
 | `module-inventory.md` | 批次、库存数量、库存流水、盘点调整 I、成本更正 | 未开始（P1） |
 | `module-purchase.md` | A 采购单、S 供应商退货 | 未开始（P2） |
@@ -47,7 +48,7 @@
 | `module-sales.md` | E 销售单、收款记录、在线支付、R 客户退货 | 未开始（P3） |
 | `module-internal-trade.md` | N 内部交易单、内部定价 | 未开始（P3） |
 | `module-settlement.md` | C 结算单、提成、利润报表 | 未开始（P4） |
-| `module-test.md` | 测试底座与契约测试 | 进行中 |
+| `module-test.md` | 测试底座与契约测试 | 🔄 进行中（P0-1 底座自检 + P0-2 口径锁定已落地） |
 
 **开工顺序**：platform →（masterdata ∥ inventory）→（purchase ∥ processing）→（sales ∥ internal-trade）→ settlement。
 **功能域归属**：D44 的 19 个功能域按「原单方向」归模块——R 归 sales、S 归 purchase、I 归 inventory。

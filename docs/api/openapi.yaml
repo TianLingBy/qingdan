@@ -1,36 +1,39 @@
+# 状态：2026-11-04 按 D54 去提案标记；口径真源 = docs/decisions.md D54 + 契约第三批。
 openapi: 3.1.0
 
 info:
   title: 轻单开放 API（Qingdan API v1）
-  version: 0.1.0-draft
+  version: 1.0.0
   summary: AI 友好型应用的接口骨架：Web / CLI / MCP 共用同一套 REST 接口（D52）
   description: |
-    **状态：草案骨架（0.1.0-draft）。** 本文件与《轻单_接口契约第三批_v1_20261104.md》同批冻
-    结；第三批 §5 的 4 项开放项确认前，本文件不作为实现依据。
+    **状态：已冻结（1.0.0）。2026-11-04 按 D54 去提案标记。** 本文件与《轻单_接口契约第三批_v1_20261104.md》
+    同批冻结；第三批 §5 的开放项已由 D54 裁决（日志租户/操作者、日志读覆盖与保留期、dryRun 审计、
+    后台分层、AI 危险动作边界、Token 粒度），本文件按 D54 与契约第三批为准。
 
     **真源**：
     - `docs/轻单_接口契约第三批_v1_20261104.md`（操作日志 §1 / API Token §2 / 通用 API 约定 §3 / CLI 与 MCP §4）
     - `docs/轻单_接口契约第一批_v1_20261103.md`（编号与权限 §1、A 单 §3.1、E 单 §3.3、C 单 §3.4、收款记录 §6、批次 §7、库存流水 §8）
-    - `docs/decisions.md` D51（操作日志）/ D52（API-first）/ D52.1（AI 权限不可放大）
+    - `docs/decisions.md` D51（操作日志）/ D52（API-first）/ D52.1（AI 权限不可放大）/ D54（契约第三批冻结与技术项）
 
-    **通用约定（契约第三批 §3）**：
-    - 认证：人类 = 会话 Cookie；机器 = `Authorization: Bearer <token>`；二选一。
-    - 错误体：`{ code, message, details, requestId }`，HTTP 状态码与 `code` 同时给。
+    **通用约定（契约第三批 §3 + D54）**：
+    - 认证：人类 = 会话 Cookie（`qingdan_session`，闲置 7 天滑动续期）；机器 = `Authorization: Bearer <token>`；二选一。
+    - 错误体：`{ code, message, details, requestId }`，HTTP 状态码与 `code` 同时给；`code` 为 11 个封闭枚举（见 `ErrorCode`）。
     - 分页：`cursor` / `limit`（默认 50、最大 200），返回 `nextCursor`。
-    - 幂等：写接口支持 `Idempotency-Key`，24h 内重复请求返回首次结果。
-    - 并发：单据/批次写接口要求 `If-Match: <version>`，冲突返回 409。
-    - 预检：写接口支持 `dryRun=true`（只校验不落库）。
+    - 幂等：写接口支持 `Idempotency-Key`，作用域 `(租户, key)`，24h 内同 key 同体回放首次结果；同 key 不同体回 409 `IDEMPOTENCY_CONFLICT`。
+    - 并发：单据/批次写接口要求 `If-Match: "<version>"`（强 ETag），冲突返回 409 `VERSION_CONFLICT`，缺失返回 428 `PRECONDITION_REQUIRED`。
+    - 预检：写接口支持 `dryRun=true`（只校验不落库）；成功失败均 200 + `DryRunResult`，且仍落审计、打 `dryRun=true` 标记。
     - 请求 id：`X-Request-Id` 透传并回写，缺省由服务端生成。
+    - 来源：客户端带 `X-Client: web|cli|api|mcp|job`，服务端映射为审计日志的 `source`（D54）。
     - 时间 ISO 8601 带时区；金额、数量一律 decimal **字符串**（避免浮点误差）。
 
-    **本骨架的命名决策（契约未规定，需 platform 冻结时一并确认，详见交付报告）**：
+    **命名与通用约定（D54 已冻结，注册表实现见 `packages/contracts`）**：
     1. JSON 键名统一 camelCase；契约 §1 的中文字段名到 JSON 键的映射见下表。
     2. 业务状态枚举保持契约原值：`进行中 / 已完成 / 已取消`、`待确认 / 已结算`、`收款 / 退款`。
     3. Token scope 的动作采用英文：查=read、建=create、编=update、审=approve、出库=ship、
        删=delete、看价=view_price、导出=export（契约只给中文动作名，`sales.create` 等示例为英文动词）。
-    4. 错误码 `code` 的枚举为**提案**：契约只约定错误体结构，未枚举 code。
-    5. 扩展端点（auth / settlement-orders / batches / inventory-transactions / employees）契约未定义
-       REST 路径，路径与字段按第一批 §2/§6/§7/§8 映射，命名待 platform 冻结。
+    4. 错误码 `code` 为**封闭枚举 11 个**（含 `NOT_IMPLEMENTED`=501），见 `#/components/schemas/ErrorCode`。
+    5. 路径规则 `/api/v1/<kebab 复数>`、tag = 功能域英文键（auth / settlement-orders / batches /
+       inventory-transactions / employees 等扩展端点同此规则）；一期全部端点签名先登记，handler 可先返 501。
 
     **审计字段映射（契约第三批 §1 → JSON 键）**：
 
@@ -60,6 +63,8 @@ info:
 servers:
   - url: /api/v1
     description: 同源相对路径（Web / CLI / MCP 共用；契约第三批 §3「版本」）
+  - url: http://127.0.0.1:3000/api/v1
+    description: 本地开发默认 API 基地址（D54；与 docs/api/cli.md §1 `--api-url` 默认值一致）
 
 security:
   - sessionCookie: []
@@ -93,6 +98,7 @@ paths:
       operationId: getOpenApiDocument
       summary: 获取本部署的 OpenAPI 3.1 文档
       description: 契约第三批 §3「文档」：OpenAPI 3.1 是唯一接口真源。返回本 YAML 转换后的 JSON。
+      security: []
       parameters:
         - $ref: '#/components/parameters/XRequestId'
       responses:
@@ -106,13 +112,11 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
-        '401':
-          $ref: '#/components/responses/Unauthorized'
         '429':
           $ref: '#/components/responses/TooManyRequests'
       x-audit:
         required: false
-        note: 读取接口文档不记日志（D51① 默认值）
+        note: 公开只读、不记日志（D54：openapi.json 公开只读）
 
   /auth/login:
     post:
@@ -139,7 +143,7 @@ paths:
             X-Request-Id:
               $ref: '#/components/headers/XRequestId'
             Set-Cookie:
-              description: '`qingdan_session=<opaque>`；HttpOnly; Secure; SameSite=Lax（Cookie 名待 platform 冻结）'
+              description: '`qingdan_session=<opaque>`；HttpOnly; Secure; SameSite=Lax（Cookie 名已冻结，D54）'
               schema:
                 type: string
           content:
@@ -242,7 +246,7 @@ paths:
         契约第三批 §1。日志只追加，不提供更新 / 删除接口。
         金额与成本字段按「看价」权限脱敏（D27）。
         「查看操作日志」本身也记一条读日志（D51 覆盖清单）。
-        普通列表 / 详情查询默认不记日志（D51① 拟定默认，待冻结）。
+        普通列表 / 详情查询不记日志；敏感读（导出 / 看价 / 看日志 / 看 Token 列表 / 含金额详情）必记（D54②）。
       parameters:
         - $ref: '#/components/parameters/XRequestId'
         - name: actorType
@@ -354,8 +358,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
       x-scope: [platform.read]
       x-audit:
-        required: false
-        note: Token 列表属敏感读，是否记日志见 D51① 待冻结
+        required: true
+        kind: read
+        note: Token 列表属敏感读，必记（D54②）
       x-ai-policy: allowed
       x-contract: 第三批 §2
     post:
@@ -694,7 +699,7 @@ paths:
       description: |
         契约第一批 §3.3：售价随单据（不随批次）；费用行一律 ≥ 0（D39）。
         改价下限 = 行级加权平均批次成本，破下限需审批（D20）；审批流不在本骨架内，
-        破下限时返回 422 且 `details.requiresApproval = true`（提案，待 platform 冻结）。
+        破下限时返回 422 且 `details.requiresApproval = true`（D54 已冻结）。
       parameters:
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -784,8 +789,9 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
       x-scope: [sales.read]
       x-audit:
-        required: false
-        note: 详情含金额，是否按敏感读记日志见 D51① 待冻结
+        required: true
+        kind: read
+        note: 详情含金额 → 记一条「查看敏感金额」（D54② / D27 同口径）
       x-ai-policy: allowed
       x-contract: 第一批 §3.3 / §6
 
@@ -1243,7 +1249,7 @@ paths:
         权限三层：岗位并集 ⊕ 个人覆盖（D50）；数据可见范围 = 绑定公司集合（D15）。
         权限变更属危险动作（D52①）：`reason` 必填；AI 默认禁止，返回 `403 AI_ACTION_FORBIDDEN`；
         经理可改普通员工、不可改老板 / 财务 / 其他经理（D50，由服务端判定）。
-        注意：本端点契约未定义 REST 路径与请求体，字段按 D15/D50 拟定，待 platform 冻结。
+        注意：本端点路径按 D54 的 `/api/v1/<kebab 复数>` 规则登记，请求体字段按 D15/D50 冻结。
       parameters:
         - name: employeeId
           in: path
@@ -1309,7 +1315,7 @@ components:
       name: qingdan_session
       description: |
         人类会话 Cookie（契约第三批 §3「认证」）。
-        Cookie 名 `qingdan_session` 为骨架拟定，待 platform 冻结；HttpOnly; Secure; SameSite=Lax。
+        Cookie 名 `qingdan_session` 已冻结（D54），HttpOnly; Secure; SameSite=Lax，闲置 7 天滑动续期。
     bearerToken:
       type: http
       scheme: bearer
@@ -1466,7 +1472,7 @@ components:
               currentVersion: 4
             requestId: req_01J0EXAMPLE000000000000004
     PreconditionRequired:
-      description: 缺少 `If-Match`（单据/批次写接口要求乐观锁，契约第三批 §3）。提案状态码，待 platform 冻结。
+      description: 缺少 `If-Match`（单据/批次写接口要求乐观锁，契约第三批 §3）。D54 已冻结：更新类强制 `If-Match`，缺失回 428 `PRECONDITION_REQUIRED`。
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'
@@ -1552,7 +1558,22 @@ components:
     ErrorCode:
       type: string
       description: |
-        错误码提案：契约第三批 §3 只约定错误体结构，未枚举 `code`；以下为骨架提案，待 platform 冻结。
+        错误码**封闭枚举 11 个**（D54 已冻结；注册表实现见 `packages/contracts/src/errors.ts`，
+        代码与文档必须一致）。`code` 与 HTTP 状态码同时给：
+
+        | code | HTTP | CLI 退出码 | 含义 |
+        |---|---|---|---|
+        | UNAUTHENTICATED | 401 | 3 | 未认证 |
+        | FORBIDDEN | 403 | 3 | 无权限 |
+        | AI_ACTION_FORBIDDEN | 403 | 3 | AI 不得直接执行该动作，需人类审批（D52①/⑥） |
+        | NOT_FOUND | 404 | 4 | 资源不存在 |
+        | VALIDATION_FAILED | 422 | 4 | 参数校验失败 |
+        | VERSION_CONFLICT | 409 | 5 | `If-Match` 版本冲突 |
+        | IDEMPOTENCY_CONFLICT | 409 | 5 | 同一 `Idempotency-Key` 携带了不同请求体 |
+        | PRECONDITION_REQUIRED | 428 | 4 | 缺少 `If-Match` 前置条件 |
+        | RATE_LIMITED | 429 | 1 | 请求过于频繁 |
+        | INTERNAL_ERROR | 500 | 1 | 服务内部错误 |
+        | NOT_IMPLEMENTED | 501 | 1 | 一期已登记签名、handler 尚未实现（D54） |
       enum:
         - UNAUTHENTICATED
         - FORBIDDEN
@@ -1564,6 +1585,7 @@ components:
         - PRECONDITION_REQUIRED
         - RATE_LIMITED
         - INTERNAL_ERROR
+        - NOT_IMPLEMENTED
 
     ValidationIssue:
       type: object
@@ -1574,7 +1596,7 @@ components:
           description: JSON Pointer 或字段名，如 `lines[0].quantity`
         code:
           type: string
-          description: 字段级错误码（提案，如 MUST_BE_POSITIVE）
+          description: 字段级错误码，格式 `<RESOURCE>_<REASON>`（如 `MUST_BE_POSITIVE`），不属封闭枚举，由各模块在 `packages/contracts` 登记
         message:
           type: string
 
@@ -1591,7 +1613,7 @@ components:
           description: 是否可执行；false 时看 errors
         changes:
           type: array
-          description: 将要发生的变更（实体 + 操作，具体形状待 platform 冻结）
+          description: 将要发生的变更，形状已冻结为 `[{operation, entity, id, before, after}]`（D54）
           items:
             type: object
             additionalProperties: true
@@ -1633,7 +1655,7 @@ components:
       type: string
       description: |
         8 动作枚举（契约第一批 §1.2：查 / 建 / 编 / 审 / 出库 / 删 / 看价 / 导出）。
-        契约只给中文动作名（示例 `sales.create` 只出现英文动词），英文映射为骨架拟定，待冻结：
+        契约只给中文动作名（示例 `sales.create` 只出现英文动词），英文映射已冻结（D54 / 契约第三批 §9）：
         查=read、建=create、编=update、审=approve、出库=ship、删=delete、看价=view_price、导出=export。
       enum:
         - read
@@ -1688,8 +1710,8 @@ components:
           type: [string, 'null']
           format: uuid
           description: |
-            契约「租户 id」：平台侧操作可空（平台级）。
-            ⚠️ 契约 §1 表列为必填、说明写「平台侧可空」，本骨架按说明允许 null，待契约冻结时裁决。
+            契约「租户 id」：业务操作必填；平台级操作填**目标租户**，仅「新增租户」这类纯平台级操作可空（D54①）。
+            `actorType=system` 时 `actorId` 固定字符串 `system`；平台开发者用 `platform:<账号 id>`。
         companyId:
           type: [string, 'null']
           format: uuid
@@ -2491,7 +2513,7 @@ components:
     PermissionUpdateRequest:
       type: object
       description: |
-        修改员工权限（D15 / D50）。契约未定义 REST 路径与请求体，本 schema 按 D50 拟定，待 platform 冻结。
+        修改员工权限（D15 / D50）。路径与请求体按 D50 口径登记（D54 已冻结）。
       required: [reason]
       properties:
         reason:
@@ -2500,12 +2522,12 @@ components:
           description: 权限变更原因（危险动作必填，D52①）
         companyGrants:
           type: array
-          description: 员工-公司-岗位对全集（替换语义，pending 冻结）
+          description: 员工-公司-岗位对全集（替换语义，已冻结）
           items:
             $ref: '#/components/schemas/CompanyGrant'
         overrides:
           type: array
-          description: 个人权限覆盖全集（替换语义，pending 冻结）
+          description: 个人权限覆盖全集（替换语义，已冻结）
           items:
             $ref: '#/components/schemas/PermissionOverride'
 

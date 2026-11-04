@@ -32,14 +32,54 @@ pwsh -NoProfile -File tests\run.ps1
 pwsh -NoProfile -File tests\requirements.test.ps1
 ```
 
+## 工程骨架（M0，2026-11-04 建立）
+
+pnpm monorepo：**Node.js 24 LTS + pnpm 11**（D55）、TypeScript 单语言全栈（D53）。
+
+```
+apps/
+  api/                 Fastify 5 + Drizzle + PostgreSQL 18（唯一部署物）；src/platform 放权限/审计/取号
+  web/                 React 19 + Vite（后续 Electron / Capacitor 复用同一产物）
+packages/
+  contracts/           ★ 唯一契约包：Zod 4 注册表 → OpenAPI 3.1 / CLI 命令树 / MCP 工具表（同源）
+  cli/                 qingdan CLI（薄 HTTP 客户端）
+  mcp/                 MCP Server（工具与 REST 一对一，不绕权限与审计）
+```
+
+```powershell
+# 依赖（首次；PATH 上的 Node 可能是 18，注意用 Node 24 + pnpm 11）
+corepack enable            # 或直接用 D:\tools\pnpm11
+pnpm install
+
+# 构建与测试（拓扑顺序）
+pnpm -r build
+pnpm -r test
+
+# 后端（默认 http://127.0.0.1:3000/api/v1）
+$env:DATABASE_URL = 'postgres://postgres:postgres@127.0.0.1:5432/qingdan_dev'
+pnpm -C apps/api migrate
+pnpm -C apps/api seed
+pnpm -C apps/api dev
+
+# 前端（http://127.0.0.1:5173，/api 代理到 3000）
+pnpm -C apps/web dev
+
+# 接口真源（OpenAPI 3.1）
+pnpm openapi
+```
+
+契约唯一真源是 `packages/contracts` 的 Zod 注册表；**禁止手写接口文档**（D52）。模块边界、环境细节见 [`docs/DEV-SETUP.md`](docs/DEV-SETUP.md)。
+
 ## 目录
 
 | 路径 | 内容 |
 |---|---|
 | `AGENTS.md` | 项目规则（阶段、检查点、开发约定、路由、测试、禁止事项）。**新会话先读它** |
+| `apps/` | 可部署应用：`api`（Fastify）、`web`（React SPA） |
+| `packages/` | 共享包：`contracts`（契约真源）、`cli`、`mcp` |
 | `docs/README.md` | 文档索引与阅读顺序（含模块表） |
 | `docs/ROLES-AND-BOUNDARIES.md` | 分工与边界：谁能做什么/不能做什么、文件级写权限矩阵 |
-| `docs/decisions.md` | **已拍板口径唯一索引（D1-D52.1）**，每阶段开发前必读 |
+| `docs/decisions.md` | **已拍板口径唯一索引（D1-D57）**，每阶段开发前必读 |
 | `docs/轻单_接口契约第一批_v1_20261103.md` | A/B/E/C 主链 + 批次 + 库存流水（已冻结） |
 | `docs/轻单_接口契约第二批_v1_20261103.md` | N 单 + 提成 + 内部定价（已冻结） |
 | `docs/prototype-v0.md` | 原型规格：22 页 IA、权限矩阵、数据模型 |
@@ -57,7 +97,7 @@ pwsh -NoProfile -File tests\requirements.test.ps1
 
 - 远程仓库：`https://github.com/TianLingBy/qingdan`（私有，GitHub）。
 - 分支：`main` 只接 PR；每个模块一条 `feat/<模块名>` 分支。
-- CI：`.github/workflows/test.yml`（push main / PR 时在 `windows-latest` 跑 `tests/run.ps1`）。
+- CI：`.github/workflows/test.yml`（push main / PR 时在 `windows-latest` 与 `ubuntu-latest` 跑 `tests/run.ps1`；另有一个仅 ubuntu 的集成 job 跑真 PostgreSQL）。
 - 本地护栏：`install-hooks.ps1` 装的 pre-commit 与 CI 跑同一入口，双保险。
 
 ## 模块与开工顺序
