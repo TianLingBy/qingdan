@@ -38,7 +38,7 @@
 
 **顺序不能颠倒**：⓿ 装齐本机软件 → ① 确认身份 → ② 把档案落盘 → ③ 登记模块负责人 → ④ 领任务 → ⑤ 才动代码。
 
-0. **装齐软件（第 0 步，装不齐后面全跑不动）**：按 [`docs/DEV-SETUP.md`](DEV-SETUP.md) §1 的《必装软件清单》装 **Git、GitHub CLI（`gh`）、Node.js 24 LTS、pnpm 11、PowerShell 7、PostgreSQL 18、编辑器**七项，然后跑 §1.1 的自检命令：`node -v`=`v24.x`、`pnpm -v`=`11.x`、`pwsh -v`=`7.x`、`gh api repos/TianLingBy/qingdan --jq '.permissions'` 返回 `push:true`。**这四条不过，不要开始 clone**——`git clone` 报 404 基本都是登录账号不对，不是负责人没给权限（见 `docs/DEV-SETUP.md` §7 第一行）。
+0. **准备软件（第 0 步，装不齐后面全跑不动）**：按 [`docs/DEV-SETUP.md`](DEV-SETUP.md) §1 的软件清单装 **Git、Node.js 24 LTS、pnpm 11、PowerShell 7、PostgreSQL 18、编辑器**六项必装。**GitHub CLI（`gh`）为可选**：装了更省事，不装用网页一样能完成（见 [`docs/ONBOARDING.md`](ONBOARDING.md) §11）。然后跑 §1.1 的自检命令：`node -v`=`v24.x`、`pnpm -v`=`11.x`、`pwsh -v`=`7.x`；仓库权限可运行 `gh api repos/TianLingBy/qingdan --jq '.permissions'` 检查（**有 gh 才做**），没有 gh 就用浏览器打开 <https://github.com/TianLingBy/qingdan>，能打开就说明有权限（打不开＝账号不对或没被邀请）。**这四条（不含 gh 那条）不过，不要开始 clone**——`git clone` 报 404 基本都是登录账号不对，不是负责人没给权限（见 `docs/DEV-SETUP.md` §7 第一行）。
 
 1. **确认身份**：读 §0.1 与 `docs/ROLES-AND-BOUNDARIES.md`，说清「我是谁、负责哪个模块、能改什么、不能改什么、谁评审我」。**身份有歧义先问负责人，禁止边猜边写。**
 
