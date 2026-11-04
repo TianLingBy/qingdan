@@ -52,7 +52,7 @@ conductor_dispatch(agent: "codex",       task: "<自包含任务>")   # 杂项
 | harness | 现在有什么 | 缺什么/怎么补 | 安装位置 |
 |---|---|---|---|
 | Claude Code | 本地读写、Bash、Git、MCP 客户端、子代理、skills、后台代理 | 需要浏览器/外部系统时加 MCP：`claude mcp add <name> ...` 或项目 `.mcp.json` | `~/.claude.json` 或项目 `.mcp.json` |
-| Codex | 本地读写、`apply_patch`、插件（documents/spreadsheets/presentations/pdf/browser/computer-use 已启用）、MCP（`codex mcp`）、多智能体（`multi_agent` = stable/true） | **联网搜索当前被关**（`web_search = "disabled"`）：`conductor_dispatch` 只传任务文本、透传不了自定义旗标，所以① 常规做法 = Lead 先查好事实再派活；② 确实要它自己搜，就绕开 conductor 直调 `codex exec -c web_search="live" ...` | `~/.codex/config.toml` / `codex mcp add` |
+| Codex | 20 个工具：`exec_command`、`apply_patch`、`view_image`、MCP 资源、**自建团队**（`spawn_agent` / `send_message` / `wait_agent` / `interrupt_agent`） | **联网**（2026-11-04 实测）：`web_search` 开关对它**无效**——接的是 DeepSeek provider，没有搜索工具，开成 `live` 也变不出来（已回退 `disabled`）。真正有效的是给沙箱开网络：`[sandbox_workspace_write] network_access = true`，复测可访问外网（HTTP 200）；注意 `curl.exe` 在沙箱内会 `EPERM`，改用 `Invoke-WebRequest` 等通道 | `~/.codex/config.toml` |
 | DSH（我） | skills（ponytail / office / systematic-debugging 等）、REA 逆向、web 搜索/抓取、自动化任务 | 按任务加载，不常驻 | `~/.dsh/skills`、`~/.dsh/cordis.patch.yml` |
 
 **铁律**：装之前先说清"为什么需要、装哪、怎么卸"，装完登记（仓库外改动登记到 `docs/roadmap.md`「外部依赖」表）。
