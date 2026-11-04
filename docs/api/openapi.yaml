@@ -1632,6 +1632,316 @@ paths:
       x-requires-if-match: '"<version>"'
       x-contract: 契约第一批 §2 / Issue #15
 
+  /customers:
+    get:
+      tags: [customer]
+      operationId: customer.list.read
+      summary: 客户列表（按名称/联系人检索；普通读不记审计，D49 不按编号全局搜）
+      parameters:
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [启用, 停用]
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: 成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Customer'
+                  nextCursor:
+                    type: [string, 'null']
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [customer.read]
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_customer_list_read
+
+    post:
+      tags: [customer]
+      operationId: customer.create
+      summary: 新增客户（编号自由文本可空；客户无金额字段，D49）
+      parameters:
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [companyId, name]
+              additionalProperties: false
+              properties:
+                companyId:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                customerNo:
+                  type: [string, 'null']
+                  maxLength: 64
+                contactName:
+                  type: [string, 'null']
+                  maxLength: 64
+                contactPhone:
+                  type: [string, 'null']
+                  maxLength: 32
+                creditTermDays:
+                  type: [integer, 'null']
+                  minimum: 0
+                status:
+                  type: string
+                  enum: [启用, 停用]
+      responses:
+        '201':
+          description: 成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [customer.create]
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+        action: customer.create
+        objectType: 客户
+        logOnFailure: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_customer_create
+
+  /customers/{id}:
+    get:
+      tags: [customer]
+      operationId: customer.detail.read
+      summary: 客户详情（D15 跨公司不可见）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: 成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [customer.read]
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_customer_detail_read
+
+    patch:
+      tags: [customer]
+      operationId: customer.update
+      summary: 修改客户（强 ETag If-Match）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                customerNo:
+                  type: [string, 'null']
+                  maxLength: 64
+                contactName:
+                  type: [string, 'null']
+                  maxLength: 64
+                contactPhone:
+                  type: [string, 'null']
+                  maxLength: 32
+                creditTermDays:
+                  type: [integer, 'null']
+                  minimum: 0
+                status:
+                  type: string
+                  enum: [启用, 停用]
+      responses:
+        '200':
+          description: 成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [customer.update]
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+        action: customer.update
+        objectType: 客户
+        logOnFailure: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-requires-if-match: '"<version>"'
+      x-mcp-tool: qingdan_customer_update
+
+    delete:
+      tags: [customer]
+      operationId: customer.delete
+      summary: 停用客户（软删除，不做物理删除；危险动作，AI 默认禁止）
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/XRequestId'
+        - $ref: '#/components/parameters/IfMatch'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 成功
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '428':
+          $ref: '#/components/responses/PreconditionRequired'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+      x-scope: [customer.delete]
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+        action: customer.delete
+        objectType: 客户
+        logOnFailure: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-requires-if-match: '"<version>"'
+      x-mcp-tool: qingdan_customer_delete
+
 components:
 
   securitySchemes:
@@ -3106,3 +3416,48 @@ components:
           type: [string, 'null']
           format: uuid
           description: credentialType = token 时为 token id（对应审计「凭证 id」）
+
+    Customer:
+      type: object
+      required:
+        - id
+        - tenantId
+        - companyId
+        - customerNo
+        - name
+        - contactName
+        - contactPhone
+        - creditTermDays
+        - status
+        - version
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        customerNo:
+          type: [string, 'null']
+        name:
+          type: string
+        contactName:
+          type: [string, 'null']
+        contactPhone:
+          type: [string, 'null']
+        creditTermDays:
+          type: [integer, 'null']
+          minimum: 0
+        status:
+          type: string
+          enum: [启用, 停用]
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

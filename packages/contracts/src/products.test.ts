@@ -15,7 +15,9 @@ describe('商品契约（masterdata）', () => {
   it('5 条端点全部登记，且归属 masterdata', () => {
     expect(PRODUCT_ROUTES).toHaveLength(5);
     for (const route of PRODUCT_ROUTES) expect(route.module).toBe('masterdata');
-    expect(routesOfModule(ROUTES, 'masterdata')).toHaveLength(5);
+    // masterdata 会陆续挂客户/供应商等切片，这里只锁「商品都归 masterdata」，不锁总数。
+    const masterdataIds = routesOfModule(ROUTES, 'masterdata').map((r) => r.operationId);
+    for (const route of PRODUCT_ROUTES) expect(masterdataIds).toContain(route.operationId);
   });
 
   it('operationId / 方法 / 路径与契约一致', () => {

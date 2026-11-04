@@ -3,6 +3,7 @@ import { AuditLogSchema } from './audit.js';
 import { ScopeMatrixSchema } from './authz.js';
 import { ApiErrorBodySchema } from './errors.js';
 import { ProductSchema } from './products.js';
+import { CustomerSchema } from './customers.js';
 
 /**
  * 契约实体登记表（D57 ①）：每个实体必须在此登记并带 globalRegistry id，
@@ -37,6 +38,9 @@ z.globalRegistry.add(ApiErrorBodySchema, { id: 'ApiErrorBody' });
 /** 商品（契约第一批 §2 / Issue #15）：实体定义在 `products.ts`，这里只做登记。 */
 z.globalRegistry.add(ProductSchema, { id: 'Product' });
 
+/** 客户（契约第一批 §2 / masterdata 第二切）：实体定义在 `customers.ts`，这里只做登记。 */
+z.globalRegistry.add(CustomerSchema, { id: 'Customer' });
+
 /** 员工列表里的公司-岗位对（D15：一人多岗 + 公司隔离）。 */
 const EmployeeCompanySchema = z.object({
   companyId: z.string(),
@@ -68,4 +72,5 @@ export const ENTITIES = [
   { name: 'ApiErrorBody', schema: ApiErrorBodySchema },
   { name: 'EmployeeSummary', schema: EmployeeSummarySchema },
   { name: 'Product', schema: ProductSchema },
+  { name: 'Customer', schema: CustomerSchema },
 ] as const;

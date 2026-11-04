@@ -6,6 +6,7 @@ import { AuditLogSchema } from './audit.js';
 import { ScopeMatrixSchema } from './authz.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
 import { PRODUCT_ROUTES } from './products.js';
+import { CUSTOMER_ROUTES } from './customers.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -192,6 +193,8 @@ export const ROUTES: readonly RouteDef[] = [
   }),
   // —— masterdata 模块：商品资料首切（Issue #15，2026-11-04）——
   ...PRODUCT_ROUTES,
+  // —— masterdata 模块：客户资料（契约第一批 §2，2026-11-04）——
+  ...CUSTOMER_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;
