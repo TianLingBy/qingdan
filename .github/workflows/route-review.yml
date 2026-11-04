@@ -157,11 +157,6 @@ jobs:
             }
 
             async function ensureLabel(name) {
-              const existing = await safely(`查询标签 ${name}`, () =>
-                github.rest.issues.getLabel({ owner, repo, name })
-              );
-              if (existing) return;
-
               const [color, description] = labelMeta[name] || ['ededed', ''];
               try {
                 await github.rest.issues.createLabel({
@@ -172,11 +167,8 @@ jobs:
                   description,
                 });
               } catch (error) {
-                if (error.status === 422) {
-                  core.warning(`标签 ${name} 已存在，继续使用`);
-                  return;
-                }
-                throw error;
+                if (error.status === 409 || error.status === 422) return;
+                core.warning(`创建标签 ${name}失败：${error.message}`);
               }
             }
 
