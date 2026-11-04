@@ -36,8 +36,15 @@ if (Test-Path $onboarding) {
       '## 5. 必读文档',
       '## 6. 干活与交付',
       '## 7. 常见失败与处置',
-      '## 8. 各 Agent 的入口对照'
+      '## 8. 各 Agent 的入口对照',
+      '## 8.1 GitHub MCP'
     )) { Assert-True $o.Contains($s) "ONBOARDING 含小节 $s" }
+
+  # GitHub MCP 必须写成可照抄的配置：端点、两个客户端命令、token 不进仓库
+  Assert-True $o.Contains('https://api.githubcopilot.com/mcp/') 'ONBOARDING 给出 GitHub MCP 端点'
+  Assert-True ($o.Contains('claude mcp add') -and $o.Contains('--transport http')) 'ONBOARDING 给出 Claude Code 配 GitHub MCP 的命令'
+  Assert-True ($o.Contains('codex mcp add') -and $o.Contains('--bearer-token-env-var GITHUB_PAT')) 'ONBOARDING 给出 Codex 配 GitHub MCP 的命令'
+  Assert-True ($o.Contains('GITHUB_PAT') -and $o.Contains('不进仓库')) 'ONBOARDING 规定 token 不进仓库'
 
   $modules = @('platform', 'masterdata', 'inventory', 'purchase', 'processing', 'sales', 'internal-trade', 'settlement', 'test')
   foreach ($m in $modules) {
