@@ -26,13 +26,13 @@
 
 | 成员 | 自述职责 | 落到代码上的写范围 | 归属检查点 |
 |---|---|---|---|
-| **温汇敏** | 账号管理 | `platform` 的**员工 / 岗位 / 权限设置 / 公司管理**（原型页 16/17/18）+ 登录与后台建号 | `module-platform.md`（与主线分工：**框架内核归主线**，账号域归他） |
+| **温汇敏** | 账号管理 **+ 权限** | `platform` 的**员工 / 岗位 / 权限设置 / 公司管理**（原型页 16/17/18）+ **权限引擎（权限判定规则与实现、三层生效：岗位并集 ⊕ 个人覆盖 ∩ 公司集合、看价）** + 登录与后台建号 | `module-platform.md`（**账号域 + 权限域归她**；主线保留审计、编号、单据框架、待办、API Token） |
 | **赖皓妍** | UI 界面设计优化 | `apps/web` 的**全部页面视觉、组件库、交互与老浏览器适配**（D56 基线），不含业务判定 | 不占模块检查点，走 `feat/ui` 分支按页面分批 PR |
 | **李祖怡** | 单据 | 八类单据（**A/B/E/N/C/R/S/I**）的**详情页、状态流转展示、打印与导出两套版式** | 横跨 `purchase`/`processing`/`sales`/`internal-trade` 的**展示层** |
-| **梁海俊** | 其他 | 上面三条未认领的后端业务：`masterdata`（商品/客户/供应商/加工厂）、`inventory`（批次/库存/盘点/成本更正）、以及剩余 `purchase`/`processing`/`internal-trade` 的业务用例 | M1/M2/M3/M4 中除「账号域」与「展示层」外的部分 |
+| **梁海俊** | 其他 | 上面三条未认领的后端业务：`masterdata`（商品/客户/供应商/加工厂）、`inventory`（批次/库存/盘点/成本更正）、`processing`（B 单/损耗）、`internal-trade`（N 单/转司）的业务用例。**`purchase`（A/S 单）已于 2026-11-04 移交主线**，不再由他承担 | M1(部分)/M2/M3/M4 中除「账号域」「权限域」「展示层」外的部分 |
 | **你 + DSH 智能体团队** | 主线 | `platform` 内核、`packages/contracts`、`sales`、`settlement`、`test` 底座 | `module-platform/sales/settlement/test.md` |
 
-**红线（沿用 `ROLES-AND-BOUNDARIES.md`）**：`packages/contracts`、`platform` 内核（权限判定 / 审计写入 / 编号 / 单据框架）、`docs/decisions.md` **只有主线能改**；其他人要动，先提 PR 到主线评审。**工作量提示**：梁海俊承接的后端面最宽（主数据 + 库存 + 三条业务线剩余），若排期吃紧，把 `purchase` 移交主线或让李祖怡分担后端用例。
+**红线（沿用 `ROLES-AND-BOUNDARIES.md`）**：`packages/contracts`、`platform` 的**审计写入 / 编号 / 单据框架 / 待办 / API Token**、`docs/decisions.md` **只有主线能改**；其他人要动，先提 PR 到主线评审。**权限域已明确归温汇敏**（判定规则 + 权限设置页 + 三层生效），但她**不得绕过 `packages/contracts` 直接改契约**，权限判定的契约签名与测试护具由主线提供——`tests/platform-spec.test.ps1`（P0-2）会锁住 D50/D15/D4 的口径，防止实现漂移。**工作量提示**：梁海俊承接「主数据 + 库存 + 加工 + 内部交易」的后端，仍是最宽的一条；若吃紧，把 `processing` 或 `internal-trade` 移交主线。
 
 ## 1. 五个交付模块的边界与验收
 
