@@ -334,3 +334,21 @@ pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>    # 模块名见 §4，
 1. `docs/members/<姓名>.md` 已合并且无空白项；
 2. `docs/module-<模块>.md` 顶部有「负责人 + 日期」；
 3. 对方贴出 `ALL PASSED (N files)` 的真实输出行与退出码。
+
+## 11. 没有 gh（GitHub CLI）也能走完全流程
+
+gh 只是省事的工具，**不是开工前置**；没装就用网页，功能一样不少。
+
+| 操作 | 有 gh 的命令 | 没 gh 的网页做法 |
+|---|---|---|
+| 看指派给自己的 issue | `gh issue list --assignee @me` | 打开 [仓库 Issues 页](https://github.com/TianLingBy/qingdan/issues)，按 Assignee 筛选自己 |
+| 开 PR | `gh pr create` | push 后点页面上出现的 Create pull request 链接，或到 [Pull requests 页](https://github.com/TianLingBy/qingdan/pulls) 点 New |
+| 看 CI 结果 | `gh pr checks` | 打开 PR 页，看底部的 Checks 区域 |
+| 合并 PR | `gh pr merge --squash` | 在 PR 页点绿色 Merge pull request，选 Squash and merge |
+| 看别人 PR 的改动 | `gh pr diff` | 打开 PR 页的 Files changed |
+
+### 想装 gh 再装（可选）
+
+Windows 可执行 `winget install --id GitHub.cli -e`，装完执行 `gh auth login` 登录本人账号。装了只是更省事，不装完全不影响。
+
+**上面所有网页操作都不需要你在本地装任何额外工具，只要有浏览器和仓库权限。**
