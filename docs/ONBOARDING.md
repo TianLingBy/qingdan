@@ -154,6 +154,7 @@ git switch -c feat/<模块名>                  # 建分支（已存在就 git s
 | 测试红 | 改了契约/检查点断言 | 先看 `tests\run.ps1` 报哪个文件哪条断言；**不要 `--no-verify` 绕过** |
 | `403` / 无权推送 | 没被邀请进私有仓 | 找仓库所有者加协作者（write 权限） |
 | `bootstrap.ps1` 报模块不存在 | 模块名拼错 | 用 §4 表格里的名字，全小写、连字符 |
+| Agent 说「GitHub MCP 未配置」/ 看不到 PR 与 issue | 客户端没配 GitHub MCP，只能靠 `gh` 命令行 | 按 §8.1 配一次；配完让 Agent 列一次开放 PR 自检 |
 
 ## 8. 各 Agent 的入口对照
 
@@ -170,6 +171,69 @@ git switch -c feat/<模块名>                  # 建分支（已存在就 git s
 
 > 克隆 https://github.com/TianLingBy/qingdan.git 到本地，读仓库根的 AGENTS.md 与 docs/ONBOARDING.md，运行 `pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>` 完成初始化；然后按 docs/module-<模块名>.md 的开放项与验收标准开始开发，提交前跑 `tests\run.ps1`。
 
+## 8.1 GitHub MCP：让 Agent 直接读写 issue / PR（协作必配）
+
+**为什么**：不配的话，Agent 只能一条条敲 `gh` 命令，或者反过来问你「PR 号是多少」。配好之后它能自己列 PR、读 diff、发评论、改 issue 状态。**Agent 报「GitHub MCP 未配置 / 我这边没有 github 工具」就是这一步没做**——不是权限问题，是客户端没装。
+
+**第 1 步：确认 `gh` 登录的是被邀请的那个账号**
+
+```powershell
+gh auth status                                        # 期望：Logged in to github.com account <你的账号>
+gh api repos/TianLingBy/qingdan --jq '.permissions.push'   # 期望：true
+```
+
+**第 2 步：把 token 放进用户环境变量（不进仓库）**
+
+```powershell
+setx GITHUB_PAT (gh auth token)   # 取 gh 自己那份 OAuth token；关掉并重开终端后生效
+$env:GITHUB_PAT.Length -gt 20     # 重开终端后验证，期望 True
+```
+
+- **变量名别用 `GITHUB_TOKEN`**：部分宿主（含 DSH）给子进程传环境变量时会剥掉名字里含 `KEY` / `SECRET` / `TOKEN` 的变量，`GITHUB_PAT` 不受影响。
+- 要最小权限就改用 fine-grained PAT：只选 `qingdan` 一个仓库，权限给 Issues: Read and write、Pull requests: Read and write、Contents: Read、Metadata: Read。
+- **token 不进仓库、不进聊天记录、不写进任何文档**；一旦泄露立刻去 GitHub 撤销重发。
+
+**第 3 步：按你的客户端配一次**（端点固定 `https://api.githubcopilot.com/mcp/`）
+
+Claude Code：
+
+```powershell
+claude mcp add --transport http github https://api.githubcopilot.com/mcp/ --header "Authorization: Bearer $env:GITHUB_PAT" --scope user
+claude mcp list
+```
+
+Codex：
+
+```powershell
+codex mcp add github --url https://api.githubcopilot.com/mcp/ --bearer-token-env-var GITHUB_PAT
+codex mcp list
+```
+
+Cursor / VS Code Copilot：写项目级配置（Cursor 是仓库根的 `.cursor/mcp.json`）：
+
+```json
+{"mcpServers":{"github":{"url":"https://api.githubcopilot.com/mcp/","headers":{"Authorization":"Bearer ${env:GITHUB_PAT}"}}}}
+```
+
+**第 4 步：验收到位（三条都要过）**
+
+1. `claude mcp list` / `codex mcp list` 里出现 `github`，状态不是 `failed`；
+2. 让 Agent 执行一次「列出本仓开放 PR」，能返回列表 → 说明私有仓读得到、token 有权限；
+3. 把 `GITHUB_PAT` 清空再试一次，应当报错 → 说明它真的在用 token，不是匿名访问。
+
+**排查**
+
+| 现象 | 原因 | 处置 |
+|---|---|---|
+| 401 / `Bad credentials` | token 没进到客户端进程 | 重开终端；核对变量名；`claude mcp list` 看是否 `failed` |
+| 403 / 读不到私有仓 | 登录的不是被邀请的账号 | `gh api user --jq '.login'` 与负责人核对 |
+| 连接超时 | 到 `api.githubcopilot.com` 不通（本机直连 GitHub 不稳） | 换网络/代理；或改用本地 Docker 版 `docker run -i --rm -e GITHUB_PERSONAL_ACCESS_TOKEN=<PAT> ghcr.io/github/github-mcp-server`，按 stdio 方式配 |
+| 用 `curl` 试连通性报 `SEC_E_NO_CREDENTIALS` | Windows schannel 的已知问题，**不是**网络不通 | 别用 curl 验，用客户端自身验 |
+
+**Agent 用它时必须守的边界**（与 §10.3 铁律一致）：只读写本仓的 issue / PR / 评论；不改分支保护、不改仓库设置、不删仓库、不读别人的仓。**提交代码仍然走 `git` + PR**，不用 MCP 直接改文件。
+
+**本节验证记录**：2026-11-04 用 `gh auth token` 对 `https://api.githubcopilot.com/mcp/` 发 MCP `initialize`，返回 HTTP 200 与 `serverInfo`（Node 24 `fetch`）；同机 `curl` 报 `SEC_E_NO_CREDENTIALS`，所以「curl 不通」不能证明端点不可用。
+
 ## 9. 卡住时找谁
 
 - 仓库所有者 / 总负责：`TianLingBy`（GitHub）。
@@ -183,6 +247,7 @@ git switch -c feat/<模块名>                  # 建分支（已存在就 git s
 1. **仓库是私有的**：所有者必须在 GitHub → Settings → Collaborators 里把成员的 GitHub 账号加为 **write** 权限（否则 `git push` 403）。
 2. **本机环境**：Git、PowerShell 7（`pwsh`，5.1 不行）、Node 24、pnpm 11。缺 Node 24 时 `bootstrap.ps1` 会提示。
 3. **不要用共享 token**：每个人用自己的 GitHub 账号登录（`gh auth login` 或 Windows 凭据管理器），**不要把 PAT 写进文档、聊天记录或仓库**。
+4. **给 Agent 配好 GitHub MCP**：没配的话 Agent 读不到 issue / PR，只能靠你人工转述（配置方法见 §8.1）。
 
 ### 10.2 三条命令（人类自己敲）
 
@@ -199,6 +264,7 @@ pwsh -NoProfile -File bootstrap.ps1 -Module <模块名>    # 模块名见 §4，
 > **开工顺序不可颠倒**：① 先和我确认我的身份（我是谁、负责哪个模块、能改什么、不能改什么）；② 把我的档案落到 `docs/members/<我的中文姓名>.md`（复制 `docs/members/_template.md` 填满，含 `install-hooks.ps1` 与 `tests\run.ps1` 的真实输出行）；③ 在 `docs/module-<模块>.md` 顶部登记「负责人：我｜接手日期」；④ 提交 PR（`chore(members): 登记 <姓名> 的成员档案`）并等我确认；⑤ **档案合并之后**才领任务、写代码。
 > 铁律：不改 `packages/contracts/**`、`platform` 内核（审计/编号/单据框架/待办/Token）、`docs/decisions.md`；不碰别人模块的目录与检查点；每次提交前跑 `tests\run.ps1` 并贴真实输出；技术栈已定 D53（TypeScript 全栈，Node 24 + Fastify 5 + Drizzle + PostgreSQL 18 + React 19/Vite），不要再讨论选型。
 > 有任何口径疑问，先查 `docs/decisions.md`（D1-D57），查不到就停下来问我，**不要用假设继续实现**。
+> 开工前先确认你自己的 GitHub MCP 已配好（见 `docs/ONBOARDING.md` §8.1）：`claude mcp list` 或 `codex mcp list` 里能看到 `github` 且不是 `failed`，否则你读不到 issue 与 PR，只能靠我人工转述。
 
 ### 10.4 到位验收（负责人检查三件事）
 
