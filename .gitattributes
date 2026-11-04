@@ -23,3 +23,6 @@ tools/pre-commit text eol=lf
 *.sql            text eol=lf
 *.css            text eol=lf
 *.html           text eol=lf
+
+# 协议与公开法律文本一律 LF（AGPL 原文是官方逐字副本，行尾不能被本机 autocrlf 改掉）
+LICENSE          text eol=lf
