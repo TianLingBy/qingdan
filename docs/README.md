@@ -13,6 +13,7 @@
 | `adr-0001-tech-stack.md` | ✅ 已接受 | 技术栈 ADR（方案 A 已由 D53 拍板；U1-U5 → D55、U12 → D57、Win10 → D56 均已收口） |
 | `api/openapi.yaml` | ✅ 已冻结 | 接口描述骨架（OpenAPI 3.1，1.0.0；2026-11-04 按 D54 去提案标记）；`api/cli.md` 为 CLI 命令表 |
 | `ONBOARDING.md` | 🔄 活跃 | **唯一入口**：一键初始化、分工与分支、必读最小集、DoD、常见失败、各 Agent 入口 |
+| `AGENT-TEAM.md` | 🔄 活跃 | **智能体团队（三套 harness）**：DSH 中间人 / 代码活→Claude Code / 杂项→Codex；派活模板、技能与 MCP「按需装」流程、子团队规则、边界 |
 
 | 文档 | 状态 | 说明 |
 |---|---|---|

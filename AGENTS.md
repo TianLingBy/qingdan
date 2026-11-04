@@ -66,18 +66,24 @@
 - 协作者接入、模块认领、每模块分支与依赖顺序见 `docs/ONBOARDING.md`；**4 人人类开发者看 `docs/TEAM-PLAN.md`（分工/里程碑/DoR/DoD）与 `docs/DEV-SETUP.md`（环境/目录）**；PR 按 `.github/pull_request_template.md` 填。
 - CI 跑 `windows-latest` 与 `ubuntu-latest` 两个平台，macOS/Linux 协作者以 ubuntu 结果为参照。
 
-## 路由（引用全局，不重复定义）
+## 路由（三套 harness 分工，真源 `docs/AGENT-TEAM.md`）
 
-全局 `~/.dsh/AGENTS.md` 的「多智能体路由」已规定：
+**2026-11-04 起团队重建**：DSH 是中间人，代码活交给 Claude Code，杂项交给 Codex；三者都走 DeepSeek。
 
-- 深度编码、代码审查、架构第二意见 → `conductor_dispatch(agent:"claude-code")`
-- 边界清晰、可验证的实现类任务 → `conductor_dispatch(agent:"codex")`
-- 探索性讨论、需求澄清、写文档 → 自己做，不派发
+- **DSH（Lead / 中间人）**：接负责人指令 → 拆任务 → 评估并安装所需技能/MCP/联网工具 → 派活 → 跑验收 → 统一提交/开 PR → 汇报。不自己闷头写业务代码（简单改动除外）。
+- **代码活 → `conductor_dispatch(agent:"claude-code")`**：实现、改代码、重构、写测试、代码审查。项目级子代理定义在 `.claude/agents/`（`coder` / `tester` / `reviewer`），它可以自建子团队。
+- **杂项 → `conductor_dispatch(agent:"codex")`**：文档撰写/整理、资料整理、脚本与配置、CI、批量改名、Office 文档、环境排错。Codex 的 `multi_agent` 已开启，可以自建子团队。
+- **探索性讨论、需求澄清、口径裁定** → 自己做，不派发；**联网调研**默认用 DSH 自带的 web 工具（Codex 的 `web_search` 当前关闭，需要时单次 `-c web_search="live"` 或先由 DSH 查好再给事实材料）。
 
-项目内追加两条：
+派发硬规则（每次都要满足）：
 
-- 派发任务的提示里必须写项目根的绝对路径，并说明「只改本模块相关文件」。
-- 派发前若不确定范围，先 `dryRun: true` 核对 cwd 与 argv。
+1. 任务必须**自包含**（对方看不到本会话上下文）：绝对路径 + 目标 + **写范围** + 依据的 D 编号 + **验收命令** + 禁止事项。
+2. 写范围写死「只允许改 X」；跨模块共享文件（`packages/contracts`、`apps/api/src/platform`、`docs/decisions.md`）未经明确授权不许动。
+3. 单次派发硬超时 **180 秒**，大活拆小分次派；跑不完就拆。
+4. 派发前不确定范围先 `dryRun: true` 核对 cwd 与 argv。
+5. 子代理/外部代理**只写不提交**；提交、推送、开 PR 归 Lead，验收以「命令退出码 + 输出关键行」为准，不认「已完成」自述。
+
+需要新能力（新 MCP / 新技能 / 联网）时：先说清「为什么需要、装哪、怎么卸」，装完登记到 `docs/roadmap.md`「外部依赖」表。
 
 ## 测试
 
