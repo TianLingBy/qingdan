@@ -12,6 +12,7 @@ import type { AppConfig } from '../../platform/config.js';
 import { requestIdFor } from '../../platform/http/request-id.js';
 import { createApiToken, listApiTokens, revokeApiToken } from './usecases/api-tokens.js';
 import { listAuditLogs } from './usecases/audit-logs.js';
+import { listEmployees } from './usecases/employees.js';
 import { login } from './usecases/login.js';
 import { logout } from './usecases/logout.js';
 import { me } from './usecases/me.js';
@@ -161,6 +162,8 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
               });
             case 'platform.auth.me':
               return await me({ database: app.database, request });
+            case 'platform.employee.read':
+              return await listEmployees({ database: app.database, request });
             case 'platform.token.create':
               return await createApiToken({ database: app.database, request, reply });
             case 'platform.token.read':

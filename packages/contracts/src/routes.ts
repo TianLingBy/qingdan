@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DOMAIN_KEYS, ACTION_KEYS } from './domains.js';
 import { defineRoute, type RouteDef } from './registry.js';
-import { ApiTokenCreatedSchema, ApiTokenSchema } from './entities.js';
+import { ApiTokenCreatedSchema, ApiTokenSchema, EmployeeSummarySchema } from './entities.js';
 import { AuditLogSchema } from './audit.js';
 import { ScopeMatrixSchema } from './authz.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
@@ -49,6 +49,17 @@ const PermissionOverrideInput = z.object({
 });
 
 const IdParam = z.object({ id: z.string() });
+
+/**
+ * 员工列表查询（D15 / D50）：在通用游标分页上追加数据范围过滤。
+ * `keyword` 匹配姓名 / 工号 / 手机号后 4 位，始终在调用者可见公司范围内生效。
+ */
+export const EmployeeListQuerySchema = PageQuerySchema.extend({
+  companyId: z.string().uuid().optional(),
+  positionId: z.string().uuid().optional(),
+  status: z.enum(['在职', '停用']).optional(),
+  keyword: z.string().min(1).max(64).optional(),
+});
 
 export const ROUTES: readonly RouteDef[] = [
   defineRoute({
@@ -103,6 +114,17 @@ export const ROUTES: readonly RouteDef[] = [
     summary: '当前登录主体与生效权限',
     audit: { kind: 'none' },
     response: { status: 200, schema: MeOutput },
+  }),
+  defineRoute({
+    operationId: 'platform.employee.read',
+    method: 'GET',
+    path: '/api/v1/employees',
+    domain: 'employee',
+    action: 'read',
+    summary: '员工列表（普通读不记审计；老板见全租户，非老板仅绑定公司集合）',
+    audit: { kind: 'none' },
+    request: { query: EmployeeListQuerySchema },
+    response: { status: 200, schema: pageSchema(EmployeeSummarySchema) },
   }),
   defineRoute({
     operationId: 'platform.audit.read',

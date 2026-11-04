@@ -45,7 +45,7 @@ describe('HTTP 骨架（buildApp + app.inject）', () => {
     };
 
     expect(document.openapi).toBe('3.1.0');
-    expect(Object.keys(document.paths)).toHaveLength(9);
+    expect(Object.keys(document.paths)).toHaveLength(new Set(ROUTES.map((route) => route.path)).size);
     const operations = Object.values(document.paths).flatMap((pathItem) => Object.values(pathItem));
     expect(operations).toHaveLength(ROUTES.length);
     expect(operations.map((operation) => operation.operationId).sort()).toEqual(
