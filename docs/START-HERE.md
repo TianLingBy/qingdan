@@ -38,6 +38,7 @@ PR 标题写：`chore(members): 登记 <姓名> 的成员档案`。
 ## 第 3 步：之后怎么接活
 
 去 [GitHub Issues](https://github.com/TianLingBy/qingdan/issues) 看你名下的 issue；没有 gh 就直接点这个网页链接，后续通知看 GitHub 邮件。
+每次开工前先跑 `pwsh -NoProfile -File scripts/sync-check.ps1`，它会告诉你：有没有人在动你的依赖、口径最近改了什么、你在等谁。
 
 ## 卡住了看哪份
 

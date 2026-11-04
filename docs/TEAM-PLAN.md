@@ -207,3 +207,11 @@ MAIN.platform ──► M1.masterdata ──► M2.inventory ──► M3.proces
 - 任务板：GitHub Issues（label：`main` / `m1` / `m2` / `m3` / `m4`、`blocked`、`needs-decision`）
 - 接入：`docs/ONBOARDING.md`；环境：`docs/DEV-SETUP.md`；边界：`docs/ROLES-AND-BOUNDARIES.md`
 - **给其他成员的智能体团队建议**：见 `docs/ROLES-AND-BOUNDARIES.md` §10（采不采用自定，附风险与收益）。
+
+### 跨模块信息怎么同步
+
+- **推**：PR 一开，CI 按 `docs/OWNERSHIP.md` 自动评论 @ 相关人并打标签，相关通知走 GitHub 邮件到邮箱。
+- **拉**：每次开工前跑 `pwsh -NoProfile -File scripts/sync-check.ps1`；它拉最新 `main`，列出本模块相关开放 PR、`contracts` 与 `decisions` 近 7 天变更、以及阻塞自己的 issue。
+- **申报**：PR/Issue 必填 `Blocked by` / `Blocks`，CI 检查缺失会红。
+
+**信息不许只活在群里；没写进 issue/PR 的事情，视为没有发生。**
