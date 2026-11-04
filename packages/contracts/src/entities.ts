@@ -17,6 +17,8 @@ export const ApiTokenSchema = z.object({
   ipAllowlist: z.array(z.string()),
   lastUsedAt: z.string().datetime().nullable(),
   status: z.enum(['active', 'revoked', 'expired']),
+  /** 乐观锁版本（撤销时放进 If-Match；列表接口必须回读，否则第二次写只能猜）。 */
+  version: z.number().int(),
   createdBy: z.string(),
   revokedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),

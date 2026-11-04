@@ -45,7 +45,7 @@
 
 ## 当前状态
 
-🔄 **进行中**：**M0 工程骨架已建立（2026-11-04）**——monorepo（`apps/api`、`apps/web`、`packages/contracts|cli|mcp`）、契约注册表发射 OpenAPI 3.1、CLI 命令树、MCP 工具表、迁移与审计/取号/权限判定内核、CI 双平台全部打通（全量门禁 `tests\run.ps1` 绿）。**业务端点仍全部返回 501**：登录、会话、Token、审计查询、权限覆盖写入尚未实现（M1 范围）。
+🔄 **进行中**：**M1 核心可用（2026-11-04）**——`platform` 注册表里 10 个端点**全部实现**（不再有 501）：health / openapi.json / 登录 / 登出 / me / 操作日志查询 / API Token 建查撤 / 员工个人级权限覆盖写入。认证内核（会话 Cookie + Bearer、同源 CSRF、每请求现算权限、Bearer 优先、代理头默认不信任）与 5 个跨 RLS 的 SECURITY DEFINER 函数已落地；**独立审查报的 7 项问题全部修完（D60）**；`apps/api` 测试 46 → **112** 例全绿，全量门禁 `tests\run.ps1` `ALL PASSED (7 files)`。**未验证**：真实 PostgreSQL 18 实例（本地无 PG，只在 PGlite PG18 跑过）、CLI/MCP 端到端「登录→查看→写→审计落库」、production 的短信与 Secure Cookie 运行时路径。
 
 ## 已完成
 
@@ -57,15 +57,26 @@
   - **apps/web**：React 19 + Vite + Tailwind 4 + TanStack Router/Query；22 页路由壳（对齐 `prototype-v0` 页 1-22）；api client（统一错误体）；D56 浏览器基线（`build.target=['chrome111','edge111']` + browserslist）。
   - **packages/cli / packages/mcp**：同一注册表生成命令树（`qingdan <domain> <action>`，退出码按 D54）与 MCP 工具表（`qingdan_<operationId>` 1:1，危险动作默认拒绝/可配走审批）。
   - **测试与 CI**：`tests/testbase.test.ps1`（P0-1 底座自检：BOM + Exit-Test）、`tests/workspace.test.ps1`（`pnpm -r build/test` 门禁）、`tests/platform-spec.test.ps1`（P0-2 包装）；CI 双平台加 Node 24 + pnpm 11 + `pnpm install --frozen-lockfile`，新增 ubuntu + `postgres:18` 集成 job（**PR #1 三个 job 实测全绿**：windows 1m31s / ubuntu 1m22s / integration 45s）。
+- **M1 核心可用（2026-11-04，D59）**——10 个 platform 端点全部实现：
+  - **迁移 `apps/api/migrations/0002_platform_m1.sql`**（纯前向）：① 审计只读视图 `audit_log_view`（属主权限视图 + 显式租户谓词，`qingdan_app` 只授 SELECT，基表仍只授 INSERT）；② `auth_find_login(phone)`（登录时无租户上下文，跨 RLS 查找）；③ `auth_resolve_session` / `auth_resolve_api_token`（凭证解析跨 RLS）；④ `audit_append_unscoped`（无租户上下文的失败登录日志，强制 `tenant_id IS NULL`）；⑤ `api_token.version` / `employee.version`（ETag 乐观锁）。全部 `SECURITY DEFINER` + `SET search_path = pg_catalog, public` + `REVOKE ALL FROM PUBLIC`。
+  - **认证内核 `apps/api/src/platform/auth/`**：`session-store.ts`（令牌 32 字节随机、库里只存 sha256、闲置 7 天滑动续期、`last_seen_at` 每 5 分钟最多写一次）、`principal.ts`（**Bearer 优先**，Bearer 失败不回退 Cookie；token scope 与员工权限取交集）、`plugin.ts`（公开路由豁免、Cookie + 非安全方法同源 Origin/Referer 校验 → 403）、`cookie.ts`（无新依赖；production 才加 `Secure`）、`tenant-context.ts`（同连接 `set_config('app.tenant_id')` 的事务边界）。
+  - **端点用例 `apps/api/src/modules/platform/usecases/`**：login（production 返 501 不静默放行 / 非生产固定验证码 / 未知手机号与非在职统一 401 防枚举 + 下发 HttpOnly Cookie）、logout（幂等 + 清 Cookie）、me（scope/companyIds/displayName）、api-tokens（scope ⊆ 创建人授权，超出直接 403 不裁剪；明文只返回一次；强 ETag + `If-Match`，缺失 428、不匹配 409；敏感读必记审计）、audit-logs（只读 `audit_log_view`、`(occurred_at,id)` keyset 分页、查询本身写一条敏感读审计）、permission-overrides（`permission.update` 闸门、经理不可改老板/经理/财务 → 403、差异项写入并与岗位基线一致项删除、dryRun 只校验不落库但打 `dry_run=true` 审计、`employee.version` 自增）。
+  - **审计**：`writer.ts` 增 `recordAudit(db, event)`（有租户走 outbox → flush，失败抛出；无租户走 `audit_append_unscoped`）；`withAudit` 在有 `tenantId` 时先设 `app.tenant_id`，否则 FORCE RLS 下业务 + outbox 写不进。
+  - **测试**：`apps/api` 46 → **112** 例（新增 66：会话存储 7 / 认证主体 9+ / 插件 8+ / DB 函数 4 / 登录闭环 10 / Token 6 / 审计查询 2 / 权限覆盖 10 / 失败审计与续期等）；`pnpm -C apps/api test` 与全量 `tests\run.ps1`（`ALL PASSED (7 files)`）均绿。
+  - **独立代码审查整改（2026-11-04，D60）**：PR #2 用 DSH 原生审查跑出 7 项，全部修完——① 非老板可给自己/下属授权超出自身权限（越权）→ 加「授予 ⊆ 自身权限」+ 禁止改自己；② `trustProxy: true` 让 `ip_allowlist` 可被 `X-Forwarded-For` 伪造 → 改配置驱动、默认不信任代理头；③ 写操作失败路径不落审计 → 统一 catch 补 `result='fail'`，并修 `recordAuditFailure` 的 RLS 前置；④ 滑动续期只续库不续 Cookie → 续期时重发 `Set-Cookie`；⑤ `If-Match` 的 `version` 无读出口 → `ApiToken` 补 `version`、权限覆盖的 `If-Match` 改选填；⑥ 经理/财务按岗位名匹配可改名绕过 → `position.preset_key`（迁移 `0003_platform_preset_key.sql`）；⑦ 配了 `PUBLIC_BASE_URL` 仍认任意 Host → 配了就只认它。
+
 
 ## 进行中
 
-- **M1（下一步）**：登录闭环（后台建号 + 手机号/验证码 + 会话 Cookie）、会话解析、API Token 增删查、审计查询端点、权限覆盖写入（`PATCH /employees/{id}/permissions`）——即把 10 个已登记端点的 501 逐个换成真实用例。
+- **M1 已完成的部分（2026-11-04）**：登录 / 登出 / me、API Token 建查撤、操作日志查询、员工个人级权限覆盖写入；认证内核与迁移 `0002_platform_m1.sql`。详见「已完成 · M1」。
+- **M1 剩余（下一段）**：CLI/MCP 端到端冒烟（登录 → 查看 → 一个写操作 → 审计落库，需真实 PostgreSQL 或 CI 的 postgres:18 job）；`apps/web` 登录页与 22 页壳接真实接口；开发者后台（`/api/v1/admin/**`，D54⑤）与运营后台手动计费（D1）尚未开工；单据框架 / 审批 / 待办属 platform 范围但排在 business 模块前面单独一段。
 
 ## 下一步
 
-- 按 `docs/TEAM-PLAN.md` §5 第 1 周：把 `ctx.authz`（权限判定）接到 HTTP 层，实现登录/会话/Token 三个闭环，跑通「CLI 登录 → 查看 → 一个写操作 → 审计落库」端到端。
-- 待裁决：① 审计查询端点的读权限（当前 `audit_log` 对应用角色只授 INSERT，需定只读视图或专角色）；② 单号日期/月键时区（N2，当前 UTC）与取号粒度（N1 候选①、允许跳号 N3①）；③ 老板判定字段 `employee.is_owner`（domain-model §1.3 仍标 ⬜）。
+- **M1-F 端到端**：在 CI 的 `postgres:18` job 上跑「CLI 登录 → `/auth/me` → 一次写操作 → 查审计有记录」，把它变成 `tests/platform-e2e.test.ps1` 的断言（本机无 PG，只能放 CI 或等本地装 PG 18）。
+- **M1-G 前端接线**：`apps/web` 登录页 + 会话态 + 统一错误体；赖皓妍（UI）接手视觉前，先把路由壳接上真实接口。
+- **M1-H**：开发者后台 `/api/v1/admin/**`（平台方跨租户，`actorType=platform`，账号独立体系，D54⑤）与平台级审计（`tenant_id IS NULL` 行目前只写不读）。
+- 待裁决已清零：原三条（审计读权限 / 单号时区与取号粒度 / `is_owner` 字段）已由 **D59** 一次性裁定并落地。
 
 ## 已知问题 / 坑
 
@@ -73,7 +84,11 @@
 - 「看价」是数据可见性不是操作（D4）：别塞进动作表格；金额字段的兜底过滤要全链一致（D27 损失金额同口径）。
 - 流水号按月重置：跨月 0 点并发取号必须有用例。
 - 权限基础在 platform，但每个业务模块的「动作→接口」映射各自实现：接口鉴权只认 platform 的判定结果，不认前端传的菜单。
-- **审计表只授 INSERT 与「日志查询」天然冲突**（M0 实测）：`audit_log` 只给 `qingdan_app` INSERT 是 D51「不可改删」的物理保证，但 `GET /audit-logs` 需要读——M1 需定口径（专用只读角色 / 只读视图 / 单独审计库），不要在这一步把 UPDATE/DELETE 授回去。
+- **审计表只授 INSERT 与「日志查询」天然冲突**（M0 实测）：已由 **D59①** 收口——基表仍只授 INSERT，另建属主权限视图 `audit_log_view`（显式租户谓词）。**别再给基表授 SELECT，也别把视图改回 `security_invoker`**：`security_invoker` 视图以调用者权限读基表，`qingdan_app` 没有基表 SELECT 就会 `permission denied`（2026-11-04 实测踩坑）。
+- **`0002_platform_m1.sql` 在 M1 期间是「可追加的未发布迁移」**：本机与 CI 只用 PGlite 每次新建库，没有持久库应用过它，所以 M1-A~E 的增量都追加在同一个文件里。**一旦某个环境真正部署过 0002，就停止改写它、改用新的 0003+**（迁移 runner 记录已执行文件，改写历史文件会让 checksum/顺序失效）。
+- **迁移里 5 个 SECURITY DEFINER 函数是「跨 RLS 的最小开口」**：只返回解析所需列、只 `GRANT EXECUTE TO qingdan_app`、固定 `search_path`。新增同类函数必须照此办理，禁止为了省事给应用角色加跨租户 SELECT。
+- **`TRUST_PROXY` 默认 `false`**：部署到反向代理后面时**必须显式配可信网段**（`TRUST_PROXY=10.0.0.0/8,...` 或 `true`），否则 `request.ip` 是反代地址——`ip_allowlist` 与审计 IP 都不准；反过来若为了拿真实 IP 就无脑 `trustProxy: true`，代理头可被客户端伪造（这是审查报的 P1）。
+- **失败审计的统一 catch 在 `routes.ts` 外层**：用例调用必须写成 `return await xxx()`，否则返回的 Promise 拒绝会绕过 catch、失败日志静默丢失（实现时实测踩到）。已有用例自己记失败审计（如登录）时要调用 `markFailureAuditRecorded` 去重，否则同一请求两条 `fail`。
 - **RLS 只在非 superuser 下成立**（D57 ③）：本地测试必须 `set role`，生产连接账号不得是 superuser / BYPASSRLS，否则隔离形同虚设。
 - **取号允许跳号**（N3①）：事务回滚会留下空洞，属已接受口径；不要为「连续」加锁表。
 

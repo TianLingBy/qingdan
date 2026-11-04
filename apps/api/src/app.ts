@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { registerPlatformRoutes } from './modules/platform/routes.js';
+import { registerAuthPlugin } from './platform/auth/plugin.js';
 import { loadConfig, type AppConfig } from './platform/config.js';
 import type { Database } from './platform/db/client.js';
 import { registerAuditContext } from './platform/http/audit-context.js';
@@ -38,19 +39,26 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const logger =
     options.logger ?? (config.nodeEnv === 'test' ? false : { level: config.logLevel });
 
+  // 默认不信任代理头：`request.ip` 必须是真实连接地址，否则 ip_allowlist 可被 XFF 伪造绕过。
+  // 显式给出可变 `string[]` 类型，避免 Fastify 的 readonly 数组重载推断出 http2 实例。
+  const trustProxy: boolean | string[] = Array.isArray(config.trustProxy)
+    ? ([...config.trustProxy] as string[])
+    : (config.trustProxy as boolean);
+
   const app = Fastify({
     logger,
     bodyLimit: 1024 * 1024,
-    trustProxy: true,
+    trustProxy,
   });
 
   app.decorate('database', options.database ?? null);
 
   registerRequestId(app, options.requestIdFactory ? { factory: options.requestIdFactory } : {});
   registerAuditContext(app);
+  registerAuthPlugin(app, { config });
   registerSecurityHeaders(app);
   registerErrorHandling(app);
-  registerPlatformRoutes(app, { version: options.version ?? APP_VERSION });
+  registerPlatformRoutes(app, { version: options.version ?? APP_VERSION, config });
 
   return app;
 }
