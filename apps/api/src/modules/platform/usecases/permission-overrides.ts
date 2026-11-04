@@ -5,6 +5,7 @@ import {
   allowsScope,
   etagOf,
   type DryRunResult,
+  type ScopeMatrix,
 } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { recordAudit, withAudit, type AuditEvent } from '../../../platform/audit/writer.js';
@@ -23,8 +24,16 @@ import { requestIdFor } from '../../../platform/http/request-id.js';
  * 边界（服务端判定，前端隐藏不算数）：
  *   - 调用者必须有 `permission.update`；
  *   - 非老板不可改老板（is_owner=true）、经理岗位、财务岗位持有者 —— 403，原因进 details；
- *   - 老板可改同租户任何员工（含自己，审计标 self=true）。
- * 并发：强 ETag `"<version>"`；缺 If-Match → 428，不匹配 → 409；成功后 employee.version+1。
+ *     「经理 / 财务」按岗位 `preset_key` 判定（改名不可绕过）；自定义岗位（preset_key IS NULL）
+ *     过渡期保留名称包含兜底；
+ *   - 非老板不可改自己（防自我提权）—— 403 `SELF_ESCALATION_DENIED`；
+ *   - 非老板每条 `granted=true` 的权限必须 ⊆ 调用者自己的生效 scope，任一项超出 → 403，
+ *     details.denied 列出被拒项，整单不落库；`granted=false`（减权）不受此限；
+ *   - 老板可改同租户任何员工（含自己，审计标 self=true），豁免上面两条。
+ * 并发：强 ETag `"<version>"`；If-Match **选填**（员工 version 暂无读接口，强制会让客户端永久 409）：
+ *   - 不传 → 跳过版本校验，仍写审计并标 `versionChecked=false`；
+ *   - 传入但格式非法 / 不匹配 → 409；
+ *   - 成功后 employee.version+1，响应头回 `ETag: "<version>"`。
  * dryRun：与真实执行走同一条判定路径，只不落库；成功 / 失败都回 200 + DryRunResult，
  *         且都写一条 `dry_run=true` 审计（D54③）。
  */
@@ -121,11 +130,13 @@ function parseEmployeeId(request: FastifyRequest): string {
   return employeeId;
 }
 
-function parseIfMatchVersion(request: FastifyRequest): number {
+/**
+ * If-Match 选填：不传 → `undefined`（跳过版本校验）；传了但格式不合法 → 409。
+ * 员工 version 目前没有读接口，强制 If-Match 会让客户端拿不到版本、永远 409。
+ */
+function parseIfMatchVersion(request: FastifyRequest): number | undefined {
   const raw = headerValue(request, 'if-match');
-  if (raw === undefined || raw.trim() === '') {
-    throw new AppError('PRECONDITION_REQUIRED', '修改权限必须携带 If-Match（强 ETag "<version>"）');
-  }
+  if (raw === undefined) return undefined;
   const match = /^"([0-9]+)"$/.exec(raw.trim());
   if (!match) {
     throw new AppError('VERSION_CONFLICT', 'If-Match 格式不合法，应为强 ETag "<version>"', {
@@ -206,6 +217,9 @@ async function loadCallerIsOwner(
 }
 
 async function loadTarget(tx: SqlClient, employeeId: string, tenantId: string): Promise<TargetRow> {
+  // 经理 / 财务边界优先按岗位 preset_key 判定（改名不可绕过）。
+  // 过渡兼容：preset_key IS NULL 的自定义岗位仍按名称包含「经理 / 财务」兜底，
+  // 避免旧库（0003 迁移不回填）里未重跑 seed 的预设岗位失去保护。
   const result = await tx.query<TargetRow>(
     `SELECT e.is_owner,
             e.version,
@@ -215,7 +229,10 @@ async function loadTarget(tx: SqlClient, employeeId: string, tenantId: string): 
                 JOIN position p ON p.id = ecp.position_id AND p.tenant_id = ecp.tenant_id
                WHERE ecp.employee_id = e.id
                  AND ecp.tenant_id = e.tenant_id
-                 AND p.name LIKE '%经理%'
+                 AND (
+                   p.preset_key = 'manager'
+                   OR (p.preset_key IS NULL AND p.name LIKE '%经理%')
+                 )
             ) AS is_manager,
             EXISTS (
               SELECT 1
@@ -223,7 +240,10 @@ async function loadTarget(tx: SqlClient, employeeId: string, tenantId: string): 
                 JOIN position p ON p.id = ecp.position_id AND p.tenant_id = ecp.tenant_id
                WHERE ecp.employee_id = e.id
                  AND ecp.tenant_id = e.tenant_id
-                 AND p.name LIKE '%财务%'
+                 AND (
+                   p.preset_key = 'finance'
+                   OR (p.preset_key IS NULL AND p.name LIKE '%财务%')
+                 )
             ) AS is_finance
        FROM employee e
       WHERE e.id = $1 AND e.tenant_id = $2`,
@@ -267,9 +287,29 @@ async function loadOverrides(
   return result.rows;
 }
 
-/** D50 经理边界：非老板不得改老板 / 经理 / 财务；老板全权（含改自己）。 */
-function assertBoundary(callerIsOwner: boolean, targetId: string, target: TargetRow): void {
+/**
+ * D50 写侧边界：非老板不得改自己 / 老板 / 经理 / 财务，且授予项必须 ⊆ 调用者自身 scope。
+ * 老板全权（含改自己），豁免自我提权与 ⊆ 两条。
+ */
+function assertBoundary(input: {
+  readonly callerIsOwner: boolean;
+  readonly callerEmployeeId: string;
+  readonly callerScope: ScopeMatrix;
+  readonly targetId: string;
+  readonly target: TargetRow;
+  readonly overrides: readonly OverrideInput[];
+}): void {
+  const { callerIsOwner, callerEmployeeId, callerScope, targetId, target, overrides } = input;
   if (callerIsOwner) return;
+
+  // 自我提权：非老板即使目标只是「普通员工」，也不能改自己的权限。
+  if (callerEmployeeId === targetId) {
+    throw new AppError('FORBIDDEN', '不可修改自己的权限（防止自我提权）', {
+      reason: 'SELF_ESCALATION_DENIED',
+      targetEmployeeId: targetId,
+    });
+  }
+
   let reason: (typeof BOUNDARY_REASON)[keyof typeof BOUNDARY_REASON] | null = null;
   if (target.is_owner) reason = BOUNDARY_REASON.owner;
   else if (target.is_manager) reason = BOUNDARY_REASON.manager;
@@ -277,6 +317,25 @@ function assertBoundary(callerIsOwner: boolean, targetId: string, target: Target
   if (reason) {
     throw new AppError('FORBIDDEN', '经理只能调整普通员工的权限，不可修改老板、财务或其他经理', {
       reason,
+      targetEmployeeId: targetId,
+    });
+  }
+
+  // D52.1 同款「不可放大」：授予项必须是调用者自身生效权限的子集；减权（granted=false）不受限。
+  const denied = overrides
+    .filter(
+      (item) =>
+        item.granted &&
+        !allowsScope(
+          callerScope,
+          item.domain as ScopeMatrix[number]['domain'],
+          item.action as ScopeMatrix[number]['actions'][number],
+        ),
+    )
+    .map((item) => ({ domain: item.domain, action: item.action }));
+  if (denied.length > 0) {
+    throw new AppError('FORBIDDEN', '授予的权限超出调用者自身权限', {
+      denied,
       targetEmployeeId: targetId,
     });
   }
@@ -391,6 +450,7 @@ function auditEventOf(
 function summaryOf(
   targetId: string,
   self: boolean,
+  versionChecked: boolean,
   before: readonly OverrideItem[],
   after: readonly OverrideItem[],
   changes: readonly PlannedChange[],
@@ -398,6 +458,7 @@ function summaryOf(
   return {
     employeeId: targetId,
     self,
+    versionChecked,
     before: before.map((item) => ({ ...item })),
     after: after.map((item) => ({ ...item })),
     changes: changes.map((change) => ({
@@ -425,18 +486,26 @@ async function executeDryRun(input: {
   readonly request: FastifyRequest;
   readonly principal: Principal;
   readonly targetId: string;
-  readonly expectedVersion: number;
+  readonly expectedVersion: number | undefined;
   readonly overrides: readonly OverrideInput[];
 }): Promise<DryRunResult> {
   const { database, request, principal, targetId, expectedVersion, overrides } = input;
   const self = principal.employeeId === targetId;
+  const versionChecked = expectedVersion !== undefined;
 
   try {
     const plan = await withTenant(database, principal.tenantId, async (tx) => {
       const callerIsOwner = await loadCallerIsOwner(tx, principal.employeeId, principal.tenantId);
       const target = await loadTarget(tx, targetId, principal.tenantId);
-      assertBoundary(callerIsOwner, targetId, target);
-      if (target.version !== expectedVersion) {
+      assertBoundary({
+        callerIsOwner,
+        callerEmployeeId: principal.employeeId,
+        callerScope: principal.scope,
+        targetId,
+        target,
+        overrides,
+      });
+      if (versionChecked && target.version !== expectedVersion) {
         throw new AppError('VERSION_CONFLICT', '员工版本与 If-Match 不一致，请重新读取后重试', {
           expected: expectedVersion,
           current: target.version,
@@ -452,7 +521,14 @@ async function executeDryRun(input: {
       auditEventOf(request, principal, targetId, {
         dryRun: true,
         result: 'success',
-        changeSummary: summaryOf(targetId, self, plan.before, plan.after, plan.changes),
+        changeSummary: summaryOf(
+          targetId,
+          self,
+          versionChecked,
+          plan.before,
+          plan.after,
+          plan.changes,
+        ),
       }),
     );
 
@@ -471,7 +547,7 @@ async function executeDryRun(input: {
         dryRun: true,
         result: 'fail',
         errorCode: error.code,
-        changeSummary: { employeeId: targetId, self, requested: [...overrides] },
+        changeSummary: { employeeId: targetId, self, versionChecked, requested: [...overrides] },
       }),
     );
     return { dryRun: true, valid: false, changes: [], errors };
@@ -493,6 +569,7 @@ export async function updatePermissionOverrides(
   const targetId = parseEmployeeId(ctx.request);
   const overrides = dedupe(parseOverrides(ctx.request.body));
   const expectedVersion = parseIfMatchVersion(ctx.request);
+  const versionChecked = expectedVersion !== undefined;
   const dryRun = isDryRun(ctx.request);
   const self = principal.employeeId === targetId;
 
@@ -502,7 +579,7 @@ export async function updatePermissionOverrides(
 
   // withAudit 在 work 返回后才把事件写入 outbox；before/after 必须等事务内的读取与计划算完，
   // 故先建一个可变 summary，在 work 内回填（appendAudit 是 work 之后才序列化它）。
-  const summary: Record<string, unknown> = { employeeId: targetId, self };
+  const summary: Record<string, unknown> = { employeeId: targetId, self, versionChecked };
 
   const written = await withAudit(
     database,
@@ -514,8 +591,15 @@ export async function updatePermissionOverrides(
     async (tx) => {
       const callerIsOwner = await loadCallerIsOwner(tx, principal.employeeId, principal.tenantId);
       const target = await loadTarget(tx, targetId, principal.tenantId);
-      assertBoundary(callerIsOwner, targetId, target);
-      if (target.version !== expectedVersion) {
+      assertBoundary({
+        callerIsOwner,
+        callerEmployeeId: principal.employeeId,
+        callerScope: principal.scope,
+        targetId,
+        target,
+        overrides,
+      });
+      if (versionChecked && target.version !== expectedVersion) {
         throw new AppError('VERSION_CONFLICT', '员工版本与 If-Match 不一致，请重新读取后重试', {
           expected: expectedVersion,
           current: target.version,
@@ -526,16 +610,29 @@ export async function updatePermissionOverrides(
       const existing = await loadOverrides(tx, targetId, principal.tenantId);
       const plan = planChanges(overrides, baseline, existing);
       await applyChanges(tx, targetId, principal.tenantId, principal.employeeId, plan.changes);
-      Object.assign(summary, summaryOf(targetId, self, plan.before, plan.after, plan.changes));
+      Object.assign(
+        summary,
+        summaryOf(targetId, self, versionChecked, plan.before, plan.after, plan.changes),
+      );
 
       // 版本守卫同时兜住并发写：0 行 ⇒ 事务回滚，覆盖写入一并撤销。
-      const updated = await tx.query<{ version: number }>(
-        `UPDATE employee
-            SET version = version + 1
-          WHERE id = $1 AND tenant_id = $2 AND version = $3
-          RETURNING version`,
-        [targetId, principal.tenantId, expectedVersion],
-      );
+      // 未传 If-Match（versionChecked=false）时跳过版本条件，但版本仍自增供 ETag 使用。
+      const updated =
+        expectedVersion === undefined
+          ? await tx.query<{ version: number }>(
+              `UPDATE employee
+                  SET version = version + 1
+                WHERE id = $1 AND tenant_id = $2
+                RETURNING version`,
+              [targetId, principal.tenantId],
+            )
+          : await tx.query<{ version: number }>(
+              `UPDATE employee
+                  SET version = version + 1
+                WHERE id = $1 AND tenant_id = $2 AND version = $3
+                RETURNING version`,
+              [targetId, principal.tenantId, expectedVersion],
+            );
       const version = updated.rows[0]?.version;
       if (version === undefined) {
         throw new AppError('VERSION_CONFLICT', '员工已被并发修改，请重新读取后重试');

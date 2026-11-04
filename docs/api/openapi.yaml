@@ -21,6 +21,7 @@ info:
     - 分页：`cursor` / `limit`（默认 50、最大 200），返回 `nextCursor`。
     - 幂等：写接口支持 `Idempotency-Key`，作用域 `(租户, key)`，24h 内同 key 同体回放首次结果；同 key 不同体回 409 `IDEMPOTENCY_CONFLICT`。
     - 并发：单据/批次写接口要求 `If-Match: "<version>"`（强 ETag），冲突返回 409 `VERSION_CONFLICT`，缺失返回 428 `PRECONDITION_REQUIRED`。
+      例外：员工个人权限覆盖（`PATCH /employees/{employeeId}/permissions`）的 `If-Match` **选填**——不传跳过版本校验（审计标 `versionChecked=false`），传入则非法 / 不匹配仍 409；成功后响应头回 `ETag`。
     - 预检：写接口支持 `dryRun=true`（只校验不落库）；成功失败均 200 + `DryRunResult`，且仍落审计、打 `dryRun=true` 标记。
     - 请求 id：`X-Request-Id` 透传并回写，缺省由服务端生成。
     - 来源：客户端带 `X-Client: web|cli|api|mcp|job`，服务端映射为审计日志的 `source`（D54）。
@@ -1249,6 +1250,14 @@ paths:
         权限三层：岗位并集 ⊕ 个人覆盖（D50）；数据可见范围 = 绑定公司集合（D15）。
         权限变更属危险动作（D52①）：`reason` 必填；AI 默认禁止，返回 `403 AI_ACTION_FORBIDDEN`；
         经理可改普通员工、不可改老板 / 财务 / 其他经理（D50，由服务端判定）。
+        非老板不可改自己（`SELF_ESCALATION_DENIED`）；非老板每条 `granted=true` 必须 ⊆ 调用者自身
+        生效权限（超出 403，`details.denied` 列出被拒项，整单不落库），减权不受此限。
+        经理 / 财务边界按岗位 `preset_key` 判定（改名不可绕过）；旧库 `preset_key IS NULL` 的
+        自定义岗位按名称包含「经理 / 财务」过渡兜底。
+
+        `If-Match` **选填**：员工 `version` 暂无独立读接口，强制会让客户端永久 409。
+        不传 → 跳过版本校验（审计 `changeSummary.versionChecked=false`）；传了但格式非法 / 与当前
+        版本不一致 → 409 `VERSION_CONFLICT`。成功后响应头回 `ETag: "<version>"`。
         注意：本端点路径按 D54 的 `/api/v1/<kebab 复数>` 规则登记，请求体字段按 D15/D50 冻结。
       parameters:
         - name: employeeId
@@ -1257,6 +1266,12 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          description: 选填强 ETag `"<version>"`；缺省跳过版本校验（审计标 versionChecked=false）
+          schema:
+            type: string
         - $ref: '#/components/parameters/XRequestId'
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/DryRun'
@@ -1274,6 +1289,8 @@ paths:
           headers:
             X-Request-Id:
               $ref: '#/components/headers/XRequestId'
+            ETag:
+              $ref: '#/components/headers/ETag'
           content:
             application/json:
               schema:
@@ -1472,7 +1489,7 @@ components:
               currentVersion: 4
             requestId: req_01J0EXAMPLE000000000000004
     PreconditionRequired:
-      description: 缺少 `If-Match`（单据/批次写接口要求乐观锁，契约第三批 §3）。D54 已冻结：更新类强制 `If-Match`，缺失回 428 `PRECONDITION_REQUIRED`。
+      description: 缺少 `If-Match`（单据/批次写接口要求乐观锁，契约第三批 §3）。D54 已冻结：更新类强制 `If-Match`，缺失回 428 `PRECONDITION_REQUIRED`；例外见员工个人权限覆盖端点（`If-Match` 选填）。
       headers:
         X-Request-Id:
           $ref: '#/components/headers/XRequestId'
@@ -1795,6 +1812,7 @@ components:
         - name
         - scope
         - status
+        - version
         - createdBy
         - createdAt
       properties:
@@ -1828,6 +1846,10 @@ components:
           description: 最后使用时间（每次调用更新，异步，允许延迟）
         status:
           $ref: '#/components/schemas/ApiTokenStatus'
+        version:
+          type: integer
+          minimum: 1
+          description: 乐观锁版本（撤销时放进 `If-Match: "<version>"`；列表接口回读，避免客户端猜版本）
         createdBy:
           type: string
           format: uuid

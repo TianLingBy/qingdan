@@ -18,11 +18,28 @@ const COMPANY_NAME = '演示公司';
 
 type Perm = readonly [domain: string, action: string];
 
+/** 出厂预设岗位的稳定标识（0003_platform_preset_key.sql 的 CHECK 允许值）。 */
+type PresetKey =
+  | 'owner'
+  | 'manager'
+  | 'finance'
+  | 'sales'
+  | 'purchase'
+  | 'quality'
+  | 'picking'
+  | 'warehouse';
+
 interface PositionSeed {
   readonly id: string;
   readonly name: string;
   readonly kind: '预设' | '自定义';
   readonly isSystem: boolean;
+  /**
+   * F8 七套岗位包按主业务键登记：组合包（销售+仓管、财务+销售）取组合里的
+   * 主岗位键；质检 / 拣货目前没有独立出厂岗位行（F8 只列七套），故 seed 不造行。
+   * 边界判定只关心 manager / finance（D50）。
+   */
+  readonly presetKey: PresetKey | null;
   readonly permissions: readonly Perm[];
 }
 
@@ -45,6 +62,7 @@ const POSITIONS: readonly PositionSeed[] = [
     name: '老板',
     kind: '预设',
     isSystem: true,
+    presetKey: 'owner',
     permissions: ALL_DOMAINS.flatMap((domain) => perms(domain, ALL_ACTIONS)),
   },
   {
@@ -52,6 +70,7 @@ const POSITIONS: readonly PositionSeed[] = [
     name: '经理',
     kind: '预设',
     isSystem: true,
+    presetKey: 'manager',
     permissions: [
       ...['purchase', 'processing', 'sales', 'internal_trade', 'settlement', 'customer_return',
         'supplier_return', 'stocktake', 'product', 'customer', 'supplier', 'processor',
@@ -68,6 +87,7 @@ const POSITIONS: readonly PositionSeed[] = [
     name: '销售',
     kind: '预设',
     isSystem: true,
+    presetKey: 'sales',
     permissions: [
       ...perms('sales', ['read', 'create', 'update', 'view_price']),
       ...perms('customer', ['read', 'create', 'update']),
@@ -81,6 +101,7 @@ const POSITIONS: readonly PositionSeed[] = [
     name: '销售+仓管',
     kind: '预设',
     isSystem: true,
+    presetKey: 'sales',
     permissions: [
       ...perms('sales', ['read', 'create', 'update', 'ship', 'view_price']),
       ...perms('customer', ['read', 'create', 'update']),
@@ -96,6 +117,7 @@ const POSITIONS: readonly PositionSeed[] = [
     name: '财务+销售',
     kind: '预设',
     isSystem: true,
+    presetKey: 'finance',
     permissions: [
       ...perms('settlement', ['read', 'create', 'update', 'approve', 'view_price']),
       ...perms('profit_report', ['read', 'export']),
@@ -108,6 +130,7 @@ const POSITIONS: readonly PositionSeed[] = [
     name: '纯仓管',
     kind: '预设',
     isSystem: true,
+    presetKey: 'warehouse',
     permissions: [
       ...perms('inventory_qty', ['read', 'update']),
       ...perms('inventory_flow', ['read', 'create']),
@@ -122,6 +145,7 @@ const POSITIONS: readonly PositionSeed[] = [
     name: '采购',
     kind: '预设',
     isSystem: true,
+    presetKey: 'purchase',
     permissions: [
       ...perms('purchase', ['read', 'create', 'update', 'approve']),
       ...perms('product', ['read', 'create', 'update']),
@@ -163,10 +187,17 @@ async function seedTenant(tx: SqlClient): Promise<void> {
 
   for (const position of POSITIONS) {
     await tx.query(
-      `INSERT INTO position (id, tenant_id, name, kind, is_system, scope, status)
-       VALUES ($1, $2, $3, $4, $5, '租户级', '启用')
-       ON CONFLICT (id) DO NOTHING`,
-      [position.id, DEMO_TENANT_ID, position.name, position.kind, position.isSystem],
+      `INSERT INTO position (id, tenant_id, name, kind, is_system, scope, status, preset_key)
+       VALUES ($1, $2, $3, $4, $5, '租户级', '启用', $6)
+       ON CONFLICT (id) DO UPDATE SET preset_key = EXCLUDED.preset_key`,
+      [
+        position.id,
+        DEMO_TENANT_ID,
+        position.name,
+        position.kind,
+        position.isSystem,
+        position.presetKey,
+      ],
     );
     for (const [domain, action] of position.permissions) {
       await tx.query(

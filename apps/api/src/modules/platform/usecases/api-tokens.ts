@@ -61,6 +61,7 @@ interface ApiTokenRow {
   ip_allowlist: string[] | null;
   last_used_at: Date | string | null;
   status: string;
+  version: number;
   created_by: string;
   revoked_at: Date | string | null;
   created_at: Date | string;
@@ -239,6 +240,7 @@ function mapTokenRow(row: ApiTokenRow): ApiToken {
     ipAllowlist: row.ip_allowlist ?? [],
     lastUsedAt: toIso(row.last_used_at),
     status: row.status as ApiToken['status'],
+    version: row.version,
     createdBy: row.created_by,
     revokedAt: toIso(row.revoked_at),
     createdAt: toDate(row.created_at).toISOString(),
@@ -350,6 +352,7 @@ export async function createApiToken(ctx: ApiTokenCreateContext): Promise<ApiTok
     ipAllowlist: input.ipAllowlist,
     lastUsedAt: null,
     status: 'active',
+    version: 1,
     createdBy: principal.employeeId,
     revokedAt: null,
     createdAt: toDate(createdAt).toISOString(),

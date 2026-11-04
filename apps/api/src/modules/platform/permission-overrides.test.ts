@@ -10,8 +10,10 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  * M1-E 员工个人级权限覆盖（D50 / D54③ / D59）：
  *   - 老板可增可减，生效权限立刻反映在 computeAuthz；
  *   - 经理边界：老板 / 经理 / 财务一律 403；普通员工可改；
+ *   - 经理边界按 preset_key 判定：岗位改名成「店长」仍被拦；preset_key IS NULL 的旧岗位按名称兜底；
+ *   - 非老板不可改自己；授予项必须 ⊆ 调用者自身权限（减权不受限）；
  *   - 无 permission.update → 403；
- *   - If-Match 428 / 409；
+ *   - If-Match 选填：缺省跳过版本校验并审计 versionChecked=false；非法 / 不匹配仍 409；
  *   - dryRun 不落库但记 dry_run=true 审计（成功与失败都记）；
  *   - 与岗位基线一致的覆盖项会被删除，不留冗余。
  */
@@ -23,6 +25,9 @@ const PUBLIC_BASE_URL = 'https://qingdan.example';
 
 const FINANCE_POSITION_ID = '01900000-0000-7000-8000-000000000018';
 const FINANCE_EMPLOYEE_ID = '01900000-0000-7000-8000-000000000025';
+/** 预设经理岗，但展示名改成了「店长」：验证边界不再靠名称子串。 */
+const RENAMED_MANAGER_POSITION_ID = '01900000-0000-7000-8000-000000000019';
+const RENAMED_MANAGER_EMPLOYEE_ID = '01900000-0000-7000-8000-000000000026';
 
 interface OverrideRow {
   domain: string;
@@ -151,6 +156,33 @@ describe('platform 员工个人级权限覆盖（PGlite + seed 演示租户）',
       [DEMO_IDS.tenantId, FINANCE_EMPLOYEE_ID, DEMO_IDS.companyId, FINANCE_POSITION_ID],
     );
 
+    // 预设经理岗改名成「店长」：preset_key 仍为 manager，边界必须照拦。
+    await test.database.query(
+      `INSERT INTO position (id, tenant_id, name, kind, is_system, scope, status, preset_key)
+       VALUES ($1, $2, '店长', '预设', true, '租户级', '启用', 'manager')`,
+      [RENAMED_MANAGER_POSITION_ID, DEMO_IDS.tenantId],
+    );
+    await test.database.query(
+      `INSERT INTO position_permission (tenant_id, position_id, domain, action, granted)
+       VALUES ($1, $2, 'sales', 'read', true)`,
+      [DEMO_IDS.tenantId, RENAMED_MANAGER_POSITION_ID],
+    );
+    await test.database.query(
+      `INSERT INTO employee (id, tenant_id, employee_no, phone, name, status, is_owner)
+       VALUES ($1, $2, '000006', '10000000006', '孙店', '在职', false)`,
+      [RENAMED_MANAGER_EMPLOYEE_ID, DEMO_IDS.tenantId],
+    );
+    await test.database.query(
+      `INSERT INTO employee_company_position (tenant_id, employee_id, company_id, position_id)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        DEMO_IDS.tenantId,
+        RENAMED_MANAGER_EMPLOYEE_ID,
+        DEMO_IDS.companyId,
+        RENAMED_MANAGER_POSITION_ID,
+      ],
+    );
+
     app = buildApp({
       config: testConfig({ publicBaseUrl: PUBLIC_BASE_URL }),
       database: test.database,
@@ -210,7 +242,7 @@ describe('platform 员工个人级权限覆盖（PGlite + seed 演示租户）',
     expect((audits[0]!.changes as { after: unknown[] }).after).toHaveLength(2);
   });
 
-  it('经理边界：改老板 / 改经理自己 / 改财务 → 403，原因进 details', async () => {
+  it('经理边界：改老板 / 改自己 / 改财务 / 改名后的经理岗 → 403，原因进 details', async () => {
     const cases = [
       {
         target: DEMO_IDS.ownerEmployeeId,
@@ -218,14 +250,22 @@ describe('platform 员工个人级权限覆盖（PGlite + seed 演示租户）',
         requestId: 'req-perm-manager-owner',
       },
       {
+        // 非老板改自己优先按自我提权报错。
         target: DEMO_IDS.managerEmployeeId,
-        reason: 'TARGET_IS_MANAGER',
+        reason: 'SELF_ESCALATION_DENIED',
         requestId: 'req-perm-manager-self',
       },
       {
+        // 财务岗 preset_key IS NULL（模拟旧库），名称含「财务」→ 过渡兜底仍拦。
         target: FINANCE_EMPLOYEE_ID,
         reason: 'TARGET_IS_FINANCE',
         requestId: 'req-perm-manager-finance',
+      },
+      {
+        // 预设经理岗改名「店长」，preset_key=manager → 仍拦。
+        target: RENAMED_MANAGER_EMPLOYEE_ID,
+        reason: 'TARGET_IS_MANAGER',
+        requestId: 'req-perm-manager-renamed',
       },
     ];
 
@@ -264,6 +304,72 @@ describe('platform 员工个人级权限覆盖（PGlite + seed 演示租户）',
     ]);
   });
 
+  it('经理给下属授予自己没有的权限 → 403，details.denied 列被拒项，整单不落库', async () => {
+    const before = await overridesOf(DEMO_IDS.warehouseEmployeeId);
+    const version = await versionOf(DEMO_IDS.warehouseEmployeeId);
+
+    const response = await patch(
+      managerCookie,
+      DEMO_IDS.warehouseEmployeeId,
+      [
+        // 这一项经理自己有：若单独提交应成功。
+        { domain: 'audit', action: 'read', granted: true },
+        // 经理的 settlement 只有 read，没有 view_price → 越权。
+        { domain: 'settlement', action: 'view_price', granted: true },
+      ],
+      { requestId: 'req-perm-manager-overreach', ifMatch: String(version) },
+    );
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      code: 'FORBIDDEN',
+      details: {
+        denied: [{ domain: 'settlement', action: 'view_price' }],
+        targetEmployeeId: DEMO_IDS.warehouseEmployeeId,
+      },
+    });
+    // 整单拒绝：合法的那一项也不得落库，版本不变。
+    expect(await overridesOf(DEMO_IDS.warehouseEmployeeId)).toEqual(before);
+    expect(await versionOf(DEMO_IDS.warehouseEmployeeId)).toBe(version);
+  });
+
+  it('经理给下属授予自己有的权限 → 204', async () => {
+    const version = await versionOf(DEMO_IDS.warehouseEmployeeId);
+
+    const response = await patch(
+      managerCookie,
+      DEMO_IDS.warehouseEmployeeId,
+      [{ domain: 'audit', action: 'read', granted: true }],
+      { requestId: 'req-perm-manager-subset-ok', ifMatch: String(version) },
+    );
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers.etag).toBe(`"${version + 1}"`);
+    const rows = await overridesOf(DEMO_IDS.warehouseEmployeeId);
+    expect(
+      rows.find((row) => row.domain === 'audit' && row.action === 'read'),
+    ).toMatchObject({ granted: true, operator_id: DEMO_IDS.managerEmployeeId });
+  });
+
+  it('减权不受 ⊆ 限制：经理可撤销下属自己也没有的权限', async () => {
+    // 销售岗基线有 sales.view_price，经理自己的 sales 只有 read。
+    const version = await versionOf(DEMO_IDS.salesEmployeeId);
+
+    const response = await patch(
+      managerCookie,
+      DEMO_IDS.salesEmployeeId,
+      [{ domain: 'sales', action: 'view_price', granted: false }],
+      { requestId: 'req-perm-manager-revoke-not-owned', ifMatch: String(version) },
+    );
+
+    expect(response.statusCode).toBe(204);
+    const rows = await overridesOf(DEMO_IDS.salesEmployeeId);
+    expect(
+      rows.find((row) => row.domain === 'sales' && row.action === 'view_price'),
+    ).toMatchObject({ granted: false, operator_id: DEMO_IDS.managerEmployeeId });
+    expect(await scopeHas(DEMO_IDS.salesEmployeeId, 'sales', 'view_price')).toBe(false);
+  });
+
   it('无 permission.update（销售）→ 403', async () => {
     const version = await versionOf(DEMO_IDS.warehouseEmployeeId);
     const response = await patch(
@@ -276,18 +382,35 @@ describe('platform 员工个人级权限覆盖（PGlite + seed 演示租户）',
     expect(response.json()).toMatchObject({ code: 'FORBIDDEN' });
   });
 
-  it('缺 If-Match → 428；版本不匹配 → 409，且不落库', async () => {
-    const before = await overridesOf(DEMO_IDS.warehouseEmployeeId);
+  it('If-Match 选填：缺省跳过版本校验并审计 versionChecked=false；非法 / 不匹配 → 409', async () => {
+    const version = await versionOf(DEMO_IDS.warehouseEmployeeId);
 
+    // 不传 If-Match：仍成功，ETag 回新版本，审计标 versionChecked=false。
     const missing = await patch(
       ownerCookie,
       DEMO_IDS.warehouseEmployeeId,
       [{ domain: 'product', action: 'create', granted: true }],
       { requestId: 'req-perm-missing-if-match' },
     );
-    expect(missing.statusCode).toBe(428);
-    expect(missing.json()).toMatchObject({ code: 'PRECONDITION_REQUIRED' });
+    expect(missing.statusCode).toBe(204);
+    expect(missing.headers.etag).toBe(`"${version + 1}"`);
+    const missingAudits = await auditsOf('req-perm-missing-if-match');
+    expect(missingAudits).toHaveLength(1);
+    expect(missingAudits[0]!.changes).toMatchObject({ versionChecked: false });
 
+    const afterOptional = await overridesOf(DEMO_IDS.warehouseEmployeeId);
+
+    // 传了但格式非法 → 409。
+    const malformed = await patch(
+      ownerCookie,
+      DEMO_IDS.warehouseEmployeeId,
+      [{ domain: 'product', action: 'create', granted: true }],
+      { requestId: 'req-perm-malformed-if-match', ifMatch: 'abc' },
+    );
+    expect(malformed.statusCode).toBe(409);
+    expect(malformed.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
+
+    // 传了但版本不匹配 → 409。
     const conflict = await patch(
       ownerCookie,
       DEMO_IDS.warehouseEmployeeId,
@@ -297,7 +420,28 @@ describe('platform 员工个人级权限覆盖（PGlite + seed 演示租户）',
     expect(conflict.statusCode).toBe(409);
     expect(conflict.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
 
-    expect(await overridesOf(DEMO_IDS.warehouseEmployeeId)).toEqual(before);
+    // 后两个失败请求都不落库。
+    expect(await overridesOf(DEMO_IDS.warehouseEmployeeId)).toEqual(afterOptional);
+  });
+
+  it('老板改自己：豁免自我提权 / ⊆ 边界，审计 self=true', async () => {
+    const version = await versionOf(DEMO_IDS.ownerEmployeeId);
+
+    const response = await patch(
+      ownerCookie,
+      DEMO_IDS.ownerEmployeeId,
+      [{ domain: 'audit', action: 'read', granted: true }],
+      { requestId: 'req-perm-owner-self', ifMatch: String(version) },
+    );
+
+    expect(response.statusCode).toBe(204);
+    const audits = await auditsOf('req-perm-owner-self');
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.changes).toMatchObject({
+      employeeId: DEMO_IDS.ownerEmployeeId,
+      self: true,
+      versionChecked: true,
+    });
   });
 
   it('dryRun：不落库、返回 DryRunResult，并写一条 dry_run=true 审计；失败也记', async () => {
@@ -306,7 +450,7 @@ describe('platform 员工个人级权限覆盖（PGlite + seed 演示租户）',
     const ok = await patch(
       ownerCookie,
       DEMO_IDS.warehouseEmployeeId,
-      [{ domain: 'product', action: 'create', granted: true }],
+      [{ domain: 'product', action: 'update', granted: true }],
       { requestId: 'req-perm-dry-run-ok', ifMatch: String(version), dryRun: true },
     );
     expect(ok.statusCode).toBe(200);
@@ -323,7 +467,7 @@ describe('platform 员工个人级权限覆盖（PGlite + seed 演示租户）',
       {
         operation: 'create',
         entity: 'employee_permission_override',
-        id: 'product.create',
+        id: 'product.update',
         before: null,
         after: { granted: true },
       },
@@ -332,7 +476,7 @@ describe('platform 员工个人级权限覆盖（PGlite + seed 演示租户）',
     // 不落库：覆盖行与员工版本都不变。
     expect(
       (await overridesOf(DEMO_IDS.warehouseEmployeeId)).some(
-        (row) => row.domain === 'product' && row.action === 'create',
+        (row) => row.domain === 'product' && row.action === 'update',
       ),
     ).toBe(false);
     expect(await versionOf(DEMO_IDS.warehouseEmployeeId)).toBe(version);

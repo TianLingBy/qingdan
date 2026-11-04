@@ -145,6 +145,7 @@ describe('platform API Token（PGlite + seed 演示租户）', () => {
       ipAllowlist: string[];
       lastUsedAt: string | null;
       status: string;
+      version: number;
       createdBy: string;
       revokedAt: string | null;
       createdAt: string;
@@ -160,6 +161,7 @@ describe('platform API Token（PGlite + seed 演示租户）', () => {
       ipAllowlist: ['127.0.0.1'],
       lastUsedAt: null,
       status: 'active',
+      version: 1,
       createdBy: DEMO_IDS.ownerEmployeeId,
       revokedAt: null,
     });
@@ -220,6 +222,11 @@ describe('platform API Token（PGlite + seed 演示租户）', () => {
     };
     expect(first.items).toHaveLength(2);
     expect(first.nextCursor).not.toBeNull();
+    // version 必须有读出口，客户端才能拿它做下一次 If-Match（不能靠猜）。
+    for (const item of first.items) {
+      expect(item.version).toBeTypeOf('number');
+      expect(item.version).toBeGreaterThanOrEqual(1);
+    }
 
     const serialized = JSON.stringify(first.items);
     expect(serialized).not.toContain('tokenHash');

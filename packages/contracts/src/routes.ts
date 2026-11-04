@@ -158,7 +158,9 @@ export const ROUTES: readonly RouteDef[] = [
     summary: '员工个人级权限覆盖（D50；经理不可改老板/财务/其他经理）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
-    requiresIfMatch: true,
+    // If-Match 选填（员工 version 暂无读接口）：缺省跳过版本校验并审计 versionChecked=false；
+    // 传入则仍按强 ETag 校验。见 permission-overrides.ts 用例注释。
+    requiresIfMatch: false,
     dryRun: true,
     request: { body: PermissionOverrideInput },
   }),
