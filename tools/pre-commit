@@ -1,6 +1,6 @@
 #!/bin/sh
 # 提交前跑全量测试；失败则阻止提交。
-# 注意：.git/hooks 不受版本控制，克隆后需重新安装（命令见 docs/raw/README.md 同级的 AGENTS.md「测试」节）。
+# 注意：.git/hooks 不受版本控制，克隆后需重新安装（跑仓库根 install-hooks.ps1，或见 AGENTS.md「测试」节）。
 # 临时跳过：git commit --no-verify
 
 cd "$(git rev-parse --show-toplevel)" || exit 1

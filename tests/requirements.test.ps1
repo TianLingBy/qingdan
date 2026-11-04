@@ -1,4 +1,4 @@
-# 交接完整性契约测试：需求产物必须真的在工程仓里、模块映射齐全、工程护栏可用。
+﻿# 交接完整性契约测试：需求产物必须真的在工程仓里、模块映射齐全、工程护栏可用。
 # 目的：防止「迁移只在对话里发生过」——归档仓冻结后，这些文件是本仓唯一可用的需求源。
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'assert.ps1')
@@ -34,7 +34,7 @@ Assert-True ($c2.Contains('已冻结') -and $c2.Contains('§4')) '第二批契�
 
 $c3 = Get-Content (Join-Path $docs '轻单_接口契约第三批_v1_20261104.md') -Raw -Encoding utf8
 Assert-True ($c3.Contains('操作日志') -and $c3.Contains('API Token')) '第三批契约含操作日志与 API Token'
-Assert-True ($c3.Contains('开放项') -and $c3.Contains('草案')) '第三批为草案并列出开放项'
+Assert-True ($c3.Contains('开放项') -and $c3.Contains('已冻结')) '第三批已冻结（D54 裁定）并保留开放项章节'
 Assert-True ($decisions.Contains('D51') -and $decisions.Contains('D52')) 'decisions 含 D51（操作日志）/ D52（AI 友好）'
 Assert-True $decisions.Contains('D52.1') 'decisions 含 D52.1（AI 权限不可放大）'
 

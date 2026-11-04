@@ -1,4 +1,4 @@
-# 安装 Git pre-commit hook。
+﻿# 安装 Git pre-commit hook。
 #
 # 为什么需要它：.git/hooks 不进版本控制，clone 之后 hook 是空的，测试等于没有护栏。
 # 跑一次这个脚本，会把仓库里受控的 tools/pre-commit 装到 .git/hooks/pre-commit，

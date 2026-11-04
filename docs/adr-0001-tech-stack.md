@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 状态 | 🟡 **提议**（待负责人拍板；拍板后由 Lead 追加 `docs/decisions.md` **D53**，本文件转为已接受） |
+| 状态 | ✅ **已接受（2026-11-04 负责人拍板）**——结论已落 `docs/decisions.md` **D53**；未随本决策拍板的 U1-U5 与 U12 spike 见文末「未决项」 |
 | 日期 | 2026-11-04 |
 | 提出 | 架构协作者（adr-architect） |
 | 决策者 | 项目负责人（拍板人），Lead 汇总 |
@@ -227,7 +227,7 @@ qingdan/
 | **CLI** | 同一注册表遍历生成命令树：`qingdan <功能域> <动作>`，自动带 `--json --dry-run --reason --if-match --idempotency-key`；退出码由错误码分类映射（0/2/3/4/5） | `packages/cli` |
 | **MCP** | 同一注册表生成工具：一工具一路由，描述里自动写入「所需 scope / 是否需 reason / 是否危险动作需人类审批」；MCP 只调 HTTP，**不直连 DB**，因此不可能绕过权限与审计 | `packages/mcp` |
 | **审计中间件** | ①**成功路径**：业务事务内写 `audit_outbox` 行（保证至少一次），提交后由追加器搬到只追加的 `audit_log`；②**失败路径**：无业务事务可依附，直接调追加器写 `result=fail`；③`audit_log` 表对应用角色**只给 INSERT**（`REVOKE UPDATE, DELETE`），物理上不可改删。写审计的任何异常都**不被吞**：返回 500 并告警（D51 要求全量，宁可失败不可漏记） | `api/src/platform/audit` |
-| **乐观锁 / 幂等 / 游标分页** | 乐观锁：单据/批次带 `version`，`If-Match: "<version>"` → `UPDATE … WHERE id=$1 AND version=$2`，0 行 → 409 + 当前 version；幂等：`idempotency_key` 表（`unique(tenant_id,key)`，存 `request_hash` 与响应快照，24h 过期），**与业务写入同事务**，重复请求回放首次响应、hash 不一致 → 422；分页：不透明游标 `base64url({keys:[...],id})`，keyset 查询 `WHERE (created_at,id) < ($1,$2)`，`limit` 默认 50 / 上限 200 | `platform/http` + 各 repo |
+| **乐观锁 / 幂等 / 游标分页** | 乐观锁：单据/批次带 `version`，`If-Match: "<version>"` → `UPDATE … WHERE id=$1 AND version=$2`，0 行 → 409 + 当前 version；幂等：`idempotency_key` 表（`unique(tenant_id,key)`，存 `request_hash` 与响应快照，24h 过期），**与业务写入同事务**，重复请求回放首次响应、hash 不一致 → 409（2026-11-04 由 D54 裁定，原写 422 已更正）；分页：不透明游标 `base64url({keys:[...],id})`，keyset 查询 `WHERE (created_at,id) < ($1,$2)`，`limit` 默认 50 / 上限 200 | `platform/http` + 各 repo |
 
 ### 契约第三批 §3 逐条落地（实现对照表）
 
