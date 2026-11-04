@@ -30,6 +30,7 @@ interface AuditRow {
   credential_id: string | null;
   tenant_id: string | null;
   object_type: string;
+  error_code: string | null;
 }
 
 function cookieOf(response: { headers: Record<string, unknown> }): string {
@@ -100,6 +101,27 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
     const response = await loginRequest(UNKNOWN_PHONE, '000000', 'req-login-unknown');
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({ code: 'UNAUTHENTICATED' });
+  });
+
+  it('登录请求体不合法 → 422，统一失败钩子落一条 result=fail 审计', async () => {
+    const response = await loginRequest('123', '000000', 'req-audit-login-invalid');
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const rows = await test.database.query<AuditRow>(
+      `SELECT request_id, action, result, actor_type, actor_id, credential_id, tenant_id,
+              object_type, error_code
+         FROM audit_log WHERE request_id = $1`,
+      ['req-audit-login-invalid'],
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]).toMatchObject({
+      action: 'platform.auth.login',
+      result: 'fail',
+      tenant_id: null,
+      object_type: 'session',
+      error_code: 'VALIDATION_FAILED',
+    });
   });
 
   it('production 未接短信服务商 → 501 NOT_IMPLEMENTED（不静默放行固定验证码）', async () => {

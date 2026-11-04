@@ -44,6 +44,12 @@ export interface Principal {
   readonly source: AuditSource;
   /** 本请求实际使用的凭证类型（供 CSRF 判定）。 */
   readonly credentialType: CredentialType;
+  /**
+   * Cookie 会话本次是否实际做了滑动续期写入（5 分钟窗口外才为 true）。
+   * 为 true 时认证插件必须重发 `Set-Cookie`，否则库里的 `expires_at` 延长了、
+   * 浏览器 Cookie 却仍按旧的 Max-Age 过期（活跃用户第 7 天被登出）。
+   */
+  readonly sessionRenewed: boolean;
 }
 
 export interface PrincipalInput {
@@ -160,6 +166,7 @@ async function resolveApiTokenPrincipal(
     scope: authz.scope,
     source: auditSourceFromClient(input.client),
     credentialType: 'api_token',
+    sessionRenewed: false,
   };
 }
 
@@ -175,7 +182,8 @@ async function resolveSessionPrincipal(
 
   const authz = await authzFor(db, session.tenantId, session.employeeId);
   // 滑动续期（每 5 分钟最多写一次；写失败按 500 处理，不静默降级）。
-  await touchSession(db, {
+  // 返回值带出「是否实际写入」，插件据此决定是否重发 Cookie（D59⑦）。
+  const sessionRenewed = await touchSession(db, {
     tenantId: session.tenantId,
     sessionId: session.id,
     ttlDays: options.sessionTtlDays,
@@ -192,6 +200,7 @@ async function resolveSessionPrincipal(
     scope: authz.scope,
     source: auditSourceFromClient(input.client),
     credentialType: 'session',
+    sessionRenewed,
   };
 }
 

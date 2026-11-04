@@ -333,6 +333,34 @@ describe('platform 员工个人级权限覆盖（PGlite + seed 演示租户）',
     expect(await versionOf(DEMO_IDS.warehouseEmployeeId)).toBe(version);
   });
 
+  it('写操作被拒（经理越界）→ 403，且 audit_log 落且只落一条 result=fail', async () => {
+    const version = await versionOf(DEMO_IDS.ownerEmployeeId);
+    const response = await patch(
+      managerCookie,
+      DEMO_IDS.ownerEmployeeId,
+      [{ domain: 'sales', action: 'read', granted: true }],
+      { requestId: 'req-perm-fail-audit', ifMatch: String(version) },
+    );
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: 'FORBIDDEN' });
+
+    // withAudit 的业务事务回滚后，由统一失败钩子补记；成功路径不得重复记。
+    const audits = await auditsOf('req-perm-fail-audit');
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      action: 'platform.permission.update',
+      object_type: 'employee',
+      object_id: DEMO_IDS.ownerEmployeeId,
+      result: 'fail',
+      error_code: 'FORBIDDEN',
+      actor_id: DEMO_IDS.managerEmployeeId,
+      tenant_id: DEMO_IDS.tenantId,
+      dry_run: false,
+    });
+    expect(audits[0]!.changes).toBeNull();
+  });
+
   it('经理给下属授予自己有的权限 → 204', async () => {
     const version = await versionOf(DEMO_IDS.warehouseEmployeeId);
 

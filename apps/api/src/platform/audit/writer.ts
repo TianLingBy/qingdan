@@ -1,5 +1,6 @@
 import { v7 as uuidv7 } from 'uuid';
 import { ACTOR_TYPES, AUDIT_RESULTS, type AuditSource } from '@qingdan/contracts';
+import { withTenant } from '../auth/tenant-context.js';
 import type { Database, SqlClient } from '../db/client.js';
 
 /**
@@ -169,7 +170,9 @@ export async function recordAudit(db: Database, event: AuditEvent): Promise<stri
 /**
  * 直接写一条 `result='fail'` 的日志（无业务事务的失败路径）。
  *
- * `tenant_id IS NULL` 时同样走 SECURITY DEFINER 函数，否则 FORCE RLS 会拒绝。
+ * `tenant_id IS NULL` → `audit_append_unscoped`（SECURITY DEFINER）；
+ * 有租户 → 必须先 `set_config('app.tenant_id')`（`withTenant`），否则 audit_log 的
+ * FORCE RLS 会让直接 INSERT 被 WITH CHECK 拒绝，失败请求的审计全部丢失。
  */
 export async function recordAuditFailure(db: Database, event: AuditEvent): Promise<string> {
   const id = event.id ?? uuidv7();
@@ -179,8 +182,26 @@ export async function recordAuditFailure(db: Database, event: AuditEvent): Promi
     return id;
   }
   const values = valuesOf(failed, id);
-  await db.query(`INSERT INTO audit_log ${INSERT_COLUMNS} VALUES ${PLACEHOLDERS}`, values);
+  await withTenant(db, event.tenantId, async (tx) => {
+    await tx.query(`INSERT INTO audit_log ${INSERT_COLUMNS} VALUES ${PLACEHOLDERS}`, values);
+  });
   return id;
+}
+
+/**
+ * 请求级「失败审计已落」标记。
+ *
+ * 少数用例（如登录）在抛错**之前**已自行记录失败审计；统一失败钩子据此跳过，
+ * 避免同一次请求落两条 fail。只存内存引用，不影响日志语义。
+ */
+const FAILURE_AUDIT_RECORDED = new WeakSet<object>();
+
+export function markFailureAuditRecorded(request: object): void {
+  FAILURE_AUDIT_RECORDED.add(request);
+}
+
+export function wasFailureAuditRecorded(request: object): boolean {
+  return FAILURE_AUDIT_RECORDED.has(request);
 }
 
 /**

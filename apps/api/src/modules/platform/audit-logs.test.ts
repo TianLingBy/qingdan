@@ -98,6 +98,25 @@ describe('platform 操作日志查询（PGlite + seed 演示租户）', () => {
     });
     expect(response.statusCode).toBe(403);
     expect(response.json()).toMatchObject({ code: 'FORBIDDEN' });
+
+    // 敏感读被拒也要留痕（统一失败钩子），成功路径不重复记。
+    const failed = await test.database.query<AuditRow>(
+      `SELECT action, object_type, result, actor_id, tenant_id
+         FROM audit_log WHERE request_id = $1`,
+      ['req-audit-forbidden'],
+    );
+    expect(failed.rows).toEqual([
+      {
+        action: 'platform.audit.read',
+        object_type: 'audit_log',
+        result: 'fail',
+        actor_id: DEMO_IDS.salesEmployeeId,
+        tenant_id: DEMO_IDS.tenantId,
+      },
+    ]);
+
+    // 清掉这条失败审计，后面的分页断言只针对本用例造的数据（与 beforeAll 口径一致）。
+    await test.database.exec('TRUNCATE audit_outbox, audit_log');
   });
 
   it('只返回本租户日志；游标分页生效；每次查询写一条敏感读审计', async () => {

@@ -86,6 +86,24 @@ describe('审计追加器（outbox → audit_log）', () => {
     });
   });
 
+  it('失败路径租户非空：先设 app.tenant_id 再 INSERT，FORCE RLS 下不丢日志', async () => {
+    const tenantId = '01900000-0000-7000-8000-000000000001';
+    await test.database.exec('SET ROLE qingdan_app');
+    try {
+      await recordAuditFailure(
+        test.database,
+        baseEvent({ tenantId, errorCode: 'FORBIDDEN', result: 'success' }),
+      );
+    } finally {
+      await test.database.exec('RESET ROLE');
+    }
+
+    const logs = await test.database.query<{ tenant_id: string; result: string; error_code: string }>(
+      'SELECT tenant_id, result, error_code FROM audit_log',
+    );
+    expect(logs.rows).toEqual([{ tenant_id: tenantId, result: 'fail', error_code: 'FORBIDDEN' }]);
+  });
+
   it('重复搬 outbox 幂等（不会产生第二条日志）', async () => {
     let auditId = '';
     await test.database.transaction(async (tx) => {

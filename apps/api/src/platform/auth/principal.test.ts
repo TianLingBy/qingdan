@@ -6,7 +6,12 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
 import { testConfig } from '../config.js';
 import { DEMO_IDS, seed } from '../db/seed.js';
 import { resolvePrincipal } from './principal.js';
-import { createSession, hashSessionToken, revokeSession } from './session-store.js';
+import {
+  SESSION_TOUCH_INTERVAL_MS,
+  createSession,
+  hashSessionToken,
+  revokeSession,
+} from './session-store.js';
 
 /**
  * 请求主体解析（D59②⑦⑧ / D52.1）实测：
@@ -164,6 +169,34 @@ describe('principal（凭证解析与权限交集）', () => {
     expect(principal.companyIds).toEqual([DEMO_IDS.companyId]);
     expect(allowsScope(principal.scope, 'sales', 'read')).toBe(true);
     expect(allowsScope(principal.scope, 'customer', 'read')).toBe(true);
+  });
+
+  it('滑动续期：实际写入时带出 sessionRenewed=true，5 分钟窗口内为 false', async () => {
+    const session = await sessionFor();
+    const cookie = `qingdan_session=${session.token}`;
+
+    // 新建会话 last_seen_at 为空 → 首次解析实际写入。
+    const first = await resolvePrincipal(test.database, { cookie }, OPTIONS);
+    expect(first.sessionRenewed).toBe(true);
+
+    // 窗口内不重复写。
+    const inWindow = new Date(T0.getTime() + SESSION_TOUCH_INTERVAL_MS - 60_000);
+    const second = await resolvePrincipal(test.database, { cookie }, { ...OPTIONS, now: inWindow });
+    expect(second.sessionRenewed).toBe(false);
+
+    // 超出窗口再次写入。
+    const beyond = new Date(T0.getTime() + SESSION_TOUCH_INTERVAL_MS + 60_000);
+    const third = await resolvePrincipal(test.database, { cookie }, { ...OPTIONS, now: beyond });
+    expect(third.sessionRenewed).toBe(true);
+
+    // API Token 没有会话续期语义。
+    const { token } = await issueToken({ scope: [{ domain: 'sales', actions: ['read'] }] });
+    const ai = await resolvePrincipal(
+      test.database,
+      { authorization: `Bearer ${token}` },
+      OPTIONS,
+    );
+    expect(ai.sessionRenewed).toBe(false);
   });
 
   it('Cookie 会话被撤销后立即 401', async () => {

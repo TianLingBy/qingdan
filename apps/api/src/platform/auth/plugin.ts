@@ -1,7 +1,9 @@
 import { AppError, HEADERS } from '@qingdan/contracts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { AppConfig } from '../config.js';
-import { resolvePrincipal, type Principal } from './principal.js';
+import { setSessionCookie } from './cookie.js';
+import { parseCookieHeader, resolvePrincipal, type Principal } from './principal.js';
+import { SESSION_COOKIE_NAME } from './session-store.js';
 
 /**
  * 认证 Fastify 插件（D59）。
@@ -96,27 +98,30 @@ export function assertCookieRequestSameOrigin(input: SameOriginInput): void {
     );
   }
 
-  const allowed = new Set<string>();
+  // 配置了 PUBLIC_BASE_URL 时**只认它**：否则任意 Host（可被 X-Forwarded-Host / 直接请求头伪造）
+  // 都能与攻击者 Origin 配对通过同源校验。未配置时才退回按请求 Host 推断。
   const configured = originOf(input.publicBaseUrl);
-  if (configured) allowed.add(configured);
-  if (input.host) {
-    const requestOrigin = originOf(`${input.protocol}://${input.host}`);
-    if (requestOrigin) allowed.add(requestOrigin);
-  }
+  const allowed = configured
+    ? configured
+    : input.host
+      ? originOf(`${input.protocol}://${input.host}`)
+      : null;
 
-  if (allowed.size === 0 || !allowed.has(candidate)) {
+  if (!allowed || allowed !== candidate) {
     throw new AppError('FORBIDDEN', 'Cookie 认证的非安全请求来源与本站不同源');
   }
 }
 
 export interface AuthPluginOptions {
-  readonly config: Pick<AppConfig, 'sessionTtlDays' | 'publicBaseUrl'>;
+  readonly config: Pick<AppConfig, 'sessionTtlDays' | 'publicBaseUrl' | 'nodeEnv'>;
 }
+
+const DAY_SECONDS = 24 * 60 * 60;
 
 export function registerAuthPlugin(app: FastifyInstance, options: AuthPluginOptions): void {
   app.decorateRequest('principal', null);
 
-  app.addHook('onRequest', async (request) => {
+  app.addHook('onRequest', async (request, reply) => {
     if (isPublicRequest(request)) return;
 
     // M0 骨架允许不配数据库启动（端点统一 501）；没有库时无从认证，保持未认证。
@@ -152,6 +157,18 @@ export function registerAuthPlugin(app: FastifyInstance, options: AuthPluginOpti
         protocol: request.protocol,
         publicBaseUrl: options.config.publicBaseUrl,
       });
+    }
+
+    // 滑动续期实际写入时同步续浏览器 Cookie：属性与登录一致，值仍是同一个会话令牌。
+    // 放在同源校验之后 —— 跨源请求即使触发了续期，也不给攻击者下发新 Cookie。
+    if (principal.credentialType === 'session' && principal.sessionRenewed) {
+      const token = parseCookieHeader(headerValue(request, 'cookie'), SESSION_COOKIE_NAME);
+      if (token) {
+        setSessionCookie(reply, token, {
+          maxAgeSeconds: options.config.sessionTtlDays * DAY_SECONDS,
+          secure: options.config.nodeEnv === 'production',
+        });
+      }
     }
 
     request.principal = principal;

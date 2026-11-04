@@ -1,6 +1,6 @@
 import { AppError } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { recordAudit } from '../../../platform/audit/writer.js';
+import { markFailureAuditRecorded, recordAudit } from '../../../platform/audit/writer.js';
 import { setSessionCookie } from '../../../platform/auth/cookie.js';
 import { createSession } from '../../../platform/auth/session-store.js';
 import type { AppConfig } from '../../../platform/config.js';
@@ -82,6 +82,8 @@ async function recordLoginFailure(
     ip: ctx.request.ip,
     userAgent: headerValue(ctx.request, 'user-agent') ?? null,
   });
+  // 已自行记录失败审计：告诉统一失败钩子别再记第二条（路由 auditKind=write）。
+  markFailureAuditRecorded(ctx.request);
 }
 
 export async function login(ctx: LoginContext): Promise<LoginResult> {
