@@ -26,20 +26,37 @@
 
 **开工顺序（不可颠倒）**：确认身份 → 落盘成员档案 → 在 `docs/module-<模块>.md` 登记负责人 → 领任务 → 才动代码。
 
-## 1. 硬前置
+## 1. 硬前置：先装软件，再 clone
 
-- **git**（任意较新版本）
-- **PowerShell 7+**（命令名 `pwsh`，**不是** Windows 自带的 `powershell` 5.1；测试与 hook 都靠它）
-- 网络（仓库是 GitHub 私有仓，需要先被邀请）
+**必装 7 项**（完整版本依据、下载地址、验证命令见 [`docs/DEV-SETUP.md`](DEV-SETUP.md) §1「必装软件清单」）：
 
-检查：
+| # | 软件 | 命令名 | 版本 | 下载 |
+|---|---|---|---|---|
+| 1 | Git（Windows 用 Git for Windows，勾选 Git Credential Manager） | `git` | ≥ 2.40 | <https://git-scm.com/download/win> |
+| 2 | GitHub CLI | `gh` | ≥ 2.60 | <https://cli.github.com/> |
+| 3 | Node.js | `node` | **24 LTS（24.x）** | <https://nodejs.org/en/download> |
+| 4 | pnpm | `pnpm` | **11.x** | `corepack enable` 或 `npm i -g pnpm@11.28.10` |
+| 5 | PowerShell 7（**不是**系统自带 `powershell` 5.1） | `pwsh` | ≥ 7.0 | <https://aka.ms/powershell-release?tag=stable> |
+| 6 | PostgreSQL | `psql` | **18** | <https://www.postgresql.org/download/windows/> |
+| 7 | 编辑器（建议 VS Code + ESLint/Prettier 插件） | — | 任意 | <https://code.visualstudio.com/> |
+
+**权限前置**：仓库是私有的，你的 GitHub 账号必须已被负责人加为 **write** 协作者并**接受邀请**，否则 `git clone` 会报 **404 / Repository not found**（GitHub 对无权限账号统一返回 404，不是 403）。
+
+装机后逐条验证（全过才进 §2）：
 
 ```powershell
-pwsh -v          # 期望 7.x
-git --version
+node -v                 # v24.x
+pnpm -v                 # 11.x
+git --version           # 2.4x+
+gh --version            # 2.6x+
+pwsh -v                 # 7.x —— 在 5.1 里跑这行会报错，正说明你没装 PS7
+gh auth login           # 浏览器登录「被邀请的那个」GitHub 账号
+gh api user --jq '.login'                          # 确认当前身份
+gh api repos/TianLingBy/qingdan --jq '.permissions' # 期望 push:true；404 见下
 ```
 
-没有 pwsh 7 时：Windows `winget install Microsoft.PowerShell`；macOS `brew install --cask powershell`；Ubuntu 走微软官方 apt 源。**不要用 5.1 兜底**——本仓 `.ps1` 带 BOM，但 5.1 仍会在部分场景按 GBK 解码中文报 `The string is missing the terminator`。
+- 没有 pwsh 7 时：Windows `winget install --id Microsoft.PowerShell -e`；macOS `brew install --cask powershell`；Ubuntu 走微软官方 apt 源。**不要用 5.1 兜底**——本仓 `.ps1` 带 BOM，但 5.1 仍会在部分场景按 GBK 解码中文报 `The string is missing the terminator`。
+- `gh api repos/TianLingBy/qingdan` 报 **404**：说明当前登录的账号不是被邀请的那个。依次做 `gh auth login`（换账号）→ `cmdkey /delete:git:https://github.com`（清 Windows 旧凭据）→ 仍不行就把 `gh api user --jq '.login'` 的输出发给负责人核对，需要时用正确账号重发邀请。
 
 ## 2. 一键初始化（推荐，所有 Agent 都能照抄）
 
