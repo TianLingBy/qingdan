@@ -83,6 +83,7 @@
 | `~/.dsh/AGENTS.md`（全局记忆，仓库外） | **2026-11-04 重写「多智能体路由」节**：改为三套 harness 分工——DSH 中间人 / 代码活→Claude Code / 杂项→Codex；写明派发硬规则（任务自包含、写范围、180s 超时、只写不提交、验收看命令输出） | 负责人指令：重新搭建智能体团队，三套 harness 都接 DeepSeek | 恢复为 2026-11-03 版「多智能体路由」五条即回滚 |
 | `C:\Users\32800\.codex\config.toml`（仓库外） | **2026-11-04 追加 `[projects.'d:\desktop\dsh\qingdan'] trust_level = "trusted"`**（只让 Codex 对本项目免信任询问，不动其他配置）；改动前备份 `config.toml.bak-20261104` | Codex 当「杂项手」要在本仓写文档/脚本，未信任目录会被拦 | 删掉这 3 行即回滚；完整还原用 `Copy-Item config.toml.bak-20261104 config.toml -Force` |
 | `C:\Users\32800\.codex\config.toml`（仓库外） | **2026-11-04 追加 `[sandbox_workspace_write] network_access = true`**，让 Codex 沙箱能访问外网（复测 HTTP 200）。同日曾把 `web_search` 改成 `live` 验证，确认在 DeepSeek provider 下无效，已回退 `disabled`。备份：`config.toml.bak-20261104-network`、`config.toml.bak-20261104-search` | 负责人要求「要什么装什么」：Codex 当杂项手，调研类任务需要能上网 | 删掉这 3 行即回滚；完整还原用 `Copy-Item config.toml.bak-20261104-network config.toml -Force` |
+| `~/.dsh/AGENTS.md`（全局记忆，仓库外） | **2026-11-04「交互规则」节追加「不许无声等待」**：单步预计 >15s 先预告耗时；禁止 `Start-Sleep` >20s 阻塞对话（等 CI 放后台）；派外部 CLI 前说明「已派，约 20–45 秒」 | 负责人反馈「回复间隔从 30 秒跳到 1 分钟甚至 4 分钟」；实测原因是长命令阻塞与轮次间空档被误读为卡死 | 删除该条即回滚 |
 
 ## 相关文件
 
