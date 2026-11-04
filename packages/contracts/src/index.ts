@@ -1,6 +1,7 @@
 export * from './domains.js';
 export * from './modules.js';
 export * from './products.js';
+export * from './customers.js';
 export * from './errors.js';
 export * from './authz.js';
 export * from './audit.js';
