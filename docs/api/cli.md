@@ -2,7 +2,8 @@
 
 > **状态：已冻结（2026-11-04 按 D54 去提案标记）**，与 `docs/api/openapi.yaml` 同批。契约真源见
 > `docs/轻单_接口契约第三批_v1_20261104.md` §4（CLI 与 MCP 映射）与 §3（通用 API 约定），
-> 以及 `docs/decisions.md` D54（缺口裁决）；命令对应的 REST 端点以 `docs/api/openapi.yaml` 为准。
+> 以及 `docs/decisions.md` D54（缺口裁决）；命令对应的 REST 端点以 `docs/api/openapi.yaml` 为准，
+> 已进入注册表的 `operationId` 以 `packages/contracts/src/routes.ts` 为准。
 
 ## 0. 定位与铁律
 
@@ -115,9 +116,9 @@ qingdan <domain> <action> [参数] [全局参数]
 
 | 命令 | 作用 | REST | scope | reason | AI |
 |---|---|---|---|---|---|
-| `qingdan auth login --phone <手机号> --code <验证码>` | 登录，保存会话 Cookie | `login` | 无（`security: []`） | — | 不适用 |
-| `qingdan auth logout` | 登出，清除本地会话 | `logout` | 无（会话本身） | — | 不适用 |
-| `qingdan auth whoami` | 当前身份 + 生效权限（服务端实时计算） | `getCurrentIdentity` | 无 | — | 允许 |
+| `qingdan auth login --phone <手机号> --code <验证码>` | 登录，保存会话 Cookie | `platform.auth.login` | 无（`security: []`） | — | 不适用 |
+| `qingdan auth logout` | 登出，清除本地会话 | `platform.auth.logout` | 无（会话本身） | — | 不适用 |
+| `qingdan auth whoami` | 当前身份 + 生效权限（服务端实时计算） | `platform.auth.me` | 无 | — | 允许 |
 
 ### 4.2 purchase（A 采购单）
 
@@ -160,20 +161,20 @@ qingdan <domain> <action> [参数] [全局参数]
 | `qingdan batch get <id>` | 批次详情 | `getBatch` | `inventory.read` | — | 允许 |
 | `qingdan inventory list [--batch <id>] [--source-order <id>] [--from] [--to]` | 库存流水（只追加） | `listInventoryTransactions` | `inventory.read` | — | 允许 |
 
-### 4.6 permission（员工与权限）
+### 4.6 employee / permission（员工与权限）
 
 | 命令 | 作用 | REST | scope | reason | AI |
 |---|---|---|---|---|---|
-| `qingdan permission employee list [--company <id>]` | 员工列表（含公司-岗位与个人覆盖） | `listEmployees` | `platform.read` | — | 允许 |
-| `qingdan permission set <employeeId> --file <permissions.json> --reason "..."` | 修改员工权限（岗位并集 ⊕ 个人覆盖） | `updateEmployeePermissions` | `platform.update` | **必填** | **403** |
+| `qingdan employee read [--company <id>] [--position <id>] [--status <在职/停用>] [--keyword <关键词>] [--limit 50] [--cursor ...]` | 员工列表（普通读不记审计；老板见全租户，非老板仅绑定公司集合） | `platform.employee.read` | `employee.read` | — | 允许 |
+| `qingdan permission set <employeeId> --file <permissions.json> --reason "..."` | 修改员工权限（岗位并集 ⊕ 个人覆盖） | `platform.permission.update` | `permission.update` | **必填** | **403** |
 
 ### 4.7 token（API Token）
 
 | 命令 | 作用 | REST | scope | reason | AI |
 |---|---|---|---|---|---|
-| `qingdan token list [--status active] [--employee <id>]` | Token 列表（永不含明文） | `listApiTokens` | `platform.read` | — | 允许 |
-| `qingdan token create --name "..." --employee <id> --scope sales.read [--expires-at <t>] [--ip-allowlist <cidr,...>]` | 创建 Token（明文只打印一次） | `createApiToken` | `platform.create` | 条件必填（AI 调用） | 允许，但 scope ⊆ 创建人授权（D52.1①） |
-| `qingdan token revoke <id> --reason "..."` | 撤销 Token（立即失效） | `revokeApiToken` | `platform.delete` | **必填** | **403** |
+| `qingdan token list [--status active] [--employee <id>]` | Token 列表（永不含明文） | `platform.token.read` | `api_integration.read` | — | 允许 |
+| `qingdan token create --name "..." --employee <id> --scope sales.read [--expires-at <t>] [--ip-allowlist <cidr,...>]` | 创建 Token（明文只打印一次） | `platform.token.create` | `api_integration.create` | 条件必填（AI 调用） | 允许，但 scope ⊆ 创建人授权（D52.1①） |
+| `qingdan token revoke <id> --reason "..."` | 撤销 Token（立即失效） | `platform.token.revoke` | `api_integration.delete` | **必填** | **403** |
 
 `token create` 的 scope 超出创建人自身授权时服务端直接拒绝（422，D52.1①）；CLI 不做本地兜底。
 
@@ -181,8 +182,8 @@ qingdan <domain> <action> [参数] [全局参数]
 
 | 命令 | 作用 | REST | scope | reason | AI |
 |---|---|---|---|---|---|
-| `qingdan audit list [--actor-type ai] [--source cli] [--action sales.create] [--result fail] [--from <t>] [--to <t>] [--limit 50] [--cursor ...]` | 查询操作日志（只读、只追加） | `listAuditLogs` | `platform.read` | — | 允许（查看日志本身也记日志） |
-| `qingdan api openapi [--out openapi.json]` | 拉取 `GET /api/v1/openapi.json`（接口真源） | `getOpenApiDocument` | 按服务端 | — | 允许 |
+| `qingdan audit list [--actor-type ai] [--source cli] [--action sales.create] [--result fail] [--from <t>] [--to <t>] [--limit 50] [--cursor ...]` | 查询操作日志（只读、只追加） | `platform.audit.read` | `audit.read` | — | 允许（查看日志本身也记日志） |
+| `qingdan api openapi [--out openapi.json]` | 拉取 `GET /api/v1/openapi.json`（接口真源） | `platform.openapi.read` | 按服务端 | — | 允许 |
 
 ### 4.9 命令示例
 
@@ -207,9 +208,9 @@ MCP 工具命名约定（D54 已冻结）：`qingdan_<domain>_<action>`，与 `o
 
 | CLI 命令 | REST operationId | MCP 工具（已冻结） | scope | reason | 审批 / AI |
 |---|---|---|---|---|---|
-| `qingdan auth login` | `login` | 不暴露为 MCP 工具 | — | — | 人类登录，AI 不用 |
-| `qingdan auth logout` | `logout` | 不暴露为 MCP 工具 | — | — | 人类会话 |
-| `qingdan auth whoami` | `getCurrentIdentity` | `qingdan_auth_whoami` | — | — | 允许 |
+| `qingdan auth login` | `platform.auth.login` | 不暴露为 MCP 工具 | — | — | 人类登录，AI 不用 |
+| `qingdan auth logout` | `platform.auth.logout` | 不暴露为 MCP 工具 | — | — | 人类会话 |
+| `qingdan auth whoami` | `platform.auth.me` | `qingdan_auth_whoami` | — | — | 允许 |
 | `qingdan purchase list` | `listPurchaseOrders` | `qingdan_purchase_list` | `purchase.read` | — | 允许 |
 | `qingdan purchase get` | `getPurchaseOrder` | `qingdan_purchase_get` | `purchase.read` | — | 允许 |
 | `qingdan purchase create` | `createPurchaseOrder` | `qingdan_purchase_create` | `purchase.create` | AI 必填 | 允许 |
@@ -223,13 +224,13 @@ MCP 工具命名约定（D54 已冻结）：`qingdan_<domain>_<action>`，与 `o
 | `qingdan batch list` | `listBatches` | `qingdan_batch_list` | `inventory.read` | — | 允许 |
 | `qingdan batch get` | `getBatch` | `qingdan_batch_get` | `inventory.read` | — | 允许 |
 | `qingdan inventory list` | `listInventoryTransactions` | `qingdan_inventory_list` | `inventory.read` | — | 允许 |
-| `qingdan permission employee list` | `listEmployees` | `qingdan_permission_employee_list` | `platform.read` | — | 允许 |
-| `qingdan permission set` | `updateEmployeePermissions` | `qingdan_permission_set` | `platform.update` | **必填** | 人类审批；AI 默认 403 |
-| `qingdan token list` | `listApiTokens` | `qingdan_token_list` | `platform.read` | — | 允许 |
-| `qingdan token create` | `createApiToken` | `qingdan_token_create` | `platform.create` | AI 必填 | 允许（scope ⊆ 创建人授权） |
-| `qingdan token revoke` | `revokeApiToken` | `qingdan_token_revoke` | `platform.delete` | **必填** | 人类审批；AI 默认 403 |
-| `qingdan audit list` | `listAuditLogs` | `qingdan_audit_list` | `platform.read` | — | 允许（记读日志） |
-| `qingdan api openapi` | `getOpenApiDocument` | `qingdan_meta_openapi` | — | — | 允许 |
+| `qingdan employee read` | `platform.employee.read` | `qingdan_employee_read` | `employee.read` | — | 允许 |
+| `qingdan permission set` | `platform.permission.update` | `qingdan_permission_set` | `permission.update` | **必填** | 人类审批；AI 默认 403 |
+| `qingdan token list` | `platform.token.read` | `qingdan_token_list` | `api_integration.read` | — | 允许 |
+| `qingdan token create` | `platform.token.create` | `qingdan_token_create` | `api_integration.create` | AI 必填 | 允许（scope ⊆ 创建人授权） |
+| `qingdan token revoke` | `platform.token.revoke` | `qingdan_token_revoke` | `api_integration.delete` | **必填** | 人类审批；AI 默认 403 |
+| `qingdan audit list` | `platform.audit.read` | `qingdan_audit_list` | `audit.read` | — | 允许（记读日志） |
+| `qingdan api openapi` | `platform.openapi.read` | `qingdan_meta_openapi` | — | — | 允许 |
 
 ## 6. `--dry-run` 语义
 
