@@ -5,6 +5,7 @@ import { ApiErrorBodySchema } from './errors.js';
 import { ProductSchema } from './products.js';
 import { CustomerSchema } from './customers.js';
 import { SupplierSchema } from './suppliers.js';
+import { ProcessorQuoteSchema, ProcessorSchema } from './processors.js';
 
 /**
  * 契约实体登记表（D57 ①）：每个实体必须在此登记并带 globalRegistry id，
@@ -45,6 +46,12 @@ z.globalRegistry.add(CustomerSchema, { id: 'Customer' });
 /** 供应商（契约第一批 §2 / masterdata 第三切）：实体定义在 `suppliers.ts`，这里只做登记。 */
 z.globalRegistry.add(SupplierSchema, { id: 'Supplier' });
 
+/** 加工厂（契约第一批 §2 / masterdata 第四切）：实体定义在 `processors.ts`，这里只做登记。 */
+z.globalRegistry.add(ProcessorSchema, { id: 'Processor' });
+
+/** 加工厂报价记录（D64 / 独立子表 processor_quote）：实体定义在 `processors.ts`。 */
+z.globalRegistry.add(ProcessorQuoteSchema, { id: 'ProcessorQuote' });
+
 /** 员工列表里的公司-岗位对（D15：一人多岗 + 公司隔离）。 */
 const EmployeeCompanySchema = z.object({
   companyId: z.string(),
@@ -78,4 +85,6 @@ export const ENTITIES = [
   { name: 'Product', schema: ProductSchema },
   { name: 'Customer', schema: CustomerSchema },
   { name: 'Supplier', schema: SupplierSchema },
+  { name: 'Processor', schema: ProcessorSchema },
+  { name: 'ProcessorQuote', schema: ProcessorQuoteSchema },
 ] as const;

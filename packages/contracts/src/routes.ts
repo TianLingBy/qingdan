@@ -8,6 +8,7 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
 import { PRODUCT_ROUTES } from './products.js';
 import { CUSTOMER_ROUTES } from './customers.js';
 import { SUPPLIER_ROUTES } from './suppliers.js';
+import { PROCESSOR_ROUTES } from './processors.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -198,6 +199,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...CUSTOMER_ROUTES,
   // —— masterdata 模块：供应商资料（契约第一批 §2，2026-11-04）——
   ...SUPPLIER_ROUTES,
+  // —— masterdata 模块：加工厂 + 报价记录（契约第一批 §2 / D64）——
+  ...PROCESSOR_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;
