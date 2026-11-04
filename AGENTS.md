@@ -70,7 +70,8 @@
 - `main` 不直推：每个模块一条 `feat/<模块名>` 分支（如 `feat/platform`），走 PR 合并。
 - PR 必须过 CI：`.github/workflows/test.yml` 在 `windows-latest` 与 `ubuntu-latest` 上跑 `./tests/run.ps1`，红的不合并。
 - 一个 PR 只动本模块的写范围；跨模块改动（公共类型、权限、库存/金额口径）必须在 PR 描述里列受影响模块并 @ 对应负责人。
-- 模块检查点 `docs/module-<名>.md` 随 PR 更新，不单独开「只改文档」的 PR；合并前至少一次人工评审（或 `claude-code` 做第二意见）。
+- 模块检查点 `docs/module-<名>.md` 随 PR 更新，不单独开「只改文档」的 PR。
+- **合并权分级（2026-11-04 负责人拍板）**：普通 PR（文档、单模块内实现与测试、脚本/CI 微调，且 CI 三项全绿）由 Lead 直接 squash 合并，**不再逐次请示**；严重变更必须先把 PR 链接交负责人定夺——清单见 `docs/AGENT-TEAM.md` §6.1。
 - 协作者接入、模块认领、每模块分支与依赖顺序见 `docs/ONBOARDING.md`；**4 人人类开发者看 `docs/TEAM-PLAN.md`（分工/里程碑/DoR/DoD）与 `docs/DEV-SETUP.md`（环境/目录）**；PR 按 `.github/pull_request_template.md` 填。
 - CI 跑 `windows-latest` 与 `ubuntu-latest` 两个平台，macOS/Linux 协作者以 ubuntu 结果为参照。
 
