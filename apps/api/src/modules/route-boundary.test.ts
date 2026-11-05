@@ -43,7 +43,19 @@ const SALES_CASES = [
   { method: 'POST', url: '/api/v1/sales-orders/so-1/cancel', operationId: 'sales.order.cancel' },
 ] as const;
 
-describe('路由挂载边界（platform / masterdata / inventory / sales）', () => {
+const PURCHASE_CASES = [
+  { method: 'GET', url: '/api/v1/purchase-orders', operationId: 'purchase.order.list.read' },
+  { method: 'POST', url: '/api/v1/purchase-orders', operationId: 'purchase.order.create' },
+  { method: 'GET', url: '/api/v1/purchase-orders/po-1', operationId: 'purchase.order.detail.read' },
+  { method: 'PATCH', url: '/api/v1/purchase-orders/po-1', operationId: 'purchase.order.update' },
+  {
+    method: 'POST',
+    url: '/api/v1/purchase-orders/po-1/cancel',
+    operationId: 'purchase.order.cancel',
+  },
+] as const;
+
+describe('路由挂载边界（platform / masterdata / inventory / sales / purchase）', () => {
   let app: FastifyInstance;
 
   beforeAll(() => {
@@ -63,13 +75,7 @@ describe('路由挂载边界（platform / masterdata / inventory / sales）', ()
 
     // 契约登记的全部模块中，尚未接线的模块（随模块开发逐项减少，改动时请显式更新）。
     const notYetMounted = MODULE_KEYS.filter((module) => !mounted.has(module));
-    expect(notYetMounted).toEqual([
-      'purchase',
-      'processing',
-      'settlement',
-      'internal-trade',
-      'test',
-    ]);
+    expect(notYetMounted).toEqual(['processing', 'settlement', 'internal-trade', 'test']);
   });
 
   it('3 个 inventory 只读端点全部由 inventory 骨架挂载 → 501 NOT_IMPLEMENTED', async () => {
@@ -90,6 +96,26 @@ describe('路由挂载边界（platform / masterdata / inventory / sales）', ()
 
   it('5 个 sales 端点全部由 sales 骨架挂载 → 501 NOT_IMPLEMENTED', async () => {
     for (const testCase of SALES_CASES) {
+      const response = await app.inject({
+        method: testCase.method,
+        url: testCase.url,
+        headers: { 'if-match': '"1"' },
+      });
+
+      expect(response.statusCode, `${testCase.method} ${testCase.url}`).toBe(501);
+      const body = response.json() as {
+        code: string;
+        message: string;
+        details?: Record<string, unknown>;
+      };
+      expect(body.code).toBe('NOT_IMPLEMENTED');
+      expect(body.message).toContain(testCase.operationId);
+      expect(body.details).toMatchObject({ operationId: testCase.operationId });
+    }
+  });
+
+  it('5 个 purchase 端点全部由 purchase 骨架挂载 → 501 NOT_IMPLEMENTED', async () => {
+    for (const testCase of PURCHASE_CASES) {
       const response = await app.inject({
         method: testCase.method,
         url: testCase.url,

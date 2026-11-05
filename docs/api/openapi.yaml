@@ -3302,6 +3302,347 @@ paths:
         reasonRequired: true
       x-mcp-tool: qingdan_sales_order_cancel
       x-requires-if-match: true
+  /api/v1/purchase-orders:
+    get:
+      operationId: purchase.order.list.read
+      summary: 采购单列表（按公司/供应商/状态/单号或供应商名检索；普通读不记审计，D15）
+      tags:
+        - purchase
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: supplierId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - 进行中
+              - 已完成
+              - 已取消
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PurchaseOrder"
+                  nextCursor:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                      - type: "null"
+                required:
+                  - items
+                  - nextCursor
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: purchase.read
+      x-module: purchase
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_purchase_order_list_read
+    post:
+      operationId: purchase.order.create
+      summary: 开采购单（单号服务端按 D16 生成；AI 默认禁止开单；本批不做入库锁价 D5）
+      tags:
+        - purchase
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "201":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: purchase.create
+      x-module: purchase
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: false
+      x-mcp-tool: qingdan_purchase_order_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                companyId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                supplierId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                handlerId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                lines:
+                  minItems: 1
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/PurchaseOrderLine"
+                fees:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      feeName:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                      qty:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      unitPrice:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      amount:
+                        type: string
+                        pattern: ^-?\d{1,12}(\.\d{1,6})?$
+                      remark:
+                        anyOf:
+                          - type: string
+                            maxLength: 255
+                          - type: "null"
+                    required:
+                      - feeName
+                      - qty
+                      - unitPrice
+                      - amount
+                    additionalProperties: false
+              required:
+                - companyId
+                - supplierId
+                - handlerId
+                - lines
+              additionalProperties: false
+  /api/v1/purchase-orders/{id}:
+    get:
+      operationId: purchase.order.detail.read
+      summary: 采购单详情（内嵌取消判定 cancelable；普通读不记审计，D21）
+      tags:
+        - purchase
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrderDetail"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: purchase.read
+      x-module: purchase
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_purchase_order_detail_read
+    patch:
+      operationId: purchase.order.update
+      summary: 修改采购单（仅「进行中」可改；强 ETag If-Match；成本更正走 platform 审批 D37）
+      tags:
+        - purchase
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: purchase.update
+      x-module: purchase
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_purchase_order_update
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                supplierId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                handlerId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                lines:
+                  minItems: 1
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/PurchaseOrderLine"
+                fees:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      feeName:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                      qty:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      unitPrice:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      amount:
+                        type: string
+                        pattern: ^-?\d{1,12}(\.\d{1,6})?$
+                      remark:
+                        anyOf:
+                          - type: string
+                            maxLength: 255
+                          - type: "null"
+                    required:
+                      - feeName
+                      - qty
+                      - unitPrice
+                      - amount
+                    additionalProperties: false
+              additionalProperties: false
+  /api/v1/purchase-orders/{id}/cancel:
+    post:
+      operationId: purchase.order.cancel
+      summary: 取消采购单（复用 assertCancelable：已完成/已结算不可取消、有下游先取消下游；AI 禁止）
+      tags:
+        - purchase
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: purchase.delete
+      x-module: purchase
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_purchase_order_cancel
+      x-requires-if-match: true
 components:
   schemas:
     AuditLog:
@@ -4566,6 +4907,214 @@ components:
         - createdAt
         - updatedAt
         - receipts
+        - cancelable
+      additionalProperties: false
+    PurchaseOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        orderNo:
+          type: string
+        supplierId:
+          type: string
+        supplierName:
+          type: string
+        status:
+          type: string
+          enum:
+            - 进行中
+            - 已完成
+            - 已取消
+        handlerId:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseOrderLine"
+        fees:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseOrderFee"
+        goodsAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        feeAmount:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        totalAmount:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - orderNo
+        - supplierId
+        - supplierName
+        - status
+        - handlerId
+        - lines
+        - fees
+        - goodsAmount
+        - feeAmount
+        - totalAmount
+        - version
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    PurchaseOrderLine:
+      type: object
+      properties:
+        productId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        qty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        unitPrice:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        amount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+      required:
+        - productId
+        - qty
+        - unitPrice
+        - amount
+      additionalProperties: false
+    PurchaseOrderFee:
+      type: object
+      properties:
+        feeName:
+          type: string
+          minLength: 1
+          maxLength: 64
+        qty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        unitPrice:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        amount:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        remark:
+          anyOf:
+            - type: string
+              maxLength: 255
+            - type: "null"
+      required:
+        - feeName
+        - qty
+        - unitPrice
+        - amount
+        - remark
+      additionalProperties: false
+    PurchaseOrderDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        orderNo:
+          type: string
+        supplierId:
+          type: string
+        supplierName:
+          type: string
+        status:
+          type: string
+          enum:
+            - 进行中
+            - 已完成
+            - 已取消
+        handlerId:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseOrderLine"
+        fees:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseOrderFee"
+        goodsAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        feeAmount:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        totalAmount:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        cancelable:
+          type: object
+          properties:
+            allowed:
+              type: boolean
+            reason:
+              anyOf:
+                - type: string
+                  enum:
+                    - already_completed
+                    - already_cancelled
+                    - has_downstream
+                - type: "null"
+          required:
+            - allowed
+            - reason
+          additionalProperties: false
+      required:
+        - id
+        - tenantId
+        - companyId
+        - orderNo
+        - supplierId
+        - supplierName
+        - status
+        - handlerId
+        - lines
+        - fees
+        - goodsAmount
+        - feeAmount
+        - totalAmount
+        - version
+        - createdAt
+        - updatedAt
         - cancelable
       additionalProperties: false
   securitySchemes:
