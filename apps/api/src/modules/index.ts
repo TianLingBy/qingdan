@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppConfig } from '../platform/config.js';
+import { registerInternalTradeRoutes } from './internal-trade/routes.js';
 import { registerInventoryRoutes } from './inventory/routes.js';
 import { registerMasterdataRoutes } from './masterdata/routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
@@ -20,6 +21,7 @@ export const MOUNTED_MODULE_KEYS = [
   'sales',
   'purchase',
   'processing',
+  'internal-trade',
 ] as const;
 
 export interface RegisterModulesOptions {
@@ -37,4 +39,5 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerSalesRoutes(app);
   registerPurchaseRoutes(app);
   registerProcessingRoutes(app);
+  registerInternalTradeRoutes(app);
 }

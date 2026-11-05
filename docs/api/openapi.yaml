@@ -4138,6 +4138,293 @@ paths:
         reasonRequired: true
       x-mcp-tool: qingdan_processing_order_cancel
       x-requires-if-match: true
+  /api/v1/internal-trade-orders:
+    get:
+      operationId: internal_trade.order.list.read
+      summary: 内部交易单列表（按发出/接收公司、状态、单号检索；普通读不记审计，D15）
+      tags:
+        - internal_trade
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: fromCompanyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: toCompanyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - 进行中
+              - 在途
+              - 已完成
+              - 已取消
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InternalTradeOrder"
+                  nextCursor:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                      - type: "null"
+                required:
+                  - items
+                  - nextCursor
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: internal_trade.read
+      x-module: internal-trade
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_internal_trade_order_list_read
+    post:
+      operationId: internal_trade.order.create
+      summary: 开内部交易单（单号服务端按 D16 生成；内部价手工填 D68①；明细引用发出公司批次 D22）
+      tags:
+        - internal_trade
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "201":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalTradeOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: internal_trade.create
+      x-module: internal-trade
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: false
+      x-mcp-tool: qingdan_internal_trade_order_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fromCompanyId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                toCompanyId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                handlerId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                lines:
+                  minItems: 1
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/InternalTradeOrderLine"
+                internalPrice:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+              required:
+                - fromCompanyId
+                - toCompanyId
+                - handlerId
+                - lines
+                - internalPrice
+              additionalProperties: false
+  /api/v1/internal-trade-orders/{id}:
+    get:
+      operationId: internal_trade.order.detail.read
+      summary: 内部交易单详情（内嵌四态取消判定 cancelable；普通读不记审计，D21 / D68②）
+      tags:
+        - internal_trade
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalTradeOrderDetail"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: internal_trade.read
+      x-module: internal-trade
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_internal_trade_order_detail_read
+    patch:
+      operationId: internal_trade.order.update
+      summary: 修改内部交易单（仅「进行中」可改；强 ETag If-Match；内部价手工填 D68①）
+      tags:
+        - internal_trade
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalTradeOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: internal_trade.update
+      x-module: internal-trade
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_internal_trade_order_update
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                handlerId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                lines:
+                  minItems: 1
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/InternalTradeOrderLine"
+                internalPrice:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+              additionalProperties: false
+  /api/v1/internal-trade-orders/{id}/cancel:
+    post:
+      operationId: internal_trade.order.cancel
+      summary: 取消内部交易单（四态映射后复用 assertCancelable：已完成/已取消不可取消、有下游先取消下游；AI 禁止）
+      tags:
+        - internal_trade
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalTradeOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: internal_trade.delete
+      x-module: internal-trade
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_internal_trade_order_cancel
+      x-requires-if-match: true
 components:
   schemas:
     AuditLog:
@@ -5931,6 +6218,184 @@ components:
         - updatedAt
         - outputBatchId
         - lossRecord
+        - cancelable
+      additionalProperties: false
+    InternalTradeOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        fromCompanyId:
+          type: string
+        fromCompanyName:
+          type: string
+        toCompanyId:
+          type: string
+        toCompanyName:
+          type: string
+        orderNo:
+          type: string
+        status:
+          type: string
+          enum:
+            - 进行中
+            - 在途
+            - 已完成
+            - 已取消
+        handlerId:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/InternalTradeOrderLine"
+        internalPrice:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        inTransitQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      required:
+        - id
+        - tenantId
+        - fromCompanyId
+        - fromCompanyName
+        - toCompanyId
+        - toCompanyName
+        - orderNo
+        - status
+        - handlerId
+        - lines
+        - internalPrice
+        - inTransitQty
+        - version
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    InternalTradeOrderLine:
+      type: object
+      properties:
+        productId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        batchIds:
+          minItems: 1
+          type: array
+          items:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        qty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        unitPrice:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        amount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+      required:
+        - productId
+        - batchIds
+        - qty
+        - unitPrice
+        - amount
+      additionalProperties: false
+    InternalTradeOrderDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        fromCompanyId:
+          type: string
+        fromCompanyName:
+          type: string
+        toCompanyId:
+          type: string
+        toCompanyName:
+          type: string
+        orderNo:
+          type: string
+        status:
+          type: string
+          enum:
+            - 进行中
+            - 在途
+            - 已完成
+            - 已取消
+        handlerId:
+          type: string
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/InternalTradeOrderLine"
+        internalPrice:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        inTransitQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        cancelable:
+          type: object
+          properties:
+            allowed:
+              type: boolean
+            reason:
+              anyOf:
+                - type: string
+                  enum:
+                    - already_completed
+                    - already_cancelled
+                    - has_downstream
+                - type: "null"
+          required:
+            - allowed
+            - reason
+          additionalProperties: false
+      required:
+        - id
+        - tenantId
+        - fromCompanyId
+        - fromCompanyName
+        - toCompanyId
+        - toCompanyName
+        - orderNo
+        - status
+        - handlerId
+        - lines
+        - internalPrice
+        - inTransitQty
+        - version
+        - createdAt
+        - updatedAt
         - cancelable
       additionalProperties: false
   securitySchemes:
