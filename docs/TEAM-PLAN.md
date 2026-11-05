@@ -77,7 +77,7 @@
 |---|---|---|---|---|
 | 负责人 + DSH 团队 | TianLingBy | 主线 platform / contracts / purchase / sales / settlement / test | — 不适用（仓库所有者） | 全部主线 |
 | 梁海俊 | Vince-Leong | masterdata / inventory / processing / internal-trade 后端 | ✅ 已核验（档案 #13 已合并） | 可领后端业务用例 |
-| 温汇敏 | 2696708617-web | platform 的账号/权限部分 | ⏳ 待本人（Issue #10 档案未合并） | ❌ 暂不可领，先落档案 |
+| 温汇敏 | 2696708617-web | platform 的账号/权限部分 | ✅ 已核验（档案 #38 已合并，2026-11-05） | 可领 platform 账号/权限域（Issue #10） |
 | 赖皓妍 | karryL921 | apps/web 全部页面视觉与适配 | ⏳ 待本人（**仓库邀请尚未接受**，档案未合并） | ❌ 暂不可领（#3/#4/#5/#6 全部挂起） |
 | 李祖怡 | lozy66 | 八类单据详情页、流转展示、打印导出 | ⏳ 待本人（档案未合并） | ❌ 暂不可领，先落档案 |
 
