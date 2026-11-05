@@ -3643,6 +3643,383 @@ paths:
         reasonRequired: true
       x-mcp-tool: qingdan_purchase_order_cancel
       x-requires-if-match: true
+  /api/v1/processing-orders:
+    get:
+      operationId: processing.order.list.read
+      summary: 加工单列表（按公司/加工厂/状态/单号或加工厂名检索；普通读不记审计，D15）
+      tags:
+        - processing
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: processorId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - 进行中
+              - 已完成
+              - 已取消
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProcessingOrder"
+                  nextCursor:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                      - type: "null"
+                required:
+                  - items
+                  - nextCursor
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processing.read
+      x-module: processing
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_processing_order_list_read
+    post:
+      operationId: processing.order.create
+      summary: 开加工单（单号服务端按 D16 生成；至少 1 条材料投入 F2b；费用行 ≥ 0 D39；AI 默认禁止开单）
+      tags:
+        - processing
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "201":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processing.create
+      x-module: processing
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: false
+      x-mcp-tool: qingdan_processing_order_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                companyId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                processorId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                handlerId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                materialBatchIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                inputQty:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                auxMaterials:
+                  anyOf:
+                    - type: string
+                      maxLength: 500
+                    - type: "null"
+                fees:
+                  minItems: 1
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      feeName:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                      qty:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      unitPrice:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      amount:
+                        type: string
+                        pattern: ^-?\d{1,12}(\.\d{1,6})?$
+                      remark:
+                        anyOf:
+                          - type: string
+                            maxLength: 255
+                          - type: "null"
+                    required:
+                      - feeName
+                      - qty
+                      - unitPrice
+                      - amount
+                    additionalProperties: false
+                attributionDoc:
+                  anyOf:
+                    - type: string
+                      pattern: ^[EN]-\d{4}-\d{8}-\d{4}$
+                    - type: "null"
+                lossQty:
+                  anyOf:
+                    - type: string
+                      pattern: ^\d{1,12}(\.\d{1,6})?$
+                    - type: "null"
+              required:
+                - companyId
+                - processorId
+                - handlerId
+                - materialBatchIds
+                - inputQty
+                - fees
+              additionalProperties: false
+  /api/v1/processing-orders/{id}:
+    get:
+      operationId: processing.order.detail.read
+      summary: 加工单详情（含产出批次占位、损失记录与取消判定 cancelable；普通读不记审计，D21/§9）
+      tags:
+        - processing
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingOrderDetail"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processing.read
+      x-module: processing
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_processing_order_detail_read
+    patch:
+      operationId: processing.order.update
+      summary: 修改加工单（仅「进行中」可改；强 ETag If-Match；损耗量验收时一次填入，F3）
+      tags:
+        - processing
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processing.update
+      x-module: processing
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_processing_order_update
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                processorId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                handlerId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                materialBatchIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                inputQty:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                auxMaterials:
+                  anyOf:
+                    - type: string
+                      maxLength: 500
+                    - type: "null"
+                fees:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      feeName:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                      qty:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      unitPrice:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      amount:
+                        type: string
+                        pattern: ^-?\d{1,12}(\.\d{1,6})?$
+                      remark:
+                        anyOf:
+                          - type: string
+                            maxLength: 255
+                          - type: "null"
+                    required:
+                      - feeName
+                      - qty
+                      - unitPrice
+                      - amount
+                    additionalProperties: false
+                attributionDoc:
+                  anyOf:
+                    - type: string
+                      pattern: ^[EN]-\d{4}-\d{8}-\d{4}$
+                    - type: "null"
+              additionalProperties: false
+  /api/v1/processing-orders/{id}/cancel:
+    post:
+      operationId: processing.order.cancel
+      summary: 取消加工单（复用 assertCancelable：有下游不可取消、先取消下游；危险动作 AI 默认禁止）
+      tags:
+        - processing
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processing.delete
+      x-module: processing
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_processing_order_cancel
+      x-requires-if-match: true
 components:
   schemas:
     AuditLog:
@@ -5115,6 +5492,254 @@ components:
         - version
         - createdAt
         - updatedAt
+        - cancelable
+      additionalProperties: false
+    ProcessingOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        orderNo:
+          type: string
+        processorId:
+          type: string
+        processorName:
+          type: string
+        status:
+          type: string
+          enum:
+            - 进行中
+            - 已完成
+            - 已取消
+        handlerId:
+          type: string
+        materialBatchIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        auxMaterials:
+          anyOf:
+            - type: string
+              maxLength: 500
+            - type: "null"
+        fees:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessingOrderFee"
+        inputQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        lossQty:
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        sellableQty:
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        attributionDoc:
+          anyOf:
+            - type: string
+              pattern: ^[EN]-\d{4}-\d{8}-\d{4}$
+            - type: "null"
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - orderNo
+        - processorId
+        - processorName
+        - status
+        - handlerId
+        - materialBatchIds
+        - auxMaterials
+        - fees
+        - inputQty
+        - lossQty
+        - sellableQty
+        - attributionDoc
+        - version
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    ProcessingOrderFee:
+      type: object
+      properties:
+        feeName:
+          type: string
+          minLength: 1
+          maxLength: 64
+        qty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        unitPrice:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        amount:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        remark:
+          anyOf:
+            - type: string
+              maxLength: 255
+            - type: "null"
+      required:
+        - feeName
+        - qty
+        - unitPrice
+        - amount
+        - remark
+      additionalProperties: false
+    ProcessingOrderDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        orderNo:
+          type: string
+        processorId:
+          type: string
+        processorName:
+          type: string
+        status:
+          type: string
+          enum:
+            - 进行中
+            - 已完成
+            - 已取消
+        handlerId:
+          type: string
+        materialBatchIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        auxMaterials:
+          anyOf:
+            - type: string
+              maxLength: 500
+            - type: "null"
+        fees:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessingOrderFee"
+        inputQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        lossQty:
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        sellableQty:
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        attributionDoc:
+          anyOf:
+            - type: string
+              pattern: ^[EN]-\d{4}-\d{8}-\d{4}$
+            - type: "null"
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        outputBatchId:
+          type:
+            - string
+            - "null"
+        lossRecord:
+          anyOf:
+            - type: object
+              properties:
+                lossQty:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                amount:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                recordedAt:
+                  type: string
+                  format: date-time
+                  pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              required:
+                - lossQty
+                - amount
+                - recordedAt
+              additionalProperties: false
+            - type: "null"
+        cancelable:
+          type: object
+          properties:
+            allowed:
+              type: boolean
+            reason:
+              anyOf:
+                - type: string
+                  enum:
+                    - already_completed
+                    - already_cancelled
+                    - has_downstream
+                - type: "null"
+          required:
+            - allowed
+            - reason
+          additionalProperties: false
+      required:
+        - id
+        - tenantId
+        - companyId
+        - orderNo
+        - processorId
+        - processorName
+        - status
+        - handlerId
+        - materialBatchIds
+        - auxMaterials
+        - fees
+        - inputQty
+        - lossQty
+        - sellableQty
+        - attributionDoc
+        - version
+        - createdAt
+        - updatedAt
+        - outputBatchId
+        - lossRecord
         - cancelable
       additionalProperties: false
   securitySchemes:

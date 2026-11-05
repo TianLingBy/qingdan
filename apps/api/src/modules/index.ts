@@ -3,6 +3,7 @@ import type { AppConfig } from '../platform/config.js';
 import { registerInventoryRoutes } from './inventory/routes.js';
 import { registerMasterdataRoutes } from './masterdata/routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
+import { registerProcessingRoutes } from './processing/routes.js';
 import { registerPurchaseRoutes } from './purchase/routes.js';
 import { registerSalesRoutes } from './sales/routes.js';
 
@@ -18,6 +19,7 @@ export const MOUNTED_MODULE_KEYS = [
   'inventory',
   'sales',
   'purchase',
+  'processing',
 ] as const;
 
 export interface RegisterModulesOptions {
@@ -34,4 +36,5 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerInventoryRoutes(app);
   registerSalesRoutes(app);
   registerPurchaseRoutes(app);
+  registerProcessingRoutes(app);
 }

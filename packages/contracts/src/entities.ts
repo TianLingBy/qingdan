@@ -21,6 +21,11 @@ import {
   PurchaseOrderLineSchema,
   PurchaseOrderSchema,
 } from './purchase-orders.js';
+import {
+  ProcessingOrderDetailSchema,
+  ProcessingOrderFeeSchema,
+  ProcessingOrderSchema,
+} from './processing-orders.js';
 
 /**
  * 契约实体登记表（D57 ①）：每个实体必须在此登记并带 globalRegistry id，
@@ -106,6 +111,15 @@ z.globalRegistry.add(PurchaseOrderFeeSchema, { id: 'PurchaseOrderFee' });
 /** 采购单详情（含取消判定，§3.1 / D21）：实体定义在 `purchase-orders.ts`。 */
 z.globalRegistry.add(PurchaseOrderDetailSchema, { id: 'PurchaseOrderDetail' });
 
+/** 加工单 B（契约第一批 §3.2 / D5 / D16 / D39 / F2b）：实体定义在 `processing-orders.ts`。 */
+z.globalRegistry.add(ProcessingOrderSchema, { id: 'ProcessingOrder' });
+
+/** 加工单费用明细（§5.2 / D39；B 单费用行一律 ≥ 0）：实体定义在 `processing-orders.ts`。 */
+z.globalRegistry.add(ProcessingOrderFeeSchema, { id: 'ProcessingOrderFee' });
+
+/** 加工单详情（含产出批次占位、损失记录与取消判定，§3.2 / §9 / D21）：实体定义在 `processing-orders.ts`。 */
+z.globalRegistry.add(ProcessingOrderDetailSchema, { id: 'ProcessingOrderDetail' });
+
 /** 员工列表里的公司-岗位对（D15：一人多岗 + 公司隔离）。 */
 const EmployeeCompanySchema = z.object({
   companyId: z.string(),
@@ -167,4 +181,7 @@ export const ENTITIES = [
   { name: 'PurchaseOrderLine', schema: PurchaseOrderLineSchema },
   { name: 'PurchaseOrderFee', schema: PurchaseOrderFeeSchema },
   { name: 'PurchaseOrderDetail', schema: PurchaseOrderDetailSchema },
+  { name: 'ProcessingOrder', schema: ProcessingOrderSchema },
+  { name: 'ProcessingOrderFee', schema: ProcessingOrderFeeSchema },
+  { name: 'ProcessingOrderDetail', schema: ProcessingOrderDetailSchema },
 ] as const;
