@@ -17,6 +17,7 @@ import { SALES_ORDER_ROUTES } from './sales-orders.js';
 import { SALES_RECEIPT_ROUTES } from './sales-receipts.js';
 import { PURCHASE_ORDER_ROUTES } from './purchase-orders.js';
 import { PROCESSING_ORDER_ROUTES } from './processing-orders.js';
+import { INTERNAL_TRADE_ORDER_ROUTES } from './internal-trade-orders.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -225,6 +226,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...PURCHASE_ORDER_ROUTES,
   // —— processing 模块：B 加工单首批 5 条（list/create/detail/update/cancel，契约第一批 §3.2）——
   ...PROCESSING_ORDER_ROUTES,
+  // —— internal-trade 模块：N 内部交易单首批 5 条（契约第二批 §1 / §3，D22/D31/D68）——
+  ...INTERNAL_TRADE_ORDER_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;

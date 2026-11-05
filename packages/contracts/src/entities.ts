@@ -27,6 +27,11 @@ import {
   ProcessingOrderFeeSchema,
   ProcessingOrderSchema,
 } from './processing-orders.js';
+import {
+  InternalTradeOrderDetailSchema,
+  InternalTradeOrderLineSchema,
+  InternalTradeOrderSchema,
+} from './internal-trade-orders.js';
 
 /**
  * 契约实体登记表（D57 ①）：每个实体必须在此登记并带 globalRegistry id，
@@ -124,6 +129,15 @@ z.globalRegistry.add(ProcessingOrderFeeSchema, { id: 'ProcessingOrderFee' });
 /** 加工单详情（含产出批次占位、损失记录与取消判定，§3.2 / §9 / D21）：实体定义在 `processing-orders.ts`。 */
 z.globalRegistry.add(ProcessingOrderDetailSchema, { id: 'ProcessingOrderDetail' });
 
+/** 内部交易单 N（契约第二批 §1 / D22 / D68）：实体定义在 `internal-trade-orders.ts`。 */
+z.globalRegistry.add(InternalTradeOrderSchema, { id: 'InternalTradeOrder' });
+
+/** 内部交易单商品明细（引用发出公司批次，至少 1 条；§1 / D22）：实体定义在 `internal-trade-orders.ts`。 */
+z.globalRegistry.add(InternalTradeOrderLineSchema, { id: 'InternalTradeOrderLine' });
+
+/** 内部交易单详情（含四态取消判定，§1 / D21 / D68②）：实体定义在 `internal-trade-orders.ts`。 */
+z.globalRegistry.add(InternalTradeOrderDetailSchema, { id: 'InternalTradeOrderDetail' });
+
 /** 员工列表里的公司-岗位对（D15：一人多岗 + 公司隔离）。 */
 const EmployeeCompanySchema = z.object({
   companyId: z.string(),
@@ -189,4 +203,7 @@ export const ENTITIES = [
   { name: 'ProcessingOrder', schema: ProcessingOrderSchema },
   { name: 'ProcessingOrderFee', schema: ProcessingOrderFeeSchema },
   { name: 'ProcessingOrderDetail', schema: ProcessingOrderDetailSchema },
+  { name: 'InternalTradeOrder', schema: InternalTradeOrderSchema },
+  { name: 'InternalTradeOrderLine', schema: InternalTradeOrderLineSchema },
+  { name: 'InternalTradeOrderDetail', schema: InternalTradeOrderDetailSchema },
 ] as const;

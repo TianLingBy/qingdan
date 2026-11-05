@@ -12,6 +12,7 @@ export * from './sales-orders.js';
 export * from './sales-receipts.js';
 export * from './purchase-orders.js';
 export * from './processing-orders.js';
+export * from './internal-trade-orders.js';
 export * from './errors.js';
 export * from './authz.js';
 export * from './audit.js';
