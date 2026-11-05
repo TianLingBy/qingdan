@@ -1,7 +1,15 @@
 import {
   AppError,
   encodeCursor,
+  type CustomerReturn,
+  type CustomerReturnCreateInput,
+  type CustomerReturnLine,
+  type CustomerReturnStatus,
   type CursorPayload,
+  type OnlyRefundKind,
+  type RefundMode,
+  type SalesReceipt,
+  type SalesReceiptCreateInput,
   type SalesOrder,
   type SalesOrderCreateInput,
   type SalesOrderFee,
@@ -814,4 +822,630 @@ export async function cancelSalesOrder(
   }
 
   return getSalesOrder(ctx, id);
+}
+
+/**
+ * E 单收款记录（D24 / D34）。
+ *
+ * 收款与退款共用一张只追加表；金额保持 decimal 字符串，余额由 SQL SUM 聚合。
+ */
+
+interface SalesReceiptRow {
+  id: string;
+  tenant_id: string;
+  company_id: string;
+  sales_order_id: string;
+  direction: string;
+  amount: string | number;
+  method: string;
+  occurred_at: Date | string;
+  reversal_doc_id: string | null;
+  remark: string | null;
+  version: number;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+const SALES_RECEIPT_COLUMNS = `r.id,
+  r.tenant_id,
+  r.company_id,
+  r.sales_order_id,
+  r.direction,
+  trim_scale(r.amount) AS amount,
+  r.method,
+  r.occurred_at,
+  r.reversal_doc_id,
+  r.remark,
+  r.version,
+  r.created_at,
+  r.updated_at`;
+
+export type SalesReceiptInsertInput = SalesReceiptCreateInput & {
+  readonly id: string;
+  readonly companyId: string;
+  readonly salesOrderId: string;
+};
+
+function mapSalesReceipt(row: SalesReceiptRow): SalesReceipt {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    companyId: row.company_id,
+    salesOrderId: row.sales_order_id,
+    direction: row.direction as SalesReceipt['direction'],
+    amount: decimal(row.amount),
+    method: row.method as SalesReceipt['method'],
+    occurredAt: toDate(row.occurred_at).toISOString(),
+    reversalDocId: row.reversal_doc_id,
+    remark: row.remark,
+    version: row.version,
+    createdAt: toDate(row.created_at).toISOString(),
+    updatedAt: toDate(row.updated_at).toISOString(),
+  };
+}
+
+/** E 单收款块：按发生时间与 UUIDv7 稳定排序。 */
+export async function listSalesReceipts(
+  ctx: SalesOrderRepoContext,
+  salesOrderId: string,
+): Promise<SalesReceipt[]> {
+  const result = await ctx.tx.query<SalesReceiptRow>(
+    `SELECT ${SALES_RECEIPT_COLUMNS}
+       FROM sales_receipt r
+      WHERE r.tenant_id = $1
+        AND r.company_id = ANY($2::uuid[])
+        AND r.sales_order_id = $3::uuid
+      ORDER BY r.occurred_at, r.id`,
+    [ctx.tenantId, [...ctx.companyIds], salesOrderId],
+  );
+  return result.rows.map(mapSalesReceipt);
+}
+
+/** D24：收款块余额 = 收款合计 - 退款合计（退款本身已存负数）。 */
+export async function getSalesReceiptBalance(
+  ctx: SalesOrderRepoContext,
+  salesOrderId: string,
+): Promise<string> {
+  const result = await ctx.tx.query<{ balance: string | number }>(
+    `SELECT trim_scale(COALESCE(SUM(r.amount), 0)) AS balance
+       FROM sales_receipt r
+      WHERE r.tenant_id = $1
+        AND r.company_id = ANY($2::uuid[])
+        AND r.sales_order_id = $3::uuid`,
+    [ctx.tenantId, [...ctx.companyIds], salesOrderId],
+  );
+  return decimal(result.rows[0]?.balance ?? '0');
+}
+
+async function getSalesReceipt(
+  ctx: SalesOrderRepoContext,
+  id: string,
+): Promise<SalesReceipt | null> {
+  const result = await ctx.tx.query<SalesReceiptRow>(
+    `SELECT ${SALES_RECEIPT_COLUMNS}
+       FROM sales_receipt r
+      WHERE r.id = $1::uuid
+        AND r.tenant_id = $2
+        AND r.company_id = ANY($3::uuid[])`,
+    [id, ctx.tenantId, [...ctx.companyIds]],
+  );
+  const row = result.rows[0];
+  return row ? mapSalesReceipt(row) : null;
+}
+
+/** 追加收款 / 退款行；历史行不更新、不删除（D34 / D47）。 */
+export async function insertSalesReceipt(
+  ctx: SalesOrderRepoContext,
+  input: SalesReceiptInsertInput,
+): Promise<SalesReceipt> {
+  await ctx.tx.query(
+    `INSERT INTO sales_receipt
+       (id, tenant_id, company_id, sales_order_id, direction, amount, method,
+        occurred_at, reversal_doc_id, remark, version)
+     VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::amount, $7,
+             $8::timestamptz, $9::uuid, $10, 1)`,
+    [
+      input.id,
+      ctx.tenantId,
+      input.companyId,
+      input.salesOrderId,
+      input.direction,
+      input.amount,
+      input.method,
+      input.occurredAt,
+      input.reversalDocId ?? null,
+      input.remark ?? null,
+    ],
+  );
+
+  const created = await getSalesReceipt(ctx, input.id);
+  if (!created) {
+    throw new AppError('INTERNAL_ERROR', '收款记录创建后读取失败', {
+      id: input.id,
+    });
+  }
+  return created;
+}
+
+/**
+ * R 客户退货（D36 / D40 / D47）。
+ *
+ * R 单与明细均只追加；商品行金额由 SQL 计算，单头应退金额按 decimal 域规范化。
+ */
+
+export interface CustomerReturnListQuery {
+  readonly companyId?: string;
+  readonly originalSalesOrderId?: string;
+  readonly status?: CustomerReturnStatus;
+  readonly keyword?: string;
+  readonly cursor?: CursorPayload;
+  readonly limit: number;
+}
+
+export type CustomerReturnInsertInput = CustomerReturnCreateInput & {
+  readonly id: string;
+  readonly returnNo: string;
+};
+
+export interface CustomerReturnPage {
+  readonly items: CustomerReturn[];
+  readonly nextCursor: string | null;
+}
+
+interface CustomerReturnHeaderRow {
+  id: string;
+  tenant_id: string;
+  company_id: string;
+  return_no: string;
+  original_sales_order_id: string;
+  original_settlement_order_id: string | null;
+  return_type: string;
+  only_refund_kind: string | null;
+  refund_mode: string;
+  status: string;
+  refund_amount: string | number;
+  remark: string | null;
+  version: number;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+interface CustomerReturnLineRow {
+  id: string;
+  product_id: string;
+  qty: string | number;
+  unit_price: string | number;
+  amount: string | number;
+}
+
+interface CustomerReturnBatchRow {
+  return_line_id: string;
+  batch_id: string;
+}
+
+const CUSTOMER_RETURN_HEADER_COLUMNS = `r.id,
+  r.tenant_id,
+  r.company_id,
+  r.return_no,
+  r.original_sales_order_id,
+  r.original_settlement_order_id,
+  r.return_type,
+  r.only_refund_kind,
+  r.refund_mode,
+  r.status,
+  trim_scale(r.refund_amount) AS refund_amount,
+  r.remark,
+  r.version,
+  r.created_at,
+  r.updated_at`;
+
+const CUSTOMER_RETURN_LINE_COLUMNS = `l.id,
+  l.product_id,
+  trim_scale(l.qty) AS qty,
+  trim_scale(l.unit_price) AS unit_price,
+  trim_scale(l.amount) AS amount`;
+
+function mapCustomerReturnHeader(
+  row: CustomerReturnHeaderRow,
+): Omit<CustomerReturn, 'lines'> {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    companyId: row.company_id,
+    returnNo: row.return_no,
+    originalSalesOrderId: row.original_sales_order_id,
+    originalSettlementOrderId: row.original_settlement_order_id,
+    returnType: row.return_type as CustomerReturn['returnType'],
+    onlyRefundKind: row.only_refund_kind as OnlyRefundKind | null,
+    refundMode: row.refund_mode as RefundMode,
+    status: row.status as CustomerReturnStatus,
+    refundAmount: decimal(row.refund_amount),
+    remark: row.remark,
+    version: row.version,
+    createdAt: toDate(row.created_at).toISOString(),
+    updatedAt: toDate(row.updated_at).toISOString(),
+  };
+}
+
+function mapCustomerReturnLine(
+  row: CustomerReturnLineRow,
+  batchIds: readonly string[],
+): CustomerReturnLine {
+  return {
+    productId: row.product_id,
+    batchIds: [...batchIds],
+    qty: decimal(row.qty),
+    unitPrice: decimal(row.unit_price),
+    amount: decimal(row.amount),
+  };
+}
+
+async function queryCustomerReturnHeader(
+  ctx: SalesOrderRepoContext,
+  id: string,
+): Promise<CustomerReturnHeaderRow | null> {
+  const result = await ctx.tx.query<CustomerReturnHeaderRow>(
+    `SELECT ${CUSTOMER_RETURN_HEADER_COLUMNS}
+       FROM customer_return r
+      WHERE r.id = $1::uuid
+        AND r.tenant_id = $2
+        AND r.company_id = ANY($3::uuid[])`,
+    [id, ctx.tenantId, [...ctx.companyIds]],
+  );
+  return result.rows[0] ?? null;
+}
+
+async function queryCustomerReturnLines(
+  ctx: SalesOrderRepoContext,
+  returnIds: readonly string[],
+): Promise<Map<string, CustomerReturnLine[]>> {
+  const grouped = new Map<string, CustomerReturnLine[]>();
+  if (returnIds.length === 0) return grouped;
+
+  const [lineResult, batchResult] = await Promise.all([
+    ctx.tx.query<CustomerReturnLineRow & { return_id: string }>(
+      `SELECT l.return_id,
+              ${CUSTOMER_RETURN_LINE_COLUMNS}
+         FROM customer_return_line l
+        WHERE l.tenant_id = $1
+          AND l.return_id = ANY($2::uuid[])
+        ORDER BY l.return_id, l.line_no`,
+      [ctx.tenantId, [...returnIds]],
+    ),
+    ctx.tx.query<CustomerReturnBatchRow>(
+      `SELECT b.return_line_id, b.batch_id
+         FROM customer_return_line_batch b
+         JOIN customer_return_line l
+           ON l.id = b.return_line_id
+          AND l.tenant_id = b.tenant_id
+        WHERE b.tenant_id = $1
+          AND b.return_id = ANY($2::uuid[])
+        ORDER BY b.return_line_id, b.line_no`,
+      [ctx.tenantId, [...returnIds]],
+    ),
+  ]);
+
+  const batchesByLine = new Map<string, string[]>();
+  for (const row of batchResult.rows) {
+    const ids = batchesByLine.get(row.return_line_id) ?? [];
+    ids.push(row.batch_id);
+    batchesByLine.set(row.return_line_id, ids);
+  }
+
+  for (const row of lineResult.rows) {
+    const list = grouped.get(row.return_id) ?? [];
+    list.push(mapCustomerReturnLine(row, batchesByLine.get(row.id) ?? []));
+    grouped.set(row.return_id, list);
+  }
+  return grouped;
+}
+
+/** R 客户退货列表：租户 + 可见公司内过滤，按 UUIDv7 id 倒序分页。 */
+export async function listCustomerReturns(
+  ctx: SalesOrderRepoContext,
+  query: CustomerReturnListQuery,
+): Promise<CustomerReturnPage> {
+  const params: unknown[] = [ctx.tenantId, [...ctx.companyIds]];
+  const where: string[] = [
+    'r.tenant_id = $1',
+    'r.company_id = ANY($2::uuid[])',
+  ];
+
+  if (query.companyId !== undefined) {
+    params.push(query.companyId);
+    where.push(`r.company_id = $${params.length}::uuid`);
+  }
+  if (query.originalSalesOrderId !== undefined) {
+    params.push(query.originalSalesOrderId);
+    where.push(`r.original_sales_order_id = $${params.length}::uuid`);
+  }
+  if (query.status !== undefined) {
+    params.push(query.status);
+    where.push(`r.status = $${params.length}`);
+  }
+  if (query.keyword !== undefined) {
+    params.push(likePattern(query.keyword));
+    where.push(`r.return_no ILIKE $${params.length} ESCAPE '\\'`);
+  }
+  if (query.cursor !== undefined) {
+    params.push(query.cursor.id);
+    where.push(`r.id < $${params.length}::uuid`);
+  }
+
+  params.push(query.limit + 1);
+  const result = await ctx.tx.query<CustomerReturnHeaderRow>(
+    `SELECT ${CUSTOMER_RETURN_HEADER_COLUMNS}
+       FROM customer_return r
+      WHERE ${where.join('\n        AND ')}
+      ORDER BY r.id DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+
+  const hasMore = result.rows.length > query.limit;
+  const pageRows = hasMore ? result.rows.slice(0, query.limit) : result.rows;
+  const linesByReturn = await queryCustomerReturnLines(
+    ctx,
+    pageRows.map((row) => row.id),
+  );
+  const items = pageRows.map((row) => ({
+    ...mapCustomerReturnHeader(row),
+    lines: linesByReturn.get(row.id) ?? [],
+  }));
+  const last = items[items.length - 1];
+  return {
+    items,
+    nextCursor:
+      hasMore && last
+        ? encodeCursor({ createdAt: last.createdAt, id: last.id })
+        : null,
+  };
+}
+
+/** R 客户退货详情：租户 + 可见公司内；查不到（含跨公司）返回 null。 */
+export async function getCustomerReturn(
+  ctx: SalesOrderRepoContext,
+  id: string,
+): Promise<CustomerReturn | null> {
+  const row = await queryCustomerReturnHeader(ctx, id);
+  if (!row) return null;
+  const linesByReturn = await queryCustomerReturnLines(ctx, [id]);
+  return {
+    ...mapCustomerReturnHeader(row),
+    lines: linesByReturn.get(id) ?? [],
+  };
+}
+
+/** D47：客户退货录入 / 审批人限定老板、经理、财务岗位（老板标识同时短路）。 */
+export async function hasCustomerReturnApprovalPosition(
+  ctx: SalesOrderRepoContext,
+  employeeId: string,
+  companyId: string,
+): Promise<boolean> {
+  const result = await ctx.tx.query<{ allowed: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+         FROM employee e
+        WHERE e.id = $1::uuid
+          AND e.tenant_id = $2
+          AND e.status = '在职'
+          AND (
+            e.is_owner
+            OR EXISTS (
+              SELECT 1
+                FROM employee_company_position ecp
+                JOIN position p
+                  ON p.id = ecp.position_id
+                 AND p.tenant_id = ecp.tenant_id
+               WHERE ecp.tenant_id = $2
+                 AND ecp.employee_id = e.id
+                 AND ecp.company_id = $3::uuid
+                 AND p.status = '启用'
+                 AND p.preset_key IN ('owner', 'manager', 'finance')
+            )
+          )
+     ) AS allowed`,
+    [employeeId, ctx.tenantId, companyId],
+  );
+  return result.rows[0]?.allowed === true;
+}
+
+async function assertOriginalSalesOrder(
+  ctx: SalesOrderRepoContext,
+  originalSalesOrderId: string,
+  companyId: string,
+): Promise<void> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `SELECT id
+       FROM sales_order
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = $3::uuid`,
+    [originalSalesOrderId, ctx.tenantId, companyId],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('VALIDATION_FAILED', '原销售单不存在或不属于本公司', {
+      originalSalesOrderId,
+      companyId,
+    });
+  }
+}
+
+async function assertCustomerReturnProducts(
+  ctx: SalesOrderRepoContext,
+  productIds: readonly string[],
+  companyId: string,
+): Promise<void> {
+  const unique = [...new Set(productIds)];
+  if (unique.length === 0) return;
+  const result = await ctx.tx.query<{ id: string }>(
+    `SELECT id
+       FROM product
+      WHERE tenant_id = $1
+        AND company_id = $2::uuid
+        AND id = ANY($3::uuid[])`,
+    [ctx.tenantId, companyId, unique],
+  );
+  const found = new Set(result.rows.map((row) => row.id));
+  const missing = unique.filter((id) => !found.has(id));
+  if (missing.length > 0) {
+    throw new AppError('VALIDATION_FAILED', '商品不存在或不属于客户退货公司', {
+      productIds: missing,
+      companyId,
+    });
+  }
+}
+
+async function assertCustomerReturnBatches(
+  ctx: SalesOrderRepoContext,
+  input: CustomerReturnCreateInput,
+): Promise<void> {
+  const lines = input.lines ?? [];
+  const batchIds = [...new Set(lines.flatMap((line) => line.batchIds))];
+  if (batchIds.length === 0) return;
+
+  const result = await ctx.tx.query<{ id: string; product_id: string }>(
+    `SELECT id, product_id
+       FROM inventory_batch
+      WHERE tenant_id = $1
+        AND company_id = $2::uuid
+        AND id = ANY($3::uuid[])`,
+    [ctx.tenantId, input.companyId, batchIds],
+  );
+  const productByBatch = new Map(
+    result.rows.map((row) => [row.id, row.product_id]),
+  );
+  const missing = batchIds.filter((id) => !productByBatch.has(id));
+  if (missing.length > 0) {
+    throw new AppError('VALIDATION_FAILED', '批次不存在或不属于客户退货公司', {
+      batchIds: missing,
+      companyId: input.companyId,
+    });
+  }
+
+  for (const [index, line] of lines.entries()) {
+    for (const batchId of line.batchIds) {
+      if (productByBatch.get(batchId) !== line.productId) {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          '商品明细商品与所引批次商品不一致',
+          {
+            lineNo: index + 1,
+            productId: line.productId,
+            batchId,
+          },
+        );
+      }
+    }
+  }
+}
+
+async function normalizeCustomerReturnRefund(
+  ctx: SalesOrderRepoContext,
+  refundAmount: string,
+): Promise<string> {
+  const result = await ctx.tx.query<{
+    refund_amount: string | number;
+    positive: boolean;
+  }>(
+    `SELECT trim_scale($1::amount) AS refund_amount,
+            COALESCE($1::amount > 0, false) AS positive`,
+    [refundAmount],
+  );
+  const row = result.rows[0];
+  if (!row?.positive) {
+    throw new AppError('VALIDATION_FAILED', '退款金额必须大于 0（D40）');
+  }
+  return decimal(row.refund_amount);
+}
+
+/**
+ * 新增 R 客户退货：客户端行金额不落库，统一按 qty × unit_price 由 SQL 计算。
+ */
+export async function insertCustomerReturn(
+  ctx: SalesOrderRepoContext,
+  input: CustomerReturnInsertInput,
+): Promise<CustomerReturn> {
+  await assertOriginalSalesOrder(
+    ctx,
+    input.originalSalesOrderId,
+    input.companyId,
+  );
+  const lines = input.lines ?? [];
+  await assertCustomerReturnProducts(
+    ctx,
+    lines.map((line) => line.productId),
+    input.companyId,
+  );
+  await assertCustomerReturnBatches(ctx, input);
+  const refundAmount = await normalizeCustomerReturnRefund(
+    ctx,
+    input.refundAmount,
+  );
+
+  await ctx.tx.query(
+    `INSERT INTO customer_return
+       (id, tenant_id, company_id, return_no, original_sales_order_id,
+        original_settlement_order_id, return_type, only_refund_kind,
+        refund_mode, status, refund_amount, remark, version)
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7, $8,
+             $9, '进行中', $10::amount, NULL, 1)`,
+    [
+      input.id,
+      ctx.tenantId,
+      input.companyId,
+      input.returnNo,
+      input.originalSalesOrderId,
+      input.originalSettlementOrderId ?? null,
+      input.returnType,
+      input.onlyRefundKind ?? null,
+      input.refundMode,
+      refundAmount,
+    ],
+  );
+
+  for (const [index, line] of lines.entries()) {
+    const lineId = uuidv7();
+    await ctx.tx.query(
+      `INSERT INTO customer_return_line
+         (id, tenant_id, company_id, return_id, line_no, product_id,
+          qty, unit_price, amount)
+       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::uuid,
+               $7::amount, $8::amount, ($7::amount * $8::amount))`,
+      [
+        lineId,
+        ctx.tenantId,
+        input.companyId,
+        input.id,
+        index + 1,
+        line.productId,
+        line.qty,
+        line.unitPrice,
+      ],
+    );
+    for (const [batchIndex, batchId] of line.batchIds.entries()) {
+      await ctx.tx.query(
+        `INSERT INTO customer_return_line_batch
+           (id, tenant_id, company_id, return_id, return_line_id, line_no, batch_id)
+         VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::uuid, $6, $7::uuid)`,
+        [
+          uuidv7(),
+          ctx.tenantId,
+          input.companyId,
+          input.id,
+          lineId,
+          batchIndex + 1,
+          batchId,
+        ],
+      );
+    }
+  }
+
+  const created = await getCustomerReturn(ctx, input.id);
+  if (!created) {
+    throw new AppError('INTERNAL_ERROR', '客户退货创建后读取失败', {
+      id: input.id,
+    });
+  }
+  return created;
 }

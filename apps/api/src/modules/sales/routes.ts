@@ -17,14 +17,25 @@ import {
   listSalesOrders,
   updateSalesOrder,
 } from './usecases/sales-orders.js';
+import {
+  createSalesReceipt,
+  getSalesReceiptBlock,
+  listSalesReceipts,
+} from './usecases/sales-receipts.js';
+import {
+  createCustomerReturn,
+  getCustomerReturn,
+  listCustomerReturns,
+} from './usecases/customer-returns.js';
 
 /**
- * sales 模块骨架（契约第一批 §3.3 E 销售单首批 5 条）。
+ * sales 模块（E 销售单一期 5 条 + 收款记录 2 条 + R 客户退货 3 条）。
  *
- * 本批按 operationId 注入 E 单 5 条用例；收款记录 2 条仍由 `mountRoutes`
- * 返回 501。注意：
+ * 按 operationId 注入全部已登记用例。注意：
  * - 开单 / 修改的破下限审批走 platform（D20），不要在这里另造审批表；
  * - 取消必须复用 `assertCancelable`（D21），有下游时先取消下游；
+ * - E 单详情内嵌收款块，余额由 SQL 聚合（D24）；
+ * - R 客户退货录入按 D47 校验老板 / 经理 / 财务岗位；
  * - 出库 / 完成端点本批未登记（依赖 inventory 写路径，D41）。
  */
 
@@ -32,6 +43,8 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'sales.order.create': 'sales_order',
   'sales.order.update': 'sales_order',
   'sales.order.cancel': 'sales_order',
+  'sales.receipt.create': 'sales_receipt',
+  'customer_return.create': 'customer_return',
 };
 
 /** 无数据库时保持骨架语义：501 + operationId。 */
@@ -76,8 +89,12 @@ export function registerSalesRoutes(app: FastifyInstance): void {
         database: instance.database,
         request,
       });
+      const receiptBlock = await getSalesReceiptBlock({
+        database: instance.database,
+        request,
+      });
       reply.header('ETag', etagOf(detail.version));
-      return detail;
+      return { ...detail, ...receiptBlock };
     },
     'sales.order.update': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
@@ -95,6 +112,24 @@ export function registerSalesRoutes(app: FastifyInstance): void {
         reply,
       });
     },
+    'sales.receipt.read': async ({ app: instance, request }) =>
+      await listSalesReceipts({ database: instance.database, request }),
+    'sales.receipt.create': async ({ app: instance, request, reply }) =>
+      await createSalesReceipt({
+        database: instance.database,
+        request,
+        reply,
+      }),
+    'customer_return.list.read': async ({ app: instance, request }) =>
+      await listCustomerReturns({ database: instance.database, request }),
+    'customer_return.detail.read': async ({ app: instance, request }) =>
+      await getCustomerReturn({ database: instance.database, request }),
+    'customer_return.create': async ({ app: instance, request, reply }) =>
+      await createCustomerReturn({
+        database: instance.database,
+        request,
+        reply,
+      }),
   };
 
   mountRoutes(app, {
