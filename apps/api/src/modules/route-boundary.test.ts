@@ -91,7 +91,21 @@ const INTERNAL_TRADE_CASES = [
   },
 ] as const;
 
-describe('路由挂载边界（platform / masterdata / inventory / sales / purchase / processing / internal-trade）', () => {
+const SETTLEMENT_CASES = [
+  { method: 'GET', url: '/api/v1/settlement-orders', operationId: 'settlement.order.list.read' },
+  {
+    method: 'GET',
+    url: '/api/v1/settlement-orders/ct-1',
+    operationId: 'settlement.order.detail.read',
+  },
+  {
+    method: 'POST',
+    url: '/api/v1/settlement-orders/ct-1/confirm',
+    operationId: 'settlement.order.confirm',
+  },
+] as const;
+
+describe('路由挂载边界（platform / masterdata / inventory / sales / purchase / processing / internal-trade / settlement）', () => {
   let app: FastifyInstance;
 
   beforeAll(() => {
@@ -111,7 +125,7 @@ describe('路由挂载边界（platform / masterdata / inventory / sales / purch
 
     // 契约登记的全部模块中，尚未接线的模块（随模块开发逐项减少，改动时请显式更新）。
     const notYetMounted = MODULE_KEYS.filter((module) => !mounted.has(module));
-    expect(notYetMounted).toEqual(['settlement', 'test']);
+    expect(notYetMounted).toEqual(['test']);
   });
 
   it('3 个 inventory 只读端点全部由 inventory 骨架挂载 → 501 NOT_IMPLEMENTED', async () => {
@@ -192,6 +206,26 @@ describe('路由挂载边界（platform / masterdata / inventory / sales / purch
 
   it('5 个 internal-trade 端点全部由 internal-trade 骨架挂载 → 501 NOT_IMPLEMENTED', async () => {
     for (const testCase of INTERNAL_TRADE_CASES) {
+      const response = await app.inject({
+        method: testCase.method,
+        url: testCase.url,
+        headers: { 'if-match': '"1"' },
+      });
+
+      expect(response.statusCode, `${testCase.method} ${testCase.url}`).toBe(501);
+      const body = response.json() as {
+        code: string;
+        message: string;
+        details?: Record<string, unknown>;
+      };
+      expect(body.code).toBe('NOT_IMPLEMENTED');
+      expect(body.message).toContain(testCase.operationId);
+      expect(body.details).toMatchObject({ operationId: testCase.operationId });
+    }
+  });
+
+  it('3 个 settlement 端点全部由 settlement 骨架挂载 → 501 NOT_IMPLEMENTED', async () => {
+    for (const testCase of SETTLEMENT_CASES) {
       const response = await app.inject({
         method: testCase.method,
         url: testCase.url,

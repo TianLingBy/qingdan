@@ -4425,6 +4425,170 @@ paths:
         reasonRequired: true
       x-mcp-tool: qingdan_internal_trade_order_cancel
       x-requires-if-match: true
+  /api/v1/settlement-orders:
+    get:
+      operationId: settlement.order.list.read
+      summary: 结算单列表（按公司/状态/来源单类型/单号检索；普通读不记审计，D15）
+      tags:
+        - settlement
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - 待确认
+              - 已结算
+        - name: sourceDocType
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - E
+              - "N"
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SettlementOrder"
+                  nextCursor:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                      - type: "null"
+                required:
+                  - items
+                  - nextCursor
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: settlement.read
+      x-module: settlement
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_settlement_order_list_read
+  /api/v1/settlement-orders/{id}:
+    get:
+      operationId: settlement.order.detail.read
+      summary: 结算单详情（内嵌确认判定 confirmable；普通读不记审计，D19）
+      tags:
+        - settlement
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettlementOrderDetail"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: settlement.read
+      x-module: settlement
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_settlement_order_detail_read
+  /api/v1/settlement-orders/{id}/confirm:
+    post:
+      operationId: settlement.order.confirm
+      summary: 确认结算（待确认 → 已结算；一期一单一次 D19；结算后不可冲正走退货 D2③；AI 禁止审批 D52）
+      tags:
+        - settlement
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettlementOrderDetail"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: settlement.approve
+      x-module: settlement
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_settlement_order_confirm
+      x-requires-if-match: true
 components:
   schemas:
     AuditLog:
@@ -6397,6 +6561,180 @@ components:
         - createdAt
         - updatedAt
         - cancelable
+      additionalProperties: false
+    SettlementOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        orderNo:
+          type: string
+        sourceDocType:
+          type: string
+          enum:
+            - E
+            - "N"
+        sourceDocId:
+          type: string
+        status:
+          type: string
+          enum:
+            - 待确认
+            - 已结算
+        totalSaleAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        totalCostAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        grossProfit:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        grossMarginRate:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        relatedLossAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        netProfit:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        commissionRateSnapshot:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        commissionAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - orderNo
+        - sourceDocType
+        - sourceDocId
+        - status
+        - totalSaleAmount
+        - totalCostAmount
+        - grossProfit
+        - grossMarginRate
+        - relatedLossAmount
+        - netProfit
+        - commissionRateSnapshot
+        - commissionAmount
+        - version
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    SettlementOrderDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        orderNo:
+          type: string
+        sourceDocType:
+          type: string
+          enum:
+            - E
+            - "N"
+        sourceDocId:
+          type: string
+        status:
+          type: string
+          enum:
+            - 待确认
+            - 已结算
+        totalSaleAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        totalCostAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        grossProfit:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        grossMarginRate:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        relatedLossAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        netProfit:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        commissionRateSnapshot:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        commissionAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        confirmable:
+          type: object
+          properties:
+            allowed:
+              type: boolean
+            reason:
+              anyOf:
+                - type: string
+                  enum:
+                    - already_settled
+                - type: "null"
+          required:
+            - allowed
+            - reason
+          additionalProperties: false
+      required:
+        - id
+        - tenantId
+        - companyId
+        - orderNo
+        - sourceDocType
+        - sourceDocId
+        - status
+        - totalSaleAmount
+        - totalCostAmount
+        - grossProfit
+        - grossMarginRate
+        - relatedLossAmount
+        - netProfit
+        - commissionRateSnapshot
+        - commissionAmount
+        - version
+        - createdAt
+        - updatedAt
+        - confirmable
       additionalProperties: false
   securitySchemes:
     cookieAuth:

@@ -7,6 +7,7 @@ import { registerPlatformRoutes } from './platform/routes.js';
 import { registerProcessingRoutes } from './processing/routes.js';
 import { registerPurchaseRoutes } from './purchase/routes.js';
 import { registerSalesRoutes } from './sales/routes.js';
+import { registerSettlementRoutes } from './settlement/routes.js';
 
 /**
  * 业务模块挂载登记（D62 / Issue #15）。
@@ -22,6 +23,7 @@ export const MOUNTED_MODULE_KEYS = [
   'purchase',
   'processing',
   'internal-trade',
+  'settlement',
 ] as const;
 
 export interface RegisterModulesOptions {
@@ -40,4 +42,5 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerPurchaseRoutes(app);
   registerProcessingRoutes(app);
   registerInternalTradeRoutes(app);
+  registerSettlementRoutes(app);
 }
