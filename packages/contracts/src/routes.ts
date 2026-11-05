@@ -9,6 +9,7 @@ import { PRODUCT_ROUTES } from './products.js';
 import { CUSTOMER_ROUTES } from './customers.js';
 import { SUPPLIER_ROUTES } from './suppliers.js';
 import { PROCESSOR_ROUTES } from './processors.js';
+import { EMPLOYEE_ROUTES } from './employees.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -133,6 +134,8 @@ export const ROUTES: readonly RouteDef[] = [
     request: { query: EmployeeListQuerySchema },
     response: { status: 200, schema: pageSchema(EmployeeSummarySchema) },
   }),
+  // —— 员工管理写端点：创建 / 编辑 / 停用（契约，2026-11-05）——
+  ...EMPLOYEE_ROUTES,
   defineRoute({
     operationId: 'platform.audit.read',
     method: 'GET',
