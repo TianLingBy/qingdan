@@ -1,15 +1,22 @@
-import { ROUTES, routesOfModule } from '@qingdan/contracts';
+import {
+  AppError,
+  ROUTES,
+  etagOf,
+  routesOfModule,
+  type RouteDef,
+} from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
+import {
+  confirmSettlementOrder,
+  getSettlementOrder,
+  listSettlementOrders,
+} from './usecases/settlement-orders.js';
 
 /**
  * settlement 模块骨架（契约第一批 §3.4 C 结算单首批 3 条）。
  *
- * 本批只接线挂载、不实现用例：`handlers` 为空，三条端点统一由 `mountRoutes` 返回
- * 501 `NOT_IMPLEMENTED`（与 inventory / sales / purchase / processing / internal-trade
- * 首切前的骨架同款）。
- *
- * 实现由 settlement 负责人接 `usecases/` 后按 operationId 注入；注意：
+ * 三条端点现按 operationId 注入 list / detail / confirm 用例。注意：
  * - C 单状态是**独立两态** `待确认 / 已结算`（D19），不复用 `HEADER_STATES`；
  * - **一期一单一次结算**，不支持部分 / 多次（D19）；草稿由 E/N 单「已完成」时系统自动生成，
  *   本模块**不提供创建端点**（D19 / D29）；
@@ -20,11 +27,69 @@ import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount
  * - 确认结算属审批动作：scope `settlement.approve`、AI 禁止且必须给原因（D52）、强 ETag；
  * - 金额一律 decimal 字符串（D54）。
  */
+
+const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
+  'settlement.order.confirm': 'settlement_order',
+};
+
+/** 无数据库时保持模块骨架语义：501 + operationId。 */
+function assertDatabaseConfigured(
+  instance: FastifyInstance,
+  route: RouteDef,
+): void {
+  if (instance.database) return;
+  throw new AppError(
+    'NOT_IMPLEMENTED',
+    `${route.operationId} 尚未实现（数据库未配置）`,
+    { operationId: route.operationId },
+  );
+}
+
 export function registerSettlementRoutes(app: FastifyInstance): void {
-  const handlers: RouteHandlers = {};
+  const handlers: RouteHandlers = {
+    'settlement.order.list.read': async ({
+      app: instance,
+      request,
+      route,
+    }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listSettlementOrders({
+        database: instance.database,
+        request,
+      });
+    },
+    'settlement.order.detail.read': async ({
+      app: instance,
+      request,
+      reply,
+      route,
+    }) => {
+      assertDatabaseConfigured(instance, route);
+      const detail = await getSettlementOrder({
+        database: instance.database,
+        request,
+      });
+      reply.header('ETag', etagOf(detail.version));
+      return detail;
+    },
+    'settlement.order.confirm': async ({
+      app: instance,
+      request,
+      reply,
+      route,
+    }) => {
+      assertDatabaseConfigured(instance, route);
+      return await confirmSettlementOrder({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+  };
 
   mountRoutes(app, {
     routes: routesOfModule(ROUTES, 'settlement'),
+    failureObjectTypes: FAILURE_OBJECT_TYPES,
     handlers,
   });
 }

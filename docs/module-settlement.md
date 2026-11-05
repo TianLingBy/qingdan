@@ -37,11 +37,12 @@
 
 ## 当前状态
 
-未开始（依赖 sales 与 processing 先跑通）
+C 单 3 端点已实现（2026-11-05）；本模块端点 0 个 501
 
 ## 已完成
 
 - 模块边界与功能域映射已登记。
+- **2026-11-05 C 单 3 端点实现（PR #77）**：`apps/api/migrations/0016_settlement_orders.sql`（来源单唯一约束 + 金额约束 + ENABLE/FORCE RLS，禁删授权）+ `modules/settlement/{repo.ts,usecases/settlement-orders.ts,routes.ts}`；list/detail/confirm 接 HTTP；confirm 需 `settlement.approve`、AI 禁止审批（D52.1，必须带 reason）、成功后冻结 `related_loss_amount_snapshot`（**D69 落地**）；一期一单一次结算（D19）。**未做**：E/N 完成态自动生成 C 单草稿（无跨模块读取通道，`TODO(D19)` 留在迁移与用例里）。测试 +4（apps/api 41 文件 295 例），tsc 0，全量门禁 ALL PASSED。
 
 ## 进行中
 
