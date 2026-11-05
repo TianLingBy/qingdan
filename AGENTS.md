@@ -7,6 +7,7 @@
 ## 团队（本目录下所有会话都生效）
 
 - 三套 harness：**DSH = 中间人/负责人**（拆任务、评估并安装所需工具、派活、验收、提交）｜**代码活 → Claude Code**｜**杂项 → Codex**；三者都接 DeepSeek。
+- **任务与进度唯一来源 = GitHub（2026-11-05 负责人拍板）**：所有成员（人类与 Agent 一致）在 GitHub 仓库 `TianLingBy/qingdan` 上通过 **issue 领取任务、在 issue/PR 汇报进度**；WorkBuddy / 本地会话里的任务清单与进展记录一律不作数，不再作为进度依据。派活后须在对应 issue 上留痕（认领评论 + 完成时关联 PR）。
 - **生效范围**：凡 cwd 在本仓库（含 `apps/**`、`packages/**` 等子目录）新建的会话，**第一个请求起就按本文件 + `docs/AGENT-TEAM.md` 执行**，不需要用户再交代一次；用户口头指令与本文冲突时，先按本文再做，除非用户明确改规则。
 - **派活方式**：`conductor_dispatch(agent:"claude-code" | "codex", task:"<自包含任务>")`；任务必须带绝对路径、写范围、依据的 D 编号、验收命令。硬规则见本文「路由」节。
 - **子团队**：Claude Code 用 `.claude/agents/`（`coder` / `tester` / `reviewer`）；Codex 的 `multi_agent` 已开启。**同一文件同一时间只许一个代理写**，子代理只写不提交。
