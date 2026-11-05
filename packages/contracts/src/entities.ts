@@ -15,6 +15,12 @@ import {
   SalesOrderLineSchema,
   SalesOrderSchema,
 } from './sales-orders.js';
+import {
+  PurchaseOrderDetailSchema,
+  PurchaseOrderFeeSchema,
+  PurchaseOrderLineSchema,
+  PurchaseOrderSchema,
+} from './purchase-orders.js';
 
 /**
  * 契约实体登记表（D57 ①）：每个实体必须在此登记并带 globalRegistry id，
@@ -88,6 +94,18 @@ z.globalRegistry.add(SalesOrderFeeSchema, { id: 'SalesOrderFee' });
 /** 销售单详情（含收款记录占位与取消判定，§3.3 / D21 / D24）：实体定义在 `sales-orders.ts`。 */
 z.globalRegistry.add(SalesOrderDetailSchema, { id: 'SalesOrderDetail' });
 
+/** 采购单 A（契约第一批 §3.1 / D16 / D39）：实体定义在 `purchase-orders.ts`。 */
+z.globalRegistry.add(PurchaseOrderSchema, { id: 'PurchaseOrder' });
+
+/** 采购单商品明细（§5.1；A 单不引用批次，入库时生成批次）：实体定义在 `purchase-orders.ts`。 */
+z.globalRegistry.add(PurchaseOrderLineSchema, { id: 'PurchaseOrderLine' });
+
+/** 采购单费用明细（§5.2 / D39；A 单可负、负数必填备注）：实体定义在 `purchase-orders.ts`。 */
+z.globalRegistry.add(PurchaseOrderFeeSchema, { id: 'PurchaseOrderFee' });
+
+/** 采购单详情（含取消判定，§3.1 / D21）：实体定义在 `purchase-orders.ts`。 */
+z.globalRegistry.add(PurchaseOrderDetailSchema, { id: 'PurchaseOrderDetail' });
+
 /** 员工列表里的公司-岗位对（D15：一人多岗 + 公司隔离）。 */
 const EmployeeCompanySchema = z.object({
   companyId: z.string(),
@@ -145,4 +163,8 @@ export const ENTITIES = [
   { name: 'SalesOrderLine', schema: SalesOrderLineSchema },
   { name: 'SalesOrderFee', schema: SalesOrderFeeSchema },
   { name: 'SalesOrderDetail', schema: SalesOrderDetailSchema },
+  { name: 'PurchaseOrder', schema: PurchaseOrderSchema },
+  { name: 'PurchaseOrderLine', schema: PurchaseOrderLineSchema },
+  { name: 'PurchaseOrderFee', schema: PurchaseOrderFeeSchema },
+  { name: 'PurchaseOrderDetail', schema: PurchaseOrderDetailSchema },
 ] as const;
