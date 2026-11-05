@@ -15,6 +15,13 @@ import {
   listProducts,
   updateProduct,
 } from './usecases/products.js';
+import {
+  createSupplier,
+  deleteSupplier,
+  getSupplier,
+  listSuppliers,
+  updateSupplier,
+} from './usecases/suppliers.js';
 
 /**
  * masterdata 端点挂载（Issue #15 首切：商品资料）。
@@ -34,6 +41,9 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'customer.create': 'customer',
   'customer.update': 'customer',
   'customer.delete': 'customer',
+  'supplier.create': 'supplier',
+  'supplier.update': 'supplier',
+  'supplier.delete': 'supplier',
 };
 
 /**
@@ -98,6 +108,31 @@ export function registerMasterdataRoutes(app: FastifyInstance): void {
     'customer.delete': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await deleteCustomer({ database: instance.database, request, reply });
+    },
+    // 供应商 5 条：权限 / 公司隔离 / 审计 / If-Match / AI 危险动作都在用例内（与商品 / 客户同款）。
+    'supplier.list.read': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listSuppliers({ database: instance.database, request });
+    },
+    'supplier.create': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const supplier = await createSupplier({ database: instance.database, request, reply });
+      reply.header('ETag', etagOf(supplier.version));
+      return supplier;
+    },
+    'supplier.detail.read': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const supplier = await getSupplier({ database: instance.database, request });
+      reply.header('ETag', etagOf(supplier.version));
+      return supplier;
+    },
+    'supplier.update': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await updateSupplier({ database: instance.database, request, reply });
+    },
+    'supplier.delete': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await deleteSupplier({ database: instance.database, request, reply });
     },
   };
 
