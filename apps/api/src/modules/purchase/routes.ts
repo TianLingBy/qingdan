@@ -8,6 +8,11 @@ import {
   listPurchaseOrders,
   updatePurchaseOrder,
 } from './usecases/purchase-orders.js';
+import {
+  createSupplierReturn,
+  getSupplierReturn,
+  listSupplierReturns,
+} from './usecases/supplier-returns.js';
 
 /**
  * purchase 模块端点挂载（A 采购单首批 5 条，契约第一批 §3.1）。
@@ -16,7 +21,7 @@ import {
  *   - list / detail / create / update / cancel 的状态码与响应实体由用例决定；
  *   - create / detail 由本层补强 ETag（用例只负责 update / cancel 的新版本 ETag）；
  *   - 权限、公司隔离、审计、If-Match、AI 危险动作拦截都在用例内（与 platform / masterdata 同款）；
- *   - S 供应商退货 3 条另起一批，本层不注入 handler，保持 501；
+ *   - S 供应商退货 3 条由 `usecases/supplier-returns.ts` 处理，F4c 只退钱；
  *   - 机械部分（路径转换 / config 透传 / 失败审计 / 默认 501）交给 `mountRoutes`。
  *
  * 本批明确不登记「完成 / 入库」、成本更正 T1/T2/T3 端点（D5 / D37）。
@@ -27,6 +32,7 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'purchase.order.create': 'purchase_order',
   'purchase.order.update': 'purchase_order',
   'purchase.order.cancel': 'purchase_order',
+  'supplier_return.create': 'supplier_return',
 };
 
 /**
@@ -65,6 +71,26 @@ export function registerPurchaseRoutes(app: FastifyInstance): void {
     'purchase.order.cancel': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await cancelPurchaseOrder({ database: instance.database, request, reply });
+    },
+    'supplier_return.list.read': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listSupplierReturns({ database: instance.database, request });
+    },
+    'supplier_return.create': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const supplierReturn = await createSupplierReturn({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(supplierReturn.version));
+      return supplierReturn;
+    },
+    'supplier_return.detail.read': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const supplierReturn = await getSupplierReturn({ database: instance.database, request });
+      reply.header('ETag', etagOf(supplierReturn.version));
+      return supplierReturn;
     },
   };
 

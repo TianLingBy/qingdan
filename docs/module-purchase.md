@@ -32,12 +32,13 @@
 
 ## 当前状态
 
-A 单 5 端点已实现（2026-11-05）；S 供应商退货 3 端点仍 501（下一批）
+A 单 5 端点 + S 供应商退货 3 端点均已实现（2026-11-05）；本模块端点 0 个 501
 
 ## 已完成
 
 - 模块边界与功能域映射已登记。
-- **2026-11-05 A 单 5 端点实现（PR #68）**：apps/api/migrations/0010_purchase_orders.sql（单头 + 商品明细 + 费用明细，RLS + 软删除语义按平台底座）+ apps/api/src/modules/purchase/{repo.ts,usecases/purchase-orders.ts,routes.ts}；list/create/detail/update/cancel 全接 HTTP，单号走 platform 取号，金额 decimal 字符串服务端聚合，create/cancel 为 AI forbid（D52①），update/cancel 必带 If-Match（缺则 428），取消按 D21 判下游引用，写操作全部落 audit_log（D51）。测试 +16 例（apps/api 30 文件 254 例），全量门禁 ALL PASSED (7 files)。
+- **2026-11-05 S 供应商退货 3 端点（PR #72）**：`apps/api/migrations/0011_supplier_returns.sql` + `usecases/supplier-returns.ts`；list/detail/create 接 HTTP，create 服务端 SQL 聚合 refundAmount、落 `supplier_return.create` 审计，AI 无 X-Reason 422、有原因仍危险动作 403（D52①）；F4c 只退钱不做换货。测试 +3（apps/api 31 文件 257 例），全量门禁 ALL PASSED。
+- **2026-11-05 A 单 5 端点实现（PR #70）**：apps/api/migrations/0010_purchase_orders.sql（单头 + 商品明细 + 费用明细，RLS + 软删除语义按平台底座）+ apps/api/src/modules/purchase/{repo.ts,usecases/purchase-orders.ts,routes.ts}；list/create/detail/update/cancel 全接 HTTP，单号走 platform 取号，金额 decimal 字符串服务端聚合，create/cancel 为 AI forbid（D52①），update/cancel 必带 If-Match（缺则 428），取消按 D21 判下游引用，写操作全部落 audit_log（D51）。测试 +16 例（apps/api 30 文件 254 例），全量门禁 ALL PASSED (7 files)。
 
 ## 进行中
 
