@@ -9,6 +9,12 @@ import { ProcessorQuoteSchema, ProcessorSchema } from './processors.js';
 import { PositionSchema } from './positions.js';
 import { CompanySchema } from './companies.js';
 import { InventoryBatchDetailSchema, InventoryBatchSchema, InventoryFlowSchema } from './inventory.js';
+import {
+  SalesOrderDetailSchema,
+  SalesOrderFeeSchema,
+  SalesOrderLineSchema,
+  SalesOrderSchema,
+} from './sales-orders.js';
 
 /**
  * 契约实体登记表（D57 ①）：每个实体必须在此登记并带 globalRegistry id，
@@ -70,6 +76,18 @@ z.globalRegistry.add(InventoryBatchDetailSchema, { id: 'InventoryBatchDetail' })
 /** 库存流水（只追加，D2① / D67④）：实体定义在 `inventory.ts`。 */
 z.globalRegistry.add(InventoryFlowSchema, { id: 'InventoryFlow' });
 
+/** 销售单 E（契约第一批 §3.3 / D16 / D39）：实体定义在 `sales-orders.ts`。 */
+z.globalRegistry.add(SalesOrderSchema, { id: 'SalesOrder' });
+
+/** 销售单商品明细（§5.1 / D22）：实体定义在 `sales-orders.ts`。 */
+z.globalRegistry.add(SalesOrderLineSchema, { id: 'SalesOrderLine' });
+
+/** 销售单费用明细（§5.2 / D39）：实体定义在 `sales-orders.ts`。 */
+z.globalRegistry.add(SalesOrderFeeSchema, { id: 'SalesOrderFee' });
+
+/** 销售单详情（含收款记录占位与取消判定，§3.3 / D21 / D24）：实体定义在 `sales-orders.ts`。 */
+z.globalRegistry.add(SalesOrderDetailSchema, { id: 'SalesOrderDetail' });
+
 /** 员工列表里的公司-岗位对（D15：一人多岗 + 公司隔离）。 */
 const EmployeeCompanySchema = z.object({
   companyId: z.string(),
@@ -123,4 +141,8 @@ export const ENTITIES = [
   { name: 'InventoryBatch', schema: InventoryBatchSchema },
   { name: 'InventoryBatchDetail', schema: InventoryBatchDetailSchema },
   { name: 'InventoryFlow', schema: InventoryFlowSchema },
+  { name: 'SalesOrder', schema: SalesOrderSchema },
+  { name: 'SalesOrderLine', schema: SalesOrderLineSchema },
+  { name: 'SalesOrderFee', schema: SalesOrderFeeSchema },
+  { name: 'SalesOrderDetail', schema: SalesOrderDetailSchema },
 ] as const;

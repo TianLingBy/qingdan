@@ -35,7 +35,15 @@ const INVENTORY_CASES = [
   { method: 'GET', url: '/api/v1/inventory/flows', operationId: 'inventory.flow.read' },
 ] as const;
 
-describe('路由挂载边界（platform / masterdata / inventory）', () => {
+const SALES_CASES = [
+  { method: 'GET', url: '/api/v1/sales-orders', operationId: 'sales.order.list.read' },
+  { method: 'POST', url: '/api/v1/sales-orders', operationId: 'sales.order.create' },
+  { method: 'GET', url: '/api/v1/sales-orders/so-1', operationId: 'sales.order.detail.read' },
+  { method: 'PATCH', url: '/api/v1/sales-orders/so-1', operationId: 'sales.order.update' },
+  { method: 'POST', url: '/api/v1/sales-orders/so-1/cancel', operationId: 'sales.order.cancel' },
+] as const;
+
+describe('路由挂载边界（platform / masterdata / inventory / sales）', () => {
   let app: FastifyInstance;
 
   beforeAll(() => {
@@ -58,7 +66,6 @@ describe('路由挂载边界（platform / masterdata / inventory）', () => {
     expect(notYetMounted).toEqual([
       'purchase',
       'processing',
-      'sales',
       'settlement',
       'internal-trade',
       'test',
@@ -68,6 +75,26 @@ describe('路由挂载边界（platform / masterdata / inventory）', () => {
   it('3 个 inventory 只读端点全部由 inventory 骨架挂载 → 501 NOT_IMPLEMENTED', async () => {
     for (const testCase of INVENTORY_CASES) {
       const response = await app.inject({ method: testCase.method, url: testCase.url });
+
+      expect(response.statusCode, `${testCase.method} ${testCase.url}`).toBe(501);
+      const body = response.json() as {
+        code: string;
+        message: string;
+        details?: Record<string, unknown>;
+      };
+      expect(body.code).toBe('NOT_IMPLEMENTED');
+      expect(body.message).toContain(testCase.operationId);
+      expect(body.details).toMatchObject({ operationId: testCase.operationId });
+    }
+  });
+
+  it('5 个 sales 端点全部由 sales 骨架挂载 → 501 NOT_IMPLEMENTED', async () => {
+    for (const testCase of SALES_CASES) {
+      const response = await app.inject({
+        method: testCase.method,
+        url: testCase.url,
+        headers: { 'if-match': '"1"' },
+      });
 
       expect(response.statusCode, `${testCase.method} ${testCase.url}`).toBe(501);
       const body = response.json() as {
