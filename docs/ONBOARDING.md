@@ -58,7 +58,7 @@ Agent 看不到邀请邮件、也看不到群聊，它默认**不知道自己代
 
 ## 1. 硬前置：先装软件，再 clone
 
-**6 项必装 + 1 项可选**（完整版本依据、下载地址、验证命令见 [`docs/DEV-SETUP.md`](DEV-SETUP.md) §1「软件清单」）：
+**7 项必装**（2026-11-05 起 GitHub CLI 升为必装——GitHub 是唯一任务与进度来源；完整版本依据、下载地址、验证命令见 [`docs/DEV-SETUP.md`](DEV-SETUP.md) §1「软件清单」）：
 
 | # | 软件 | 命令名 | 版本 | 下载 |
 |---|---|---|---|---|
@@ -68,7 +68,7 @@ Agent 看不到邀请邮件、也看不到群聊，它默认**不知道自己代
 | 4 | PowerShell 7（**不是**系统自带 `powershell` 5.1） | `pwsh` | ≥ 7.0 | <https://aka.ms/powershell-release?tag=stable> |
 | 5 | PostgreSQL | `psql` | **18** | <https://www.postgresql.org/download/windows/> |
 | 6 | 编辑器（建议 VS Code + ESLint/Prettier 插件） | — | 任意 | <https://code.visualstudio.com/> |
-| 可选 | GitHub CLI（装了更省事，不装用网页一样能完成，见 §11） | `gh` | ≥ 2.60 | <https://cli.github.com/> |
+| 7 | **GitHub CLI**（领 issue、看 PR、报进度的命令线标配，装完 `gh auth login` 配身份） | `gh` | ≥ 2.60 | <https://cli.github.com/> ／ `winget install --id GitHub.cli -e` |
 
 **权限前置**：仓库是私有的，你的 GitHub 账号必须已被负责人加为 **write** 协作者并**接受邀请**，否则 `git clone` 会报 **404 / Repository not found**（GitHub 对无权限账号统一返回 404，不是 403）。
 
@@ -80,7 +80,7 @@ pnpm -v                 # 11.x
 git --version           # 2.4x+
 pwsh -v                 # 7.x —— 在 5.1 里跑这行会报错，正说明你没装 PS7
 
-# 以下只为可选工具 gh，有 gh 才做
+# GitHub CLI（2026-11-05 起必装）
 gh --version            # 2.6x+
 gh auth login           # 浏览器登录「被邀请的那个」GitHub 账号
 gh api user --jq '.login'                          # 确认当前身份

@@ -6,9 +6,9 @@
 
 ---
 
-## 1. 前置条件：软件清单（6 项必装 + 1 项可选；先装齐必装项，再 clone）
+## 1. 前置条件：软件清单（7 项必装；先装齐再 clone）
 
-> **这一节是「开工第 0 步」。** 表里的 6 项必装装不齐，后面会出现三类假故障：`git clone` 报 404（其实是登录的账号不对）、`pnpm` 版本冲突（大版本不对）、`.ps1` 中文报错（用的是 5.1）。GitHub CLI（`gh`）是可选工具。
+> **这一节是「开工第 0 步」。** 表里的 7 项必装装不齐，后面会出现三类假故障：`git clone` 报 404（其实是登录的账号不对）、`pnpm` 版本冲突（大版本不对）、`.ps1` 中文报错（用的是 5.1）。**GitHub CLI（`gh`）自 2026-11-05 起升为必装**（GitHub 是唯一任务与进度来源）。
 > **版本基准**：下表「实测版本」是 2026-11-04 在负责人 Windows 机器上 `--version` 的真实输出。成员机器可以更新，但 **Node 必须 24.x、pnpm 必须 11.x**——`package.json` 的 `engines` 会硬校验，不符合直接报错。
 
 | # | 软件 | 版本要求 | 实测版本 | 下载地址 | 为什么必须有 | 验证命令 |
@@ -19,11 +19,11 @@
 | 4 | **PowerShell 7**（命令名 `pwsh`） | ≥ 7.0 | 7.6.9 | <https://aka.ms/powershell-release?tag=stable> ／ `winget install --id Microsoft.PowerShell -e` | 所有 `.ps1`（测试、hook、bootstrap）的运行时。**不要用系统自带 5.1**，它按 GBK 解码中文脚本会报 `The string is missing the terminator` | `pwsh -v` |
 | 5 | **PostgreSQL** | **18** | 18.x | <https://www.postgresql.org/download/windows/> ／ `winget install --id PostgreSQL.PostgreSQL.18 -e` | 本地开发库；CI integration job 用 `postgres:18`。D57 实测 PGlite 0.5.15 = PG 18.6，主版本必须一致 | `psql --version` |
 | 6 | **编辑器** | 任意 | VS Code | <https://code.visualstudio.com/> | 建议装 ESLint / Prettier / EditorConfig 插件（配置随骨架提交） | — |
-| 可选 | **GitHub CLI（命令名 `gh`）** | ≥ 2.60 | 2.97.0 | <https://cli.github.com/> ／ `winget install --id GitHub.cli -e` | 装了更省事：可用 `gh auth login` 配身份、`gh api` 自查权限、`gh` 建 PR；不装用网页一样能完成（见 [`docs/ONBOARDING.md`](ONBOARDING.md) §11） | `gh --version`（有 gh 才做） |
+| 7 | **GitHub CLI（命令名 `gh`）** | ≥ 2.60 | 2.97.0 | <https://cli.github.com/> ／ `winget install --id GitHub.cli -e` | **2026-11-05 起必装**：任务与进度唯一来源是 GitHub，`gh` 是成员命令线领 issue、看 PR、报进度的标配；装完 `gh auth login` 配身份、`gh api` 自查权限 | `gh --version` |
 
 **不需要装**：Docker（只有 L3 并发测试可选使用）、Redis、消息队列、Java / Python 运行时。
 
-macOS / Linux 必装项对应命令：`brew install git node pnpm postgresql@18`、`brew install --cask powershell`；Ubuntu 用微软官方 apt 源装 `powershell`，PostgreSQL 用 `postgresql-18`。GitHub CLI（`gh`）是可选项，想装再走官方安装源。
+macOS / Linux 必装项对应命令：`brew install git node pnpm postgresql@18 gh`、`brew install --cask powershell`；Ubuntu 用微软官方 apt 源装 `powershell`，PostgreSQL 用 `postgresql-18`，gh 走官方安装源。
 
 ### 1.1 装完先跑这段自检（逐行复制执行）
 
@@ -34,7 +34,7 @@ git --version           # 期望 2.4x 或更新
 pwsh -v                 # 期望 7.x（在 5.1 里跑这行会报错，正说明你没装 PS7）
 psql --version          # 期望 18.x（只影响 L3 真库测试，不阻塞前三个门禁）
 
-# 以下只为可选工具 gh，有 gh 才做
+# GitHub CLI（2026-11-05 起必装）
 gh --version            # 期望 2.6x 或更新
 gh auth status                    # 期望：Logged in to github.com account <你的账号>
 gh api user --jq '.login'         # 确认当前 git/gh 用的是哪个 GitHub 账号
@@ -43,9 +43,9 @@ gh api repos/TianLingBy/qingdan --jq '.permissions' # 有 gh 才做
 # 若这里报 404 → 见 §7 FAQ 第一行：登录的账号不是被邀请进仓库的那个
 ```
 
-没有 gh 也能检查仓库权限：用浏览器打开 <https://github.com/TianLingBy/qingdan>，能打开就说明有权限；打不开＝账号不对或没被邀请。
+临时没有 gh 时的兑底检查：用浏览器打开 <https://github.com/TianLingBy/qingdan>，能打开就说明有权限；打不开＝账号不对或没被邀请。
 
-**四条（不含 gh 那条）都要对上才算环境就绪**：Node 24.x、pnpm 11.x、pwsh 7.x、能访问本仓库（有 gh 时以 `gh api` 结果为准，没有 gh 时以浏览器能打开为准）。
+**五条都要对上才算环境就绪**：Node 24.x、pnpm 11.x、pwsh 7.x、GitHub CLI 已装并登录、能访问本仓库（以 `gh api` 结果为准）。
 
 ## 2. 第一次安装（clone 之后）
 
@@ -160,7 +160,7 @@ pwsh -NoProfile -File tests\run.ps1 -Filter '*api*'   # 只跑某类
 |---|---|---|
 | **`git clone` 报 404 / `Repository not found`** | 本机 git/gh 登录的 GitHub 账号**不是**被邀请进仓库的那个。私有仓对无权限账号一律返回 404（不是 403），所以看起来像「权限没开」 | ① `gh api user --jq '.login'` 看当前身份；② 换账号：`gh auth login` 用被邀请的账号登录；③ 清旧凭据：`cmdkey /delete:git:https://github.com`；④ 仍 404 就让负责人用正确账号重发邀请。**别只看浏览器能打开就以为命令行也对**——两者凭据可以不同 |
 | `pre-commit: 找不到 pwsh` | PATH 无 PS7 | 装 PowerShell 7（§1 第 5 项） |
-| `gh: 不是内部或外部命令` | 没装 GitHub CLI，或装完没重开终端 | 装 gh（§1 第 2 项）后**重开终端**再验证 |
+| `gh: 不是内部或外部命令` | 没装 GitHub CLI，或装完没重开终端 | 装 gh（§1 表第 7 项）后**重开终端**再验证 |
 | `git clone` 卡住几十分钟 | 网络到 github.com 不通 | 先 `gh api repos/TianLingBy/qingdan` 判断是网络还是身份；不通就换网络/代理，别反复重试 |
 | `The string is missing the terminator` | 用 5.1 跑 `.ps1` | 一律 `pwsh`；新 `.ps1` 带 BOM |
 | `pnpm` 版本冲突 | 系统 pnpm 与 `packageManager` 不一致 | 用 `D:\tools\pnpm11` 或 `corepack enable` |

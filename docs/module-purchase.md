@@ -32,11 +32,12 @@
 
 ## 当前状态
 
-未开始
+A 单 5 端点已实现（2026-11-05）；S 供应商退货 3 端点仍 501（下一批）
 
 ## 已完成
 
 - 模块边界与功能域映射已登记。
+- **2026-11-05 A 单 5 端点实现（PR #68）**：apps/api/migrations/0010_purchase_orders.sql（单头 + 商品明细 + 费用明细，RLS + 软删除语义按平台底座）+ apps/api/src/modules/purchase/{repo.ts,usecases/purchase-orders.ts,routes.ts}；list/create/detail/update/cancel 全接 HTTP，单号走 platform 取号，金额 decimal 字符串服务端聚合，create/cancel 为 AI forbid（D52①），update/cancel 必带 If-Match（缺则 428），取消按 D21 判下游引用，写操作全部落 audit_log（D51）。测试 +16 例（apps/api 30 文件 254 例），全量门禁 ALL PASSED (7 files)。
 
 ## 进行中
 
