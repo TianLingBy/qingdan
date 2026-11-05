@@ -94,6 +94,59 @@ describe('纯 SQL 迁移 runner（PGlite / 内存 PG18）', () => {
     }
   });
 
+  it('库存核心表（0008）：生成列由数据库维护，流水只追加（D67 / D2① / D38 / D47）', async () => {
+    const tables = await test.database.query<{
+      relname: string;
+      relrowsecurity: boolean;
+      relforcerowsecurity: boolean;
+    }>(
+      `SELECT relname, relrowsecurity, relforcerowsecurity
+       FROM pg_class
+       WHERE relname = ANY($1::text[])
+       ORDER BY relname`,
+      [['inventory_batch', 'inventory_flow']],
+    );
+    expect(tables.rows.map((row) => row.relname)).toEqual(['inventory_batch', 'inventory_flow']);
+    for (const row of tables.rows) {
+      expect(row.relrowsecurity, `${row.relname} 未开 RLS`).toBe(true);
+      expect(row.relforcerowsecurity, `${row.relname} 未开 FORCE RLS`).toBe(true);
+    }
+
+    const generated = await test.database.query<{
+      column_name: string;
+      is_generated: string;
+    }>(
+      `SELECT column_name, is_generated
+       FROM information_schema.columns
+       WHERE table_name = 'inventory_batch'
+         AND column_name = ANY($1::text[])
+       ORDER BY column_name`,
+      [['available_qty', 'remaining_qty']],
+    );
+    expect(generated.rows).toEqual([
+      { column_name: 'available_qty', is_generated: 'ALWAYS' },
+      { column_name: 'remaining_qty', is_generated: 'ALWAYS' },
+    ]);
+
+    const privileges = await test.database.query<{
+      can_select: boolean;
+      can_insert: boolean;
+      can_update: boolean;
+      can_delete: boolean;
+    }>(
+      `SELECT has_table_privilege('qingdan_app', 'inventory_flow', 'SELECT') AS can_select,
+              has_table_privilege('qingdan_app', 'inventory_flow', 'INSERT') AS can_insert,
+              has_table_privilege('qingdan_app', 'inventory_flow', 'UPDATE') AS can_update,
+              has_table_privilege('qingdan_app', 'inventory_flow', 'DELETE') AS can_delete`,
+    );
+    expect(privileges.rows[0]).toEqual({
+      can_select: true,
+      can_insert: true,
+      can_update: false,
+      can_delete: false,
+    });
+  });
+
   it('历史迁移被改动 → checksum 不一致直接失败（防漂移）', async () => {
     const files = await loadMigrationFiles();
     const first = files[0]!;
