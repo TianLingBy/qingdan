@@ -129,6 +129,10 @@ jobs:
         timeout-minutes: 10
         run: pnpm install --frozen-lockfile
 
+      - name: 构建 workspace 包
+        timeout-minutes: 10
+        run: pnpm -r build
+
       - name: 迁移真实 PostgreSQL
         timeout-minutes: 5
         run: pnpm -C apps/api migrate
