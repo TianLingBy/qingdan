@@ -16,12 +16,14 @@ import {
   SalesOrderSchema,
 } from './sales-orders.js';
 import { SalesReceiptSchema } from './sales-receipts.js';
+import { CustomerReturnSchema } from './customer-returns.js';
 import {
   PurchaseOrderDetailSchema,
   PurchaseOrderFeeSchema,
   PurchaseOrderLineSchema,
   PurchaseOrderSchema,
 } from './purchase-orders.js';
+import { SupplierReturnSchema } from './supplier-returns.js';
 import {
   ProcessingOrderDetailSchema,
   ProcessingOrderFeeSchema,
@@ -109,6 +111,9 @@ z.globalRegistry.add(SalesOrderDetailSchema, { id: 'SalesOrderDetail' });
 /** 收款记录（§6 / D24 / D34）：内嵌 E 单详情页，退款为负数行；实体定义在 `sales-receipts.ts`。 */
 z.globalRegistry.add(SalesReceiptSchema, { id: 'SalesReceipt' });
 
+/** R 客户退货单（契约第一批 §4；D36 / D40 / D47）：实体定义在 `customer-returns.ts`。 */
+z.globalRegistry.add(CustomerReturnSchema, { id: 'CustomerReturn' });
+
 /** 采购单 A（契约第一批 §3.1 / D16 / D39）：实体定义在 `purchase-orders.ts`。 */
 z.globalRegistry.add(PurchaseOrderSchema, { id: 'PurchaseOrder' });
 
@@ -120,6 +125,9 @@ z.globalRegistry.add(PurchaseOrderFeeSchema, { id: 'PurchaseOrderFee' });
 
 /** 采购单详情（含取消判定，§3.1 / D21）：实体定义在 `purchase-orders.ts`。 */
 z.globalRegistry.add(PurchaseOrderDetailSchema, { id: 'PurchaseOrderDetail' });
+
+/** S 供应商退货单（契约第一批 §4；F4c 只做退钱）：实体定义在 `supplier-returns.ts`。 */
+z.globalRegistry.add(SupplierReturnSchema, { id: 'SupplierReturn' });
 
 /** 加工单 B（契约第一批 §3.2 / D5 / D16 / D39 / F2b）：实体定义在 `processing-orders.ts`。 */
 z.globalRegistry.add(ProcessingOrderSchema, { id: 'ProcessingOrder' });
@@ -203,10 +211,12 @@ export const ENTITIES = [
   { name: 'SalesOrderFee', schema: SalesOrderFeeSchema },
   { name: 'SalesOrderDetail', schema: SalesOrderDetailSchema },
   { name: 'SalesReceipt', schema: SalesReceiptSchema },
+  { name: 'CustomerReturn', schema: CustomerReturnSchema },
   { name: 'PurchaseOrder', schema: PurchaseOrderSchema },
   { name: 'PurchaseOrderLine', schema: PurchaseOrderLineSchema },
   { name: 'PurchaseOrderFee', schema: PurchaseOrderFeeSchema },
   { name: 'PurchaseOrderDetail', schema: PurchaseOrderDetailSchema },
+  { name: 'SupplierReturn', schema: SupplierReturnSchema },
   { name: 'ProcessingOrder', schema: ProcessingOrderSchema },
   { name: 'ProcessingOrderFee', schema: ProcessingOrderFeeSchema },
   { name: 'ProcessingOrderDetail', schema: ProcessingOrderDetailSchema },
