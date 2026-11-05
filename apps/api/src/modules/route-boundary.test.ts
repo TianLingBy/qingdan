@@ -25,7 +25,17 @@ const PRODUCT_CASES = [
   { method: 'DELETE', url: '/api/v1/products/prod-1', operationId: 'product.delete' },
 ] as const;
 
-describe('路由挂载边界（platform / masterdata）', () => {
+const INVENTORY_CASES = [
+  { method: 'GET', url: '/api/v1/inventory/batches', operationId: 'inventory.batch.list.read' },
+  {
+    method: 'GET',
+    url: '/api/v1/inventory/batches/batch-1',
+    operationId: 'inventory.batch.detail.read',
+  },
+  { method: 'GET', url: '/api/v1/inventory/flows', operationId: 'inventory.flow.read' },
+] as const;
+
+describe('路由挂载边界（platform / masterdata / inventory）', () => {
   let app: FastifyInstance;
 
   beforeAll(() => {
@@ -46,7 +56,6 @@ describe('路由挂载边界（platform / masterdata）', () => {
     // 契约登记的全部模块中，尚未接线的模块（随模块开发逐项减少，改动时请显式更新）。
     const notYetMounted = MODULE_KEYS.filter((module) => !mounted.has(module));
     expect(notYetMounted).toEqual([
-      'inventory',
       'purchase',
       'processing',
       'sales',
@@ -54,6 +63,22 @@ describe('路由挂载边界（platform / masterdata）', () => {
       'internal-trade',
       'test',
     ]);
+  });
+
+  it('3 个 inventory 只读端点全部由 inventory 骨架挂载 → 501 NOT_IMPLEMENTED', async () => {
+    for (const testCase of INVENTORY_CASES) {
+      const response = await app.inject({ method: testCase.method, url: testCase.url });
+
+      expect(response.statusCode, `${testCase.method} ${testCase.url}`).toBe(501);
+      const body = response.json() as {
+        code: string;
+        message: string;
+        details?: Record<string, unknown>;
+      };
+      expect(body.code).toBe('NOT_IMPLEMENTED');
+      expect(body.message).toContain(testCase.operationId);
+      expect(body.details).toMatchObject({ operationId: testCase.operationId });
+    }
   });
 
   it('5 个商品端点全部由 masterdata 挂载 → 501 NOT_IMPLEMENTED，operationId 正确', async () => {

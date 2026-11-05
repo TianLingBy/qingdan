@@ -8,6 +8,7 @@ import { SupplierSchema } from './suppliers.js';
 import { ProcessorQuoteSchema, ProcessorSchema } from './processors.js';
 import { PositionSchema } from './positions.js';
 import { CompanySchema } from './companies.js';
+import { InventoryBatchDetailSchema, InventoryBatchSchema, InventoryFlowSchema } from './inventory.js';
 
 /**
  * 契约实体登记表（D57 ①）：每个实体必须在此登记并带 globalRegistry id，
@@ -60,6 +61,15 @@ z.globalRegistry.add(PositionSchema, { id: 'Position' });
 /** 公司（D16 公司码）：实体定义在 `companies.ts`。 */
 z.globalRegistry.add(CompanySchema, { id: 'Company' });
 
+/** 库存批次（Issue #48 / D67）：实体定义在 `inventory.ts`。 */
+z.globalRegistry.add(InventoryBatchSchema, { id: 'InventoryBatch' });
+
+/** 库存批次详情（含待执行占用来源，D38 / D67⑤）：实体定义在 `inventory.ts`。 */
+z.globalRegistry.add(InventoryBatchDetailSchema, { id: 'InventoryBatchDetail' });
+
+/** 库存流水（只追加，D2① / D67④）：实体定义在 `inventory.ts`。 */
+z.globalRegistry.add(InventoryFlowSchema, { id: 'InventoryFlow' });
+
 /** 员工列表里的公司-岗位对（D15：一人多岗 + 公司隔离）。 */
 const EmployeeCompanySchema = z.object({
   companyId: z.string(),
@@ -110,4 +120,7 @@ export const ENTITIES = [
   { name: 'ProcessorQuote', schema: ProcessorQuoteSchema },
   { name: 'Position', schema: PositionSchema },
   { name: 'Company', schema: CompanySchema },
+  { name: 'InventoryBatch', schema: InventoryBatchSchema },
+  { name: 'InventoryBatchDetail', schema: InventoryBatchDetailSchema },
+  { name: 'InventoryFlow', schema: InventoryFlowSchema },
 ] as const;
