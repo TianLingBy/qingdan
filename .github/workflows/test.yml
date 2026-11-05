@@ -206,7 +206,7 @@ jobs:
           NODE
 
           export NODE_OPTIONS="--import=$RUNNER_TEMP/capture-cookie.mjs"
-          pnpm --silent -C packages/cli dev -- \
+          pnpm --silent -C packages/cli dev \
             --base-url "$API_URL" \
             --json \
             employee login \
