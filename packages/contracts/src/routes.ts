@@ -10,6 +10,8 @@ import { CUSTOMER_ROUTES } from './customers.js';
 import { SUPPLIER_ROUTES } from './suppliers.js';
 import { PROCESSOR_ROUTES } from './processors.js';
 import { EMPLOYEE_ROUTES } from './employees.js';
+import { POSITION_ROUTES } from './positions.js';
+import { COMPANY_ROUTES } from './companies.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -136,6 +138,10 @@ export const ROUTES: readonly RouteDef[] = [
   }),
   // —— 员工管理写端点：创建 / 编辑 / 停用（契约，2026-11-05）——
   ...EMPLOYEE_ROUTES,
+  // —— 岗位（权限模板）端点：归 permission 功能域（D44，2026-11-05）——
+  ...POSITION_ROUTES,
+  // —— 公司管理端点（D16 公司码，2026-11-05）——
+  ...COMPANY_ROUTES,
   defineRoute({
     operationId: 'platform.audit.read',
     method: 'GET',

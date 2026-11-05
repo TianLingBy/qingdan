@@ -40,7 +40,16 @@ describe('命令树', () => {
     const byId = new Map(ROUTES.map((route, i) => [route.operationId, actions[i]]));
     expect(byId.get('platform.auth.login')).toBe('login');
     expect(byId.get('platform.audit.read')).toBe('read');
-    expect(byId.get('platform.permission.update')).toBe('update');
+    // permission 域内 permission.update 与 position.update 撞名 → 整域改用末两段（旧命令改名，见报告）。
+    expect(byId.get('platform.permission.update')).toBe('permission-update');
+    expect(byId.get('platform.position.list')).toBe('position-list');
+    expect(byId.get('platform.position.create')).toBe('position-create');
+    expect(byId.get('platform.position.update')).toBe('position-update');
+    expect(byId.get('platform.position.delete')).toBe('position-delete');
+    // company 域内无撞名 → 保持末段。
+    expect(byId.get('platform.company.list')).toBe('list');
+    expect(byId.get('platform.company.create')).toBe('create');
+    expect(byId.get('platform.company.update')).toBe('update');
     // api_integration 域内三条 read → 全部两段
     expect(byId.get('platform.health.read')).toBe('health-read');
     expect(byId.get('platform.openapi.read')).toBe('openapi-read');
@@ -136,7 +145,7 @@ describe('URL 与错误体', () => {
       stderr: (line) => errs.push(line),
       setExitCode: (code) => codes.push(code),
     });
-    await program.parseAsync(['node', 'qingdan', 'permission', 'update', 'emp-1', '--data', '{"overrides":[]}']);
+    await program.parseAsync(['node', 'qingdan', 'permission', 'permission-update', 'emp-1', '--data', '{"overrides":[]}']);
     expect(codes).toEqual([4]);
     expect(errs.join('\n')).toContain('PRECONDITION_REQUIRED');
   });

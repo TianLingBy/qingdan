@@ -6,6 +6,8 @@ import { ProductSchema } from './products.js';
 import { CustomerSchema } from './customers.js';
 import { SupplierSchema } from './suppliers.js';
 import { ProcessorQuoteSchema, ProcessorSchema } from './processors.js';
+import { PositionSchema } from './positions.js';
+import { CompanySchema } from './companies.js';
 
 /**
  * 契约实体登记表（D57 ①）：每个实体必须在此登记并带 globalRegistry id，
@@ -51,6 +53,12 @@ z.globalRegistry.add(ProcessorSchema, { id: 'Processor' });
 
 /** 加工厂报价记录（D64 / 独立子表 processor_quote）：实体定义在 `processors.ts`。 */
 z.globalRegistry.add(ProcessorQuoteSchema, { id: 'ProcessorQuote' });
+
+/** 岗位（权限模板，D4/D60②）：实体定义在 `positions.ts`。 */
+z.globalRegistry.add(PositionSchema, { id: 'Position' });
+
+/** 公司（D16 公司码）：实体定义在 `companies.ts`。 */
+z.globalRegistry.add(CompanySchema, { id: 'Company' });
 
 /** 员工列表里的公司-岗位对（D15：一人多岗 + 公司隔离）。 */
 const EmployeeCompanySchema = z.object({
@@ -100,4 +108,6 @@ export const ENTITIES = [
   { name: 'Supplier', schema: SupplierSchema },
   { name: 'Processor', schema: ProcessorSchema },
   { name: 'ProcessorQuote', schema: ProcessorQuoteSchema },
+  { name: 'Position', schema: PositionSchema },
+  { name: 'Company', schema: CompanySchema },
 ] as const;
