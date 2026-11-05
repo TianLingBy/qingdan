@@ -35,11 +35,12 @@
 
 ## 当前状态
 
-未开始（第二批契约；等第一批主链跑通）
+N 单 5 端点已实现（2026-11-05）；本模块端点 0 个 501
 
 ## 已完成
 
 - 模块边界与功能域映射已登记。
+- **2026-11-05 N 单 5 端点实现（PR #76）**：`apps/api/migrations/0015_internal_trade_orders.sql`（单头 + 明细 + 批次引用，四态约束，ENABLE/FORCE RLS）+ `modules/internal-trade/{repo.ts,usecases/internal-trade-orders.ts,routes.ts}`；list/create(201)/detail/update/cancel 接 HTTP；**D68 落地**：内部价由制单人手工填、独立四态状态机（进行中/在途/已完成/已取消，不复用 HEADER_STATES）、company_id 表示发出公司、创建需同时可见发出与接收公司；转司确认（接收方到货）留待后续批次。测试 +8（apps/api 39 文件 291 例），tsc 0，全量门禁 ALL PASSED。
 
 ## 进行中
 
