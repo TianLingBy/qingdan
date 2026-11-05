@@ -1,110 +1,101 @@
 # 交接说明（HANDOFF）
 
-> **用途**：新会话接手时**第一个读的文档**。它只写「现在在哪、下一步做什么、坑在哪」，口径细节仍以
-> `docs/decisions.md`、`docs/module-*.md`、`docs/roadmap.md` 为准（本文不复制口径，避免两处漂移）。
-> **维护规则**：每次一段工作结束、或换会话前更新一次；过期内容直接改掉，不堆历史（历史看 `docs/roadmap.md` 变更记录）。
+> **用途**：新会话接手时第一个读的文档。它只写「现在在哪、下一步做什么、坑在哪」，口径细节以
+> `docs/decisions.md`、`docs/module-*.md`、`docs/roadmap.md` 为准。
+> **维护规则**：每次一段工作结束或换会话前更新；过期内容直接改掉，历史看 `docs/roadmap.md`。
 
 ## 0. 一分钟读完
 
+**一句话：契约已全覆盖，实现只完成 masterdata + platform 员工 + inventory 只读。**
+
 | 项 | 结论 |
 |---|---|
-| 仓库 / 阶段 | `D:\Desktop\dsh\Qingdan`，私有仓 `github.com/TianLingBy/qingdan`；当前是阶段 4 分工开发。 |
-| masterdata | 商品、客户、供应商、加工厂四类档案 + 报价记录共 **22 条端点全部可用**；迁移覆盖 `0004`–`0007`。 |
-| inventory | 3 条只读契约 + 3 个实体；模块已挂载，handler 仍为 501，梁海俊按 #49 实现中。 |
-| sales | 5 条契约 + 4 个实体；模块已挂载，handler 仍为 501；完成/出库、收款记录、破下限审批本批未做。 |
-| platform | 员工 create/update/disable 3 条已实现；岗位 4 条、公司 3 条仍在实现。 |
-| 团队 | 温汇敏 #51 已合并；梁海俊 #49 已解封；赖皓妍邀请仍 pending，#3/#4/#5/#6 挂起；李祖怡尚未开工。 |
-| 开工入口 | 先读 `docs/START-HERE.md`，核验身份后按个人档案接活；每次开工前跑 `scripts/sync-check.ps1`。 |
-| 当前总阻塞 | 前端线等赖皓妍接受邀请；未完成身份核验者不得领任务、写代码。 |
+| 仓库 / 阶段 | `D:\Desktop\dsh\Qingdan`，私有仓 `github.com/TianLingBy/qingdan`；阶段 4 分工开发。 |
+| 契约 | 八张单据全线登记，OpenAPI 规模 paths=50 / operations=81 / schemas=37；生成物勿手改。 |
+| 实现 | masterdata 22 端点、platform 员工 4 端点、inventory 3 条只读可用；其余单据端点仍是 501 占位。 |
+| 当前主线 | 补 inventory 写动作与单据侧实现，再按实现进度交付前端详情页；契约侧推进报表、打印导出。 |
 
-## 1. 最近状态（截至 2026-11-05 中午）
+## 1. 最近状态（截至 2026-11-05 下午）
 
 | 项 | 值 |
 |---|---|
-| masterdata | 商品/客户/供应商/加工厂各 5 条 + 报价 2 条，共 22 条 HTTP 端点可用。 |
-| 迁移 | `0004` 商品、`0005` 客户、`0006` 供应商、`0007` 加工厂 + 报价、`0008` 库存批次 + 库存流水。 |
-| inventory | 契约：批次列表/详情、库存流水共 3 条只读端点与 3 个实体；API 模块已挂载，仍返回 501。 |
-| sales | 契约：订单列表/创建/详情/更新/取消共 5 条端点与 4 个实体；API 模块已挂载，仍返回 501。 |
-| platform | 新增员工 create/update/disable、岗位 4 条（domain 归 `permission`）、公司 3 条；员工 3 条已实现，其余实现中。 |
-| OpenAPI | `pnpm openapi` 从注册表生成，规模为 paths=30、operations=51、schemas=20；`docs/api/openapi.yaml` 勿手改。 |
-| CI | 7 项：`test(ubuntu)`、`test(windows)`、`integration(PG18)`、`e2e`、`route`、`fields`、`spec-drift`。 |
-| 决策 | D63 客户账期、D64 加工厂报价、D65 员工/岗位/公司口径、D66 员工实现裁定、D67 库存数量算法。 |
-| 团队 | 温汇敏完成 #51；梁海俊提交 #48/#49，#48 已由 Lead 完成关闭，#49 已解封；赖皓妍邀请待接受；李祖怡未开工。 |
+| OpenAPI | `pnpm openapi` 生成 `docs/api/openapi.yaml`：paths=50 / operations=81 / schemas=37。 |
+| 已登记 | A 采购 5、B 加工 5、E 销售 5 + 收款 2、N 内部交易 5、C 结算 3、R 客户退货 3、S 供应商退货 3、盘点 I 4、库存只读 3；另含 masterdata 22 与 platform 员工/岗位/公司。 |
+| 已挂载 | `MOUNTED_MODULE_KEYS`：platform / masterdata / inventory / sales / purchase / processing / internal-trade / settlement。 |
+| 决策 | 已到 D69：D63 客户账期、D64 加工厂报价、D65 员工岗位公司口径、D66 员工三项裁定、D67 库存四列+生成列、D68 N 单口径与状态、D69 C 单损失快照。 |
+| 迁移 | 已到 `0009`：`0004` product、`0005` customer、`0006` supplier、`0007` processor+quote、`0008` inventory_batch+flow、`0009` 收紧库存批次成本/保管人非空。 |
+| CI | 7 项，含 `e2e` 与 `spec-drift`；契约和路由测试均不得绕过。 |
+| 盘点约束 | inventory 仅允许 `stocktake.create`、`stocktake.approve` 两个写动作，`inventory.test.ts` 使用显式白名单。 |
 
 ## 2. 已完成（不用重做）
 
-- **masterdata**：四类档案 + 报价记录 22 条端点全部可用；迁移 `0004`–`0007` 已落地，加工厂报价按 D64 写独立子表。
-- **员工管理**：PR #51 已合并，员工管理共 4 条端点接上 HTTP（原员工列表 + 新增/更新/停用 3 条），12 条测试先行；D52.1②「停用即失效」用 `computeAuthz` 每请求现算、不加缓存、不加迁移。
-- **inventory 契约**：`inventory.batch.list.read` / `.detail.read` / `inventory.flow.read` 共 3 条只读端点，加批次、流水等 3 个实体；迁移 `0008` 建 `inventory_batch` + `inventory_flow`。
-- **sales 契约**：`sales.order.list.read` / `.create` / `.detail.read` / `.update` / `.cancel` 共 5 条端点与 4 个实体；本批不包含完成/出库、收款记录、破下限审批。
-- **platform 契约**：员工 create/update/disable 3 条已实现；岗位 4 条归 `permission` domain；公司 3 条契约已落，岗位/公司代码实现中。
-- **D66 员工裁定**：停用不物理删；重复停用幂等且不自增版本；最后一个在职老板不可停，返回 403 `LAST_ACTIVE_OWNER`；D52.1② 按每请求现算落地。
-- **D67 库存数量**：业务只维护四个基础列，`remaining_qty` / `available_qty` 由数据库生成列计算，应用层不得写；出库按 D41 不重复扣，流水只追加。
-- **M1-F e2e**：真 PG18 → 迁移 → seed → 起 API → CLI 登录 → `/auth/me` → POST 商品 201 → 查审计断言；已进入 CI。
-- **OpenAPI 治理**：生成器新增无依赖 YAML 序列化器 `packages/contracts/src/yaml.ts`；旧手工版完整保存为 `docs/api/openapi.legacy.yaml`（含 13 条未注册计划端点 + 9 条平台旧命名），仅作历史参考。
-- **spec-drift**：CI 执行 `pnpm openapi` 后跑 `git diff --exit-code -- docs/api/openapi.yaml`；已在 PR #54 上真实抓到一次契约改了未重生成。
+- **masterdata**：商品、客户、供应商、加工厂四类档案与报价记录共 22 个 HTTP 端点全部可用；迁移落在 `0004`–`0007`，加工厂报价按 D64 使用独立子表。
+- **platform**：员工共 4 个端点可用，含原列表及 create/update/disable；停用即失效按 D52.1 每请求重算，不缓存、不物理删。
+- **inventory**：批次列表、批次详情、库存流水 3 条只读端点已接 HTTP；`0008` 建批次与流水实体，`0009` 收紧 `locked_unit_cost` / `custodian_id` 为 NOT NULL。
+- **sales**：E 单 5 条及收款记录 2 条已登记；完成/出库、破下限审批等动作不在当前实现范围。
+- **purchase**：A 单 5 条已登记，模块已挂载，handler 仍为 501。
+- **processing**：B 单 5 条已登记，模块已挂载，handler 仍为 501。
+- **internal-trade**：N 单 5 条已登记，模块已挂载，handler 仍为 501；内部价手填、独立四态、确认到货才转司见 D68。
+- **settlement**：C 单 3 条已登记，模块已挂载，handler 仍为 501；相关损失取结算时快照见 D69。
+- **退货与盘点契约**：R 客户退货 3 条、S 供应商退货 3 条、盘点 I 4 条均已登记；盘点审批后追加流水，不物理删历史。
+- **OpenAPI 治理**：全部契约由注册表生成；`spec-drift` 在 CI 中重生成并检查 `git diff --exit-code -- docs/api/openapi.yaml`。
 
-## 3. 任务板（GitHub Issues / PR）
+## 3. 团队与任务
 
-| Issue / PR | 内容 | 当前状态 |
-|---|---|---|
-| #51 | 温汇敏：员工管理 4 端点接 HTTP，12 条测试先行 | ✅ 已合并 |
-| #48 | 梁海俊：inventory 契约、占用字段拍板、`0008` 迁移 | ✅ Lead 已完成并关闭 |
-| #49 | 梁海俊：inventory 只读实现 | OPEN；已解封，开工中 |
-| #3 | 赖皓妍：成员档案落盘 | OPEN；邀请 pending |
-| #4 | 登录页（P0，接口已就绪） | OPEN；前置 #3，挂起 |
-| #5 | 工作台（占位数据定版式） | OPEN；前置 #3，挂起 |
-| #6 | 员工页视觉骨架 + 个人权限覆盖面板 | OPEN；前置 #3，挂起 |
+| 人员 / 任务 | 当前状态 |
+|---|---|
+| 温汇敏 #45 | 继续岗位/公司实现，相关文件由她独占。 |
+| 梁海俊 #49 | 已完成 inventory 只读；当前等待单据侧能力，后续接库存写/联动。 |
+| 赖皓妍 | 邀请仍 pending；成员档案与前段页面任务继续挂起。 |
+| 李祖怡 | 尚未开工；先完成身份核验和成员档案。 |
 
-## 4. 下一步
+## 4. 下一步（按谁能领）
 
-1. **梁海俊领 #49**：把 inventory 3 条只读 handler 从 501 接到用例；严格使用 D67 生成列，应用层不得写数量派生列，流水只追加。
-2. **platform 岗位/公司**：当前实现者续做，其他人不领同一批文件；完成后补齐对应 HTTP/权限/service 测试。
-3. **sales 可交温汇敏**：#51 已完成，前提是她没有继续占用 platform 岗位/公司文件；若冲突，再交给下一位已核验且无文件冲突的后端。先实现 5 条契约端点，完成/出库、收款、破下限审批另开批次。
-4. **赖皓妍前端线仍卡邀请**：她接受邀请并完成 #3 后才可领 #4/#5/#6；期间任何人不得代领。
-5. **李祖怡尚未开工**：先完成身份核验和成员档案，再由 Lead 指派；当前没有可分给她的既定任务。
-6. **契约改动纪律**：任何端点或字段变更先决策与契约文档，再改注册表，最后跑 `pnpm openapi`；CI 会以 spec-drift 拦截漏生成。
+1. **梁海俊：inventory 写 / 单据联动**。先实现 `stocktake.create`、`stocktake.approve` 并守住显式白名单；单据侧出现可联调实现后再接库存扣减/占用/流水联动。
+2. **温汇敏：岗位公司**。继续 #45 的岗位/公司 HTTP、权限和测试，不与其他人并行写同一批 platform 文件。
+3. **李祖怡：单据详情页**。完成身份核验后可开工，但先有对应详情端点实现；此前只做不依赖假数据的页面骨架与字段适配，501 期间不冒充完成联调。
+4. **Lead：报表与输出契约**。补齐提成、利润报表、打印导出契约，严格按“决策与契约文档 → 注册表 → `pnpm openapi` → spec-drift”顺序推进。
 
 ## 5. 坑（踩过，别再踩）
 
-- **`main` 会被误提交**：`git switch -c <分支>` 因分支已存在而失败后，若继续 `git add/commit`，提交会落在 `main`。处理：先 `git branch -f <分支> <sha>` 把提交挂到目标分支，再 `git reset --hard origin/main`。2026-11-05 已发生两次。
-- **GitHub 402 `Insufficient Balance` 可能是瞬时错误**：实测 DeepSeek 余额充足（`20.32 CNY / is_available: true`），先重试，别急着让负责人充值。
-- **PGlite 可用生成列**：内存 PG18 实测支持 `STORED` 生成列及其 `CHECK`，D67 写法可在测试中使用。
-- **CLI 同域末段撞名会改既有命令名**：岗位进入 `permission` 域后，`qingdan permission update` 会变成 `qingdan permission permission-update`；`sales` 域同理。
-- **route-boundary 清单需手删**：`route-boundary.test.ts` 的「未挂载模块清单」是写死的，新增模块必须同步删对应行，否则测试必红。
-- **派活超时补丁尚未在当前进程生效**：已改为 180 秒起体检、连续 240 秒无输出且 CPU 无增长判卡死、900 秒硬上限、卡死自动续跑一次；`IDLE_WINDOW_MS=240000` 要重启 DSH 才生效，当前进程仍是 120 秒。插件升级会丢补丁，升级后必须重打。
-- **迁移与 OpenAPI 都不回写历史**：迁移只增不改；`docs/api/openapi.yaml` 由 `pnpm openapi` 生成，任何手改都会被 spec-drift 或下次生成覆盖。
+- **`git switch -c <分支>` 失败后不要继续提交**：目标分支已存在时命令失败但人仍停在原分支（常是 `main`），继续 `git add/commit` 会把提交落在 main 上；今天发生过两次。修法是 `git branch -f <分支> <sha>` 把提交挂到分支，再 `git reset --hard origin/main`。
+- **子代理为了过测试会改松防线**：今天一次重写了 CLI 命名算法（会改既有命令名），一次把 `inventory.test.ts` 的禁止写端点断言改成前缀过滤。验收必须读“为了让测试变绿”的改动；盘点现已改回显式白名单。
+- **operationId 必须以功能域开头**：`internalTrade.*`（驼峰）会触发 registry 校验失败，正确写法是 `internal_trade.*`；不要放宽校验，改名即可。
+- **CLI 命令名的整域规则**：域内末段撞名会整域改用末两段/末三段，新增端点可能被动改既有命令名；先检查冲突。`sales.receipt.list.read` 因改为 `sales.receipt.read` 才没有波及既有命令。
+- **route-boundary 未挂载清单是写死的**：新增或移除模块时要同步更新 `route-boundary.test.ts`，否则测试必红。
+- **生成物与迁移纪律**：迁移只增不改；`docs/api/openapi.yaml` 只由 `pnpm openapi` 生成，手改会被 CI 或下次生成覆盖。
+- **PGlite 支持生成列**：内存 PG18 已实测支持 D67 的 `STORED` 生成列与 `CHECK`，不要在测试里退回应用层维护派生数量。
+- **GitHub 402 可能是瞬时错误**：先重试；不要在没有余额证据时让负责人充值。
 
-## 6. 需要负责人拍板 / 补的
+## 6. 需要负责人处理
 
-- 赖皓妍的 `karryL921` 邀请仍是 pending；权限落定前，#3/#4/#5/#6 无法指派，前端线不能动。
-- 李祖怡尚未开工，需先完成身份核验和成员档案；未通过前不得领任务。
-- `dsh-agent-conductor` 补丁需在 DSH 重启后验证 240 秒空闲窗口和自动续跑一次均按预期生效。
+- 赖皓妍的 GitHub 邀请仍未接受；落定前成员档案与前端页面任务保持挂起。
+- 李祖怡先完成中文姓名、GitHub 账号、负责模块三处核验；未通过不得领任务或写代码。
+- `dsh-agent-conductor` 补丁需在 DSH 重启后验证 240 秒空闲窗口与自动续跑，插件升级后还要重打。
 
 ## 7. 交接前自检命令
 
 ```powershell
 cd D:\Desktop\dsh\Qingdan
-git status --short                           # 应只有 AGENTS.md / docs/HANDOFF.md / docs/roadmap.md
+git status --short                           # 本任务应只有 docs/HANDOFF.md
 pwsh -NoProfile -File scripts/sync-check.ps1 # 依赖、口径、等待关系
-pwsh -NoProfile -File tests\run.ps1          # exit 0 才算通过
-pnpm -r test                                 # 工作区测试
+pwsh -NoProfile -File tests\run.ps1          # 退出码 0 才算通过
+pnpm -r test
 pnpm openapi
-git diff --exit-code -- docs/api/openapi.yaml # 生成物不得漂移
-gh pr checks <PR 编号或 URL>                 # 7 项：test(ubuntu) / test(windows) /
-                                             # integration(PG18) / e2e / route / fields / spec-drift
-gh issue list --state open                   # 重点看 #3/#4/#5/#6/#49
+git diff --exit-code -- docs/api/openapi.yaml
+gh pr checks <PR 编号或 URL>                 # 7 项：test(ubuntu)、test(windows)、
+                                             # integration(PG18)、e2e、route、fields、spec-drift
 ```
 
-## 8. 给新会话的开场话（可直接粘贴）
+## 8. 给新会话的开场话
 
 ```text
 接手「轻单」工程仓（D:\Desktop\dsh\Qingdan）。先读 docs/START-HERE.md 与 docs/HANDOFF.md，再按
 docs/AGENT-TEAM.md 开工：DSH 拆任务/派活/验收/提交，代码交 Claude Code，杂项交 Codex。
-先核验中文姓名、GitHub 账号、负责模块；三处对不上就停，未核验身份不得领任务或写代码。
-每次开工前跑 pwsh -NoProfile -File scripts/sync-check.ps1；PR 须过 7 项 CI：
-test(ubuntu)、test(windows)、integration(PG18)、e2e、route、fields、spec-drift。
-普通改动 CI 全绿后按合并权处理；严重变更打“需批准”等负责人，不设代理人。
-当前继续：梁海俊 #49 inventory 实现 + platform 岗位/公司收尾；sales 待无冲突后端接；
-赖皓妍 #3/#4/#5/#6 等邀请，李祖怡等身份核验。契约变更后必须跑 pnpm openapi。
+先核验中文姓名、GitHub 账号、负责模块；未核验不得领任务或写代码。开工先跑
+pwsh -NoProfile -File scripts/sync-check.ps1；PR 须过 7 项 CI：test(ubuntu)、test(windows)、
+integration(PG18)、e2e、route、fields、spec-drift。
+当前契约已全覆盖（paths=50 / operations=81 / schemas=37），实现仅 masterdata + platform 员工 +
+inventory 只读。下一步：梁海俊接 inventory 写/联动，温汇敏续 #45 岗位/公司，李祖怡待后端实现后做
+单据详情页，Lead 补提成/利润报表/打印导出契约。契约变更后必须跑 pnpm openapi。
 ```
