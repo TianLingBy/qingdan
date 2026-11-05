@@ -15,7 +15,9 @@ import { COMPANY_ROUTES } from './companies.js';
 import { INVENTORY_ROUTES } from './inventory.js';
 import { SALES_ORDER_ROUTES } from './sales-orders.js';
 import { SALES_RECEIPT_ROUTES } from './sales-receipts.js';
+import { CUSTOMER_RETURN_ROUTES } from './customer-returns.js';
 import { PURCHASE_ORDER_ROUTES } from './purchase-orders.js';
+import { SUPPLIER_RETURN_ROUTES } from './supplier-returns.js';
 import { PROCESSING_ORDER_ROUTES } from './processing-orders.js';
 import { INTERNAL_TRADE_ORDER_ROUTES } from './internal-trade-orders.js';
 import { SETTLEMENT_ORDER_ROUTES } from './settlement-orders.js';
@@ -223,8 +225,12 @@ export const ROUTES: readonly RouteDef[] = [
   ...SALES_ORDER_ROUTES,
   // —— sales 模块：收款记录 2 条（list/create，契约第一批 §6 / D24/D34/D40）——
   ...SALES_RECEIPT_ROUTES,
+  // —— sales 模块：R 客户退货 3 条（list/create/detail，契约第一批 §4 / D36/D40/D47）——
+  ...CUSTOMER_RETURN_ROUTES,
   // —— purchase 模块：A 采购单首批 5 条（list/create/detail/update/cancel，契约第一批 §3.1）——
   ...PURCHASE_ORDER_ROUTES,
+  // —— purchase 模块：S 供应商退货 3 条（list/create/detail，契约第一批 §4 / F4c）——
+  ...SUPPLIER_RETURN_ROUTES,
   // —— processing 模块：B 加工单首批 5 条（list/create/detail/update/cancel，契约第一批 §3.2）——
   ...PROCESSING_ORDER_ROUTES,
   // —— internal-trade 模块：N 内部交易单首批 5 条（契约第二批 §1 / §3，D22/D31/D68）——
