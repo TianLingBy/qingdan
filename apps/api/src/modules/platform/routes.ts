@@ -4,7 +4,12 @@ import type { AppConfig } from '../../platform/config.js';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
 import { createApiToken, listApiTokens, revokeApiToken } from './usecases/api-tokens.js';
 import { listAuditLogs } from './usecases/audit-logs.js';
-import { listEmployees } from './usecases/employees.js';
+import {
+  createEmployee,
+  disableEmployee,
+  listEmployees,
+  updateEmployee,
+} from './usecases/employees.js';
 import { login } from './usecases/login.js';
 import { logout } from './usecases/logout.js';
 import { me } from './usecases/me.js';
@@ -46,6 +51,9 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'platform.token.read': 'api_token',
   'platform.token.revoke': 'api_token',
   'platform.permission.update': 'employee',
+  'platform.employee.create': 'employee',
+  'platform.employee.update': 'employee',
+  'platform.employee.disable': 'employee',
 };
 
 export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRoutesOptions): void {
@@ -64,6 +72,12 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
     'platform.auth.me': ({ app: instance, request }) => me({ database: instance.database, request }),
     'platform.employee.read': ({ app: instance, request }) =>
       listEmployees({ database: instance.database, request }),
+    'platform.employee.create': ({ app: instance, request, reply }) =>
+      createEmployee({ database: instance.database, request, reply }),
+    'platform.employee.update': ({ app: instance, request, reply }) =>
+      updateEmployee({ database: instance.database, request, reply }),
+    'platform.employee.disable': ({ app: instance, request, reply }) =>
+      disableEmployee({ database: instance.database, request, reply }),
     'platform.token.create': ({ app: instance, request, reply }) =>
       createApiToken({ database: instance.database, request, reply }),
     'platform.token.read': ({ app: instance, request }) =>
