@@ -3,13 +3,19 @@ import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
 import { getBatch, listBatches } from './usecases/batches.js';
 import { listFlows } from './usecases/flows.js';
+import {
+  approveStocktake,
+  createStocktake,
+  getStocktake,
+  listStocktakes,
+} from './usecases/stocktakes.js';
 
 /**
- * inventory 首批只读端点（Issue #49）。
+ * inventory 端点：首批只读 3 条（Issue #49）+ 盘点调整 I 4 条。
  *
- * 三条端点全部由用例完成权限、公司隔离与查询；本层只做 operationId 分派和详情 ETag。
+ * 全部端点由用例完成权限、公司隔离与查询；本层只做 operationId 分派和 ETag。
  * **不要在这里直接写 SQL 或改批次数字**——库存写入只能经单据用例调用 inventory
- * 服务函数（Issue #48 §2）。
+ * 服务函数（Issue #48 §2 / D67）。
  */
 function assertDatabaseConfigured(app: FastifyInstance, route: RouteDef): void {
   if (app.database) return;
@@ -33,6 +39,39 @@ export function registerInventoryRoutes(app: FastifyInstance): void {
     'inventory.flow.read': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);
       return await listFlows({ database: instance.database, request });
+    },
+    'stocktake.list.read': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listStocktakes({ database: instance.database, request });
+    },
+    'stocktake.create': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const stocktake = await createStocktake({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(stocktake.version));
+      return stocktake;
+    },
+    'stocktake.detail.read': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const detail = await getStocktake({
+        database: instance.database,
+        request,
+      });
+      reply.header('ETag', etagOf(detail.version));
+      return detail;
+    },
+    'stocktake.approve': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const detail = await approveStocktake({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(detail.version));
+      return detail;
     },
   };
 
