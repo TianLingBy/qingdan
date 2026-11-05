@@ -18,6 +18,7 @@ import { SALES_RECEIPT_ROUTES } from './sales-receipts.js';
 import { PURCHASE_ORDER_ROUTES } from './purchase-orders.js';
 import { PROCESSING_ORDER_ROUTES } from './processing-orders.js';
 import { INTERNAL_TRADE_ORDER_ROUTES } from './internal-trade-orders.js';
+import { SETTLEMENT_ORDER_ROUTES } from './settlement-orders.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -228,6 +229,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...PROCESSING_ORDER_ROUTES,
   // —— internal-trade 模块：N 内部交易单首批 5 条（契约第二批 §1 / §3，D22/D31/D68）——
   ...INTERNAL_TRADE_ORDER_ROUTES,
+  // —— settlement 模块：C 结算单首批 3 条（list/detail/confirm，契约第一批 §3.4）——
+  ...SETTLEMENT_ORDER_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;

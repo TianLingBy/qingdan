@@ -32,6 +32,7 @@ import {
   InternalTradeOrderLineSchema,
   InternalTradeOrderSchema,
 } from './internal-trade-orders.js';
+import { SettlementOrderDetailSchema, SettlementOrderSchema } from './settlement-orders.js';
 
 /**
  * 契约实体登记表（D57 ①）：每个实体必须在此登记并带 globalRegistry id，
@@ -138,6 +139,12 @@ z.globalRegistry.add(InternalTradeOrderLineSchema, { id: 'InternalTradeOrderLine
 /** 内部交易单详情（含四态取消判定，§1 / D21 / D68②）：实体定义在 `internal-trade-orders.ts`。 */
 z.globalRegistry.add(InternalTradeOrderDetailSchema, { id: 'InternalTradeOrderDetail' });
 
+/** C 结算单（契约第一批 §3.4 / D5 / D19 / D33 / D36）：实体定义在 `settlement-orders.ts`。 */
+z.globalRegistry.add(SettlementOrderSchema, { id: 'SettlementOrder' });
+
+/** C 结算单详情（含确认判定，§3.4 / D19）：实体定义在 `settlement-orders.ts`。 */
+z.globalRegistry.add(SettlementOrderDetailSchema, { id: 'SettlementOrderDetail' });
+
 /** 员工列表里的公司-岗位对（D15：一人多岗 + 公司隔离）。 */
 const EmployeeCompanySchema = z.object({
   companyId: z.string(),
@@ -206,4 +213,6 @@ export const ENTITIES = [
   { name: 'InternalTradeOrder', schema: InternalTradeOrderSchema },
   { name: 'InternalTradeOrderLine', schema: InternalTradeOrderLineSchema },
   { name: 'InternalTradeOrderDetail', schema: InternalTradeOrderDetailSchema },
+  { name: 'SettlementOrder', schema: SettlementOrderSchema },
+  { name: 'SettlementOrderDetail', schema: SettlementOrderDetailSchema },
 ] as const;
