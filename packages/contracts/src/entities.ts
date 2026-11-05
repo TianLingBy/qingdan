@@ -76,12 +76,25 @@ export const EmployeeSummarySchema = z.object({
 export type EmployeeSummary = z.infer<typeof EmployeeSummarySchema>;
 z.globalRegistry.add(EmployeeSummarySchema, { id: 'EmployeeSummary' });
 
+/**
+ * 员工写端点返回实体：在列表摘要口径上补 `version`（修改/停用后客户端要拿新版本继续并发写）。
+ * 手机号仍只回 `phoneMasked`，完整手机号不出服务端。
+ */
+export const EmployeeSchema = z.object({
+  ...EmployeeSummarySchema.shape,
+  /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
+  version: z.number().int(),
+});
+export type Employee = z.infer<typeof EmployeeSchema>;
+z.globalRegistry.add(EmployeeSchema, { id: 'Employee' });
+
 export const ENTITIES = [
   { name: 'AuditLog', schema: AuditLogSchema },
   { name: 'ApiToken', schema: ApiTokenSchema },
   { name: 'ApiTokenCreated', schema: ApiTokenCreatedSchema },
   { name: 'ApiErrorBody', schema: ApiErrorBodySchema },
   { name: 'EmployeeSummary', schema: EmployeeSummarySchema },
+  { name: 'Employee', schema: EmployeeSchema },
   { name: 'Product', schema: ProductSchema },
   { name: 'Customer', schema: CustomerSchema },
   { name: 'Supplier', schema: SupplierSchema },
