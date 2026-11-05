@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { HEADER_STATES, type CancelDecision } from './documents.js';
 import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
+import { SalesReceiptSchema } from './sales-receipts.js';
 
 /**
  * 销售单 E 契约（契约第一批 §3.3 / §5.1 / §5.2 / §10，第一批第一切）。
@@ -21,7 +22,7 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * 本批明确不做（等后续批次）：
  * - **不做「完成 / 出库」端点**：出库要把待执行占用转已引用（D41），依赖 inventory 写路径，
  *   等 inventory 写能力落地后再加；
- * - **不做收款记录写入端点**（下一批）：详情里的 `receipts` 仅留空数组占位（D24/D34/D40）；
+ * - **收款记录端点不在本文件**：见 `sales-receipts.ts`（§6，D24/D34/D40）；
  * - **不做改价下限审批的独立端点**：破下限需走 platform 审批（D20），审批端点后续补；
  *   本批不在契约里发明任何审批 / `priceFloor` 字段。
  */
@@ -112,11 +113,14 @@ export type SalesOrderCancelable = z.infer<typeof SalesOrderCancelableSchema>;
 
 /**
  * 销售单详情（§3.3）：在列表实体上补收款记录块与取消判定。
- * - `receipts` 本批只留空数组占位（收款记录批次实现，D24/D34/D40）；
+ * - `receipts` 为收款台账（§6，退款是负数行，D24/D34/D40）；
+ * - `receiptBalance` = 收款合计 − 退款合计，**服务端计算值，客户端不传**（D34）；
  * - `cancelable` 由 `canCancel` 推导（D21）。
  */
 export const SalesOrderDetailSchema = SalesOrderSchema.extend({
-  receipts: z.array(z.unknown()),
+  receipts: z.array(SalesReceiptSchema),
+  /** 块内余额（D34）：收款合计 − 退款合计；计算值，客户端不传。 */
+  receiptBalance: DecimalString,
   cancelable: SalesOrderCancelableSchema,
 });
 export type SalesOrderDetail = z.infer<typeof SalesOrderDetailSchema>;
