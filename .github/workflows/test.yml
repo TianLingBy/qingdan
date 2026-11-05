@@ -84,3 +84,279 @@ jobs:
         run: |
           echo "tests/db-concurrency.test.ps1 不存在：L3 integration 测试待该文件落地后由上面的步骤自动启用。"
           echo "本 job 目前只验证 postgres:18 服务与依赖安装可用。"
+
+  e2e:
+    name: e2e (ubuntu-latest, PostgreSQL 18)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        ports:
+          - "5432:5432"
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ${{ secrets.PG_TEST_PASSWORD || 'postgres' }}
+          POSTGRES_DB: qingdan_test
+        options: >-
+          --health-cmd "pg_isready -U postgres -d qingdan_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:${{ secrets.PG_TEST_PASSWORD || 'postgres' }}@127.0.0.1:5432/qingdan_test
+      NODE_ENV: test
+      HOST: 127.0.0.1
+      PORT: "3000"
+      LOGIN_DEV_CODE: "000000"
+      PUBLIC_BASE_URL: http://127.0.0.1:3000
+    steps:
+      - uses: actions/checkout@v5
+        timeout-minutes: 2
+
+      - name: 安装 pnpm（版本读 packageManager）
+        uses: pnpm/action-setup@v4
+        timeout-minutes: 5
+
+      - name: 安装 Node 24
+        uses: actions/setup-node@v4
+        timeout-minutes: 5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖
+        timeout-minutes: 10
+        run: pnpm install --frozen-lockfile
+
+      - name: 迁移真实 PostgreSQL
+        timeout-minutes: 5
+        run: pnpm -C apps/api migrate
+
+      - name: 写入演示租户与员工
+        timeout-minutes: 5
+        run: pnpm -C apps/api seed
+
+      - name: 启动 API 并等待健康检查
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          pnpm dev:api > "$RUNNER_TEMP/qingdan-api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/qingdan-api.pid"
+
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error \
+              "$PUBLIC_BASE_URL/api/v1/health" \
+              --output "$RUNNER_TEMP/qingdan-health.json"; then
+              node -e '
+                const fs = require("node:fs");
+                const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                if (body.status !== "ok") {
+                  console.error(`健康检查响应异常: ${JSON.stringify(body)}`);
+                  process.exit(1);
+                }
+                console.log(`API 健康检查通过: ${JSON.stringify(body)}`);
+              ' "$RUNNER_TEMP/qingdan-health.json"
+              exit 0
+            fi
+
+            if ! kill -0 "$(cat "$RUNNER_TEMP/qingdan-api.pid")" 2>/dev/null; then
+              echo "API 进程在健康检查前退出"
+              cat "$RUNNER_TEMP/qingdan-api.log"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          echo "API 健康检查超时（60 秒）"
+          cat "$RUNNER_TEMP/qingdan-api.log"
+          exit 1
+
+      - name: CLI 登录并断言会话
+        shell: bash
+        timeout-minutes: 3
+        env:
+          API_URL: http://127.0.0.1:3000
+          QINGDAN_COOKIE_JAR: ${{ runner.temp }}/qingdan-session.cookie
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/capture-cookie.mjs" <<'NODE'
+          import { writeFileSync } from 'node:fs';
+
+          const realFetch = globalThis.fetch;
+          globalThis.fetch = async (...args) => {
+            const response = await realFetch(...args);
+            const cookies =
+              typeof response.headers.getSetCookie === 'function'
+                ? response.headers.getSetCookie()
+                : [];
+            const session = cookies.find((value) => value.startsWith('qingdan_session='));
+            if (session) {
+              writeFileSync(process.env.QINGDAN_COOKIE_JAR, session.split(';', 1)[0], {
+                mode: 0o600,
+              });
+            }
+            return response;
+          };
+          NODE
+
+          export NODE_OPTIONS="--import=$RUNNER_TEMP/capture-cookie.mjs"
+          pnpm --silent -C packages/cli dev -- \
+            --base-url "$API_URL" \
+            --json \
+            employee login \
+            --data '{"phone":"10000000001","code":"000000"}' \
+            | tee "$RUNNER_TEMP/qingdan-cli-login.json"
+
+          node -e '
+            const fs = require("node:fs");
+            const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const expectedEmployeeId = "01900000-0000-7000-8000-000000000021";
+            const expectedTenantId = "01900000-0000-7000-8000-000000000001";
+            if (body.employeeId !== expectedEmployeeId || body.tenantId !== expectedTenantId) {
+              console.error(`CLI 登录会话异常: ${JSON.stringify(body)}`);
+              process.exit(1);
+            }
+            console.log(`CLI 登录成功: ${body.displayName} (${body.employeeId})`);
+          ' "$RUNNER_TEMP/qingdan-cli-login.json"
+
+          test -s "$QINGDAN_COOKIE_JAR"
+          grep -Eq '^qingdan_session=[^;[:space:]]+$' "$QINGDAN_COOKIE_JAR"
+          echo "已从 CLI 登录响应捕获会话 Cookie"
+
+      - name: 调用 /auth/me
+        shell: bash
+        timeout-minutes: 2
+        env:
+          API_URL: http://127.0.0.1:3000
+          QINGDAN_COOKIE_JAR: ${{ runner.temp }}/qingdan-session.cookie
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --cookie "$(cat "$QINGDAN_COOKIE_JAR")" \
+            --header 'X-Client: cli' \
+            --header 'X-Request-Id: m1f-e2e-auth-me' \
+            "$API_URL/api/v1/auth/me" \
+            --output "$RUNNER_TEMP/qingdan-me.json"
+
+          node -e '
+            const fs = require("node:fs");
+            const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const expectedEmployeeId = "01900000-0000-7000-8000-000000000021";
+            const expectedCompanyId = "01900000-0000-7000-8000-000000000002";
+            if (
+              body.employeeId !== expectedEmployeeId ||
+              !Array.isArray(body.companyIds) ||
+              !body.companyIds.includes(expectedCompanyId)
+            ) {
+              console.error(`/auth/me 返回异常: ${JSON.stringify(body)}`);
+              process.exit(1);
+            }
+            console.log(`/auth/me 通过: ${body.displayName} / ${body.companyIds.join(", ")}`);
+          ' "$RUNNER_TEMP/qingdan-me.json"
+
+      - name: 创建商品并断言 201
+        shell: bash
+        timeout-minutes: 2
+        env:
+          API_URL: http://127.0.0.1:3000
+          QINGDAN_COOKIE_JAR: ${{ runner.temp }}/qingdan-session.cookie
+        run: |
+          set -euo pipefail
+          product_name="M1-F E2E ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          node -e '
+            const fs = require("node:fs");
+            const payload = {
+              companyId: "01900000-0000-7000-8000-000000000002",
+              name: process.argv[1],
+              unit: "件",
+              productNo: process.argv[2],
+            };
+            fs.writeFileSync(process.argv[3], JSON.stringify(payload));
+          ' "$product_name" "M1F-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "$RUNNER_TEMP/qingdan-product-request.json"
+
+          status="$(curl --silent --show-error \
+            --request POST \
+            --cookie "$(cat "$QINGDAN_COOKIE_JAR")" \
+            --header "Origin: $API_URL" \
+            --header 'Content-Type: application/json' \
+            --header 'X-Client: cli' \
+            --header 'X-Request-Id: m1f-e2e-product-create' \
+            --data-binary "@$RUNNER_TEMP/qingdan-product-request.json" \
+            --output "$RUNNER_TEMP/qingdan-product.json" \
+            --write-out '%{http_code}' \
+            "$API_URL/api/v1/products")"
+
+          if [ "$status" != "201" ]; then
+            echo "POST /api/v1/products 期望 201，实际 $status"
+            cat "$RUNNER_TEMP/qingdan-product.json"
+            exit 1
+          fi
+
+          node -e '
+            const fs = require("node:fs");
+            const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (body.companyId !== "01900000-0000-7000-8000-000000000002" || !body.id) {
+              console.error(`商品创建响应异常: ${JSON.stringify(body)}`);
+              process.exit(1);
+            }
+            fs.writeFileSync(process.argv[2], body.id);
+            console.log(`商品创建成功: ${body.id}`);
+          ' "$RUNNER_TEMP/qingdan-product.json" "$RUNNER_TEMP/qingdan-product-id"
+
+      - name: 查询审计并断言写入记录
+        shell: bash
+        timeout-minutes: 2
+        env:
+          API_URL: http://127.0.0.1:3000
+          QINGDAN_COOKIE_JAR: ${{ runner.temp }}/qingdan-session.cookie
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --cookie "$(cat "$QINGDAN_COOKIE_JAR")" \
+            --header 'X-Client: cli' \
+            --header 'X-Request-Id: m1f-e2e-audit-read' \
+            "$API_URL/api/v1/audit-logs?limit=200" \
+            --output "$RUNNER_TEMP/qingdan-audit.json"
+
+          node -e '
+            const fs = require("node:fs");
+            const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const productId = fs.readFileSync(process.argv[2], "utf8").trim();
+            const item = body.items.find(
+              (entry) =>
+                entry.action === "product.create" &&
+                entry.objectType === "product" &&
+                entry.objectId === productId &&
+                entry.result === "success",
+            );
+            if (!item) {
+              console.error(`未找到商品创建审计: ${productId}`);
+              console.error(JSON.stringify(body.items.slice(0, 10), null, 2));
+              process.exit(1);
+            }
+            console.log(
+              `审计验证通过: ${item.action} / ${item.objectType} / ${item.objectId} / ${item.requestId}`,
+            );
+          ' "$RUNNER_TEMP/qingdan-audit.json" "$RUNNER_TEMP/qingdan-product-id"
+
+      - name: 打印失败日志
+        if: failure()
+        shell: bash
+        timeout-minutes: 2
+        run: |
+          echo "===== API 日志 ====="
+          if [ -f "$RUNNER_TEMP/qingdan-api.log" ]; then
+            cat "$RUNNER_TEMP/qingdan-api.log"
+          else
+            echo "API 日志文件不存在"
+          fi
+
+          echo "===== PostgreSQL 日志 ====="
+          container_id="$(docker ps --filter 'ancestor=postgres:18' --format '{{.ID}}' | head -n 1)"
+          if [ -n "$container_id" ]; then
+            docker logs "$container_id"
+          else
+            echo "未找到 postgres:18 服务容器"
+          fi
