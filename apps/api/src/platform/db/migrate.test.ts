@@ -147,6 +147,21 @@ describe('纯 SQL 迁移 runner（PGlite / 内存 PG18）', () => {
     });
   });
 
+  it('批次必填字段（0009）：locked_unit_cost / custodian_id 均为 NOT NULL（契约第一批 §7）', async () => {
+    const result = await test.database.query<{ column_name: string; is_nullable: string }>(
+      `SELECT column_name, is_nullable
+       FROM information_schema.columns
+       WHERE table_name = 'inventory_batch'
+         AND column_name = ANY($1::text[])
+       ORDER BY column_name`,
+      [['locked_unit_cost', 'custodian_id']],
+    );
+    expect(result.rows).toEqual([
+      { column_name: 'custodian_id', is_nullable: 'NO' },
+      { column_name: 'locked_unit_cost', is_nullable: 'NO' },
+    ]);
+  });
+
   it('历史迁移被改动 → checksum 不一致直接失败（防漂移）', async () => {
     const files = await loadMigrationFiles();
     const first = files[0]!;
