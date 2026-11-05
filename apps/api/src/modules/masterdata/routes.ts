@@ -22,6 +22,15 @@ import {
   listSuppliers,
   updateSupplier,
 } from './usecases/suppliers.js';
+import {
+  createProcessor,
+  createQuote,
+  deleteProcessor,
+  getProcessor,
+  listProcessors,
+  listQuotes,
+  updateProcessor,
+} from './usecases/processors.js';
 
 /**
  * masterdata 端点挂载（Issue #15 首切：商品资料）。
@@ -44,6 +53,11 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'supplier.create': 'supplier',
   'supplier.update': 'supplier',
   'supplier.delete': 'supplier',
+  'processor.create': 'processor',
+  'processor.update': 'processor',
+  'processor.delete': 'processor',
+  // 报价是独立子表（D64④），失败审计按对象记 processor_quote，与 usecases 常量一致。
+  'processor.quote.create': 'processor_quote',
 };
 
 /**
@@ -133,6 +147,43 @@ export function registerMasterdataRoutes(app: FastifyInstance): void {
     'supplier.delete': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await deleteSupplier({ database: instance.database, request, reply });
+    },
+    // 加工厂 5 条：权限 / 公司隔离 / 审计 / If-Match / AI 危险动作都在用例内（与前三切同款）。
+    'processor.list.read': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listProcessors({ database: instance.database, request });
+    },
+    'processor.create': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const processor = await createProcessor({ database: instance.database, request, reply });
+      reply.header('ETag', etagOf(processor.version));
+      return processor;
+    },
+    'processor.detail.read': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const processor = await getProcessor({ database: instance.database, request });
+      reply.header('ETag', etagOf(processor.version));
+      return processor;
+    },
+    'processor.update': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await updateProcessor({ database: instance.database, request, reply });
+    },
+    'processor.delete': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await deleteProcessor({ database: instance.database, request, reply });
+    },
+    // 报价 2 条（D64④ 只增不改）：只有 list / create，没有 update / delete 路由。
+    'processor.quote.read': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listQuotes({ database: instance.database, request });
+    },
+    'processor.quote.create': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const quote = await createQuote({ database: instance.database, request, reply });
+      // 报价只增不改：创建时回强 ETag，后续没有修改入口，因而不校验 If-Match。
+      reply.header('ETag', etagOf(quote.version));
+      return quote;
     },
   };
 
