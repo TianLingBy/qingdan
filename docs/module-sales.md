@@ -37,11 +37,12 @@
 
 ## 当前状态
 
-未开始
+E 单 5 端点已实现（2026-11-05）；收款记录 2 端点与 R 客户退货 3 端点仍 501
 
 ## 已完成
 
 - 模块边界与功能域映射已登记。
+- **2026-11-05 E 单 5 端点实现（PR #74）**：`apps/api/migrations/0013_sales_orders.sql`（单头 + 商品明细 + 行批次引用 + 费用明细，ENABLE/FORCE RLS）+ `modules/sales/{repo.ts,usecases/sales-orders.ts,routes.ts}`；list/create(201)/detail/update/cancel 接 HTTP，单号走 platform 取号，行金额与单头合计由 SQL 计算，update/cancel 必带 If-Match，取消按 D21，写操作落 audit_log（D51），create/cancel AI forbid（D52①）。**D20 落地口径**：契约无逐批引用量与审批字段，故按「同行批次等额引用」在 SQL 算加权平均成本下限并持久化 `sales_order_line.cost_floor`，低于下限返回 422 VALIDATION_FAILED 并走失败审计，未自创审批表。测试 +10（apps/api 35 文件 278 例），tsc 0，全量门禁 ALL PASSED (7 files)。
 
 ## 进行中
 
