@@ -364,3 +364,41 @@ jobs:
           else
             echo "未找到 postgres:18 服务容器"
           fi
+
+  spec-drift:
+    name: spec-drift (OpenAPI 说明书与契约一致)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        timeout-minutes: 2
+
+      - name: 安装 pnpm（版本读 packageManager）
+        uses: pnpm/action-setup@v4
+        timeout-minutes: 5
+
+      - name: 安装 Node 24
+        uses: actions/setup-node@v4
+        timeout-minutes: 5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖
+        timeout-minutes: 10
+        run: pnpm install --frozen-lockfile
+
+      - name: 由契约注册表重生成 OpenAPI 说明书
+        timeout-minutes: 5
+        run: pnpm openapi
+
+      - name: 校验说明书未漂移
+        shell: bash
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          if ! git diff --exit-code -- docs/api/openapi.yaml; then
+            echo "::error::契约改了但 docs/api/openapi.yaml 没重生成。请本地跑 pnpm openapi 并提交。"
+            exit 1
+          fi
+          echo "OpenAPI 说明书与契约注册表一致"
