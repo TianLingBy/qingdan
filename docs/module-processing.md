@@ -35,11 +35,12 @@
 
 ## 当前状态
 
-未开始
+B 单 5 端点已实现（2026-11-05），本模块端点 0 个 501
 
 ## 已完成
 
 - 模块边界与功能域映射已登记。
+- **2026-11-05 B 单 5 端点实现（PR #73）**：`apps/api/migrations/0012_processing_orders.sql`（单头 + 材料批次 + 费用，ENABLE/FORCE RLS）+ `modules/processing/{repo.ts,usecases/processing-orders.ts,routes.ts}`；list/create(201)/detail/update/cancel 全接 HTTP，单号走 platform 取号，可售量/费用由 SQL 聚合，update/cancel 必带 If-Match，取消按 D21 判下游，create/cancel 危险动作 AI 拒绝（D52①），写操作落 audit_log（D51）。测试 +11（apps/api 33 文件 268 例），tsc 0，全量门禁 ALL PASSED (7 files)。
 
 ## 进行中
 
