@@ -9,6 +9,7 @@ import { ProcessorQuoteSchema, ProcessorSchema } from './processors.js';
 import { PositionSchema } from './positions.js';
 import { CompanySchema } from './companies.js';
 import { InventoryBatchDetailSchema, InventoryBatchSchema, InventoryFlowSchema } from './inventory.js';
+import { StocktakeDetailSchema, StocktakeSchema } from './stocktakes.js';
 import {
   SalesOrderDetailSchema,
   SalesOrderFeeSchema,
@@ -95,6 +96,12 @@ z.globalRegistry.add(InventoryBatchDetailSchema, { id: 'InventoryBatchDetail' })
 
 /** 库存流水（只追加，D2① / D67④）：实体定义在 `inventory.ts`。 */
 z.globalRegistry.add(InventoryFlowSchema, { id: 'InventoryFlow' });
+
+/** 盘点调整单 I（契约第一批 §4；D16 / D47 / D54）：实体定义在 `stocktakes.ts`。 */
+z.globalRegistry.add(StocktakeSchema, { id: 'Stocktake' });
+
+/** 盘点调整单详情（含审批判定，§4 / D47）：实体定义在 `stocktakes.ts`。 */
+z.globalRegistry.add(StocktakeDetailSchema, { id: 'StocktakeDetail' });
 
 /** 销售单 E（契约第一批 §3.3 / D16 / D39）：实体定义在 `sales-orders.ts`。 */
 z.globalRegistry.add(SalesOrderSchema, { id: 'SalesOrder' });
@@ -206,6 +213,8 @@ export const ENTITIES = [
   { name: 'InventoryBatch', schema: InventoryBatchSchema },
   { name: 'InventoryBatchDetail', schema: InventoryBatchDetailSchema },
   { name: 'InventoryFlow', schema: InventoryFlowSchema },
+  { name: 'Stocktake', schema: StocktakeSchema },
+  { name: 'StocktakeDetail', schema: StocktakeDetailSchema },
   { name: 'SalesOrder', schema: SalesOrderSchema },
   { name: 'SalesOrderLine', schema: SalesOrderLineSchema },
   { name: 'SalesOrderFee', schema: SalesOrderFeeSchema },

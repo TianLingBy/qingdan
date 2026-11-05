@@ -13,6 +13,7 @@ import { EMPLOYEE_ROUTES } from './employees.js';
 import { POSITION_ROUTES } from './positions.js';
 import { COMPANY_ROUTES } from './companies.js';
 import { INVENTORY_ROUTES } from './inventory.js';
+import { STOCKTAKE_ROUTES } from './stocktakes.js';
 import { SALES_ORDER_ROUTES } from './sales-orders.js';
 import { SALES_RECEIPT_ROUTES } from './sales-receipts.js';
 import { CUSTOMER_RETURN_ROUTES } from './customer-returns.js';
@@ -221,6 +222,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...PROCESSOR_ROUTES,
   // —— inventory 模块：首批只读（批次 list/detail + 流水，Issue #48 / D67）——
   ...INVENTORY_ROUTES,
+  // —— inventory 模块：盘点调整 I 4 条（list/create/detail/approve，契约第一批 §4 / D47）——
+  ...STOCKTAKE_ROUTES,
   // —— sales 模块：E 销售单首批 5 条（list/create/detail/update/cancel，契约第一批 §3.3）——
   ...SALES_ORDER_ROUTES,
   // —— sales 模块：收款记录 2 条（list/create，契约第一批 §6 / D24/D34/D40）——

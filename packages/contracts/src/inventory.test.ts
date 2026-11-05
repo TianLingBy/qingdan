@@ -89,8 +89,13 @@ describe('库存契约（inventory）', () => {
       expect(route.audit, route.operationId).toEqual({ kind: 'none', required: false });
     }
     // 反向锁：库存写入只能经单据用例（Issue #48 §2），不允许出现 direct-write 端点。
-    const inventoryRoutes = routesOfModule(ROUTES, 'inventory');
-    expect(inventoryRoutes.filter((route) => route.method !== 'GET')).toEqual([]);
+    // 盘点调整 I 的 `stocktake.create` 与 `stocktake.approve` 是**唯一**允许出现在 inventory 模块里的写动作：
+    // 它只追加库存流水，不改批次数量（D47/D67）。白名单写死，避免将来有人往 inventory
+    // 塞「直接改库存」的写端点而被前缀过滤悄悄放行。
+    const nonGetInventoryRoutes = routesOfModule(ROUTES, 'inventory')
+      .filter((route) => route.method !== 'GET')
+      .map((route) => route.operationId);
+    expect(nonGetInventoryRoutes).toEqual(['stocktake.create', 'stocktake.approve']);
   });
 
   it('批次列表查询：公司/商品/关键字 + 游标分页；流水查询：公司/批次/来源单据', () => {

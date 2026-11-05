@@ -2961,6 +2961,226 @@ paths:
         policy: allow
         reasonRequired: false
       x-mcp-tool: qingdan_inventory_flow_read
+  /api/v1/stocktakes:
+    get:
+      operationId: stocktake.list.read
+      summary: 盘点单列表（按公司/状态/单号检索；普通读不记审计，D15）
+      tags:
+        - stocktake
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - 待审批
+              - 已批准
+              - 已驳回
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Stocktake"
+                  nextCursor:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                      - type: "null"
+                required:
+                  - items
+                  - nextCursor
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: stocktake.read
+      x-module: inventory
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_stocktake_list_read
+    post:
+      operationId: stocktake.create
+      summary: 发起盘点单（只传账面量/实盘量，差异量服务端算；无差异拒绝；盘盈盘亏走冲正流水 D47）
+      tags:
+        - stocktake
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "201":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stocktake"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: stocktake.create
+      x-module: inventory
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: false
+      x-mcp-tool: qingdan_stocktake_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                companyId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                batchId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                bookQty:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                actualQty:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                remark:
+                  anyOf:
+                    - type: string
+                      maxLength: 200
+                    - type: "null"
+              required:
+                - companyId
+                - batchId
+                - bookQty
+                - actualQty
+              additionalProperties: false
+  /api/v1/stocktakes/{id}:
+    get:
+      operationId: stocktake.detail.read
+      summary: 盘点单详情（内嵌审批判定 approvable；普通读不记审计，D47）
+      tags:
+        - stocktake
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StocktakeDetail"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: stocktake.read
+      x-module: inventory
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_stocktake_detail_read
+  /api/v1/stocktakes/{id}/approve:
+    post:
+      operationId: stocktake.approve
+      summary: 审批盘点单（通过后追加库存流水、不物理删除 D47；不直接改批次数量 D67；AI 禁止审批 D52）
+      tags:
+        - stocktake
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StocktakeDetail"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: stocktake.approve
+      x-module: inventory
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_stocktake_approve
+      x-requires-if-match: true
   /api/v1/sales-orders:
     get:
       operationId: sales.order.list.read
@@ -6101,6 +6321,159 @@ components:
         - sourceDocId
         - handledBy
         - occurredAt
+      additionalProperties: false
+    Stocktake:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        stocktakeNo:
+          type: string
+        batchId:
+          type: string
+        bookQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        actualQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        diffQty:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        status:
+          type: string
+          enum:
+            - 待审批
+            - 已批准
+            - 已驳回
+        applicantId:
+          type: string
+        approverId:
+          type:
+            - string
+            - "null"
+        remark:
+          anyOf:
+            - type: string
+              maxLength: 200
+            - type: "null"
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - stocktakeNo
+        - batchId
+        - bookQty
+        - actualQty
+        - diffQty
+        - status
+        - applicantId
+        - approverId
+        - remark
+        - version
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    StocktakeDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        stocktakeNo:
+          type: string
+        batchId:
+          type: string
+        bookQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        actualQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        diffQty:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        status:
+          type: string
+          enum:
+            - 待审批
+            - 已批准
+            - 已驳回
+        applicantId:
+          type: string
+        approverId:
+          type:
+            - string
+            - "null"
+        remark:
+          anyOf:
+            - type: string
+              maxLength: 200
+            - type: "null"
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        approvable:
+          type: object
+          properties:
+            allowed:
+              type: boolean
+            reason:
+              anyOf:
+                - type: string
+                  enum:
+                    - already_approved
+                    - already_rejected
+                - type: "null"
+          required:
+            - allowed
+            - reason
+          additionalProperties: false
+      required:
+        - id
+        - tenantId
+        - companyId
+        - stocktakeNo
+        - batchId
+        - bookQty
+        - actualQty
+        - diffQty
+        - status
+        - applicantId
+        - approverId
+        - remark
+        - version
+        - createdAt
+        - updatedAt
+        - approvable
       additionalProperties: false
     SalesOrder:
       type: object
