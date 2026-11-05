@@ -2758,6 +2758,209 @@ paths:
                 - processName
                 - unitPrice
               additionalProperties: false
+  /api/v1/inventory/batches:
+    get:
+      operationId: inventory.batch.list.read
+      summary: 库存批次列表（按公司/商品/批次号或商品名检索；普通读不记审计，D38）
+      tags:
+        - inventory_qty
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: productId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InventoryBatch"
+                  nextCursor:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                      - type: "null"
+                required:
+                  - items
+                  - nextCursor
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: inventory_qty.read
+      x-module: inventory
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_inventory_batch_list_read
+  /api/v1/inventory/batches/{id}:
+    get:
+      operationId: inventory.batch.detail.read
+      summary: 库存批次详情（四列口径 + 待执行占用来源；普通读不记审计，D38/D67）
+      tags:
+        - inventory_qty
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryBatchDetail"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: inventory_qty.read
+      x-module: inventory
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_inventory_batch_detail_read
+  /api/v1/inventory/flows:
+    get:
+      operationId: inventory.flow.read
+      summary: 库存流水列表（按公司/批次/来源单据检索；只追加流水，普通读不记审计，D2①/D67④）
+      tags:
+        - inventory_flow
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: batchId
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: sourceDocType
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 32
+        - name: sourceDocId
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InventoryFlow"
+                  nextCursor:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                      - type: "null"
+                required:
+                  - items
+                  - nextCursor
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: inventory_flow.read
+      x-module: inventory
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_inventory_flow_read
 components:
   schemas:
     AuditLog:
@@ -3626,6 +3829,199 @@ components:
         - version
         - createdAt
         - updatedAt
+      additionalProperties: false
+    InventoryBatch:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        productId:
+          type: string
+        batchNo:
+          type: string
+        lockedUnitCost:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        inboundQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        referencedQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        remainingQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        inTransitQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        pendingExecutionQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        availableQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        custodianId:
+          type: string
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - productId
+        - batchNo
+        - lockedUnitCost
+        - inboundQty
+        - referencedQty
+        - remainingQty
+        - inTransitQty
+        - pendingExecutionQty
+        - availableQty
+        - custodianId
+        - version
+        - createdAt
+        - updatedAt
+      additionalProperties: false
+    InventoryBatchDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        productId:
+          type: string
+        batchNo:
+          type: string
+        lockedUnitCost:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        inboundQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        referencedQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        remainingQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        inTransitQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        pendingExecutionQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        availableQty:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        custodianId:
+          type: string
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        productName:
+          type: string
+        productNo:
+          type:
+            - string
+            - "null"
+        pendingOccupancies:
+          type: array
+          items:
+            type: object
+            properties:
+              sourceDocType:
+                type: string
+              sourceDocId:
+                type: string
+              qty:
+                type: string
+                pattern: ^\d{1,12}(\.\d{1,6})?$
+            required:
+              - sourceDocType
+              - sourceDocId
+              - qty
+            additionalProperties: false
+      required:
+        - id
+        - tenantId
+        - companyId
+        - productId
+        - batchNo
+        - lockedUnitCost
+        - inboundQty
+        - referencedQty
+        - remainingQty
+        - inTransitQty
+        - pendingExecutionQty
+        - availableQty
+        - custodianId
+        - version
+        - createdAt
+        - updatedAt
+        - productName
+        - productNo
+        - pendingOccupancies
+      additionalProperties: false
+    InventoryFlow:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        batchId:
+          type: string
+        delta:
+          type: string
+          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+        sourceDocType:
+          type: string
+        sourceDocId:
+          type: string
+        handledBy:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - batchId
+        - delta
+        - sourceDocType
+        - sourceDocId
+        - handledBy
+        - occurredAt
       additionalProperties: false
   securitySchemes:
     cookieAuth:

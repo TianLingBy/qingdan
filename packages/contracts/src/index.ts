@@ -7,6 +7,7 @@ export * from './processors.js';
 export * from './employees.js';
 export * from './positions.js';
 export * from './companies.js';
+export * from './inventory.js';
 export * from './errors.js';
 export * from './authz.js';
 export * from './audit.js';

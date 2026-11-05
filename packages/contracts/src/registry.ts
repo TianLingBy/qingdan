@@ -80,7 +80,17 @@ export function validateRegistry(routes: readonly RouteDef[]): string[] {
     if (!(MODULE_KEYS as string[]).includes(r.module)) {
       errors.push(`${r.operationId}: 未登记的归属模块 ${String(r.module)}（D62）`);
     }
-    if (!r.operationId.startsWith(r.domain) && !r.operationId.startsWith('platform.')) {
+    // inventory 用 `inventory.*` 伞名，而 scope 按功能域拆为 `inventory_qty` / `inventory_flow`
+    // （Issue #48 / D67）：仅对 inventory 的两个功能域放行伞名，其余域仍按原规则，
+    // 避免 `customer_return` / `internal_trade` 等域被顺带放宽。
+    const inventoryUmbrella =
+      (r.domain === 'inventory_qty' || r.domain === 'inventory_flow') &&
+      r.operationId.startsWith('inventory.');
+    if (
+      !r.operationId.startsWith(r.domain) &&
+      !inventoryUmbrella &&
+      !r.operationId.startsWith('platform.')
+    ) {
       errors.push(`${r.operationId}: operationId 应以功能域或 platform 开头（审计 action 约定）`);
     }
     if (r.audit.kind !== 'none' && !r.publicAccess && r.method === 'GET' && r.audit.kind === 'write') {
