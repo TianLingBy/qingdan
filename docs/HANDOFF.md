@@ -6,14 +6,14 @@
 
 ## 0. 一分钟读完
 
-**一句话：契约已全覆盖，实现只完成 masterdata + platform 员工 + inventory 只读。**
+**一句话：契约全覆盖，八张单据 + 收款 + 退货的后端全部实现，只剩 inventory 写动作（盘点）与模块间联动。**
 
 | 项 | 结论 |
 |---|---|
 | 仓库 / 阶段 | `D:\Desktop\dsh\Qingdan`，私有仓 `github.com/TianLingBy/qingdan`；阶段 4 分工开发。 |
 | 契约 | 八张单据全线登记，OpenAPI 规模 paths=50 / operations=81 / schemas=37；生成物勿手改。 |
-| 实现 | masterdata 22 端点、platform 员工 4 端点、inventory 3 条只读可用；其余单据端点仍是 501 占位。 |
-| 当前主线 | 补 inventory 写动作与单据侧实现，再按实现进度交付前端详情页；契约侧推进报表、打印导出。 |
+| 实现 | masterdata 22、platform 员工 4、sales 10（E 5 + 收款 2 + R 3）、purchase 8（A 5 + S 3）、processing 5、internal-trade 5、settlement 3、inventory 只读 3 均已可用；**只剩盘点 I 4 条是 501**。 |
+| 当前主线 | ①inventory 写动作（盘点 4 + 单据联动）；②模块间调用通道（E/N 完成 → C 草稿，D19；单据 → 库存流水）；③前端详情页。 |
 
 ## 1. 最近状态（截至 2026-11-05 下午）
 
@@ -23,7 +23,7 @@
 | 已登记 | A 采购 5、B 加工 5、E 销售 5 + 收款 2、N 内部交易 5、C 结算 3、R 客户退货 3、S 供应商退货 3、盘点 I 4、库存只读 3；另含 masterdata 22 与 platform 员工/岗位/公司。 |
 | 已挂载 | `MOUNTED_MODULE_KEYS`：platform / masterdata / inventory / sales / purchase / processing / internal-trade / settlement。 |
 | 决策 | 已到 D69：D63 客户账期、D64 加工厂报价、D65 员工岗位公司口径、D66 员工三项裁定、D67 库存四列+生成列、D68 N 单口径与状态、D69 C 单损失快照。 |
-| 迁移 | 已到 `0009`：`0004` product、`0005` customer、`0006` supplier、`0007` processor+quote、`0008` inventory_batch+flow、`0009` 收紧库存批次成本/保管人非空。 |
+| 迁移 | 已到 `0016`：`0010` purchase_orders、`0011` supplier_returns、`0012` processing_orders、`0013` sales_orders、`0014` sales_receipts_returns、`0015` internal_trade_orders、`0016` settlement_orders（更早见 §2）。 |
 | CI | 7 项，含 `e2e` 与 `spec-drift`；契约和路由测试均不得绕过。 |
 | 盘点约束 | inventory 仅允许 `stocktake.create`、`stocktake.approve` 两个写动作，`inventory.test.ts` 使用显式白名单。 |
 
@@ -32,11 +32,11 @@
 - **masterdata**：商品、客户、供应商、加工厂四类档案与报价记录共 22 个 HTTP 端点全部可用；迁移落在 `0004`–`0007`，加工厂报价按 D64 使用独立子表。
 - **platform**：员工共 4 个端点可用，含原列表及 create/update/disable；停用即失效按 D52.1 每请求重算，不缓存、不物理删。
 - **inventory**：批次列表、批次详情、库存流水 3 条只读端点已接 HTTP；`0008` 建批次与流水实体，`0009` 收紧 `locked_unit_cost` / `custodian_id` 为 NOT NULL。
-- **sales**：E 单 5 条及收款记录 2 条已登记；完成/出库、破下限审批等动作不在当前实现范围。
-- **purchase**：A 单 5 条已登记，模块已挂载，handler 仍为 501。
-- **processing**：B 单 5 条已登记，模块已挂载，handler 仍为 501。
-- **internal-trade**：N 单 5 条已登记，模块已挂载，handler 仍为 501；内部价手填、独立四态、确认到货才转司见 D68。
-- **settlement**：C 单 3 条已登记，模块已挂载，handler 仍为 501；相关损失取结算时快照见 D69。
+- **sales**：E 单 5 + 收款记录 2 + R 客户退货 3 全部可用（`0013`/`0014`）。E 单行金额与单头合计由 SQL 计算，D20 下限按「同行批次等额引用」算加权平均成本（`sales_order_line.cost_floor`），破线直接 422 + 失败审计，**没有审批流**。R 的「减成交额退款」需要按 C 单快照重算，settlement 当时无表，留 TODO。
+- **purchase**：A 单 5 + S 供应商退货 3 全部可用（`0010`/`0011`）。
+- **processing**：B 单 5 全部可用（`0012`）；可售量 = 投入 − 损耗由 SQL 计算。
+- **internal-trade**：N 单 5 全部可用（`0015`）；内部价手填、独立四态见 D68；**转司确认（接收方到货）未实现**。
+- **settlement**：C 单 3 全部可用（`0016`）；confirm 需 `settlement.approve`、AI 禁审批且必须带 reason，成功时冻结 `related_loss_amount_snapshot`（D69）；**E/N 完成态自动生成 C 草稿未实现**（`TODO(D19)`）。
 - **退货与盘点契约**：R 客户退货 3 条、S 供应商退货 3 条、盘点 I 4 条均已登记；盘点审批后追加流水，不物理删历史。
 - **OpenAPI 治理**：全部契约由注册表生成；`spec-drift` 在 CI 中重生成并检查 `git diff --exit-code -- docs/api/openapi.yaml`。
 
@@ -44,17 +44,17 @@
 
 | 人员 / 任务 | 当前状态 |
 |---|---|
-| 温汇敏 #45 | 继续岗位/公司实现，相关文件由她独占。 |
-| 梁海俊 #49 | 已完成 inventory 只读；当前等待单据侧能力，后续接库存写/联动。 |
-| 赖皓妍 | 邀请仍 pending；成员档案与前段页面任务继续挂起。 |
+| 温汇敏 #45 | #45 已由 #51 闭环并关闭；下次派活前先确认她是否还在线。 |
+| 梁海俊 #49 | inventory 只读已完成；**盘点 I 4 条写端点仍 501**，是当前唯一没实现的后端切片。 |
+| 赖皓妍 | 邀请仍 pending；成员档案与页面任务继续挂起。 |
 | 李祖怡 | 尚未开工；先完成身份核验和成员档案。 |
 
 ## 4. 下一步（按谁能领）
 
-1. **梁海俊：inventory 写 / 单据联动**。先实现 `stocktake.create`、`stocktake.approve` 并守住显式白名单；单据侧出现可联调实现后再接库存扣减/占用/流水联动。
-2. **温汇敏：岗位公司**。继续 #45 的岗位/公司 HTTP、权限和测试，不与其他人并行写同一批 platform 文件。
-3. **李祖怡：单据详情页**。完成身份核验后可开工，但先有对应详情端点实现；此前只做不依赖假数据的页面骨架与字段适配，501 期间不冒充完成联调。
-4. **Lead：报表与输出契约**。补齐提成、利润报表、打印导出契约，严格按“决策与契约文档 → 注册表 → `pnpm openapi` → spec-drift”顺序推进。
+1. **梁海俊：盘点 I 4 条**（`stocktake.list.read/create/detail.read/approve`）。审批后追加流水、不物理删；`inventory.test.ts` 的写端点白名单是显式的，不要放宽。
+2. **谁都能接（需先拍板）：模块间调用通道**。两个 TODO 同一根因——模块禁止直读对方表，但「E/N 完成 → C 草稿（D19）」和「单据 → 库存流水」需要跨模块写。建议在 platform 层加一条内部服务接口（服务身份 + 审计），先补 `decisions.md` 再写代码。
+3. **李祖怡：单据详情页**。后端详情端点已全部可用，可做真联调。
+4. **Lead：报表与输出契约**。提成、利润报表、打印导出尚未登记，按「决策 → 契约 → 注册表 → `pnpm openapi` → spec-drift」推进。
 
 ## 5. 坑（踩过，别再踩）
 
@@ -95,7 +95,8 @@ docs/AGENT-TEAM.md 开工：DSH 拆任务/派活/验收/提交，代码交 Claud
 先核验中文姓名、GitHub 账号、负责模块；未核验不得领任务或写代码。开工先跑
 pwsh -NoProfile -File scripts/sync-check.ps1；PR 须过 7 项 CI：test(ubuntu)、test(windows)、
 integration(PG18)、e2e、route、fields、spec-drift。
-当前契约已全覆盖（paths=50 / operations=81 / schemas=37），实现仅 masterdata + platform 员工 +
-inventory 只读。下一步：梁海俊接 inventory 写/联动，温汇敏续 #45 岗位/公司，李祖怡待后端实现后做
-单据详情页，Lead 补提成/利润报表/打印导出契约。契约变更后必须跑 pnpm openapi。
+当前契约已全覆盖（paths=50 / operations=81 / schemas=37），后端除盘点 I 4 条外全部实现（A/B/E/收款/R/S/N/C
++ masterdata + platform 员工 + inventory 只读）。下一步：梁海俊接盘点 I 4 条；模块间调用通道（D19 草稿与
+单据→库存流水）需先拍板；李祖怡可做单据详情页真联调；Lead 补提成/利润报表/打印导出契约。
+契约变更后必须跑 pnpm openapi。
 ```
