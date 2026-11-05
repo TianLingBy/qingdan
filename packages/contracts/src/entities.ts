@@ -15,6 +15,7 @@ import {
   SalesOrderLineSchema,
   SalesOrderSchema,
 } from './sales-orders.js';
+import { SalesReceiptSchema } from './sales-receipts.js';
 import {
   PurchaseOrderDetailSchema,
   PurchaseOrderFeeSchema,
@@ -96,8 +97,11 @@ z.globalRegistry.add(SalesOrderLineSchema, { id: 'SalesOrderLine' });
 /** 销售单费用明细（§5.2 / D39）：实体定义在 `sales-orders.ts`。 */
 z.globalRegistry.add(SalesOrderFeeSchema, { id: 'SalesOrderFee' });
 
-/** 销售单详情（含收款记录占位与取消判定，§3.3 / D21 / D24）：实体定义在 `sales-orders.ts`。 */
+/** 销售单详情（含收款记录与取消判定，§3.3 / D21 / D24）：实体定义在 `sales-orders.ts`。 */
 z.globalRegistry.add(SalesOrderDetailSchema, { id: 'SalesOrderDetail' });
+
+/** 收款记录（§6 / D24 / D34）：内嵌 E 单详情页，退款为负数行；实体定义在 `sales-receipts.ts`。 */
+z.globalRegistry.add(SalesReceiptSchema, { id: 'SalesReceipt' });
 
 /** 采购单 A（契约第一批 §3.1 / D16 / D39）：实体定义在 `purchase-orders.ts`。 */
 z.globalRegistry.add(PurchaseOrderSchema, { id: 'PurchaseOrder' });
@@ -177,6 +181,7 @@ export const ENTITIES = [
   { name: 'SalesOrderLine', schema: SalesOrderLineSchema },
   { name: 'SalesOrderFee', schema: SalesOrderFeeSchema },
   { name: 'SalesOrderDetail', schema: SalesOrderDetailSchema },
+  { name: 'SalesReceipt', schema: SalesReceiptSchema },
   { name: 'PurchaseOrder', schema: PurchaseOrderSchema },
   { name: 'PurchaseOrderLine', schema: PurchaseOrderLineSchema },
   { name: 'PurchaseOrderFee', schema: PurchaseOrderFeeSchema },

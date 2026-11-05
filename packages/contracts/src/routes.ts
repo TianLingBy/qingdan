@@ -14,6 +14,7 @@ import { POSITION_ROUTES } from './positions.js';
 import { COMPANY_ROUTES } from './companies.js';
 import { INVENTORY_ROUTES } from './inventory.js';
 import { SALES_ORDER_ROUTES } from './sales-orders.js';
+import { SALES_RECEIPT_ROUTES } from './sales-receipts.js';
 import { PURCHASE_ORDER_ROUTES } from './purchase-orders.js';
 import { PROCESSING_ORDER_ROUTES } from './processing-orders.js';
 
@@ -218,6 +219,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...INVENTORY_ROUTES,
   // —— sales 模块：E 销售单首批 5 条（list/create/detail/update/cancel，契约第一批 §3.3）——
   ...SALES_ORDER_ROUTES,
+  // —— sales 模块：收款记录 2 条（list/create，契约第一批 §6 / D24/D34/D40）——
+  ...SALES_RECEIPT_ROUTES,
   // —— purchase 模块：A 采购单首批 5 条（list/create/detail/update/cancel，契约第一批 §3.1）——
   ...PURCHASE_ORDER_ROUTES,
   // —— processing 模块：B 加工单首批 5 条（list/create/detail/update/cancel，契约第一批 §3.2）——

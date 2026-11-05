@@ -67,6 +67,7 @@ const ORDER = {
 const DETAIL = {
   ...ORDER,
   receipts: [],
+  receiptBalance: '0',
   cancelable: { allowed: true, reason: null },
 } as const;
 
