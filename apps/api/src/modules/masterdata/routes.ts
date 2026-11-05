@@ -2,6 +2,13 @@ import { AppError, ROUTES, etagOf, routesOfModule, type RouteDef } from '@qingda
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
 import {
+  createCustomer,
+  deleteCustomer,
+  getCustomer,
+  listCustomers,
+  updateCustomer,
+} from './usecases/customers.js';
+import {
   createProduct,
   deleteProduct,
   getProduct,
@@ -19,11 +26,14 @@ import {
  *   - 机械部分（路径转换 / config 透传 / 失败审计 / 默认 501）交给 `mountRoutes`。
  */
 
-/** 失败审计的 objectType：商品写操作统一记 product（成功路径由用例写）。 */
+/** 失败审计的 objectType：写操作按对象归类（成功路径由用例写）。 */
 const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'product.create': 'product',
   'product.update': 'product',
   'product.delete': 'product',
+  'customer.create': 'customer',
+  'customer.update': 'customer',
+  'customer.delete': 'customer',
 };
 
 /**
@@ -63,6 +73,31 @@ export function registerMasterdataRoutes(app: FastifyInstance): void {
     'product.delete': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await deleteProduct({ database: instance.database, request, reply });
+    },
+    // 客户 5 条：权限 / 公司隔离 / 审计 / If-Match / AI 危险动作都在用例内（与商品同款）。
+    'customer.list.read': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listCustomers({ database: instance.database, request });
+    },
+    'customer.create': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const customer = await createCustomer({ database: instance.database, request, reply });
+      reply.header('ETag', etagOf(customer.version));
+      return customer;
+    },
+    'customer.detail.read': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const customer = await getCustomer({ database: instance.database, request });
+      reply.header('ETag', etagOf(customer.version));
+      return customer;
+    },
+    'customer.update': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await updateCustomer({ database: instance.database, request, reply });
+    },
+    'customer.delete': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await deleteCustomer({ database: instance.database, request, reply });
     },
   };
 
