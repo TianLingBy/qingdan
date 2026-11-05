@@ -36,7 +36,14 @@
 
 ## 当前状态
 
-进行中（梁海俊，2026-11-05）：批次四列与库存流水只读切片已实现。
+进行中（2026-11-05）：批次只读 + 盘点 I 已实现；**库存写联动（单据出入库流水）待 #79 拍板**。
+
+- 2026-11-05（Lead，Issue #78）：盘点 I 4 条端点接 HTTP——`stocktake.list.read / create / detail.read / approve`。
+  - 迁移 `0017_inventory_stocktakes.sql`；三态审批流、单号按 D16、`diff_qty` 由 SQL 计算且 DB 兜底非零。
+  - 审批：强 If-Match、非待审批 409 带 `details.reason`、AI 禁审批且必须给 reason；同一事务内先锁批次、校验
+    调整后入库量与可用量均非负，再改 `inbound_qty` 并追加 `source_doc_type='stocktake'` 流水，行不物理删。
+  - `apps/api/src/modules/inventory/services/stock-flow.ts` 是全仓唯一改批次数字的库存服务函数（D67）。
+  - 测试：`inventory-http.test.ts` 新增 5 组（公司隔离、无差异 422、缺 If-Match 428、非待审批 409、盘亏超可用量 409）。
 
 ## 已完成
 

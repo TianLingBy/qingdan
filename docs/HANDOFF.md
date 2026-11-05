@@ -12,8 +12,8 @@
 |---|---|
 | 仓库 / 阶段 | `D:\Desktop\dsh\Qingdan`，私有仓 `github.com/TianLingBy/qingdan`；阶段 4 分工开发。 |
 | 契约 | 八张单据全线登记，OpenAPI 规模 paths=50 / operations=81 / schemas=37；生成物勿手改。 |
-| 实现 | masterdata 22、platform 员工 4、sales 10（E 5 + 收款 2 + R 3）、purchase 8（A 5 + S 3）、processing 5、internal-trade 5、settlement 3、inventory 只读 3 均已可用；**只剩盘点 I 4 条是 501**。 |
-| 当前主线 | ①inventory 写动作（盘点 4 + 单据联动）；②模块间调用通道（E/N 完成 → C 草稿，D19；单据 → 库存流水）；③前端详情页。 |
+| 实现 | masterdata 22、platform 员工 4、sales 10（E 5 + 收款 2 + R 3）、purchase 8（A 5 + S 3）、processing 5、internal-trade 5、settlement 3、inventory 3 只读 + 盘点 I 4 全部可用；**81 个 operation 已无 501**。 |
+| 当前主线 | ①模块间调用通道（#79 待拍板：E/N 完成 → C 草稿 D19；单据 → 库存流水）；②前端详情页 / 登录页；③提成、利润报表、打印导出契约尚未登记。 |
 
 ## 1. 最近状态（截至 2026-11-05 下午）
 
@@ -23,15 +23,15 @@
 | 已登记 | A 采购 5、B 加工 5、E 销售 5 + 收款 2、N 内部交易 5、C 结算 3、R 客户退货 3、S 供应商退货 3、盘点 I 4、库存只读 3；另含 masterdata 22 与 platform 员工/岗位/公司。 |
 | 已挂载 | `MOUNTED_MODULE_KEYS`：platform / masterdata / inventory / sales / purchase / processing / internal-trade / settlement。 |
 | 决策 | 已到 D69：D63 客户账期、D64 加工厂报价、D65 员工岗位公司口径、D66 员工三项裁定、D67 库存四列+生成列、D68 N 单口径与状态、D69 C 单损失快照。 |
-| 迁移 | 已到 `0016`：`0010` purchase_orders、`0011` supplier_returns、`0012` processing_orders、`0013` sales_orders、`0014` sales_receipts_returns、`0015` internal_trade_orders、`0016` settlement_orders（更早见 §2）。 |
+| 迁移 | 已到 `0017`：`0010` purchase_orders、`0011` supplier_returns、`0012` processing_orders、`0013` sales_orders、`0014` sales_receipts_returns、`0015` internal_trade_orders、`0016` settlement_orders、`0017` inventory_stocktakes（更早见 §2）。 |
 | CI | 7 项，含 `e2e` 与 `spec-drift`；契约和路由测试均不得绕过。 |
-| 盘点约束 | inventory 仅允许 `stocktake.create`、`stocktake.approve` 两个写动作，`inventory.test.ts` 使用显式白名单。 |
+| 盘点约束 | inventory 仅允许 `stocktake.create`、`stocktake.approve` 两个写动作（已实现，PR 待合），`inventory.test.ts` 使用显式白名单。 |
 
 ## 2. 已完成（不用重做）
 
 - **masterdata**：商品、客户、供应商、加工厂四类档案与报价记录共 22 个 HTTP 端点全部可用；迁移落在 `0004`–`0007`，加工厂报价按 D64 使用独立子表。
 - **platform**：员工共 4 个端点可用，含原列表及 create/update/disable；停用即失效按 D52.1 每请求重算，不缓存、不物理删。
-- **inventory**：批次列表、批次详情、库存流水 3 条只读端点已接 HTTP；`0008` 建批次与流水实体，`0009` 收紧 `locked_unit_cost` / `custodian_id` 为 NOT NULL。
+- **inventory**：批次列表、批次详情、库存流水 3 条只读 + 盘点 I 4 条（list/create/detail/approve）已接 HTTP；`0008` 建批次与流水，`0009` 收紧成本/保管人非空，`0017` 建盘点单表。审批同事务改 `inbound_qty` 并追加 `source_doc_type='stocktake'` 流水；唯一改批次的函数是 `apps/api/src/modules/inventory/services/stock-flow.ts`（D67）；**单据→库存流水联动仍未做，待 #79 拍板**。
 - **sales**：E 单 5 + 收款记录 2 + R 客户退货 3 全部可用（`0013`/`0014`）。E 单行金额与单头合计由 SQL 计算，D20 下限按「同行批次等额引用」算加权平均成本（`sales_order_line.cost_floor`），破线直接 422 + 失败审计，**没有审批流**。R 的「减成交额退款」需要按 C 单快照重算，settlement 当时无表，留 TODO。
 - **purchase**：A 单 5 + S 供应商退货 3 全部可用（`0010`/`0011`）。
 - **processing**：B 单 5 全部可用（`0012`）；可售量 = 投入 − 损耗由 SQL 计算。
@@ -45,13 +45,13 @@
 | 人员 / 任务 | 当前状态 |
 |---|---|
 | 温汇敏 #45 | #45 已由 #51 闭环并关闭；下次派活前先确认她是否还在线。 |
-| 梁海俊 #49 | inventory 只读已完成；**盘点 I 4 条写端点仍 501**，是当前唯一没实现的后端切片。 |
+| 梁海俊 #49 | inventory 只读已完成；盘点 I 4 条由 Lead 先行实现（#78），他回来后 review + 接 #79 的库存联动。 |
 | 赖皓妍 | 邀请仍 pending；成员档案与页面任务继续挂起。 |
 | 李祖怡 | 尚未开工；先完成身份核验和成员档案。 |
 
 ## 4. 下一步（按谁能领）
 
-1. **梁海俊：盘点 I 4 条**（`stocktake.list.read/create/detail.read/approve`）。审批后追加流水、不物理删；`inventory.test.ts` 的写端点白名单是显式的，不要放宽。
+1. **梁海俊：review 盘点 I 4 条**（#78），重点看审批后批次四列变化是否符合 D67；随后接 #79 拍板后的 `stockFlowService`。
 2. **谁都能接（需先拍板）：模块间调用通道**。两个 TODO 同一根因——模块禁止直读对方表，但「E/N 完成 → C 草稿（D19）」和「单据 → 库存流水」需要跨模块写。建议在 platform 层加一条内部服务接口（服务身份 + 审计），先补 `decisions.md` 再写代码。
 3. **李祖怡：单据详情页**。后端详情端点已全部可用，可做真联调。
 4. **Lead：报表与输出契约**。提成、利润报表、打印导出尚未登记，按「决策 → 契约 → 注册表 → `pnpm openapi` → spec-drift」推进。
@@ -95,8 +95,8 @@ docs/AGENT-TEAM.md 开工：DSH 拆任务/派活/验收/提交，代码交 Claud
 先核验中文姓名、GitHub 账号、负责模块；未核验不得领任务或写代码。开工先跑
 pwsh -NoProfile -File scripts/sync-check.ps1；PR 须过 7 项 CI：test(ubuntu)、test(windows)、
 integration(PG18)、e2e、route、fields、spec-drift。
-当前契约已全覆盖（paths=50 / operations=81 / schemas=37），后端除盘点 I 4 条外全部实现（A/B/E/收款/R/S/N/C
-+ masterdata + platform 员工 + inventory 只读）。下一步：梁海俊接盘点 I 4 条；模块间调用通道（D19 草稿与
-单据→库存流水）需先拍板；李祖怡可做单据详情页真联调；Lead 补提成/利润报表/打印导出契约。
+当前契约已全覆盖（paths=50 / operations=81 / schemas=37），**81 个 operation 全部可用、无 501**
+（A/B/E/收款/R/S/N/C + masterdata + platform 员工 + inventory 只读 + 盘点 I）。下一步：模块间调用通道
+（#79 待拍板：D19 草稿与单据→库存流水）；李祖怡可做单据详情页真联调；Lead 补提成/利润报表/打印导出契约。
 契约变更后必须跑 pnpm openapi。
 ```
