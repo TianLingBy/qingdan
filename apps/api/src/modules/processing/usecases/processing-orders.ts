@@ -171,6 +171,19 @@ function parseUpdateInput(body: unknown): ProcessingOrderUpdateInput {
   return parsed.data;
 }
 
+/**
+ * 创建契约要求 B 单至少一行费用（§3.2 / D39）。
+ * Update schema 为避免改动主线契约仍允许空数组；用例必须在触及明细前拒绝清空，
+ * 否则一次 PATCH 就能把已有加工费 / 运杂费全部删掉。
+ */
+function assertFeesNotCleared(input: ProcessingOrderUpdateInput): void {
+  if (input.fees !== undefined && input.fees.length === 0) {
+    throw new AppError('VALIDATION_FAILED', 'B 单至少保留 1 行费用明细', {
+      field: 'fees',
+    });
+  }
+}
+
 /** 强 ETag `"<version>"`；缺失 → 428，格式非法 → 409（与 purchase 一致）。 */
 function parseIfMatchVersion(request: FastifyRequest): number {
   const raw = headerValue(request, 'if-match');
@@ -326,6 +339,7 @@ export async function updateProcessingOrder(
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
   const input = parseUpdateInput(ctx.request.body);
+  assertFeesNotCleared(input);
   const audit = auditEventOf(ctx.request, principal, 'processing.order.update', id, {
     changedFields: Object.keys(input),
   });
