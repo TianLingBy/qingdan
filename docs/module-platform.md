@@ -45,6 +45,8 @@
 
 ## 当前状态
 
+🙋 **认领（赖皓妍，2026-11-06）**：认领 **M1-G 前端接线**（`apps/web` 登录页 + 会话态 + 统一错误体，UI 视觉接手）。开放项均已裁定（D53/D54/D55/D56/D57），无待拍板项。以下为主线既有状态，保留不覆盖：
+
 🔄 **进行中**：**M1 核心可用（2026-11-04）**——`platform` 注册表里 10 个端点**全部实现**（不再有 501）：health / openapi.json / 登录 / 登出 / me / 操作日志查询 / API Token 建查撤 / 员工个人级权限覆盖写入。认证内核（会话 Cookie + Bearer、同源 CSRF、每请求现算权限、Bearer 优先、代理头默认不信任）与 5 个跨 RLS 的 SECURITY DEFINER 函数已落地；**独立审查报的 7 项问题全部修完（D60）**；`apps/api` 测试 46 → **112** 例全绿，全量门禁 `tests\run.ps1` `ALL PASSED (7 files)`。**未验证**：真实 PostgreSQL 18 实例（本地无 PG，只在 PGlite PG18 跑过）、CLI/MCP 端到端「登录→查看→写→审计落库」、production 的短信与 Secure Cookie 运行时路径。
 
 ## 已完成
