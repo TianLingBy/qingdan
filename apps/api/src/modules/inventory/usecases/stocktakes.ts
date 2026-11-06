@@ -416,6 +416,7 @@ export async function approveStocktake(
       diffQty: state.diffQty,
       inboundQty: adjustment.inboundQty,
       availableQty: adjustment.availableQty,
+      custodianId: adjustment.custodianId,
     };
     return detailOf(updated);
   });
