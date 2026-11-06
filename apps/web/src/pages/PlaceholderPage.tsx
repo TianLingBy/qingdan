@@ -11,7 +11,7 @@ export function PlaceholderPage({ entry }: PlaceholderPageProps) {
     <section className="mx-auto max-w-3xl">
       <div className="flex flex-wrap items-baseline gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">{entry.page}</h1>
-        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+        <span className="rounded-full border border-slate-300 bg-white/60 px-2.5 py-0.5 text-xs font-medium tracking-wide text-slate-600">
           待实现
         </span>
       </div>

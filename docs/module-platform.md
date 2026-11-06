@@ -73,6 +73,7 @@
   - **登录页 `apps/web/src/pages/LoginPage.tsx` + `login-form.ts`**：纯逻辑校验（阈值对齐契约 phone 6-32 / code 1-16）与错误文案（`VALIDATION_FAILED`/`RATE_LIMITED`/`NOT_IMPLEMENTED` 各自口语化，其余以服务端 message 为主，防枚举文案由服务端定）；服务端 `requestId` 以「追踪号」展示；提交中禁重复提交；aria-invalid/describedby 无障碍标注。
   - **壳接会话 `AppLayout.tsx`**：顶栏显示当前登录人 displayName + 登出按钮（登出请求失败也清本地缓存回登录页，Cookie 由门禁下次再校验）；移除「骨架阶段未接真实接口」文案。
   - **测试**：`apps/web` 43 → **49** 例（新增 `login-form.test.ts` 14 例 + `session.test.ts` 6 例）；全量 `tests\run.ps1`（`ALL PASSED (7 files)`）绿。
+  - **视觉（2026-11-06，赖皓妍）**：黑白简约现代风落地——登录页毛玻璃卡片（`backdrop-blur-2xl` + 背景黑白灰光斑）、错误态黑白化（黑底白字警示块）、占位页徽章去彩色；视觉口径登记 `docs/awesome-design.md`。
 
 
 ## 进行中
@@ -107,4 +108,5 @@
 - 口径：`docs/decisions.md`（D1/D4/D8/D13/D14/D15/D16/D21/D44/D48/D50）
 - 契约：`docs/轻单_接口契约第一批_v1_20261103.md` §1/§2/§10
 - 原型：`docs/prototype-v0.md` §1/§2/§3
+- 视觉：`docs/awesome-design.md`（黑白简约视觉语言 + 毛玻璃口径，页面实装前对齐）
 - 原型页面：`prototype.html`
