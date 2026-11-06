@@ -214,7 +214,7 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
       handlerId: DEMO_IDS.ownerEmployeeId,
       status: '进行中',
       internalPrice: '10.5',
-      inTransitQty: '2',
+      inTransitQty: '0',
       version: 1,
     });
     expect(body.orderNo).toMatch(/^N-0001-\d{8}-\d{4}$/);
@@ -410,7 +410,7 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
     expect(updated.json()).toMatchObject({
       version: 2,
       internalPrice: '18.25',
-      inTransitQty: '3',
+      inTransitQty: '0',
       lines: [
         {
           batchIds: [BATCH_B_ID],

@@ -160,7 +160,9 @@ function mapHeader(row: HeaderRow): Omit<InternalTradeOrder, 'lines'> {
     status: row.status as InternalTradeOrderStatus,
     handlerId: row.handler_id,
     internalPrice: decimal(row.internal_price),
-    inTransitQty: decimal(row.in_transit_qty),
+    // D68：只有「在途」状态才代表真实锁定；进行中 / 终态都必须回 0。
+    // 发货端点落地前，新单会一直保持 0；这里同时屏蔽历史错误派生值。
+    inTransitQty: row.status === '在途' ? decimal(row.in_transit_qty) : '0',
     version: row.version,
     createdAt: toDate(row.created_at).toISOString(),
     updatedAt: toDate(row.updated_at).toISOString(),
@@ -494,26 +496,6 @@ async function insertLines(
   }
 }
 
-/** 单头在途量 = 明细数量 SQL SUM；创建与改明细后都重新聚合。 */
-async function recalcInTransitQty(
-  ctx: InternalTradeOrderRepoContext,
-  orderId: string,
-): Promise<void> {
-  await ctx.tx.query(
-    `UPDATE internal_trade_order o
-        SET in_transit_qty = COALESCE(
-              (SELECT SUM(l.qty)
-                 FROM internal_trade_order_line l
-                WHERE l.order_id = o.id
-                  AND l.tenant_id = o.tenant_id),
-              0
-            )
-      WHERE o.id = $1::uuid
-        AND o.tenant_id = $2`,
-    [orderId, ctx.tenantId],
-  );
-}
-
 /** 新增 N 单：`id` / `orderNo` 由用例生成，状态固定从「进行中」开始。 */
 export async function insertInternalTradeOrder(
   ctx: InternalTradeOrderRepoContext,
@@ -544,7 +526,6 @@ export async function insertInternalTradeOrder(
     ],
   );
   await insertLines(ctx, input.id, input.fromCompanyId, input.lines);
-  await recalcInTransitQty(ctx, input.id);
 
   const created = await getInternalTradeOrder(ctx, input.id);
   if (!created) {
@@ -645,7 +626,6 @@ export async function updateInternalTradeOrder(
       [id, ctx.tenantId, current.fromCompanyId],
     );
     await insertLines(ctx, id, current.fromCompanyId, input.lines);
-    await recalcInTransitQty(ctx, id);
   }
 
   return getInternalTradeOrder(ctx, id);

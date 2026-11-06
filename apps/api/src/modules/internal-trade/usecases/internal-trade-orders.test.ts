@@ -235,7 +235,8 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
     expect(created.orderNo).toMatch(/^N-0001-\d{8}-\d{4}$/);
     expect(created.status).toBe('进行中');
     expect(created.internalPrice).toBe('10.5');
-    expect(created.inTransitQty).toBe('2');
+    // D68：单仍为「进行中」，尚未发货，绝不能虚报在途锁定。
+    expect(created.inTransitQty).toBe('0');
     expect(created.version).toBe(1);
     expect(created.lines).toEqual([
       {
@@ -264,7 +265,7 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
     expect(row.rows[0]).toEqual({
       company_id: DEMO_IDS.companyId,
       amount: '30',
-      in_transit_qty: '2',
+      in_transit_qty: '0',
     });
 
     const recipientList = await listInternalTradeOrders(
@@ -452,7 +453,7 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
     expect(state.headers.ETag).toBe('"2"');
     expect(updated.version).toBe(2);
     expect(updated.internalPrice).toBe('18.25');
-    expect(updated.inTransitQty).toBe('3');
+    expect(updated.inTransitQty).toBe('0');
     expect(updated.lines).toEqual([
       {
         productId: PRODUCT_ID,
