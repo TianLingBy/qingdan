@@ -870,15 +870,21 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       action: string;
       result: string;
       reason: string | null;
+      custodian_id: string | null;
     }>(
-      `SELECT action, result, reason
+      `SELECT action, result, reason, changes->>'custodianId' AS custodian_id
          FROM audit_log
         WHERE object_id = $1
           AND result = 'success'`,
       [STOCKTAKE_APPROVE_ID],
     );
     expect(audit.rows).toEqual([
-      { action: 'stocktake.approve', result: 'success', reason: '盘点复核' },
+      {
+        action: 'stocktake.approve',
+        result: 'success',
+        reason: '盘点复核',
+        custodian_id: DEMO_IDS.ownerEmployeeId,
+      },
     ]);
 
     const repeated = await approveStocktakeRequest(

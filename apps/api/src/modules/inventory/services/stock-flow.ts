@@ -34,6 +34,8 @@ export interface StockAdjustmentInput {
 export interface StockAdjustmentResult {
   readonly inboundQty: string;
   readonly availableQty: string;
+  /** 批次实物责任人快照，供调用方写审计留痕（F5 / #84）。 */
+  readonly custodianId: string;
 }
 
 interface GuardRow {
@@ -45,6 +47,7 @@ interface GuardRow {
 interface BatchRow {
   inbound_qty: string | number;
   available_qty: string | number;
+  custodian_id: string | null;
 }
 
 /**
@@ -59,7 +62,8 @@ export async function applyStockAdjustment(
 ): Promise<StockAdjustmentResult> {
   const locked = await tx.query<BatchRow>(
     `SELECT trim_scale(inbound_qty) AS inbound_qty,
-            trim_scale(available_qty) AS available_qty
+            trim_scale(available_qty) AS available_qty,
+            custodian_id
        FROM inventory_batch
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -71,6 +75,12 @@ export async function applyStockAdjustment(
   if (!current) {
     throw new AppError('NOT_FOUND', '库存批次不存在', {
       batchId: input.batchId,
+    });
+  }
+  if (current.custodian_id === null) {
+    throw new AppError('INTERNAL_ERROR', '库存批次缺少保管人', {
+      batchId: input.batchId,
+      field: 'custodianId',
     });
   }
 
@@ -112,13 +122,20 @@ export async function applyStockAdjustment(
         AND tenant_id = $2
         AND company_id = $3::uuid
       RETURNING trim_scale(inbound_qty) AS inbound_qty,
-                trim_scale(available_qty) AS available_qty`,
+                trim_scale(available_qty) AS available_qty,
+                custodian_id`,
     [input.batchId, input.tenantId, input.companyId, input.delta],
   );
   const next = updated.rows[0];
   if (!next) {
     throw new AppError('INTERNAL_ERROR', '库存批次调整后读取失败', {
       batchId: input.batchId,
+    });
+  }
+  if (next.custodian_id === null) {
+    throw new AppError('INTERNAL_ERROR', '库存批次调整后缺少保管人', {
+      batchId: input.batchId,
+      field: 'custodianId',
     });
   }
 
@@ -143,5 +160,6 @@ export async function applyStockAdjustment(
   return {
     inboundQty: String(next.inbound_qty),
     availableQty: String(next.available_qty),
+    custodianId: next.custodian_id,
   };
 }
