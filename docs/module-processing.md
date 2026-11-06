@@ -35,27 +35,30 @@
 
 ## 当前状态
 
-B 单 5 端点已实现（2026-11-05），本模块端点 0 个 501
+进行中（梁海俊，2026-11-06）：B 单 5 端点已实现，正在补 D39 更新路径回归。
 
 ## 已完成
 
 - 模块边界与功能域映射已登记。
 - **2026-11-05 B 单 5 端点实现（PR #73）**：`apps/api/migrations/0012_processing_orders.sql`（单头 + 材料批次 + 费用，ENABLE/FORCE RLS）+ `modules/processing/{repo.ts,usecases/processing-orders.ts,routes.ts}`；list/create(201)/detail/update/cancel 全接 HTTP，单号走 platform 取号，可售量/费用由 SQL 聚合，update/cancel 必带 If-Match，取消按 D21 判下游，create/cancel 危险动作 AI 拒绝（D52①），写操作落 audit_log（D51）。测试 +11（apps/api 33 文件 268 例），tsc 0，全量门禁 ALL PASSED (7 files)。
+- **2026-11-06 PATCH 费用清空回归（Issue #85）**：运行时禁止 `fees: []`，返回 422 且保留原费用；补 usecase / HTTP 回归测试。
 
 ## 进行中
 
-- 无。
+- 验收/完成端点（产出批次、全损耗）仍待 inventory 写联动与主线 #79 口径落地。
 
 ## 下一步
 
-- 拍板损耗精度 → 追加 decisions.md。
-- 等 inventory 批次引用接口就绪后开工；先做正常路径，再补全损耗。
+- 等 #79 拍板后接 inventory `stockFlowService`，实现验收完成、产出批次与全损耗。
+- 主线需要将 `ProcessingOrderUpdateInputSchema.fees` 同步收紧为 `.min(1)`。
 
 ## 已知问题 / 坑
 
 - 全损耗**不能**除零：先判可售量为 0 的分支，再算批次单价（G2）。
 - 损失记录的「归属单」只影响 C 单聚合，不能反过来改毛利公式（D5 不动，D26/D33 只在展示层聚合）。
 - 损耗量填错不许在 B 单上改（F3）：走取消重开（D21）或成本更正（D37）。
+- `ProcessingOrderUpdateInputSchema` 当前仍允许 `fees: []`；运行时 usecase 已收紧，
+  但 OpenAPI/契约 schema 仍需主线后续同步为 `.min(1)`。
 
 ## 相关文件
 

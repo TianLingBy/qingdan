@@ -426,6 +426,28 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(weak.statusCode).toBe(409);
     expect(weak.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
 
+    const clearFees = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/processing-orders/${created.id}`,
+      headers: writeHeaders(ownerCookie, 'req-processing-update-empty-fees', {
+        'if-match': '"1"',
+      }),
+      payload: { fees: [] },
+    });
+    expect(clearFees.statusCode).toBe(422);
+    expect(clearFees.json()).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { field: 'fees' },
+    });
+
+    const unchanged = await app.inject({
+      method: 'GET',
+      url: `/api/v1/processing-orders/${created.id}`,
+      headers: readHeaders(ownerCookie, 'req-processing-update-empty-fees-detail'),
+    });
+    expect(unchanged.statusCode).toBe(200);
+    expect((unchanged.json() as ProcessingOrder).fees).toEqual(created.fees);
+
     const ok = await app.inject({
       method: 'PATCH',
       url: `/api/v1/processing-orders/${created.id}`,

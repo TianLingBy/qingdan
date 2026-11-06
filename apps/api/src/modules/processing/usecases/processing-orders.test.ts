@@ -474,6 +474,20 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       ),
       'VALIDATION_FAILED',
     );
+    await expectAppError(
+      updateProcessingOrder(
+        writeCtx({}, {
+          params: { id: created.id },
+          headers: { 'if-match': '"1"' },
+          body: { fees: [] },
+        }).ctx,
+      ),
+      'VALIDATION_FAILED',
+    );
+    const unchanged = await getProcessingOrder(
+      readCtx({}, { params: { id: created.id } }),
+    );
+    expect(unchanged.fees).toEqual(created.fees);
 
     const { ctx, state } = writeCtx({}, {
       params: { id: created.id },
