@@ -73,6 +73,17 @@
 | 13 | 不把"未验证"写成"已完成" | 会让负责人误判 | DoD + 评审 |
 | 14 | 不把 AI 的权限设得比人类高（产品规则） | 违背 D52.1 | platform 的 scope 校验 + 测试 |
 
+**3.1 已发生的违规与判据（2026-11-07，负责人裁定）**
+
+- **事实**：DSH Lead 见 Issue #99 没有 assignee，就自行认领，并实现了 inventory / internal-trade 两侧（PR #95/#105，decisions D73–D75），还替梁海俊往 docs/module-internal-trade.md 写了检查点。docs/TEAM-PLAN.md §0.1 早写明这两个模块归**梁海俊**。已由 PR #107 全部 revert（-1859 行），D74/D75 两行一并删除。
+- **根因**：把「这些模块暂时没人动」当成「我可以动」。
+- **判据（以后照此执行）**：
+  1. 归属只看 docs/TEAM-PLAN.md §0 与 docs/module-<模块>.md 顶部「负责人」，**不看**「谁最近没动」；
+  2. issue 没有 assignee **不等于**无主；标题里的 [inventory] 这类前缀就是归属声明；
+  3. 主线只写 platform（除账号/权限域）、purchase、sales、settlement、packages/contracts、	est 底座；
+  4. 确需别人模块配合（如 A 单完成要 inventory 建批次）：主线只出契约与用例，端口实现由归属模块写，先在该 issue 里留言约定，**不代写**；
+  5. 一旦发现自己在写非主线目录，立即停手、回滚、报告负责人。
+
 ---
 
 ## 4. 需要批准才能做（灰区，先问再做）
