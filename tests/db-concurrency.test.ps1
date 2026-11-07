@@ -19,6 +19,11 @@ if ([string]::IsNullOrWhiteSpace($dbUrl)) {
 $env:DATABASE_URL = $dbUrl
 Push-Location $root
 try {
+  # tsx 直接跑 api 的源码，但工作区依赖 @qingdan/contracts 走的是构建产物 dist/，
+  # 所以 CI（以及任何干净 clone）必须先构建契约包，否则 migrate 会报 MODULE_NOT_FOUND。
+  & pnpm -C packages/contracts build 2>&1 | Out-Host
+  Assert-True ($LASTEXITCODE -eq 0) "契约包构建成功（退出码 $LASTEXITCODE）"
+
   & pnpm -C apps/api migrate 2>&1 | Out-Host
   Assert-True ($LASTEXITCODE -eq 0) "真 PG 迁移成功（退出码 $LASTEXITCODE）"
 
