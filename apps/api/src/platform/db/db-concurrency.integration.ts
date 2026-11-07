@@ -103,8 +103,8 @@ async function main(): Promise<void> {
     await check('批次行锁（FOR UPDATE 挡住第二个写者）', async () => {
       const batchId = randomUUID();
       await database.query(
-        `INSERT INTO inventory_batch (id, tenant_id, company_id, product_id, batch_no, inbound_qty)
-         VALUES ($1, $2, $3, $4, 'L3-LOCK-1', 10)`,
+        `INSERT INTO inventory_batch (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost, inbound_qty)
+         VALUES ($1, $2, $3, $4, 'L3-LOCK-1', 5, 10)`,
         [batchId, tenantA, companyA, productA],
       );
 
@@ -148,8 +148,8 @@ async function main(): Promise<void> {
     // --- 3. RLS：qingdan_app 只能看到 app.tenant_id 对应的租户 -----------------
     await check('RLS 跨租户不可见（qingdan_app + app.tenant_id）', async () => {
       await database.query(
-        `INSERT INTO inventory_batch (id, tenant_id, company_id, product_id, batch_no, inbound_qty)
-         VALUES ($1, $2, $3, $4, 'L3-RLS-1', 5)`,
+        `INSERT INTO inventory_batch (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost, inbound_qty)
+         VALUES ($1, $2, $3, $4, 'L3-RLS-1', 5, 5)`,
         [randomUUID(), tenantA, companyA, productA],
       );
 
@@ -188,8 +188,8 @@ async function main(): Promise<void> {
       const batchId = randomUUID();
       await database.query(
         `INSERT INTO inventory_batch
-           (id, tenant_id, company_id, product_id, batch_no, inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty)
-         VALUES ($1, $2, $3, $4, 'L3-GEN-1', 10, 3, 2, 1)`,
+           (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost, inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty)
+         VALUES ($1, $2, $3, $4, 'L3-GEN-1', 5, 10, 3, 2, 1)`,
         [batchId, tenantA, companyA, productA],
       );
       const row = await database.query<{ remaining_qty: string; available_qty: string }>(
