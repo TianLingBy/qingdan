@@ -70,6 +70,10 @@ export const SettlementOrderSourceDocTypeSchema = z.enum(SETTLEMENT_SOURCE_DOC_T
  * - `netProfit` = 毛利 − 本单相关损失（D33），**可为负**；
  * - `commissionRateSnapshot`：**结算时快照**（D36），之后改比例不影响本单；
  * - `commissionAmount`：提成金额，负毛利记 0（D5④），非负；一期仅为报表数字（D11）。
+ *
+ * **金额脱敏（D27 / D78）**：调用者无 `settlement.view_price` 时，下列金额字段返回 `null`
+ * （字段保留、不删不出 0，也不 403）——「可见记录、金额隐藏」；普通读不记日志，
+ * 但**有看价权限的成功读取会写一条 `amount.detail` 审计**（D51①）。
  */
 export const SettlementOrderSchema = z.object({
   id: z.string(),
@@ -83,22 +87,22 @@ export const SettlementOrderSchema = z.object({
   /** 来源单 id：一张 C 单对应且仅对应一张 E/N 单（一期一单一次，D19）。 */
   sourceDocId: z.string(),
   status: SettlementOrderStatusSchema,
-  /** 总售价：来源单成交额合计（decimal 字符串，D54）。 */
-  totalSaleAmount: NonNegativeDecimal,
-  /** 总成本：来源单引用批次成本合计（decimal 字符串，D54）。 */
-  totalCostAmount: NonNegativeDecimal,
-  /** 毛利 = 总售价 − 总成本（D5）；服务端计算值，可为负。 */
-  grossProfit: DecimalString,
-  /** 毛利率 = 毛利 ÷ 总售价（D5）；服务端计算值，可为负。 */
-  grossMarginRate: DecimalString,
-  /** 本单相关损失（D35）：结算时快照，非负。 */
-  relatedLossAmount: NonNegativeDecimal,
-  /** 净毛利 = 毛利 − 本单相关损失（D33）；服务端计算值，可为负。 */
-  netProfit: DecimalString,
+  /** 总售价：来源单成交额合计（decimal 字符串，D54）；无看价权限 → null（D78）。 */
+  totalSaleAmount: NonNegativeDecimal.nullable(),
+  /** 总成本：来源单引用批次成本合计（decimal 字符串，D54）；无看价权限 → null（D78）。 */
+  totalCostAmount: NonNegativeDecimal.nullable(),
+  /** 毛利 = 总售价 − 总成本（D5）；服务端计算值，可为负；无看价权限 → null（D78）。 */
+  grossProfit: DecimalString.nullable(),
+  /** 毛利率 = 毛利 ÷ 总售价（D5）；服务端计算值，可为负；无看价权限 → null（D78）。 */
+  grossMarginRate: DecimalString.nullable(),
+  /** 本单相关损失（D35）：结算时快照，非负；无看价权限 → null（D78）。 */
+  relatedLossAmount: NonNegativeDecimal.nullable(),
+  /** 净毛利 = 毛利 − 本单相关损失（D33）；服务端计算值，可为负；无看价权限 → null（D78）。 */
+  netProfit: DecimalString.nullable(),
   /** 提成比例快照：**结算时快照**，之后改比例不影响本单（D36 / D5④）。 */
   commissionRateSnapshot: NonNegativeDecimal,
-  /** 提成金额：负毛利记 0（D5④），一期仅为报表数字（D11）。 */
-  commissionAmount: NonNegativeDecimal,
+  /** 提成金额：负毛利记 0（D5④），一期仅为报表数字（D11）；无看价权限 → null（D78）。 */
+  commissionAmount: NonNegativeDecimal.nullable(),
   /**
    * 提成归属人：来源单负责人（D77 ②）。草稿生成时写入；确认结算时按它在**本公司**
    * `effectiveFrom <= 结算日` 的最新配置解析比例。历史草稿可能为 null（比例记 0）。
@@ -158,7 +162,7 @@ export const SettlementOrderListQuerySchema = PageQuerySchema.extend({
  *
  * operationId 以 `settlement` 开头（与功能域同名，registry 校验要求）。
  * 权限：查询 `settlement.read`；**确认结算属审批动作**，scope 用 `settlement.approve`（D44）。
- * 审计：普通读不记（D54 ②）；确认结算记 write（D51）。
+ * 审计：普通读不记（D54 ②）；**有看价权限的详情读取记一条 `amount.detail`（D51① / D78）**；确认结算记 write（D51）。
  * AI：**结算确认属危险动作，默认禁止且必须给原因**（D52① / D54 ⑥）。
  * 并发：confirm 强制 If-Match 强 ETag。
  * 一期一单一次结算（D19）；结算后不可冲正，走退货（D2③）。
@@ -171,7 +175,7 @@ export const SETTLEMENT_ORDER_ROUTES: readonly RouteDef[] = [
     path: '/api/v1/settlement-orders',
     domain: 'settlement',
     action: 'read',
-    summary: '结算单列表（按公司/状态/来源单类型/单号检索；普通读不记审计，D15）',
+    summary: '结算单列表（按公司/状态/来源单类型/单号检索；无看价权限时金额字段为 null，D15 / D27 / D78）',
     audit: { kind: 'none' },
     request: { query: SettlementOrderListQuerySchema },
     response: { status: 200, schema: pageSchema(SettlementOrderSchema) },
@@ -183,7 +187,8 @@ export const SETTLEMENT_ORDER_ROUTES: readonly RouteDef[] = [
     path: '/api/v1/settlement-orders/{id}',
     domain: 'settlement',
     action: 'read',
-    summary: '结算单详情（内嵌确认判定 confirmable；普通读不记审计，D19）',
+    summary:
+      '结算单详情（内嵌确认判定 confirmable；无 settlement.view_price 时金额字段为 null，D27 / D78；看过金额记 amount.detail，D51①）',
     audit: { kind: 'none' },
     response: { status: 200, schema: SettlementOrderDetailSchema },
   }),

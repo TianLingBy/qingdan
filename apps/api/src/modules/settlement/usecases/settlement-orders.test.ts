@@ -25,10 +25,10 @@ import {
 const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000008001';
 
 const APPROVE_SCOPE: ScopeMatrix = [
-  { domain: 'settlement', actions: ['read', 'approve'] },
+  { domain: 'settlement', actions: ['read', 'approve', 'view_price'] },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [
-  { domain: 'settlement', actions: ['read'] },
+  { domain: 'settlement', actions: ['read', 'view_price'] },
 ];
 
 interface FakeRequestInput {
@@ -392,6 +392,7 @@ describe('settlement C 结算单用例（PGlite + seed 演示租户）', () => {
       `SELECT action, result, reason
          FROM audit_log
         WHERE object_id = $1
+          AND action <> 'amount.detail'
         ORDER BY occurred_at, id`,
       [id],
     );

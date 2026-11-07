@@ -340,6 +340,7 @@ describe('settlement C 结算单 HTTP（PGlite + seed 演示租户）', () => {
       `SELECT action, result, reason
          FROM audit_log
         WHERE object_id = $1
+          AND action <> 'amount.detail'
           AND result = 'success'`,
       [id],
     );
