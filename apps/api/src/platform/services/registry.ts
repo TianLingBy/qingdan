@@ -35,9 +35,38 @@ export interface StockAdjustmentReceipt {
   readonly custodianId: string;
 }
 
+/**
+ * 在途占用命令（D68③ / D73；由 N 单发货发起）。
+ *
+ * 与 `StockAdjustmentCommand` 的区别：**在途占用不改入库量、不写库存流水**——
+ * 它只是「锁定可用量」（D31），批次实物仍在发出公司；真正的库存减少要到到货确认 / 出库。
+ * `delta > 0` 锁定、`delta < 0` 释放。
+ */
+export interface StockReservationCommand {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly batchId: string;
+  /** 有符号在途量变化：锁定为正、释放为负（decimal 字符串，D54）。 */
+  readonly delta: string;
+  readonly sourceDocType: string;
+  readonly sourceDocId: string;
+  readonly handledBy: string;
+}
+
+export interface StockReservationReceipt {
+  readonly inTransitQty: string;
+  readonly availableQty: string;
+  readonly custodianId: string;
+}
+
 /** 库存写入端口：由 inventory 实现，内部就是 `inventory/services/stock-flow.ts`。 */
 export interface StockFlowPort {
   applyAdjustment(tx: SqlClient, command: StockAdjustmentCommand): Promise<StockAdjustmentReceipt>;
+  /** 在途占用 / 释放（D68③）：只动 `in_transit_qty`，可用量由生成列自动跟随。 */
+  reserveInTransit(
+    tx: SqlClient,
+    command: StockReservationCommand,
+  ): Promise<StockReservationReceipt>;
 }
 
 /** C 结算单草稿命令（D19 / D70；由 E / N 单完成方发起）。 */

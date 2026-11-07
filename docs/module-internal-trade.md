@@ -35,29 +35,31 @@
 
 ## 当前状态
 
-进行中（梁海俊，2026-11-06）：N 单 5 端点已实现；正在修正“进行中却虚报在途量”的语义。
+进行中（2026-11-07）：N 单 6 端点可用（5 端点 + D73 发货），**发货 / 在途占用已落地**；只剩「到货确认 / 转司」与 N 单生成 C 草稿未做（等拍板）。
 
 ## 已完成
 
 - 模块边界与功能域映射已登记。
 - **2026-11-05 N 单 5 端点实现（PR #76）**：`apps/api/migrations/0015_internal_trade_orders.sql`（单头 + 明细 + 批次引用，四态约束，ENABLE/FORCE RLS）+ `modules/internal-trade/{repo.ts,usecases/internal-trade-orders.ts,routes.ts}`；list/create(201)/detail/update/cancel 接 HTTP；**D68 落地**：内部价由制单人手工填、独立四态状态机（进行中/在途/已完成/已取消，不复用 HEADER_STATES）、company_id 表示发出公司、创建需同时可见发出与接收公司；转司确认（接收方到货）留待后续批次。测试 +8（apps/api 39 文件 291 例），tsc 0，全量门禁 ALL PASSED。
 - **2026-11-06 在途量语义修正（Issue #87）**：进行中 N 单不再按明细 qty 虚报 `inTransitQty`；只有真实「在途」状态才回锁定值。
+- **2026-11-07 发货 / 在途占用（D73）**：新增 `internal_trade.order.ship` = `POST /api/v1/internal-trade-orders/{id}/ship`（`进行中→在途`，scope `internal_trade.update`，强 If-Match，AI 禁止且必须给原因）。按行把数量均分到所引用批次（末批承余，与 D72 同规则），经 D70 的 `StockFlowPort.reserveInTransit` 逐批锁 `in_transit_qty`，`available_qty` 由 STORED 生成列自动跟随；**不写库存流水、不改入库量、不改批次 `company_id`**。只有发出公司可发货（接收方 403）。取消在途单在同一事务按同样份数原路释放并归零单头在途量。测试 +6（`internal-trade-order-ship.test.ts`）；HTTP 用例改为走真实发货端点进入在途。
 
 ## 进行中
 
-- 发货锁定与到货转司仍由 #79 的 platform 内部库存服务接口承接。
+- 到货确认 / 转司（改批次 `company_id`）仍待拍板：要同时解锁在途占用并生成 C 单草稿（D29）。
 
 ## 下一步
 
-- 等 #79 拍板后实现发货：批次 `in_transit_qty` 与 N 单在途量同事务增加。
-- 到货确认：同事务解锁在途占用并把批次 `company_id` 转给接收公司。
+- 到货确认：同一事务内解锁在途占用 + 把批次 `company_id` 转给接收公司 + 生成 C 单草稿（D29）。
+- 需要先拍板：确认到货的调用者是否必须属接收公司；C 草稿的总售价 / 总成本按内部价还是对外价。
 
 ## 已知问题 / 坑
 
 - 在途锁定的是「可用量」不是「剩余量」：只改剩余量会让别的单据继续引用（D31）。
 - 转司要同时改批次公司 + 解锁在途占用，两件事必须在一个事务里。
 - 内部价只是记录字段：一期任何报表都不得把它当利润来源（D45）。
-- 发货端点落地前，N 单 `inTransitQty` 必须保持 0；不能再用明细数量冒充库存锁定。
+- 发货端点已于 D73 落地：`inTransitQty` 只在「在途」状态回锁定值（`mapHeader` 兜底），进行中 / 终态一律 0。
+- **在途单取消必须释放在途占用**（D73 ⑥）：取消与释放同事务，否则批次可用量会被永久锁死。
 
 ## 相关文件
 

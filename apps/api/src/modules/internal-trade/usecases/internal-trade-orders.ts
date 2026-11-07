@@ -25,6 +25,7 @@ import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
+import { stockFlowPort } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 
 /**
@@ -238,6 +239,49 @@ function auditEventOf(
   };
 }
 
+/** 六个小数位的定点整数（D54 `numeric(18,6)`）：数量均分不出现浮点。 */
+const SCALE = 1_000_000n;
+
+function toMicro(value: string): bigint {
+  const negative = value.startsWith('-');
+  const [intPart, fracPart = ''] = (negative ? value.slice(1) : value).split('.');
+  const frac = `${fracPart}000000`.slice(0, 6);
+  const micro = BigInt(intPart ?? '0') * SCALE + BigInt(frac);
+  return negative ? -micro : micro;
+}
+
+function fromMicro(micro: bigint): string {
+  const negative = micro < 0n;
+  const abs = negative ? -micro : micro;
+  const intPart = abs / SCALE;
+  const fracPart = (abs % SCALE).toString().padStart(6, '0').replace(/0+$/, '');
+  const body = fracPart === '' ? `${intPart}` : `${intPart}.${fracPart}`;
+  return negative ? `-${body}` : body;
+}
+
+/**
+ * 把一行的数量按所引用批次均分，除不尽的余量由**最后一个批次**承接（与 D72 同规则）。
+ *
+ * 契约里 `internal_trade_order_line_batch` 只有引用关系、没有每批分配量（0015），
+ * 所以「每批锁多少」只能由这条确定性规则推导；为 0 的批次直接跳过，不写空占用。
+ */
+function distributeQty(
+  qty: string,
+  batchIds: readonly string[],
+): { readonly batchId: string; readonly qty: string }[] {
+  const total = toMicro(qty);
+  const count = BigInt(batchIds.length);
+  const base = total / count;
+  const remainder = total - base * count;
+  const shares: { batchId: string; qty: string }[] = [];
+  batchIds.forEach((batchId, index) => {
+    const share = index === batchIds.length - 1 ? base + remainder : base;
+    if (share === 0n) return;
+    shares.push({ batchId, qty: fromMicro(share) });
+  });
+  return shares;
+}
+
 /** 内部交易单列表（普通读，不记审计）。 */
 export async function listInternalTradeOrders(
   ctx: InternalTradeOrderContext,
@@ -379,6 +423,115 @@ export async function updateInternalTradeOrder(
 }
 
 /**
+ * 发货（D68③ / D73）：`进行中` → `在途`，同时锁定批次的在途占用。
+ *
+ * - 权限 `internal_trade.update`（不新增动作词，D4 封闭枚举）；危险动作 → AI 禁止且必须给原因（D52①）；
+ * - 只有**发出公司**的调用者可发货（D15 / D22）：接收方等「确认到货」；
+ * - 按行把数量均分到所引用批次（末批承余，与 D72 同规则），逐批调 D70 的
+ *   `StockFlowPort.reserveInTransit` 锁 `in_transit_qty`；**不改入库量、不写库存流水**——
+ *   在途占用不是库存变动（D31 / D67）；
+ * - 批次 `company_id` 不变，仍归发出公司（D68③）；转司要等确认到货端点；
+ * - 单头 `in_transit_qty` = Σ 行数量；可用量不足 → 409 整单回滚。
+ */
+export async function shipInternalTradeOrder(
+  ctx: InternalTradeOrderWriteContext,
+): Promise<InternalTradeOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'internal_trade.order.ship');
+  requireScope(principal, 'update');
+  assertHumanCredential(principal, '发货内部交易单');
+
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+
+  const audit = auditEventOf(
+    ctx.request,
+    principal,
+    'internal_trade.order.ship',
+    id,
+    {
+      beforeStatus: '进行中',
+      afterStatus: '在途',
+    },
+  );
+
+  const order = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const current = await repo.getInternalTradeOrder(context, id);
+    if (!current) throw new AppError('NOT_FOUND', '内部交易单不存在');
+    // 先判版本再判状态：并发下 If-Match 不匹配优先报 409，避免把「别人刚发过货」误报成 422。
+    if (current.version !== expectedVersion) {
+      throw new AppError(
+        'VERSION_CONFLICT',
+        '内部交易单版本与 If-Match 不一致，请重新读取后重试',
+        { expected: expectedVersion, current: current.version },
+      );
+    }
+    if (current.status !== '进行中') {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        '只有「进行中」的内部交易单可发货，在途 / 已完成 / 已取消不可重复发货',
+        { status: current.status },
+      );
+    }
+    if (!principal.companyIds.includes(current.fromCompanyId)) {
+      throw new AppError(
+        'FORBIDDEN',
+        '只有发出公司可以发货，接收方不能代发（D15 / D22）',
+        { fromCompanyId: current.fromCompanyId },
+      );
+    }
+
+    let totalMicro = 0n;
+    const reservations: { readonly batchId: string; readonly qty: string }[] = [];
+    for (const [index, line] of current.lines.entries()) {
+      if (line.batchIds.length === 0) {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          `第 ${index + 1} 行没有引用批次，无法发货（D22）`,
+          { lineNo: index + 1 },
+        );
+      }
+      totalMicro += toMicro(line.qty);
+      reservations.push(...distributeQty(line.qty, line.batchIds));
+    }
+
+    for (const reservation of reservations) {
+      await stockFlowPort().reserveInTransit(tx, {
+        tenantId: principal.tenantId,
+        companyId: current.fromCompanyId,
+        batchId: reservation.batchId,
+        delta: reservation.qty,
+        sourceDocType: 'internal_trade_order',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+      });
+    }
+
+    const shipped = await repo.shipInternalTradeOrder(
+      context,
+      id,
+      expectedVersion,
+      fromMicro(totalMicro),
+    );
+    if (!shipped) throw new AppError('NOT_FOUND', '内部交易单不存在');
+
+    audit.companyId = shipped.fromCompanyId;
+    audit.changeSummary = {
+      beforeStatus: '进行中',
+      afterStatus: shipped.status,
+      version: shipped.version,
+      inTransitQty: shipped.inTransitQty,
+      reservedBatchCount: new Set(reservations.map((item) => item.batchId)).size,
+    };
+    return shipped;
+  });
+
+  ctx.reply.header('ETag', etagOf(order.version));
+  return order;
+}
+
+/**
  * 取消内部交易单：危险动作（AI 默认拒绝，D52①）；If-Match 强 ETag。
  * D21 / D68②：进行中与在途均映射为「进行中」参与取消判定；
  * 已完成 / 已取消不可取消；有直接下游先取消下游。
@@ -422,6 +575,30 @@ export async function cancelInternalTradeOrder(
     },
   );
   const order = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+
+    // D68③ / D73：在途单取消必须释放已锁定的在途占用，否则批次可用量会被永久锁死。
+    // 释放与取消同事务；释放是按行的均分份数原路退回，不看调用者属于哪一方（取消权不分收发方）。
+    let releasedBatchCount = 0;
+    if (state.status === '在途') {
+      const current = await repo.getInternalTradeOrder(context, id);
+      if (!current) throw new AppError('NOT_FOUND', '内部交易单不存在');
+      for (const line of current.lines) {
+        for (const share of distributeQty(line.qty, line.batchIds)) {
+          await stockFlowPort().reserveInTransit(tx, {
+            tenantId: principal.tenantId,
+            companyId: current.fromCompanyId,
+            batchId: share.batchId,
+            delta: fromMicro(-toMicro(share.qty)),
+            sourceDocType: 'internal_trade_order',
+            sourceDocId: id,
+            handledBy: principal.employeeId,
+          });
+          releasedBatchCount += 1;
+        }
+      }
+    }
+
     const cancelled = await repo.cancelInternalTradeOrder(
       repoContext(tx, principal),
       id,
@@ -433,6 +610,7 @@ export async function cancelInternalTradeOrder(
       beforeStatus: state.status,
       afterStatus: cancelled.status,
       version: cancelled.version,
+      releasedBatchCount,
     };
     return cancelled;
   });
