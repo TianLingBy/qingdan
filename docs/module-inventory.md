@@ -30,13 +30,13 @@
 - 选批次弹窗只显示可用量，不可引用行置灰并注明原因（在途占用 / 已出库 / 待执行，D38）。
 - 提交即占用；取消时占用与单据同事务释放；出库把「待执行占用」转为「已引用量」，可用量不变、不重复扣（D41）。
 - 库存流水只追加，与单据同事务写入（D2①）。
-- 盘点：盘盈盘亏走冲正流水，不物理删除；理货可发起减少调整申请，老板/经理审批后追加流水（D47）。
+- 盘点：盘盈盘亏走冲正流水，不物理删除；发起拆成两个端点——盘盈 `stocktake.increase.create`（scope `stocktake.create`）、盘亏 `stocktake.decrease.create`（scope `stocktake.delete`），方向由入参 schema 锁死；老板/经理审批后追加流水（D47、D71）。
 - 成本更正三段：T1 未被引用可改价重算（审批）、T2 逆向解锁后改（审批）、T3 锁定不改只留日志 + 免责说明（D37）；审批人老板/经理/财务（D42）。
 - 批次保管人字段维护，变更留痕（F5）。
 
 ## 当前状态
 
-进行中（2026-11-06）：批次只读 + 盘点 I 已实现；**库存写联动（单据出入库流水）待 #79 拍板**。
+进行中（2026-11-07）：批次只读 + 盘点 I 已实现（5 条，D71 拆分盘盈/盘亏）；**库存写联动（单据出入库流水）待 #79 / D70 落地**。
 
 - 2026-11-05（Lead，Issue #78）：盘点 I 4 条端点接 HTTP——`stocktake.list.read / create / detail.read / approve`。
   - 迁移 `0017_inventory_stocktakes.sql`；三态审批流、单号按 D16、`diff_qty` 由 SQL 计算且 DB 兜底非零。
@@ -44,8 +44,14 @@
     调整后入库量与可用量均非负，再改 `inbound_qty` 并追加 `source_doc_type='stocktake'` 流水，行不物理删。
   - `apps/api/src/modules/inventory/services/stock-flow.ts` 是全仓唯一改批次数字的库存服务函数（D67）。
   - 测试：`inventory-http.test.ts` 新增 5 组（公司隔离、无差异 422、缺 If-Match 428、非待审批 409、盘亏超可用量 409）。
-- 2026-11-06（Issue #84）：盘点审批审计增加批次 `custodianId` 快照，差异可直接追溯到实物责任人（F5）；
-  D47 的“理货仅可减少 / 采购需审批 / 经理审批”权限映射仍等主线裁定。
+- 2026-11-06（Issue #84）：盘点审批审计增加批次 `custodianId` 快照，差异可直接追溯到实物责任人（F5）。
+- 2026-11-07（Lead，Issue #84 / D71）：盘点发起拆两条端点，动作词表不动——
+  - 盘盈 `stocktake.increase.create` → `POST /api/v1/stocktakes/increases`，scope `stocktake.create`；
+  - 盘亏 `stocktake.decrease.create` → `POST /api/v1/stocktakes/decreases`，scope `stocktake.delete`
+    （「仅删减」不新增动作名：D4 的 8 动作是全局封闭枚举，加动作会污染 22 个域的权限表）；
+  - 原 `stocktake.create` 移除（契约未投产，前端已由 #90 撤回）；方向不符 422，文案写清「盘盈单要求实盘量大于账面量」；
+  - seed：经理补 `stocktake.approve`（D47 明文老板或经理审批），采购 `read/create/delete`，纯仓管 `read/delete`；
+  - 契约 5 条路由、OpenAPI 重新发射（paths 52 / operations 82），`inventory-http.test.ts` 增方向锁与仓管盘亏 201。
 
 ## 已完成
 

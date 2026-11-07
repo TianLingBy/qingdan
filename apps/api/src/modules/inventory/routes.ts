@@ -5,13 +5,14 @@ import { getBatch, listBatches } from './usecases/batches.js';
 import { listFlows } from './usecases/flows.js';
 import {
   approveStocktake,
-  createStocktake,
+  createStocktakeDecrease,
+  createStocktakeIncrease,
   getStocktake,
   listStocktakes,
 } from './usecases/stocktakes.js';
 
 /**
- * inventory 端点：首批只读 3 条（Issue #49）+ 盘点调整 I 4 条。
+ * inventory 端点：首批只读 3 条（Issue #49）+ 盘点调整 I 5 条（D71：盘盈/盘亏拆两条）。
  *
  * 全部端点由用例完成权限、公司隔离与查询；本层只做 operationId 分派和 ETag。
  * **不要在这里直接写 SQL 或改批次数字**——库存写入只能经单据用例调用 inventory
@@ -44,9 +45,19 @@ export function registerInventoryRoutes(app: FastifyInstance): void {
       assertDatabaseConfigured(instance, route);
       return await listStocktakes({ database: instance.database, request });
     },
-    'stocktake.create': async ({ app: instance, request, reply, route }) => {
+    'stocktake.increase.create': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
-      const stocktake = await createStocktake({
+      const stocktake = await createStocktakeIncrease({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(stocktake.version));
+      return stocktake;
+    },
+    'stocktake.decrease.create': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const stocktake = await createStocktakeDecrease({
         database: instance.database,
         request,
         reply,

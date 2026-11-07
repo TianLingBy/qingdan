@@ -129,6 +129,17 @@ function hasDifference(value: { bookQty: string; actualQty: string }): boolean {
   return normalizeDecimal(value.actualQty) !== normalizeDecimal(value.bookQty);
 }
 
+/** 按 `numeric(18,6)` 定点比较两个 decimal 字符串：返回负数 / 0 / 正数。 */
+function compareDecimal(left: string, right: string): number {
+  const toScaled = (value: string): bigint => {
+    const [int, frac = ''] = value.split('.');
+    return BigInt(`${int}${frac.padEnd(6, '0')}`);
+  };
+  const a = toScaled(left);
+  const b = toScaled(right);
+  return a === b ? 0 : a < b ? -1 : 1;
+}
+
 /**
  * 发起盘点单入参：
  * - 服务端生成 `id` / `tenantId` / `stocktakeNo` / `diffQty` / `status` /
@@ -148,6 +159,22 @@ export const StocktakeCreateInputSchema = z
 export type StocktakeCreateInput = z.infer<typeof StocktakeCreateInputSchema>;
 
 /**
+ * 盘盈入参：实盘量必须**大于**账面量（D71）。
+ * 与盘亏拆成两条路由，是因为两者的权限口径不同（盘盈 = `stocktake.create`，
+ * 盘亏 = `stocktake.delete`／「仅删减」，见 D71）。
+ */
+export const StocktakeIncreaseInputSchema = StocktakeCreateInputSchema.refine(
+  (value) => compareDecimal(value.actualQty, value.bookQty) > 0,
+  { message: '盘盈单要求实盘量大于账面量', path: ['actualQty'] },
+);
+
+/** 盘亏入参：实盘量必须**小于**账面量（D71）。 */
+export const StocktakeDecreaseInputSchema = StocktakeCreateInputSchema.refine(
+  (value) => compareDecimal(value.actualQty, value.bookQty) < 0,
+  { message: '盘亏单要求实盘量小于账面量', path: ['actualQty'] },
+);
+
+/**
  * 盘点单列表查询：公司 / 状态 / 关键字（单号），游标分页。
  * 公司隔离（D15）由服务端按调用者可见公司集合再收口。
  */
@@ -158,11 +185,12 @@ export const StocktakeListQuerySchema = PageQuerySchema.extend({
 });
 
 /**
- * inventory 模块盘点调整 I 端点（4 条，契约第一批 §4 / §8）。
+ * inventory 模块盘点调整 I 端点（5 条，契约第一批 §4 / §8；D71 拆盘盈/盘亏）。
  *
  * operationId 以 `stocktake` 开头（功能域 = 权限域，registry 校验要求）；
  * **不要用 `stocktake_page`**：那是页面权限域，不是本单据的功能域。
- * 权限：查询 `stocktake.read`；发起 `stocktake.create`；**审批 `stocktake.approve`**。
+ * 权限：查询 `stocktake.read`；盘盈 `stocktake.create`；盘亏 `stocktake.delete`（仅删减）；
+ * **审批 `stocktake.approve`**（D71）。
  * 审计：普通读不记（D54 ②）；发起 / 审批记 write（D51）。
  * AI：发起盘点默认禁止；**审批只能人类，禁止 AI 且必须给原因**（D52① / D54 ⑥）。
  * 并发：审批强制 If-Match 强 ETag。
@@ -184,16 +212,30 @@ export const STOCKTAKE_ROUTES: readonly RouteDef[] = [
   }),
   defineRoute({
     module: 'inventory',
-    operationId: 'stocktake.create',
+    operationId: 'stocktake.increase.create',
     method: 'POST',
-    path: '/api/v1/stocktakes',
+    path: '/api/v1/stocktakes/increases',
     domain: 'stocktake',
     action: 'create',
     summary:
-      '发起盘点单（只传账面量/实盘量，差异量服务端算；无差异拒绝；盘盈盘亏走冲正流水 D47）',
+      '发起盘盈单（实盘量 > 账面量；差异量服务端算；盘盈走冲正流水 D47；权限 stocktake.create，D71）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid' },
-    request: { body: StocktakeCreateInputSchema },
+    request: { body: StocktakeIncreaseInputSchema },
+    response: { status: 201, schema: StocktakeSchema },
+  }),
+  defineRoute({
+    module: 'inventory',
+    operationId: 'stocktake.decrease.create',
+    method: 'POST',
+    path: '/api/v1/stocktakes/decreases',
+    domain: 'stocktake',
+    action: 'delete',
+    summary:
+      '发起盘亏单（实盘量 < 账面量；只追加冲正流水、不物理删除 D47；权限 stocktake.delete = 仅删减，D71）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid' },
+    request: { body: StocktakeDecreaseInputSchema },
     response: { status: 201, schema: StocktakeSchema },
   }),
   defineRoute({

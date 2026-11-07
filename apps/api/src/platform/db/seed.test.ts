@@ -58,6 +58,25 @@ describe('seed（演示租户）', () => {
     expect(salesEntry?.actions).toEqual(expect.arrayContaining(['read', 'create', 'update']));
   });
 
+  it('D71 盘点角色矩阵：经理可审批，仓管只有「仅删减」', async () => {
+    const manager = await computeAuthz(test.database, {
+      employeeId: DEMO_IDS.managerEmployeeId,
+      tenantId: DEMO_IDS.tenantId,
+    });
+    const managerStocktake = manager!.scope.find((entry) => entry.domain === 'stocktake');
+    expect(managerStocktake?.actions).toEqual(
+      expect.arrayContaining(['read', 'create', 'delete', 'approve']),
+    );
+
+    const warehouse = await computeAuthz(test.database, {
+      employeeId: DEMO_IDS.warehouseEmployeeId,
+      tenantId: DEMO_IDS.tenantId,
+    });
+    const warehouseStocktake = warehouse!.scope.find((entry) => entry.domain === 'stocktake');
+    // 盘盈＝create、盘亏＝delete：仓管只有 delete，即只能发起盘亏（D47「仅删减」）。
+    expect([...(warehouseStocktake?.actions ?? [])].sort()).toEqual(['delete', 'read']);
+  });
+
   it('重复执行幂等：不重复建岗位/员工', async () => {
     await seed(test.database);
 
