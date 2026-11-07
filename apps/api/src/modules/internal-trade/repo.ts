@@ -632,52 +632,6 @@ export async function updateInternalTradeOrder(
 }
 
 /**
- * 发货：`进行中` → `在途`（D68③ / D73）。
- *
- * - 只改状态与单头在途量；批次的在途占用由用例在**同一事务**内调 D70 端口写（D70 ③）；
- * - 只认**发出公司**（D15 / D22）：接收方不能替发出方发货，`from_company_id` 必须在调用者可见集合内；
- * - 强乐观锁：`version` 与 `status` 双条件，命中 0 行时回读状态区分 409 / 422。
- */
-export async function shipInternalTradeOrder(
-  ctx: InternalTradeOrderRepoContext,
-  id: string,
-  expectedVersion: number,
-  inTransitQty: string,
-): Promise<InternalTradeOrder | null> {
-  const shipped = await ctx.tx.query<{ id: string }>(
-    `UPDATE internal_trade_order
-        SET status = '在途',
-            in_transit_qty = $4::amount,
-            version = version + 1
-      WHERE id = $1::uuid
-        AND tenant_id = $2
-        AND from_company_id = ANY($3::uuid[])
-        AND version = $5
-        AND status = '进行中'
-      RETURNING id`,
-    [id, ctx.tenantId, [...ctx.companyIds], inTransitQty, expectedVersion],
-  );
-  if (shipped.rows.length === 0) {
-    const current = await loadInternalTradeOrderState(ctx, id);
-    if (!current) return null;
-    if (current.version !== expectedVersion) {
-      throw new AppError(
-        'VERSION_CONFLICT',
-        '内部交易单版本与 If-Match 不一致，请重新读取后重试',
-        { expected: expectedVersion, current: current.version },
-      );
-    }
-    throw new AppError(
-      'VALIDATION_FAILED',
-      '只有「进行中」的内部交易单可发货，在途 / 已完成 / 已取消不可重复发货',
-      { status: current.status },
-    );
-  }
-
-  return getInternalTradeOrder(ctx, id);
-}
-
-/**
  * 取消 N 单：只把「进行中 / 在途」改为「已取消」，不物理删除（D21 / D68②）。
  * 状态合法性由用例侧先按四态映射调用 `assertCancelable`。
  */
@@ -702,7 +656,6 @@ export async function cancelInternalTradeOrder(
   const result = await ctx.tx.query<{ id: string }>(
     `UPDATE internal_trade_order
         SET status = '已取消',
-            in_transit_qty = 0,
             version = version + 1
       WHERE id = $1::uuid
         AND tenant_id = $2
