@@ -156,7 +156,7 @@ async function main(): Promise<void> {
       await database.query(
         `INSERT INTO inventory_batch (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost, inbound_qty, custodian_id)
          VALUES ($1, $2, $3, $4, 'L3-RLS-1', 5, 5, $5)`,
-        [randomUUID(), tenantA, companyA, productA],
+        [randomUUID(), tenantA, companyA, productA, employeeA],
       );
 
       const visibleA = await database.transaction(async (tx) => {
@@ -203,8 +203,15 @@ async function main(): Promise<void> {
          FROM inventory_batch WHERE id = $1`,
         [batchId],
       );
-      assert(row.rows[0]?.remaining_qty === '7', `remaining_qty 期望 7，实际 ${row.rows[0]?.remaining_qty}`);
-      assert(row.rows[0]?.available_qty === '4', `available_qty 期望 4，实际 ${row.rows[0]?.available_qty}`);
+      // amount 域在库里是 numeric(18,6)，::text 会带 6 位小数，按数值比较。
+      assert(
+        Number(row.rows[0]?.remaining_qty) === 7,
+        `remaining_qty 期望 7，实际 ${row.rows[0]?.remaining_qty}`,
+      );
+      assert(
+        Number(row.rows[0]?.available_qty) === 4,
+        `available_qty 期望 4，实际 ${row.rows[0]?.available_qty}`,
+      );
 
       let rejected = false;
       try {
