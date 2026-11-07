@@ -59,6 +59,34 @@ export interface StockReservationReceipt {
   readonly custodianId: string;
 }
 
+/**
+ * 内部交易「到货确认 / 转司」命令（D31 / D74 / D75；由 N 单到货确认发起）。
+ *
+ * 同一行上做两件事：释放本次在途占用 + 把批次 `company_id` 改成接收公司。
+ * **不改入库量、不写库存流水**（转司不改变数量，D47）。
+ */
+export interface OwnershipTransferCommand {
+  readonly tenantId: string;
+  /** 原归属公司（发出公司）。 */
+  readonly companyId: string;
+  /** 转入公司（接收公司）。 */
+  readonly toCompanyId: string;
+  readonly batchId: string;
+  /** 本次释放的在途占用量。 */
+  readonly delta: string;
+  readonly sourceDocType: string;
+  readonly sourceDocId: string;
+  readonly handledBy: string;
+}
+
+export interface OwnershipTransferReceipt {
+  readonly inTransitQty: string;
+  readonly availableQty: string;
+  /** 批次锁价成本（D5），供调用方算 C 草稿总成本（D75：N 单行没有 cost_floor）。 */
+  readonly lockedUnitCost: string;
+  readonly custodianId: string;
+}
+
 /** 库存写入端口：由 inventory 实现，内部就是 `inventory/services/stock-flow.ts`。 */
 export interface StockFlowPort {
   applyAdjustment(tx: SqlClient, command: StockAdjustmentCommand): Promise<StockAdjustmentReceipt>;
@@ -67,6 +95,11 @@ export interface StockFlowPort {
     tx: SqlClient,
     command: StockReservationCommand,
   ): Promise<StockReservationReceipt>;
+  /** 到货确认转司（D31 / D74）：释放在途占用 + 批次归属公司变更，同事务。 */
+  transferOwnership(
+    tx: SqlClient,
+    command: OwnershipTransferCommand,
+  ): Promise<OwnershipTransferReceipt>;
 }
 
 /** C 结算单草稿命令（D19 / D70；由 E / N 单完成方发起）。 */

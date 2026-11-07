@@ -12,6 +12,7 @@ import {
   createInternalTradeOrder,
   getInternalTradeOrder,
   listInternalTradeOrders,
+  receiveInternalTradeOrder,
   shipInternalTradeOrder,
   updateInternalTradeOrder,
 } from './usecases/internal-trade-orders.js';
@@ -26,13 +27,15 @@ import {
  * - 明细只能引用**发出公司**批次（D22），`batchIds` 至少 1 条；
  * - 发货 / 在途端点已按 D73 接线：`进行中` → `在途`，按行锁定批次 `in_transit_qty`（D31 / D68③），
  *   批次 `company_id` 不变，仍归发出公司；取消在途单会同事务释放在途占用；
- * - 到货确认 / 转司端点仍未登记（要改批次 `company_id` 并生成 C 草稿，D29 另案拍板）。
+ * - 到货确认 / 转司已按 D74 接线：`在途 → 已完成`，仅**接收公司**可确认（D22），
+ *   同一事务内释放在途占用 + 批次 `company_id` 转接收公司 + 生成 C 草稿（D29 / D75）。
  */
 
 const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'internal_trade.order.create': 'internal_trade_order',
   'internal_trade.order.update': 'internal_trade_order',
   'internal_trade.order.ship': 'internal_trade_order',
+  'internal_trade.order.receive': 'internal_trade_order',
   'internal_trade.order.cancel': 'internal_trade_order',
 };
 
@@ -114,6 +117,14 @@ export function registerInternalTradeRoutes(app: FastifyInstance): void {
     }) => {
       assertDatabaseConfigured(instance, route);
       return await shipInternalTradeOrder({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+    'internal_trade.order.receive': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await receiveInternalTradeOrder({
         database: instance.database,
         request,
         reply,
