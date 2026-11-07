@@ -6,28 +6,28 @@
 
 ## 0. 一分钟读完
 
-**一句话：契约全覆盖，八张单据 + 收款 + 退货的后端全部实现，只剩 inventory 写动作（盘点）与模块间联动。**
+**一句话：后端 84 个接口全部可用（无 501）；E 单完成、N 单发货已通；剩 N 到货确认/转司、四条单据→流水联动、提成/报表/打印/成本更正/支付，以及整块前端 22 页与打包部署。CI 因 GitHub 账单停摆。**
 
 | 项 | 结论 |
 |---|---|
 | 仓库 / 阶段 | `D:\Desktop\dsh\Qingdan`，私有仓 `github.com/TianLingBy/qingdan`；阶段 4 分工开发。 |
-| 契约 | 八张单据全线登记，OpenAPI 规模 paths=53 / operations=83 / schemas=37（D71 盘点拆盘盈/盘亏、D72 E 单完成）；生成物勿手改。 |
-| 实现 | masterdata 22、platform 员工 4、sales 11（E 6 含 D72 完成 + 收款 2 + R 3）、purchase 8（A 5 + S 3）、processing 5、internal-trade 5、settlement 3、inventory 3 只读 + 盘点 I 5 全部可用；**83 个 operation 已无 501**。 |
-| 当前主线 | ①**#79 已通 E 单**（D70 端口 + D72 完成端点）：E 单完成 = 扣库存 + 生成 C 草稿；**N 单完成（转司 + 在途量）仍待拍板**；②**#84 盘点权限已按 D71 落地**（盘盈/盘亏两端点 + 角色矩阵），待 review 后关 issue；③前端登录页重做——**先落 #3 成员档案**；④提成、利润报表、打印导出契约尚未登记。 |
+| 契约 | 八张单据全线登记，OpenAPI 规模 **paths=54 / operations=84 / schemas=37**（D71 盘点拆盘盈/盘亏、D72 E 单完成、D73 N 单发货）；生成物勿手改。 |
+| 实现 | masterdata 22、platform 21、sales 11（E 6 含 D72 完成 + 收款 2 + R 3）、purchase 8（A 5 + S 3）、processing 5、**internal-trade 6（含 D73 发货）**、settlement 3、inventory 8（只读 3 + 盘点 5）全部可用；**84 个 operation 已无 501**。 |
+| 当前主线 | ①**#79**：E 单完成（D72）、N 单发货（D73）已通；**N 到货确认/转司口径已由 D74 定，实现待做**；②欠账已全部建成 issue：#96 提成、#97 利润报表、#98 打印导出、#99 四条流水联动、#100 成本更正、#101 在线支付、#102 前端 22 页、#103 真实 PG e2e；③前端仍是 22 页占位；④#3 赖皓妍成员档案仍是「待本人确认」。 |
 | 前端 | `apps/web` 已回到 22 页骨架态：#82/#83 的 M1-G 登录页接线与黑白毛玻璃视觉已由 **#90 撤回**（2026-11-07 合并）。 |
 
 ## 1. 最近状态（截至 2026-11-07 晚）
 
 | 项 | 值 |
 |---|---|
-| main | `344c6c3`（#92 D71 盘点权限）+ `ec399a5`（#90 撤回 M1-G）。 |
-| OpenAPI | `pnpm openapi` 生成 `docs/api/openapi.yaml`：paths=53 / operations=83 / schemas=37。 |
-| 已登记 | A 采购 5、B 加工 5、E 销售 6（含完成）+ 收款 2、N 内部交易 5、C 结算 3、R 客户退货 3、S 供应商退货 3、盘点 I 5（盘盈/盘亏各一条 create）、库存只读 3；另含 masterdata 22 与 platform 员工/岗位/公司。 |
+| main | `de082c2`（#95 D73 N 单发货）；前一版是 `e4990bf`（#94 D72 E 单完成）。 |
+| OpenAPI | `pnpm openapi` 生成 `docs/api/openapi.yaml`：**paths=54 / operations=84 / schemas=37**。 |
+| 已登记 | A 采购 5、B 加工 5、E 销售 6（含完成）+ 收款 2、**N 内部交易 6（含发货）**、C 结算 3、R 客户退货 3、S 供应商退货 3、盘点 I 5、库存只读 3；另含 masterdata 22 与 platform 21（员工/岗位/公司/审计/Token/权限）。 |
 | 已挂载 | `MOUNTED_MODULE_KEYS`：platform / masterdata / inventory / sales / purchase / processing / internal-trade / settlement。 |
-| 决策 | 已到 D72：D63 客户账期、D64 加工厂报价、D65 员工岗位公司口径、D66 员工三项裁定、D67 库存四列+生成列、D68 N 单口径与状态、D69 C 单损失快照、**D70 模块间通道（platform 内部服务端口）**、**D71 盘点权限（盘盈 create / 盘亏 delete + 角色矩阵）**、**D72 E 单完成（扣库存 + C 草稿同事务，损失/提成占位 0）**。下一号 D73。 |
+| 决策 | 已到 D74：D63 客户账期、D64 加工厂报价、D65 员工岗位公司口径、D66 员工三项裁定、D67 库存四列+生成列、D68 N 单口径与状态、D69 C 单损失快照、**D70 模块间通道（platform 内部服务端口）**、**D71 盘点权限（盘盈 create / 盘亏 delete + 角色矩阵）**、**D72 E 单完成**、**D73 N 单发货（在途占用 + 取消释放）**、**D74 N 到货确认/转司与 N→C 草稿金额口径**。下一号 D75。 |
 | 迁移 | 已到 `0017`：`0010` purchase_orders、`0011` supplier_returns、`0012` processing_orders、`0013` sales_orders、`0014` sales_receipts_returns、`0015` internal_trade_orders、`0016` settlement_orders、`0017` inventory_stocktakes（更早见 §2）。 |
-| 11-06/07 合并 | #82/#83 前端 M1-G（**已被 #90 撤回**）、#86 加工单修改不清空费用明细、#88 N 单不虚报在途量、#89 盘点审计记录保管人快照（#84 发现 2 已解）、#91 HANDOFF 更新、#92 盘点权限 D71。 |
-| CI | 7 项，含 `route` / `fields`（PR 描述必带 `Blocked by:` 与 `Blocks:`）、`e2e` 与 `spec-drift`；契约和路由测试均不得绕过。 |
+| 11-07 合并 | #92 盘点权限 D71、#93 模块间通道 D70、**#94 E 单完成 D72**、**#95 N 单发货 D73**；#84 已按证据关闭；#82/#83 前端 M1-G 由 #90 撤回。 |
+| CI | 7 项（`test` ubuntu/windows、`integration` PG18、`e2e`、`route`、`fields`、`spec-drift`）。**2026-11-07 起全部 0 步骤秒红：GitHub Actions 账单停摆**（注解 `recent account payments have failed or your spending limit needs to be increased`）；#94/#95 在本机全量门禁通过后由负责人授权合并，账单恢复后需重跑 CI 补形式记录。 |
 | 盘点约束 | inventory 写动作 = `stocktake.increase.create`（scope `stocktake.create`）、`stocktake.decrease.create`（scope `stocktake.delete`）、`stocktake.approve`；`inventory.test.ts` 用显式白名单，新增盘点写端点必须同步白名单。 |
 
 ## 2. 已完成（不用重做）
@@ -55,10 +55,10 @@
 
 ## 4. 下一步（按谁能领）
 
-1. **D72 之后的下一个缺口：N 单完成 + 损失/提成归集（#79 剩余部分）**：E 单已通（D72：`sales.order.complete` 同事务扣库存 + 生成 C 草稿）。剩下的：N 内部交易单完成的在途量释放与批次转司（D22/D31）、D35 的 B 单损失归集（要 processing 侧端口）、D5④ 提成比例配置（「提成」域未登记）——后两项现在在 C 草稿里写 0 占位，补上时才需要新决策。
-2. **D71 代码已写、待 review 合并**：`stocktake.increase.create` / `stocktake.decrease.create` 两条端点 + 角色矩阵（经理补 approve、采购 read/create/delete、纯仓管 read/delete）+ 方向锁 422。合并后关 #84。
-3. **赖皓妍：先落 #3 成员档案 PR**，合并后再接 #4 登录页（接口已全部就绪，可真联调）。
-4. **Lead：报表与输出契约**。提成、利润报表、打印导出尚未登记，按「决策 → 契约 → 注册表 → `pnpm openapi` → spec-drift」推进。
+1. **N 到货确认 / 转司（D74 已定口径，实现待做）**：`internal_trade.order.receive` = `在途 → 已完成`，同一事务内「解锁在途占用 + 批次 `company_id` 转接收公司 + 单头归零」，并生成 N 的 C 草稿（售价=内部价总额、成本=Σ数量×cost_floor、提成记 0）。**确认人必须属接收方公司**。
+2. **四条单据→库存流水联动（#99）**：A 采购入库、B 加工产出、R 退货入库、S 退货出库，照 E 单完成（D72）的写法走 D70 端口。
+3. **前端 22 页（#102 + #4/#5/#6）**：现在全是 `PlaceholderPage`；赖皓妍的 #3 成员档案仍未确认，UI 任务仍挂起。
+4. **欠账清单已全部建档**：#96 提成、#97 利润报表、#98 打印导出、#99 流水联动、#100 成本更正、#101 在线支付、#102 前端 22 页、#103 真实 PG e2e。按 p0 → p1 顺序领。
 
 ## 5. 坑（踩过，别再踩）
 
@@ -76,9 +76,8 @@
 
 ## 6. 需要负责人处理
 
-- **拍板 D70（#79 模块间调用通道）**：推荐 A 方案，拍板后 Lead 才能写 `decisions.md`、改契约、开工实现；在此之前 D19 自动草稿与单据→库存流水两条联动都只能挂着。
-- **拍板 D71（#84 盘点权限口径）**：理货/采购/经理三岗的盘点创建与审批权限、是否新增 `custodian_id` 快照，需一句话定下来。
-- 赖皓妍已能推 PR（#82/#83/#90 都是她的），但**成员档案 #3 仍未落盘**；#4 及其后续 UI 任务在她交档案前保持挂起。
+- **恢复 GitHub Actions 账单（唯一硬阻塞）**：Settings → Billing & plans；注解原文 `recent account payments have failed or your spending limit needs to be increased`。恢复后把 #94/#95 的 CI 重跑（或对 main 重跑）补齐形式记录。
+- **赖皓妍确认 #3 成员档案**：`docs/members/赖皓妍.md` 里的正文是主线 2026-11-04 替她起草的，状态仍是「⬜ 待本人确认」；她的 GitHub 账号 `karryL921` 已由她本人 3 个已合并 PR（#82/#83/#90）验证，只剩她逐项确认后开一个档案 PR。**在那之前 #4/#5/#6/#102 的 UI 任务按规则挂起。**
 - 李祖怡先完成中文姓名、GitHub 账号、负责模块三处核验；未通过不得领任务或写代码。
 - `dsh-agent-conductor` 补丁需在 DSH 重启后验证 240 秒空闲窗口与自动续跑，插件升级后还要重打。
 
@@ -104,9 +103,10 @@ docs/AGENT-TEAM.md 开工：DSH 拆任务/派活/验收/提交，代码交 Claud
 先核验中文姓名、GitHub 账号、负责模块；未核验不得领任务或写代码。开工先跑
 pwsh -NoProfile -File scripts/sync-check.ps1；PR 须过 7 项 CI：test(ubuntu)、test(windows)、
 integration(PG18)、e2e、route、fields、spec-drift，且 PR 正文必须带 Blocked by: / Blocks: 两行。
-当前契约已全覆盖（paths=50 / operations=81 / schemas=37），**81 个 operation 全部可用、无 501**
-（A/B/E/收款/R/S/N/C + masterdata + platform 员工 + inventory 只读 + 盘点 I）。main 在 ec399a5，
-前端已由 #90 撤回回到 22 页骨架。下一步：①等负责人拍板 D70（#79 模块间调用通道）与 D71（#84 盘点
-权限）；②赖皓妍先交 #3 成员档案再开 UI；③Lead 补提成/利润报表/打印导出契约。
+当前 paths=54 / operations=84 / schemas=37，**84 个 operation 全部可用、无 501**（A/B/E/收款/R/S/N/C +
+masterdata + platform + inventory 只读 + 盘点 I + N 发货）。main 在 de082c2，前端仍是 22 页占位（#90 曾
+撤回 M1-G）。口径已到 D74（N 到货确认/转司已定、实现待做）。下一步：①按 D74 实现到货确认/转司；
+②四条单据→库存流水联动（#99）；③前端 22 页（#102，#3 档案未确认前挂起）；④#103 真实 PG e2e。
+**CI 现状：GitHub Actions 因账单停摆，7 项全 0 步骤秒红**，恢复账单后才能按 CI 绿合并。
 契约变更后必须跑 pnpm openapi。
 ```
