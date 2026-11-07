@@ -11,7 +11,9 @@ import {
   SalesOrderCreateInputSchema,
   SalesOrderDetailSchema,
   SalesOrderFeeSchema,
+  SalesOrderFeeViewSchema,
   SalesOrderLineSchema,
+  SalesOrderLineViewSchema,
   SalesOrderListQuerySchema,
   SalesOrderSchema,
   SalesOrderStatusSchema,
@@ -278,8 +280,8 @@ describe('销售单契约（sales）', () => {
     }
 
     expect(z.globalRegistry.get(SalesOrderSchema)?.id).toBe('SalesOrder');
-    expect(z.globalRegistry.get(SalesOrderLineSchema)?.id).toBe('SalesOrderLine');
-    expect(z.globalRegistry.get(SalesOrderFeeSchema)?.id).toBe('SalesOrderFee');
+    expect(z.globalRegistry.get(SalesOrderLineViewSchema)?.id).toBe('SalesOrderLine');
+    expect(z.globalRegistry.get(SalesOrderFeeViewSchema)?.id).toBe('SalesOrderFee');
     expect(z.globalRegistry.get(SalesOrderDetailSchema)?.id).toBe('SalesOrderDetail');
 
     const doc = buildOpenApiDocument(ROUTES);

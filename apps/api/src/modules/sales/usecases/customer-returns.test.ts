@@ -25,7 +25,7 @@ const BATCH_ID = '01900000-0000-7000-8000-000000006121';
 const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000006131';
 
 const SALES_SCOPE: ScopeMatrix = [
-  { domain: 'sales', actions: ['read', 'create', 'update', 'delete'] },
+  { domain: 'sales', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
 ];
 const RETURN_WRITE_SCOPE: ScopeMatrix = [
   { domain: 'customer_return', actions: ['read', 'create'] },

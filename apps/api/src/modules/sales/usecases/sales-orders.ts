@@ -18,6 +18,7 @@ import {
 } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { v7 as uuidv7 } from 'uuid';
+import { recordAmountDetailRead } from '../../../platform/audit/sensitive-read.js';
 import { withAudit, type AuditEvent } from '../../../platform/audit/writer.js';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
@@ -29,6 +30,10 @@ import {
   stockFlowPort,
 } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
+import {
+  maskSalesOrderAmounts,
+  maskSalesOrderDetailAmounts,
+} from '../services/masking.js';
 
 /**
  * 销售单 E 用例（D15 / D16 / D20 / D21 / D22 / D39 / D51 / D52 / D54）。
@@ -256,9 +261,14 @@ export async function listSalesOrders(
   requireScope(principal, 'read');
   const query = parseListQuery(ctx.request);
 
-  return withTenant(database, principal.tenantId, (tx) =>
+  const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
+  const page = await withTenant(database, principal.tenantId, (tx) =>
     repo.listSalesOrders(repoContext(tx, principal), query),
   );
+  return {
+    items: page.items.map((order) => maskSalesOrderAmounts(order, canViewPrice)),
+    nextCursor: page.nextCursor,
+  };
 }
 
 /** 销售单详情（普通读，不记审计）；本批收款块为空占位。 */
@@ -291,7 +301,17 @@ export async function getSalesOrder(
     };
   });
   if (!detail) throw new AppError('NOT_FOUND', '销售单不存在');
-  return detail;
+  const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
+  await recordAmountDetailRead(database, {
+    request: ctx.request,
+    principal,
+    domain: 'sales',
+    operationId: 'sales.order.detail.read',
+    objectType: OBJECT_TYPE,
+    objectId: detail.id,
+    companyId: detail.companyId,
+  });
+  return maskSalesOrderDetailAmounts(detail, canViewPrice);
 }
 
 /** 开销售单：201 + 同事务取 E 号 / 审计（D16 / D51）。 */
@@ -336,7 +356,11 @@ export async function createSalesOrder(
   });
 
   ctx.reply.status(201);
-  return order;
+  // D79：写路径返回的真实金额同样按看价权限脱敏（脱敏只发生在响应上）。
+  return maskSalesOrderAmounts(
+    order,
+    allowsScope(principal.scope, 'sales', 'view_price'),
+  );
 }
 
 /** 修改销售单：If-Match 强 ETag；仅「进行中」可改；成功后回新 ETag。 */
@@ -374,7 +398,11 @@ export async function updateSalesOrder(
   });
 
   ctx.reply.header('ETag', etagOf(order.version));
-  return order;
+  // D79：写路径返回的真实金额同样按看价权限脱敏（脱敏只发生在响应上）。
+  return maskSalesOrderAmounts(
+    order,
+    allowsScope(principal.scope, 'sales', 'view_price'),
+  );
 }
 
 /**
@@ -430,7 +458,11 @@ export async function cancelSalesOrder(
   });
 
   ctx.reply.header('ETag', etagOf(order.version));
-  return order;
+  // D79：写路径返回的真实金额同样按看价权限脱敏（脱敏只发生在响应上）。
+  return maskSalesOrderAmounts(
+    order,
+    allowsScope(principal.scope, 'sales', 'view_price'),
+  );
 }
 
 /** 六个小数位的定点整数（D54 `numeric(18,6)`）：避免浮点算数量。 */
@@ -531,7 +563,8 @@ export async function completeSalesOrder(
       companyId: source.order.companyId,
       sourceDocType: 'E',
       sourceDocId: id,
-      totalSaleAmount: source.order.totalAmount,
+      // 写路径读真实金额（脱敏只作用于响应，D79）；null 仅可能来自响应侧类型。
+      totalSaleAmount: source.order.totalAmount ?? '0',
       totalCostAmount: fromMicro(totalCostMicro),
       relatedLossAmount: '0',
       commissionRateSnapshot: '0',
@@ -553,7 +586,8 @@ export async function completeSalesOrder(
       stockFlowCount: stockFlows.length,
       settlementOrderId: draft.id,
       settlementOrderNo: draft.orderNo,
-      totalSaleAmount: source.order.totalAmount,
+      // 写路径读真实金额（脱敏只作用于响应，D79）；null 仅可能来自响应侧类型。
+      totalSaleAmount: source.order.totalAmount ?? '0',
       totalCostAmount: fromMicro(totalCostMicro),
       commissionRateSnapshot: '0',
       relatedLossAmount: '0',
@@ -564,5 +598,9 @@ export async function completeSalesOrder(
   });
 
   ctx.reply.header('ETag', etagOf(order.version));
-  return order;
+  // D79：写路径返回的真实金额同样按看价权限脱敏（脱敏只发生在响应上）。
+  return maskSalesOrderAmounts(
+    order,
+    allowsScope(principal.scope, 'sales', 'view_price'),
+  );
 }

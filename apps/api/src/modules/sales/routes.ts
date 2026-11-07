@@ -1,6 +1,7 @@
 import {
   AppError,
   ROUTES,
+  allowsScope,
   etagOf,
   routesOfModule,
   type RouteDef,
@@ -28,6 +29,7 @@ import {
   getCustomerReturn,
   listCustomerReturns,
 } from './usecases/customer-returns.js';
+import { maskSalesOrderDetailAmounts } from './services/masking.js';
 
 /**
  * sales 模块（E 销售单一期 5 条 + 收款记录 2 条 + R 客户退货 3 条）。
@@ -96,7 +98,14 @@ export function registerSalesRoutes(app: FastifyInstance): void {
         request,
       });
       reply.header('ETag', etagOf(detail.version));
-      return { ...detail, ...receiptBlock };
+      // 收款块由本 handler 合并进来，故 D79 脱敏在这里再做一次（幂等）。
+      const canViewPrice = request.principal
+        ? allowsScope(request.principal.scope, 'sales', 'view_price')
+        : false;
+      return maskSalesOrderDetailAmounts(
+        { ...detail, ...receiptBlock },
+        canViewPrice,
+      );
     },
     'sales.order.update': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);

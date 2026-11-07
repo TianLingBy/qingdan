@@ -12,16 +12,16 @@ import { InventoryBatchDetailSchema, InventoryBatchSchema, InventoryFlowSchema }
 import { StocktakeDetailSchema, StocktakeSchema } from './stocktakes.js';
 import {
   SalesOrderDetailSchema,
-  SalesOrderFeeSchema,
-  SalesOrderLineSchema,
+  SalesOrderFeeViewSchema,
+  SalesOrderLineViewSchema,
   SalesOrderSchema,
 } from './sales-orders.js';
 import { SalesReceiptSchema } from './sales-receipts.js';
 import { CustomerReturnSchema } from './customer-returns.js';
 import {
   PurchaseOrderDetailSchema,
-  PurchaseOrderFeeSchema,
-  PurchaseOrderLineSchema,
+  PurchaseOrderFeeViewSchema,
+  PurchaseOrderLineViewSchema,
   PurchaseOrderSchema,
 } from './purchase-orders.js';
 import { SupplierReturnSchema } from './supplier-returns.js';
@@ -108,10 +108,10 @@ z.globalRegistry.add(StocktakeDetailSchema, { id: 'StocktakeDetail' });
 z.globalRegistry.add(SalesOrderSchema, { id: 'SalesOrder' });
 
 /** 销售单商品明细（§5.1 / D22）：实体定义在 `sales-orders.ts`。 */
-z.globalRegistry.add(SalesOrderLineSchema, { id: 'SalesOrderLine' });
+z.globalRegistry.add(SalesOrderLineViewSchema, { id: 'SalesOrderLine' });
 
 /** 销售单费用明细（§5.2 / D39）：实体定义在 `sales-orders.ts`。 */
-z.globalRegistry.add(SalesOrderFeeSchema, { id: 'SalesOrderFee' });
+z.globalRegistry.add(SalesOrderFeeViewSchema, { id: 'SalesOrderFee' });
 
 /** 销售单详情（含收款记录与取消判定，§3.3 / D21 / D24）：实体定义在 `sales-orders.ts`。 */
 z.globalRegistry.add(SalesOrderDetailSchema, { id: 'SalesOrderDetail' });
@@ -126,10 +126,10 @@ z.globalRegistry.add(CustomerReturnSchema, { id: 'CustomerReturn' });
 z.globalRegistry.add(PurchaseOrderSchema, { id: 'PurchaseOrder' });
 
 /** 采购单商品明细（§5.1；A 单不引用批次，入库时生成批次）：实体定义在 `purchase-orders.ts`。 */
-z.globalRegistry.add(PurchaseOrderLineSchema, { id: 'PurchaseOrderLine' });
+z.globalRegistry.add(PurchaseOrderLineViewSchema, { id: 'PurchaseOrderLine' });
 
 /** 采购单费用明细（§5.2 / D39；A 单可负、负数必填备注）：实体定义在 `purchase-orders.ts`。 */
-z.globalRegistry.add(PurchaseOrderFeeSchema, { id: 'PurchaseOrderFee' });
+z.globalRegistry.add(PurchaseOrderFeeViewSchema, { id: 'PurchaseOrderFee' });
 
 /** 采购单详情（含取消判定，§3.1 / D21）：实体定义在 `purchase-orders.ts`。 */
 z.globalRegistry.add(PurchaseOrderDetailSchema, { id: 'PurchaseOrderDetail' });
@@ -217,14 +217,14 @@ export const ENTITIES = [
   { name: 'Stocktake', schema: StocktakeSchema },
   { name: 'StocktakeDetail', schema: StocktakeDetailSchema },
   { name: 'SalesOrder', schema: SalesOrderSchema },
-  { name: 'SalesOrderLine', schema: SalesOrderLineSchema },
-  { name: 'SalesOrderFee', schema: SalesOrderFeeSchema },
+  { name: 'SalesOrderLine', schema: SalesOrderLineViewSchema },
+  { name: 'SalesOrderFee', schema: SalesOrderFeeViewSchema },
   { name: 'SalesOrderDetail', schema: SalesOrderDetailSchema },
   { name: 'SalesReceipt', schema: SalesReceiptSchema },
   { name: 'CustomerReturn', schema: CustomerReturnSchema },
   { name: 'PurchaseOrder', schema: PurchaseOrderSchema },
-  { name: 'PurchaseOrderLine', schema: PurchaseOrderLineSchema },
-  { name: 'PurchaseOrderFee', schema: PurchaseOrderFeeSchema },
+  { name: 'PurchaseOrderLine', schema: PurchaseOrderLineViewSchema },
+  { name: 'PurchaseOrderFee', schema: PurchaseOrderFeeViewSchema },
   { name: 'PurchaseOrderDetail', schema: PurchaseOrderDetailSchema },
   { name: 'SupplierReturn', schema: SupplierReturnSchema },
   { name: 'ProcessingOrder', schema: ProcessingOrderSchema },

@@ -17,11 +17,13 @@ import { SalesReceiptSchema } from './sales-receipts.js';
  *   不另造英文枚举（D54 §9-6）；
  * - **取消规则复用** `documents.ts` 的 `canCancel` / `assertCancelable`（D21），
  *   本文件不重写一套级联判断；
- * - 写操作必记审计（D51）；普通读不记（D54 ②）。
+ * - **金额可见性（D27 / D79）**：无 `sales.view_price` 时，列表与详情里的金额字段
+ *   （`totalAmount`、`lines[].unitPrice|amount`、`fees[].unitPrice|amount`、
+ *   `receipts[].amount`、`receiptBalance`）**返回 null**——字段保留、不出 0、不 403；
+ *   有看价权限的详情读取会写一条 `amount.detail` 审计（D51 ①）；
+ * - 写操作必记审计（D51）；普通读不记（D54 ②），看价详情读例外（D78 / D79）。
  *
  * 本批明确不做（等后续批次）：
- * - **不做「完成 / 出库」端点**：出库要把待执行占用转已引用（D41），依赖 inventory 写路径，
- *   等 inventory 写能力落地后再加；
  * - **收款记录端点不在本文件**：见 `sales-receipts.ts`（§6，D24/D34/D40）；
  * - **不做改价下限审批的独立端点**：破下限需走 platform 审批（D20），审批端点后续补；
  *   本批不在契约里发明任何审批 / `priceFloor` 字段。
@@ -55,26 +57,50 @@ export const SalesOrderLineSchema = z.object({
 });
 export type SalesOrderLine = z.infer<typeof SalesOrderLineSchema>;
 
+/** 实体视图：无 `sales.view_price` 时金额为 null（D79）；入参仍用上面的非空 schema。 */
+export const SalesOrderLineViewSchema = SalesOrderLineSchema.extend({
+  unitPrice: NonNegativeDecimal.nullable(),
+  amount: NonNegativeDecimal.nullable(),
+});
+
 /**
  * 费用明细（§5.2）：运费 / 杂费 / 加工费等。
  * **E 单费用行金额必须 ≥ 0（D39）**——负数会绕过破下限审批，故在 schema 层用 refine 拒绝。
  */
-export const SalesOrderFeeSchema = z.object({
+const salesFeeFields = {
   feeName: z.string().min(1).max(64),
   qty: NonNegativeDecimal,
   unitPrice: NonNegativeDecimal,
-  amount: DecimalString.refine((value) => Number(value) >= 0, {
-    message: 'E 单费用行金额必须 ≥ 0（D39，禁止用负数费用行绕过破下限审批）',
-  }),
+  amount: DecimalString,
   /** 备注可空（§5.2；A 单负数费用才条件必填，E 单无此要求）。 */
   remark: z.string().max(255).nullable(),
-});
+};
+
+const E_FEE_NON_NEGATIVE = {
+  message: 'E 单费用行金额必须 ≥ 0（D39，禁止用负数费用行绕过破下限审批）',
+} as const;
+
+export const SalesOrderFeeSchema = z
+  .object(salesFeeFields)
+  .refine((value) => Number(value.amount) >= 0, E_FEE_NON_NEGATIVE);
 export type SalesOrderFee = z.infer<typeof SalesOrderFeeSchema>;
 
+/** 实体视图：金额可为 null（D79）；null 表示无看价权限，跳过符号校验。 */
+export const SalesOrderFeeViewSchema = z
+  .object({
+    ...salesFeeFields,
+    unitPrice: NonNegativeDecimal.nullable(),
+    amount: DecimalString.nullable(),
+  })
+  .refine((value) => value.amount === null || Number(value.amount) >= 0, E_FEE_NON_NEGATIVE);
+
 /** 创建入参里的费用行：`remark` 可省略（响应实体仍回 `null`）。 */
-const SalesOrderFeeInputSchema = SalesOrderFeeSchema.extend({
-  remark: z.string().max(255).nullable().optional(),
-});
+const SalesOrderFeeInputSchema = z
+  .object({
+    ...salesFeeFields,
+    remark: z.string().max(255).nullable().optional(),
+  })
+  .refine((value) => Number(value.amount) >= 0, E_FEE_NON_NEGATIVE);
 
 /** 销售单实体（§3.3）：`customerName` 为只读回显，单号服务端生成（D16）。 */
 export const SalesOrderSchema = z.object({
@@ -90,10 +116,10 @@ export const SalesOrderSchema = z.object({
   status: SalesOrderStatusSchema,
   /** 经手人。 */
   handlerId: z.string(),
-  lines: z.array(SalesOrderLineSchema),
-  fees: z.array(SalesOrderFeeSchema),
-  /** 单据总金额，decimal 字符串（D54）。 */
-  totalAmount: NonNegativeDecimal,
+  lines: z.array(SalesOrderLineViewSchema),
+  fees: z.array(SalesOrderFeeViewSchema),
+  /** 单据总金额，decimal 字符串（D54）；**无 `sales.view_price` 时为 null**（D79）。 */
+  totalAmount: NonNegativeDecimal.nullable(),
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
   version: z.number().int(),
   createdAt: z.string().datetime(),
@@ -120,7 +146,7 @@ export type SalesOrderCancelable = z.infer<typeof SalesOrderCancelableSchema>;
 export const SalesOrderDetailSchema = SalesOrderSchema.extend({
   receipts: z.array(SalesReceiptSchema),
   /** 块内余额（D34）：收款合计 − 退款合计；计算值，客户端不传。 */
-  receiptBalance: DecimalString,
+  receiptBalance: DecimalString.nullable(),
   cancelable: SalesOrderCancelableSchema,
 });
 export type SalesOrderDetail = z.infer<typeof SalesOrderDetailSchema>;
@@ -185,7 +211,7 @@ export const SALES_ORDER_ROUTES: readonly RouteDef[] = [
     path: '/api/v1/sales-orders',
     domain: 'sales',
     action: 'read',
-    summary: '销售单列表（按公司/客户/状态/单号或客户名检索；普通读不记审计，D15）',
+    summary: '销售单列表（按公司/客户/状态/单号或客户名检索；普通读不记审计，D15；无看价权限时金额字段为 null，D79）',
     audit: { kind: 'none' },
     request: { query: SalesOrderListQuerySchema },
     response: { status: 200, schema: pageSchema(SalesOrderSchema) },
@@ -210,7 +236,8 @@ export const SALES_ORDER_ROUTES: readonly RouteDef[] = [
     path: '/api/v1/sales-orders/{id}',
     domain: 'sales',
     action: 'read',
-    summary: '销售单详情（内嵌收款记录占位 + 取消判定 cancelable；普通读不记审计，D21/D24）',
+    summary:
+      '销售单详情（内嵌收款记录 + 取消判定 cancelable；无看价权限时金额字段为 null；看过金额记 amount.detail，D21/D24/D79）',
     audit: { kind: 'none' },
     response: { status: 200, schema: SalesOrderDetailSchema },
   }),

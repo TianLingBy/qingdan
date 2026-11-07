@@ -46,8 +46,12 @@ export type SalesReceiptMethod = z.infer<typeof SalesReceiptMethodSchema>;
 const DIRECTION_AMOUNT_MESSAGE =
   '收款行金额必须 > 0、退款行金额必须 < 0（§6 / D34；退款只追加负数行，不改历史行）';
 
-/** 方向与金额符号一致性：收款 > 0，退款 < 0（D34/D40）。 */
-function directionMatchesAmount(value: { direction: SalesReceiptDirection; amount: string }): boolean {
+/**
+ * 方向与金额符号一致性：收款 > 0，退款 < 0（D34/D40）。
+ * 无看价权限时 `amount` 为 null（D79），此时不判符号——脱敏字段保留、值不下发。
+ */
+function directionMatchesAmount(value: { direction: SalesReceiptDirection; amount: string | null }): boolean {
+  if (value.amount === null) return true;
   if (value.direction === '退款') return Number(value.amount) < 0;
   return Number(value.amount) > 0;
 }
@@ -55,6 +59,7 @@ function directionMatchesAmount(value: { direction: SalesReceiptDirection; amoun
 /** 实体与创建入参共用的字段（服务端生成字段不在其中）。 */
 const receiptFields = {
   direction: SalesReceiptDirectionSchema,
+  /** 金额；**无 `sales.view_price` 时响应为 null**（D79）。 */
   amount: DecimalString,
   method: SalesReceiptMethodSchema,
   /** 发生时间（§6），ISO datetime 字符串。 */
@@ -77,6 +82,8 @@ export const SalesReceiptSchema = z
     companyId: z.string(),
     salesOrderId: z.string(),
     ...receiptFields,
+    /** 金额；无 `sales.view_price` 时响应为 null（D79：字段保留、不出 0、不 403）。 */
+    amount: DecimalString.nullable(),
     /** 乐观锁版本：记录只追加，版本留给后续批次（本批不做 update）。 */
     version: z.number().int(),
     createdAt: z.string().datetime(),

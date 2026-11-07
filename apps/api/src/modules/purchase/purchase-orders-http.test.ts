@@ -248,7 +248,7 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
     });
 
     const audit = await test.database.query<{ action: string; result: string }>(
-      `SELECT action, result FROM audit_log WHERE object_id = $1`,
+      `SELECT action, result FROM audit_log WHERE object_id = $1 AND action <> 'amount.detail'`,
       [body.id],
     );
     expect(audit.rows).toEqual([{ action: 'purchase.order.create', result: 'success' }]);
@@ -444,7 +444,7 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         name: 'HTTP Purchase AI Token',
         employeeId: DEMO_IDS.ownerEmployeeId,
-        scope: [{ domain: 'purchase', actions: ['read', 'create', 'delete'] }],
+        scope: [{ domain: 'purchase', actions: ['read', 'create', 'delete', 'view_price'] }],
       },
     });
     expect(tokenResponse.statusCode).toBe(201);

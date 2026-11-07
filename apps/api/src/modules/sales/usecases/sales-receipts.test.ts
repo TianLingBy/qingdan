@@ -23,9 +23,9 @@ const BATCH_ID = '01900000-0000-7000-8000-000000005121';
 const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000005131';
 
 const SALES_SCOPE: ScopeMatrix = [
-  { domain: 'sales', actions: ['read', 'create', 'update', 'delete'] },
+  { domain: 'sales', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
 ];
-const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'sales', actions: ['read'] }];
+const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'sales', actions: ['read', 'view_price'] }];
 
 interface FakeRequestInput {
   readonly principal: Principal;

@@ -261,7 +261,7 @@ describe('sales 销售单 HTTP（PGlite + seed 演示租户）', () => {
     expect(page.nextCursor).toBeNull();
 
     const audit = await test.database.query<{ action: string; result: string }>(
-      `SELECT action, result FROM audit_log WHERE object_id = $1`,
+      `SELECT action, result FROM audit_log WHERE object_id = $1 AND action <> 'amount.detail'`,
       [body.id],
     );
     expect(audit.rows).toEqual([
@@ -416,6 +416,7 @@ describe('sales 销售单 HTTP（PGlite + seed 演示租户）', () => {
          FROM audit_log
         WHERE object_id = $1
           AND result = 'success'
+          AND action <> 'amount.detail'
         ORDER BY action`,
       [created.id],
     );
@@ -435,7 +436,7 @@ describe('sales 销售单 HTTP（PGlite + seed 演示租户）', () => {
         name: 'HTTP Sales AI Token',
         employeeId: DEMO_IDS.ownerEmployeeId,
         scope: [
-          { domain: 'sales', actions: ['read', 'create', 'update', 'delete'] },
+          { domain: 'sales', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
         ],
       },
     });

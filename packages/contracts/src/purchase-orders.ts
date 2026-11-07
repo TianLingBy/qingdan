@@ -57,8 +57,15 @@ export const PurchaseOrderLineSchema = z.object({
 });
 export type PurchaseOrderLine = z.infer<typeof PurchaseOrderLineSchema>;
 
+/** 实体视图：无 `purchase.view_price` 时金额为 null（D79）；入参仍用上面的非空 schema。 */
+export const PurchaseOrderLineViewSchema = PurchaseOrderLineSchema.extend({
+  unitPrice: NonNegativeDecimal.nullable(),
+  amount: NonNegativeDecimal.nullable(),
+});
+
 /** D39：A 单负数费用行必须填写非空备注，否则拒绝。 */
-function negativeFeeHasRemark(fee: { amount: string; remark?: string | null }): boolean {
+function negativeFeeHasRemark(fee: { amount: string | null; remark?: string | null }): boolean {
+  if (fee.amount === null) return true;
   if (Number(fee.amount) >= 0) return true;
   return typeof fee.remark === 'string' && fee.remark.trim().length > 0;
 }
@@ -88,6 +95,16 @@ export const PurchaseOrderFeeSchema = z
   .refine(negativeFeeHasRemark, { message: NEGATIVE_FEE_MESSAGE, path: ['remark'] });
 export type PurchaseOrderFee = z.infer<typeof PurchaseOrderFeeSchema>;
 
+/** 实体视图：金额可为 null（D79）；null 表示无看价权限，跳过负数备注校验。 */
+export const PurchaseOrderFeeViewSchema = z
+  .object({
+    ...feeShape,
+    unitPrice: NonNegativeDecimal.nullable(),
+    amount: DecimalString.nullable(),
+    remark: z.string().max(255).nullable(),
+  })
+  .refine(negativeFeeHasRemark, { message: NEGATIVE_FEE_MESSAGE, path: ['remark'] });
+
 /** 创建入参里的费用行：`remark` 可省略（响应实体仍回 `null`），负数校验口径不变。 */
 const PurchaseOrderFeeInputSchema = z
   .object({
@@ -115,14 +132,14 @@ export const PurchaseOrderSchema = z.object({
   status: PurchaseOrderStatusSchema,
   /** 经手人。 */
   handlerId: z.string(),
-  lines: z.array(PurchaseOrderLineSchema),
-  fees: z.array(PurchaseOrderFeeSchema),
-  /** 货款：商品明细金额合计（decimal 字符串，D54）。 */
-  goodsAmount: NonNegativeDecimal,
-  /** 费用合计：可为负（D39）。 */
-  feeAmount: DecimalString,
-  /** 单据总金额 = 货款 + 费用合计（decimal 字符串，D54 / D5）。 */
-  totalAmount: DecimalString,
+  lines: z.array(PurchaseOrderLineViewSchema),
+  fees: z.array(PurchaseOrderFeeViewSchema),
+  /** 货款：商品明细金额合计（decimal 字符串，D54）；**无 `purchase.view_price` 时为 null**（D79）。 */
+  goodsAmount: NonNegativeDecimal.nullable(),
+  /** 费用合计：可为负（D39）；无看价权限时为 null。 */
+  feeAmount: DecimalString.nullable(),
+  /** 单据总金额 = 货款 + 费用合计（decimal 字符串，D54 / D5）；无看价权限时为 null。 */
+  totalAmount: DecimalString.nullable(),
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
   version: z.number().int(),
   createdAt: z.string().datetime(),

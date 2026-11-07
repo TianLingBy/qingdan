@@ -245,11 +245,18 @@ describe('收款记录契约（sales.receipt）', () => {
     expect(doc.components.schemas.SalesReceipt).toBeDefined();
 
     const detail = doc.components.schemas.SalesOrderDetail as {
-      properties: Record<string, { items?: { $ref?: string }; type?: string }>;
+      properties: Record<
+        string,
+        { items?: { $ref?: string }; type?: string | string[]; anyOf?: { type?: string }[] }
+      >;
       required: string[];
     };
     expect(detail.properties.receipts?.items?.$ref).toBe('#/components/schemas/SalesReceipt');
-    expect(detail.properties.receiptBalance?.type).toBe('string');
+    // D79：无看价权限时余额为 null，故是 `anyOf: [string, null]`。
+    expect(detail.properties.receiptBalance?.anyOf?.map((part) => part.type)).toEqual([
+      'string',
+      'null',
+    ]);
     expect(detail.required).toContain('receipts');
     expect(detail.required).toContain('receiptBalance');
   });

@@ -33,9 +33,9 @@ const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000003103';
 const FLOW_ID = '01900000-0000-7000-8000-000000003131';
 
 const FULL_SCOPE: ScopeMatrix = [
-  { domain: 'sales', actions: ['read', 'create', 'update', 'delete'] },
+  { domain: 'sales', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
 ];
-const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'sales', actions: ['read'] }];
+const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'sales', actions: ['read', 'view_price'] }];
 
 const LINE = {
   productId: PRODUCT_ID,
@@ -283,7 +283,7 @@ describe('sales 销售单用例（PGlite + seed 演示租户）', () => {
     expect(detail.cancelable).toEqual({ allowed: true, reason: null });
 
     const audit = await test.database.query<{ action: string; result: string }>(
-      `SELECT action, result FROM audit_log WHERE object_id = $1`,
+      `SELECT action, result FROM audit_log WHERE object_id = $1 AND action <> 'amount.detail'`,
       [created.id],
     );
     expect(audit.rows).toEqual([

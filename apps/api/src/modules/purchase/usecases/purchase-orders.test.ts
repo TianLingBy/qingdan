@@ -33,9 +33,9 @@ const BATCH_ID = '01900000-0000-7000-8000-000000000321';
 const FLOW_ID = '01900000-0000-7000-8000-000000000322';
 
 const FULL_SCOPE: ScopeMatrix = [
-  { domain: 'purchase', actions: ['read', 'create', 'update', 'delete'] },
+  { domain: 'purchase', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
 ];
-const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'purchase', actions: ['read'] }];
+const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'purchase', actions: ['read', 'view_price'] }];
 
 interface FakeRequestInput {
   readonly principal: Principal;
@@ -229,7 +229,7 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
 
     // D51：成功审计落到 audit_log（outbox 已搬运）。
     const audit = await test.database.query<{ action: string; object_type: string; result: string }>(
-      `SELECT action, object_type, result FROM audit_log WHERE object_id = $1`,
+      `SELECT action, object_type, result FROM audit_log WHERE object_id = $1 AND action <> 'amount.detail'`,
       [created.id],
     );
     expect(audit.rows).toEqual([
@@ -505,7 +505,7 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
     );
 
     const audit = await test.database.query<{ action: string; result: string }>(
-      `SELECT action, result FROM audit_log WHERE object_id = $1 ORDER BY action`,
+      `SELECT action, result FROM audit_log WHERE object_id = $1 AND action <> 'amount.detail' ORDER BY action`,
       [created.id],
     );
     expect(audit.rows).toContainEqual({ action: 'purchase.order.cancel', result: 'success' });
