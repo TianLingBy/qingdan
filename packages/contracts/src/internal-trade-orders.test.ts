@@ -75,8 +75,8 @@ const CREATE_INPUT = {
 } as const;
 
 describe('内部交易单契约（internal-trade）', () => {
-  it('7 条端点全部登记并汇总进 ROUTES，且归属 internal-trade（含 D73 发货 / D74 到货确认）', () => {
-    expect(INTERNAL_TRADE_ORDER_ROUTES).toHaveLength(7);
+  it('6 条端点全部登记并汇总进 ROUTES，且归属 internal-trade（含 D73 发货）', () => {
+    expect(INTERNAL_TRADE_ORDER_ROUTES).toHaveLength(6);
     for (const route of INTERNAL_TRADE_ORDER_ROUTES) expect(route.module).toBe('internal-trade');
 
     const internalTradeIds = routesOfModule(ROUTES, 'internal-trade').map((r) => r.operationId);
@@ -96,7 +96,6 @@ describe('内部交易单契约（internal-trade）', () => {
         'GET /api/v1/internal-trade-orders/{id} internal_trade.order.detail.read',
         'PATCH /api/v1/internal-trade-orders/{id} internal_trade.order.update',
         'POST /api/v1/internal-trade-orders/{id}/ship internal_trade.order.ship',
-        'POST /api/v1/internal-trade-orders/{id}/receive internal_trade.order.receive',
         'POST /api/v1/internal-trade-orders/{id}/cancel internal_trade.order.cancel',
       ].sort(),
     );
@@ -108,8 +107,6 @@ describe('内部交易单契约（internal-trade）', () => {
     expect(byId.get('internal_trade.order.update')?.scope).toBe('internal_trade.update');
     // D73：发货只是状态推进 + 锁在途，沿用 update 权限位，不新增动作词（D4 八动作封闭）。
     expect(byId.get('internal_trade.order.ship')?.scope).toBe('internal_trade.update');
-    // D74：到货确认同样是状态推进 + 转司，沿用 update 权限位。
-    expect(byId.get('internal_trade.order.receive')?.scope).toBe('internal_trade.update');
     expect(byId.get('internal_trade.order.cancel')?.scope).toBe('internal_trade.delete');
 
     // 域键必须是已有的下划线键，不是模块键的连字符形式。
@@ -130,7 +127,6 @@ describe('内部交易单契约（internal-trade）', () => {
       'internal_trade.order.create',
       'internal_trade.order.update',
       'internal_trade.order.ship',
-      'internal_trade.order.receive',
       'internal_trade.order.cancel',
     ]) {
       expect(byId.get(id)?.audit, id).toEqual({ kind: 'write', required: true });
@@ -159,7 +155,6 @@ describe('内部交易单契约（internal-trade）', () => {
 
     expect(byId.get('internal_trade.order.update')?.requiresIfMatch).toBe(true);
     expect(byId.get('internal_trade.order.ship')?.requiresIfMatch).toBe(true);
-    expect(byId.get('internal_trade.order.receive')?.requiresIfMatch).toBe(true);
     expect(byId.get('internal_trade.order.cancel')?.requiresIfMatch).toBe(true);
     expect(byId.get('internal_trade.order.create')?.requiresIfMatch).toBe(false);
     expect(byId.get('internal_trade.order.create')?.response?.status).toBe(201);
@@ -365,11 +360,12 @@ describe('内部交易单契约（internal-trade）', () => {
       InternalTradeOrderCancelableSchema.safeParse({ allowed: false, reason: 'unknown' }).success,
     ).toBe(false);
 
-    // D73 补「发货 / 在途」、D74 补「到货确认 / 转司」；「自动生成 C 单（独立端点）」「内部定价规则」仍禁止。
+    // D73 只补了「发货 / 在途」；「到货确认 / 转司」「自动生成 C 单」「内部定价规则」仍禁止。
     const ids = INTERNAL_TRADE_ORDER_ROUTES.map((r) => r.operationId);
     expect(ids.some((id) => /ship/.test(id))).toBe(true);
-    expect(ids.some((id) => /receive/.test(id))).toBe(true);
-    expect(ids.some((id) => /transit|arrive|complete|settle|price-rule/.test(id))).toBe(false);
+    expect(
+      ids.some((id) => /transit|receive|arrive|complete|settle|price-rule/.test(id)),
+    ).toBe(false);
   });
 
   it('实体已登记（ENTITIES / globalRegistry / components.schemas 三处一致）', () => {

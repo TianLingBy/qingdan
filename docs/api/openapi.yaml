@@ -5199,44 +5199,6 @@ paths:
         reasonRequired: true
       x-mcp-tool: qingdan_internal_trade_order_ship
       x-requires-if-match: true
-  /api/v1/internal-trade-orders/{id}/receive:
-    post:
-      operationId: internal_trade.order.receive
-      summary: 内部交易单到货确认 / 转司（在途→已完成；仅接收方公司可确认；释放占用 + 批次归属转接收公司 + 生成 C 草稿，D22/D31/D74）
-      tags:
-        - internal_trade
-      security:
-        - cookieAuth: []
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/InternalTradeOrder"
-        default:
-          description: 错误（统一错误体）
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiErrorBody"
-      x-scope: internal_trade.update
-      x-module: internal-trade
-      x-audit:
-        kind: write
-        required: true
-      x-ai-policy:
-        policy: forbid
-        reasonRequired: true
-      x-mcp-tool: qingdan_internal_trade_order_receive
-      x-requires-if-match: true
   /api/v1/internal-trade-orders/{id}/cancel:
     post:
       operationId: internal_trade.order.cancel

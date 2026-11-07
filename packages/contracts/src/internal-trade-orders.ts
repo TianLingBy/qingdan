@@ -26,15 +26,14 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - **单号由服务端按 D16 生成**（格式 `N-<公司码4>-<日期8>-<流水4>`），创建入参不接收 `orderNo`；
  * - 写操作必记审计（D51）；普通读不记（D54 ②）。
  *
- * 已补的两个推进端点：
- * - **D73 发货** `internal_trade.order.ship`：`进行中 → 在途`，按行锁定批次 `in_transit_qty`（在途占用，D31），
- *   批次 `company_id` 不变，仍属发出公司；
- * - **D74 到货确认 / 转司** `internal_trade.order.receive`：`在途 → 已完成`，**仅接收方公司可确认**（D22），
- *   同一事务内释放该单在途占用 + 把批次 `company_id` 改成接收公司（D31），并生成 C 草稿（D29）。
- *
- * 本批仍不做（写进契约，防止后续顺手加端点）：
+ * 本批明确不做（写进契约，防止后续顺手加端点）：
+ * - **不做「到货确认 / 转司」端点**：转司要在同一事务里改批次 `company_id` 并解锁在途占用（D22 / D31 / D68③），
+ *   依赖 inventory 写能力已具备，但口径（确认人范围、C 草稿生成 D29）另案拍板；
  * - **不做内部定价规则表**：一期内部价手工填（D68①），系统不按成本价 / 加成自动算；
- * - **不做部分到货 / 分批确认**：一期一单一次确认，与 C 单「一单一次结算」同规则（D29）。
+ * - **不做 N 单完成自动生成 C 单草稿**（D29，与 E 单同规则）：等「到货确认」端点一起定。
+ *
+ * 已补（D73）：**发货 / 在途端点** `internal_trade.order.ship`——进入在途时按行锁定批次
+ * `in_transit_qty`（在途占用，D31），批次 `company_id` 不变，仍属发出公司。
  */
 
 /** decimal 字符串（D54 `numeric(18,6)`：最多 12 位整数 + 6 位小数，可负）。 */
@@ -191,13 +190,13 @@ export const InternalTradeOrderUpdateInputSchema = z
 export type InternalTradeOrderUpdateInput = z.infer<typeof InternalTradeOrderUpdateInputSchema>;
 
 /**
- * internal-trade 模块 N 内部交易单端点（7 条：第二批 5 条 + D73 发货 + D74 到货确认/转司）。
+ * internal-trade 模块 N 内部交易单端点（6 条：第二批 5 条 + D73 发货）。
  *
  * operationId 以 `internal_trade` 开头（与功能域同名，registry 校验要求）；
  * 权限 scope 仍按功能域推导为 `internal_trade.read/create/update/delete`（D44）。
  * 审计：写操作必记（D51）；普通读不记（D54 ②）。
- * AI：开单属业务动作默认禁止；修改允许；发货 / 到货确认 / 取消属危险动作，默认禁止且必须给原因（D52① / D54 ⑥）。
- * 并发：update / ship / receive / cancel 强制 If-Match 强 ETag。
+ * AI：开单属业务动作默认禁止；修改允许；发货 / 取消属危险动作，默认禁止且必须给原因（D52① / D54 ⑥）。
+ * 并发：update / ship / cancel 强制 If-Match 强 ETag。
  * 取消：按四态映射后复用 `canCancel` / `assertCancelable`（D21 / D68②）。
  */
 export const INTERNAL_TRADE_ORDER_ROUTES: readonly RouteDef[] = [
@@ -260,20 +259,6 @@ export const INTERNAL_TRADE_ORDER_ROUTES: readonly RouteDef[] = [
     action: 'update',
     summary:
       '内部交易单发货（进行中→在途；按行均分锁定批次在途占用 D31/D68③，批次仍归发出公司；AI 禁止）',
-    audit: { kind: 'write' },
-    ai: { policy: 'forbid', reasonRequired: true },
-    requiresIfMatch: true,
-    response: { status: 200, schema: InternalTradeOrderSchema },
-  }),
-  defineRoute({
-    module: 'internal-trade',
-    operationId: 'internal_trade.order.receive',
-    method: 'POST',
-    path: '/api/v1/internal-trade-orders/{id}/receive',
-    domain: 'internal_trade',
-    action: 'update',
-    summary:
-      '内部交易单到货确认 / 转司（在途→已完成；仅接收方公司可确认；释放占用 + 批次归属转接收公司 + 生成 C 草稿，D22/D31/D74）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,

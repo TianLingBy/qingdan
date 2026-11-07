@@ -1,9 +1,5 @@
 import type { ServiceRegistry } from '../../../platform/services/registry.js';
-import {
-  applyOwnershipTransfer,
-  applyStockAdjustment,
-  applyStockReservation,
-} from './stock-flow.js';
+import { applyStockAdjustment, applyStockReservation } from './stock-flow.js';
 
 /**
  * inventory 对外端口实现（D70）。
@@ -27,17 +23,6 @@ export const inventoryServices: Pick<ServiceRegistry, 'stockFlow'> = {
       applyStockReservation(tx, {
         tenantId: command.tenantId,
         companyId: command.companyId,
-        batchId: command.batchId,
-        delta: command.delta,
-        sourceDocType: command.sourceDocType,
-        sourceDocId: command.sourceDocId,
-        handledBy: command.handledBy,
-      }),
-    transferOwnership: async (tx, command) =>
-      applyOwnershipTransfer(tx, {
-        tenantId: command.tenantId,
-        companyId: command.companyId,
-        toCompanyId: command.toCompanyId,
         batchId: command.batchId,
         delta: command.delta,
         sourceDocType: command.sourceDocType,
