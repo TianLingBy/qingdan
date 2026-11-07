@@ -37,7 +37,7 @@
 
 ## 当前状态
 
-C 单 3 端点 + 提成比例配置 3 端点已实现（2026-11-07）；本模块端点 0 个 501
+C 单 3 端点 + 提成比例配置 3 端点已实现（2026-11-07）；C 单金额已按「看价」脱敏（D78）；本模块端点 0 个 501
 
 ## 已完成
 
@@ -45,8 +45,9 @@ C 单 3 端点 + 提成比例配置 3 端点已实现（2026-11-07）；本模�
 - **2026-11-05 C 单 3 端点实现（PR #77）**：`apps/api/migrations/0016_settlement_orders.sql`（来源单唯一约束 + 金额约束 + ENABLE/FORCE RLS，禁删授权）+ `modules/settlement/{repo.ts,usecases/settlement-orders.ts,routes.ts}`；list/detail/confirm 接 HTTP；confirm 需 `settlement.approve`、AI 禁止审批（D52.1，必须带 reason）、成功后冻结 `related_loss_amount_snapshot`（**D69 落地**）；一期一单一次结算（D19）。**未做**：E/N 完成态自动生成 C 单草稿（无跨模块读取通道，`TODO(D19)` 留在迁移与用例里）。测试 +4（apps/api 41 文件 295 例），tsc 0，全量门禁 ALL PASSED。
 - **2026-11-07 提成比例配置 + 确认时算提成（D77，Issue #96）**：`apps/api/migrations/0018_settlement_commission.sql`（`commission_rate` 表：租户+公司+员工+生效日唯一、rate CHECK 0..1、RLS；`settlement_order.commission_owner_id` 可空列）+ `packages/contracts/src/commission-rates.ts`（3 端点：list / create / delete）+ `modules/settlement/{repo.ts,usecases/commission-rates.ts,routes.ts}`；确认结算时按归属人在本公司的**最新生效比例**解析（无配置记 0、负毛利记 0）并同事务快照，改配置不影响已结算单。E 单完成时把来源单负责人写进 `commission_owner_id`（D72 ④ 的提成占位由本项收口）；`SettlementDraftPort` 命令新增 `commissionOwnerId`。测试：契约 253 例（+13）、api 314 例（+4，含配置 CRUD / 权限与公司隔离 / 算提成 / 负毛利与无配置）；`pnpm openapi` → paths 55 / operations 86 / schemas 38。
 
-## 进行中
+- **2026-11-07 看价脱敏 + 敏感金额读取审计（D78）**：`apps/api/src/modules/settlement/services/masking.ts`（`maskSettlementAmounts` 把 7 个金额字段置 null）+ `apps/api/src/platform/audit/sensitive-read.ts`（`recordAmountDetailRead`，持 `settlement.view_price` 时写 `action='amount.detail'` 审计）+ `usecases/settlement-orders.ts` 的 list/detail/confirm 接线；契约 `SettlementOrderSchema` 的 7 个金额字段改 `.nullable()`（`commissionRateSnapshot` 不脱敏）。口径：无看价权限**记录可见、金额为 null、不 403**；列表不记敏感读，只有详情记。测试：新增 `settlement-amount-masking.test.ts` 5 例（有价可见+审计、无价 null+不记、列表脱敏、销售只读、列表不记审计）+ 1 例确认响应脱敏，api 45 文件 320 例；契约 253 例；`pnpm openapi` 仍 paths 55 / operations 86 / schemas 38。
 
+## 进行中
 - **2026-11-07 D70 端口就绪（Issue #79）**：apps/api/src/modules/settlement/services/drafts.ts 提供
   SettlementDraftPort.createDraft(tx, command)——金额与佣金费率快照由来源模块算好传入，settlement 不读 E/N 表；
   同事务、来源单唯一（重复 409）、实现在 outbox 追加一行审计并返回 auditId 由调用方提交后 flush。
@@ -59,6 +60,7 @@ C 单 3 端点 + 提成比例配置 3 端点已实现（2026-11-07）；本模�
 - 拍板四个开放项 → 追加 decisions.md。
 - 等 sales 的「E 单完成」事件与 processing 的损失记录就绪后开工。
 - 提成「按岗」配置（D5④ 另一半）待 platform 岗位解析端口落地；利润报表（#97）待口径（D26/D43）。
+- sales / purchase 的金额脱敏按 D78 口径从 D79 起追加（同一套 `view_price` + `amount.detail`）。
 
 ## 已知问题 / 坑
 

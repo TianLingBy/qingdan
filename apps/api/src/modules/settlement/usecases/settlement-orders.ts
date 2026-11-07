@@ -13,12 +13,14 @@ import {
   type SettlementSourceDocType,
 } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { recordAmountDetailRead } from '../../../platform/audit/sensitive-read.js';
 import { withAudit, type AuditEvent } from '../../../platform/audit/writer.js';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import * as repo from '../repo.js';
+import { maskSettlementAmounts } from '../services/masking.js';
 
 /**
  * C 结算单用例（D15 / D19 / D26 / D51 / D52 / D54 / D69）。
@@ -238,9 +240,15 @@ export async function listSettlementOrders(
   requireScope(principal, 'read');
   const query = parseListQuery(ctx.request);
 
-  return withTenant(database, principal.tenantId, (tx) =>
+  const page = await withTenant(database, principal.tenantId, (tx) =>
     repo.listSettlementOrders(repoContext(tx, principal), query),
   );
+  // D27 / D78：无 settlement.view_price 时金额字段返回 null（列表同样脱敏）。
+  const canViewPrice = allowsScope(principal.scope, 'settlement', 'view_price');
+  return {
+    items: page.items.map((order) => maskSettlementAmounts(order, canViewPrice)),
+    nextCursor: page.nextCursor,
+  };
 }
 
 /** C 结算单详情（普通读，不记审计）；内嵌 confirmable。 */
@@ -256,7 +264,19 @@ export async function getSettlementOrder(
     repo.getSettlementOrder(repoContext(tx, principal), id),
   );
   if (!order) throw new AppError('NOT_FOUND', '结算单不存在');
-  return detailOf(order);
+
+  // D27 / D78：无看价权限 → 金额字段 null；有看价权限 → 金额真实可见，按 D51① 记敏感读。
+  const canViewPrice = allowsScope(principal.scope, 'settlement', 'view_price');
+  await recordAmountDetailRead(database, {
+    request: ctx.request,
+    principal,
+    domain: 'settlement',
+    operationId: 'settlement.order.detail.read',
+    objectType: OBJECT_TYPE,
+    objectId: order.id,
+    companyId: order.companyId,
+  });
+  return maskSettlementAmounts(detailOf(order), canViewPrice);
 }
 
 /**
@@ -336,5 +356,7 @@ export async function confirmSettlementOrder(
   });
 
   ctx.reply.header('ETag', etagOf(order.version));
-  return detailOf(order);
+  // D27 / D78：写路径的计算永远用真实金额，但**响应**同样按看价脱敏。
+  const canViewPrice = allowsScope(principal.scope, 'settlement', 'view_price');
+  return maskSettlementAmounts(detailOf(order), canViewPrice);
 }
