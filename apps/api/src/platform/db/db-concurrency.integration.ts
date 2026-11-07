@@ -77,7 +77,7 @@ async function main(): Promise<void> {
       );
       await tx.query(
         `INSERT INTO employee (id, tenant_id, employee_no, phone, name, status, is_owner)
-         VALUES ($1, $2, '900001', '90000000001', 'L3 仓管', '启用', false)`,
+         VALUES ($1, $2, '900001', '13900000001', 'L3 仓管', '启用', false)`,
         [employeeA, tenantA],
       );
       await tx.query(
