@@ -6,27 +6,27 @@
 
 ## 0. 一分钟读完
 
-**一句话：契约全覆盖，八张单据 + 收款 + 退货的后端全部实现，只剩 inventory 写动作（盘点）与模块间联动。**
+**一句话：契约全覆盖、86 个 operation 全部可用；提成（D77）与看价脱敏（D78）已落地，剩模块间库存联动（#99，归梁海俊）、利润报表（#97，卡 processing 损失金额）、在线支付（#101，卡真实商户号）与前端 22 页（归赖皓妍/李祖怡）。**
 
 | 项 | 结论 |
 |---|---|
 | 仓库 / 阶段 | `D:\Desktop\dsh\Qingdan`，私有仓 `github.com/TianLingBy/qingdan`；阶段 4 分工开发。 |
 | 契约 | 八张单据全线登记，OpenAPI 规模 paths=55 / operations=86 / schemas=38（D71 盘点拆盘盈/盘亏、D72 E 单完成、D77 提成配置）；生成物勿手改。 |
 | 实现 | masterdata 22、platform 员工 4、sales 11（E 6 含 D72 完成 + 收款 2 + R 3）、purchase 8（A 5 + S 3）、processing 5、internal-trade 5、settlement 6（C 3 + 提成配置 3）、inventory 3 只读 + 盘点 I 5 全部可用；**86 个 operation 已无 501**。 |
-| 当前主线 | ①**#79 已通 E 单**（D70 端口 + D72 完成端点）：E 单完成 = 扣库存 + 生成 C 草稿；**N 单完成（转司 + 在途量）仍待拍板**；②**#84 盘点权限已按 D71 落地**（盘盈/盘亏两端点 + 角色矩阵），待 review 后关 issue；③前端登录页重做——**先落 #3 成员档案**；④**提成已落地（D77，#96）**：按人配置 + 确认结算时解析快照；剩利润报表、打印导出契约尚未登记。 |
+| 当前主线 | ①**#79 已通 E 单**（D70 端口 + D72 完成）：E 单完成 = 扣库存 + 生成 C 草稿；**N 单完成（转司 + 在途量）仍待拍板**（2026-11-07 的 D73–D76 实现已按越界回滚）；②**提成已落地（D77，#96）**：按人配置 + 确认结算时解析并快照，`commissionOwnerId` 由来源单带入；③**看价脱敏已落地（D78，#110）**：无 `settlement.view_price` 时 C 单金额返回 null，有权限的详情读取记 `amount.detail`；④前端登录页重做——**先落 #3 成员档案**；⑤剩利润报表、打印导出、在线支付契约未登记。 |
 | 前端 | `apps/web` 已回到 22 页骨架态：#82/#83 的 M1-G 登录页接线与黑白毛玻璃视觉已由 **#90 撤回**（2026-11-07 合并）。 |
 
 ## 1. 最近状态（截至 2026-11-07 晚）
 
 | 项 | 值 |
 |---|---|
-| main | `344c6c3`（#92 D71 盘点权限）+ `ec399a5`（#90 撤回 M1-G）。 |
+| main | `0b02c6c`（#112 D78 看价脱敏）+ `606b4d6`（#109 D77 提成）+ `4f1742d`（#108 越界教训）。 |
 | OpenAPI | `pnpm openapi` 生成 `docs/api/openapi.yaml`：paths=55 / operations=86 / schemas=38。 |
 | 已登记 | A 采购 5、B 加工 5、E 销售 6（含完成）+ 收款 2、N 内部交易 5、C 结算 3、提成配置 3、R 客户退货 3、S 供应商退货 3、盘点 I 5（盘盈/盘亏各一条 create）、库存只读 3；另含 masterdata 22 与 platform 员工/岗位/公司。 |
 | 已挂载 | `MOUNTED_MODULE_KEYS`：platform / masterdata / inventory / sales / purchase / processing / internal-trade / settlement。 |
-| 决策 | 已到 D72：D63 客户账期、D64 加工厂报价、D65 员工岗位公司口径、D66 员工三项裁定、D67 库存四列+生成列、D68 N 单口径与状态、D69 C 单损失快照、**D70 模块间通道（platform 内部服务端口）**、**D71 盘点权限（盘盈 create / 盘亏 delete + 角色矩阵）**、**D72 E 单完成（扣库存 + C 草稿同事务，损失/提成占位 0）**、**D77 提成比例配置（按人 + 确认结算时解析并快照）**。下一号 D78（D73–D76 随 2026-11-07 越界改动回滚作废，编号不复用）。 |
-| 迁移 | 已到 `0017`：`0010` purchase_orders、`0011` supplier_returns、`0012` processing_orders、`0013` sales_orders、`0014` sales_receipts_returns、`0015` internal_trade_orders、`0016` settlement_orders、`0017` inventory_stocktakes、`0018` settlement_commission（更早见 §2）。 |
-| 11-06/07 合并 | #82/#83 前端 M1-G（**已被 #90 撤回**）、#86 加工单修改不清空费用明细、#88 N 单不虚报在途量、#89 盘点审计记录保管人快照（#84 发现 2 已解）、#91 HANDOFF 更新、#92 盘点权限 D71。 |
+| 决策 | 已到 D78：D77 提成比例配置（按人 + 确认结算时解析并快照）、**D78 看价脱敏 + 敏感金额读取审计（7 个金额字段 null、详情记 `amount.detail`）**。下一号 D79（D73–D76 随 2026-11-07 越界改动回滚作废，编号不复用）。 |
+| 迁移 | 已到 `0018`：`0016` settlement_orders、`0017` inventory_stocktakes、**`0018` settlement_commission（提成比例表 + `settlement_order.commission_owner_id`）**（更早见 §2）。 |
+| 11-06/07 合并 | #82/#83 前端 M1-G（**已被 #90 撤回**）、#86、#88、#89、#91、#92 盘点权限 D71、#94 E 单完成 D72、**#107 越界改动回滚（-1859 行，D73–D76 作废）**、**#108 模块边界教训**、**#109 提成 D77**、**#112 看价脱敏 D78**。 |
 | CI | 7 项，含 `route` / `fields`（PR 描述必带 `Blocked by:` 与 `Blocks:`）、`e2e` 与 `spec-drift`；契约和路由测试均不得绕过。 |
 | 盘点约束 | inventory 写动作 = `stocktake.increase.create`（scope `stocktake.create`）、`stocktake.decrease.create`（scope `stocktake.delete`）、`stocktake.approve`；`inventory.test.ts` 用显式白名单，新增盘点写端点必须同步白名单。 |
 
@@ -39,7 +39,7 @@
 - **purchase**：A 单 5 + S 供应商退货 3 全部可用（`0010`/`0011`）。
 - **processing**：B 单 5 全部可用（`0012`）；可售量 = 投入 − 损耗由 SQL 计算。
 - **internal-trade**：N 单 5 全部可用（`0015`）；内部价手填、独立四态见 D68；**转司确认（接收方到货）未实现**。
-- **settlement**：C 单 3 全部可用（`0016`）；confirm 需 `settlement.approve`、AI 禁审批且必须带 reason，成功时冻结 `related_loss_amount_snapshot`（D69）；**E/N 完成态自动生成 C 草稿未实现**（`TODO(D19)`）。
+- **settlement**：C 单 3 全部可用（`0016`）；confirm 需 `settlement.approve`、AI 禁审批且必须带 reason，成功时冻结 `related_loss_amount_snapshot`（D69）；**D77 起确认时按 `commission_owner_id` 解析本公司最新比例并快照**（无配置/负毛利记 0），提成配置 3 端点见 `commission-rates.ts`；**D78 起金额按 `settlement.view_price` 脱敏**（list/detail/confirm 响应，有权限的详情读取记 `amount.detail`）；E 单完成态自动生成 C 草稿已通（D72），N 单侧待拍板。 |
 - **退货与盘点契约**：R 客户退货 3 条、S 供应商退货 3 条、盘点 I 4 条均已登记；盘点审批后追加流水，不物理删历史。
 - **OpenAPI 治理**：全部契约由注册表生成；`spec-drift` 在 CI 中重生成并检查 `git diff --exit-code -- docs/api/openapi.yaml`。
 - **前端（apps/web）**：仅 22 页骨架 + 路由骨架，**没有**登录页真接线、会话态、路由守卫。M1-G 那版（#82/#83）已被 #90 整份撤回，重做时按 #4 验收标准来。
@@ -55,10 +55,10 @@
 
 ## 4. 下一步（按谁能领）
 
-1. **D72 之后的下一个缺口：N 单完成 + 损失/提成归集（#79 剩余部分）**：E 单已通（D72：`sales.order.complete` 同事务扣库存 + 生成 C 草稿）。剩下的：N 内部交易单完成的在途量释放与批次转司（D22/D31）、D35 的 B 单损失归集（要 processing 侧端口）、D5④ 提成比例配置（「提成」域未登记）——后两项现在在 C 草稿里写 0 占位，补上时才需要新决策。
-2. **D71 代码已写、待 review 合并**：`stocktake.increase.create` / `stocktake.decrease.create` 两条端点 + 角色矩阵（经理补 approve、采购 read/create/delete、纯仓管 read/delete）+ 方向锁 422。合并后关 #84。
+1. **N 单完成 + 损失归集（#79 剩余部分，归梁海俊）**：E 单已通（D72）。剩下的：N 内部交易单完成的在途量释放与批次转司（D22/D31）、D35 的 B 单损失归集（要 processing 侧端口）、单据→库存流水联动（#99）。注意 D73–D76 的实现已于 #107 整体回滚，**编号不复用，重做时要新开 D 编号**。
+2. **梁海俊：#99 单据→库存流水联动**（A/B/R/S 四条链路，含批次增删与成本锁价）；issue 已回到未领取状态。
 3. **赖皓妍：先落 #3 成员档案 PR**，合并后再接 #4 登录页（接口已全部就绪，可真联调）。
-4. **Lead：报表与输出契约**。提成已登记（D77，3 端点 + 确认时快照）；利润报表、打印导出尚未登记，按「决策 → 契约 → 注册表 → `pnpm openapi` → spec-drift」推进。
+4. **Lead：报表与输出契约**。提成已登记并实现（D77）、看价脱敏已落地（D78）；利润报表（#97，卡 processing 的损失金额未落地）、打印导出（#98，归李祖怡）、在线支付（#101，需真实商户号）按「决策 → 契约 → 注册表 → `pnpm openapi` → spec-drift」推进；sales/purchase 同款脱敏按 D79 追加。
 
 ## 5. 坑（踩过，别再踩）
 
@@ -76,8 +76,8 @@
 
 ## 6. 需要负责人处理
 
-- **拍板 D70（#79 模块间调用通道）**：推荐 A 方案，拍板后 Lead 才能写 `decisions.md`、改契约、开工实现；在此之前 D19 自动草稿与单据→库存流水两条联动都只能挂着。
-- **拍板 D71（#84 盘点权限口径）**：理货/采购/经理三岗的盘点创建与审批权限、是否新增 `custodian_id` 快照，需一句话定下来。
+- **D70 / D71 已拍板并落地**（#93 端口通道、#92 盘点权限 D71），#84 已关；不要再按「等拍板」处理。
+- **GitHub Actions 账单停摆**（仅负责人可处理）：7 项检查 0 步骤、2–3 秒内 FAILURE，注解 `The job was not started because recent account payments have failed…`；恢复前一切 PR 的 CI 都是红的，与代码无关（此状态下的合并需负责人明确同意）。
 - 赖皓妍已能推 PR（#82/#83/#90 都是她的），但**成员档案 #3 仍未落盘**；#4 及其后续 UI 任务在她交档案前保持挂起。
 - 李祖怡先完成中文姓名、GitHub 账号、负责模块三处核验；未通过不得领任务或写代码。
 - `dsh-agent-conductor` 补丁需在 DSH 重启后验证 240 秒空闲窗口与自动续跑，插件升级后还要重打。
@@ -105,8 +105,9 @@ docs/AGENT-TEAM.md 开工：DSH 拆任务/派活/验收/提交，代码交 Claud
 pwsh -NoProfile -File scripts/sync-check.ps1；PR 须过 7 项 CI：test(ubuntu)、test(windows)、
 integration(PG18)、e2e、route、fields、spec-drift，且 PR 正文必须带 Blocked by: / Blocks: 两行。
 当前契约已全覆盖（paths=55 / operations=86 / schemas=38），**86 个 operation 全部可用、无 501**
-（A/B/E/收款/R/S/N/C + 提成配置 + masterdata + platform 员工 + inventory 只读 + 盘点 I）。main 已合到 #108（2026-11-07），
-前端已由 #90 撤回回到 22 页骨架。下一步：①等负责人拍板 D70（#79 模块间调用通道）与 D71（#84 盘点
-权限）；②赖皓妍先交 #3 成员档案再开 UI；③Lead 补利润报表/打印导出契约。
+（A/B/E/收款/R/S/N/C + 提成配置 + masterdata + platform 员工 + inventory 只读 + 盘点 I）。
+main 已合到 #112（2026-11-07，D78 看价脱敏），提成 D77 与脱敏 D78 均已落地；前端已由 #90 撤回回到 22 页骨架。
+下一步：①梁海俊接 #99 单据→库存流水联动、#79 剩余 N 单完成；②赖皓妍先交 #3 成员档案再开 UI；
+③Lead 补利润报表（#97，卡 processing 损失金额）/打印导出（#98，归李祖怡）/在线支付（#101，需商户号）。
 契约变更后必须跑 pnpm openapi。
 ```
