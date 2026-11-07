@@ -6,25 +6,25 @@
 
 ## 0. 一分钟读完
 
-**一句话：后端 84 个接口全部可用（无 501）；E 单完成、N 单发货已通；剩 N 到货确认/转司、四条单据→流水联动、提成/报表/打印/成本更正/支付，以及整块前端 22 页与打包部署。CI 因 GitHub 账单停摆。**
+**一句话：后端 85 个接口全部可用（无 501）；E 单完成、N 单主链（开单→发货→到货确认/转司→C 草稿）已闭环；剩四条单据→流水联动、提成/报表/打印/成本更正/支付，以及整块前端 22 页与打包部署。CI 因 GitHub 账单停摆。**
 
 | 项 | 结论 |
 |---|---|
 | 仓库 / 阶段 | `D:\Desktop\dsh\Qingdan`，私有仓 `github.com/TianLingBy/qingdan`；阶段 4 分工开发。 |
-| 契约 | 八张单据全线登记，OpenAPI 规模 **paths=54 / operations=84 / schemas=37**（D71 盘点拆盘盈/盘亏、D72 E 单完成、D73 N 单发货）；生成物勿手改。 |
-| 实现 | masterdata 22、platform 21、sales 11（E 6 含 D72 完成 + 收款 2 + R 3）、purchase 8（A 5 + S 3）、processing 5、**internal-trade 6（含 D73 发货）**、settlement 3、inventory 8（只读 3 + 盘点 5）全部可用；**84 个 operation 已无 501**。 |
-| 当前主线 | ①**#79**：E 单完成（D72）、N 单发货（D73）已通；**N 到货确认/转司口径已由 D74 定，实现待做**；②欠账已全部建成 issue：#96 提成、#97 利润报表、#98 打印导出、#99 四条流水联动、#100 成本更正、#101 在线支付、#102 前端 22 页、#103 真实 PG e2e；③前端仍是 22 页占位；④#3 赖皓妍成员档案仍是「待本人确认」。 |
+| 契约 | 八张单据全线登记，OpenAPI 规模 **paths=55 / operations=85 / schemas=37**（D71 盘点拆盘盈/盘亏、D72 E 单完成、D73 N 单发货）；生成物勿手改。 |
+| 实现 | masterdata 22、platform 21、sales 11（E 6 含 D72 完成 + 收款 2 + R 3）、purchase 8（A 5 + S 3）、processing 5、**internal-trade 7（含 D73 发货、D74 到货确认/转司）**、settlement 3、inventory 8（只读 3 + 盘点 5）全部可用；**85 个 operation 已无 501**。 |
+| 当前主线 | ①**#79**：E 单完成（D72）、N 单发货（D73）、**N 到货确认/转司（D74/D75）全部落地，N 侧闭环**；②欠账已全部建成 issue：#96 提成、#97 利润报表、#98 打印导出、#99 四条流水联动、#100 成本更正、#101 在线支付、#102 前端 22 页、#103 真实 PG e2e；③前端仍是 22 页占位；④#3 赖皓妍成员档案仍是「待本人确认」。 |
 | 前端 | `apps/web` 已回到 22 页骨架态：#82/#83 的 M1-G 登录页接线与黑白毛玻璃视觉已由 **#90 撤回**（2026-11-07 合并）。 |
 
 ## 1. 最近状态（截至 2026-11-07 晚）
 
 | 项 | 值 |
 |---|---|
-| main | `de082c2`（#95 D73 N 单发货）；前一版是 `e4990bf`（#94 D72 E 单完成）。 |
-| OpenAPI | `pnpm openapi` 生成 `docs/api/openapi.yaml`：**paths=54 / operations=84 / schemas=37**。 |
-| 已登记 | A 采购 5、B 加工 5、E 销售 6（含完成）+ 收款 2、**N 内部交易 6（含发货）**、C 结算 3、R 客户退货 3、S 供应商退货 3、盘点 I 5、库存只读 3；另含 masterdata 22 与 platform 21（员工/岗位/公司/审计/Token/权限）。 |
+| main | `6eb819e`（#105 D74 N 到货确认/转司）；前一版 `e2911dd`（#104 D74 口径）、`de082c2`（#95 D73 发货）、`e4990bf`（#94 D72 E 单完成）。 |
+| OpenAPI | `pnpm openapi` 生成 `docs/api/openapi.yaml`：**paths=55 / operations=85 / schemas=37**。 |
+| 已登记 | A 采购 5、B 加工 5、E 销售 6（含完成）+ 收款 2、**N 内部交易 7（含发货 + 到货确认/转司）**、C 结算 3、R 客户退货 3、S 供应商退货 3、盘点 I 5、库存只读 3；另含 masterdata 22 与 platform 21（员工/岗位/公司/审计/Token/权限）。 |
 | 已挂载 | `MOUNTED_MODULE_KEYS`：platform / masterdata / inventory / sales / purchase / processing / internal-trade / settlement。 |
-| 决策 | 已到 D74：D63 客户账期、D64 加工厂报价、D65 员工岗位公司口径、D66 员工三项裁定、D67 库存四列+生成列、D68 N 单口径与状态、D69 C 单损失快照、**D70 模块间通道（platform 内部服务端口）**、**D71 盘点权限（盘盈 create / 盘亏 delete + 角色矩阵）**、**D72 E 单完成**、**D73 N 单发货（在途占用 + 取消释放）**、**D74 N 到货确认/转司与 N→C 草稿金额口径**。下一号 D75。 |
+| 决策 | 已到 D75：D63 客户账期、D64 加工厂报价、D65 员工岗位公司口径、D66 员工三项裁定、D67 库存四列+生成列、D68 N 单口径与状态、D69 C 单损失快照、**D70 模块间通道（platform 内部服务端口）**、**D71 盘点权限（盘盈 create / 盘亏 delete + 角色矩阵）**、**D72 E 单完成**、**D73 N 单发货（在途占用 + 取消释放）**、**D74 N 到货确认/转司**、**D75 N→C 草稿取数修正**。下一号 D76。 |
 | 迁移 | 已到 `0017`：`0010` purchase_orders、`0011` supplier_returns、`0012` processing_orders、`0013` sales_orders、`0014` sales_receipts_returns、`0015` internal_trade_orders、`0016` settlement_orders、`0017` inventory_stocktakes（更早见 §2）。 |
 | 11-07 合并 | #92 盘点权限 D71、#93 模块间通道 D70、**#94 E 单完成 D72**、**#95 N 单发货 D73**；#84 已按证据关闭；#82/#83 前端 M1-G 由 #90 撤回。 |
 | CI | 7 项（`test` ubuntu/windows、`integration` PG18、`e2e`、`route`、`fields`、`spec-drift`）。**2026-11-07 起全部 0 步骤秒红：GitHub Actions 账单停摆**（注解 `recent account payments have failed or your spending limit needs to be increased`）；#94/#95 在本机全量门禁通过后由负责人授权合并，账单恢复后需重跑 CI 补形式记录。 |
@@ -55,7 +55,7 @@
 
 ## 4. 下一步（按谁能领）
 
-1. **N 到货确认 / 转司（D74 已定口径，实现待做）**：`internal_trade.order.receive` = `在途 → 已完成`，同一事务内「解锁在途占用 + 批次 `company_id` 转接收公司 + 单头归零」，并生成 N 的 C 草稿（售价=内部价总额、成本=Σ数量×cost_floor、提成记 0）。**确认人必须属接收方公司**。
+1. ~~N 到货确认 / 转司~~ ✅ **已闭环（D74 / D75 / #105）**：`internal_trade.order.receive` 落地，同一事务内解锁占用 + 转司 + 生成 C 草稿；只有接收方可确认。
 2. **四条单据→库存流水联动（#99）**：A 采购入库、B 加工产出、R 退货入库、S 退货出库，照 E 单完成（D72）的写法走 D70 端口。
 3. **前端 22 页（#102 + #4/#5/#6）**：现在全是 `PlaceholderPage`；赖皓妍的 #3 成员档案仍未确认，UI 任务仍挂起。
 4. **欠账清单已全部建档**：#96 提成、#97 利润报表、#98 打印导出、#99 流水联动、#100 成本更正、#101 在线支付、#102 前端 22 页、#103 真实 PG e2e。按 p0 → p1 顺序领。
@@ -103,7 +103,7 @@ docs/AGENT-TEAM.md 开工：DSH 拆任务/派活/验收/提交，代码交 Claud
 先核验中文姓名、GitHub 账号、负责模块；未核验不得领任务或写代码。开工先跑
 pwsh -NoProfile -File scripts/sync-check.ps1；PR 须过 7 项 CI：test(ubuntu)、test(windows)、
 integration(PG18)、e2e、route、fields、spec-drift，且 PR 正文必须带 Blocked by: / Blocks: 两行。
-当前 paths=54 / operations=84 / schemas=37，**84 个 operation 全部可用、无 501**（A/B/E/收款/R/S/N/C +
+当前 paths=55 / operations=85 / schemas=37，**85 个 operation 全部可用、无 501**（A/B/E/收款/R/S/N/C +
 masterdata + platform + inventory 只读 + 盘点 I + N 发货）。main 在 de082c2，前端仍是 22 页占位（#90 曾
 撤回 M1-G）。口径已到 D74（N 到货确认/转司已定、实现待做）。下一步：①按 D74 实现到货确认/转司；
 ②四条单据→库存流水联动（#99）；③前端 22 页（#102，#3 档案未确认前挂起）；④#103 真实 PG e2e。
