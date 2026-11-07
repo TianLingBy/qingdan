@@ -475,15 +475,28 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
     });
 
     const inTransit = await createOne(nextRequestId('in-transit'));
-    await test.database.query(
-      `UPDATE internal_trade_order SET status = '在途' WHERE id = $1`,
-      [inTransit.id],
-    );
+    // D73：走真实发货端点进「在途」，不再用裸 SQL 改状态——否则没有在途占用，
+    // 取消时释放会对不上（发货会锁两个批次各 1 的在途量）。
+    const shipped = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${inTransit.id}/ship`,
+      headers: writeHeaders(ownerCookie, 'req-internal-ship', {
+        'if-match': `"${inTransit.version}"`,
+        'x-reason': '发货以进入在途',
+      }),
+    });
+    expect(shipped.statusCode).toBe(200);
+    expect(shipped.json()).toMatchObject({
+      status: '在途',
+      inTransitQty: '2',
+      version: inTransit.version + 1,
+    });
+
     const updateInTransit = await app.inject({
       method: 'PATCH',
       url: `/api/v1/internal-trade-orders/${inTransit.id}`,
       headers: writeHeaders(ownerCookie, 'req-internal-update-transit', {
-        'if-match': '"1"',
+        'if-match': `"${inTransit.version + 1}"`,
       }),
       payload: { internalPrice: '22' },
     });
@@ -496,14 +509,27 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
       method: 'POST',
       url: `/api/v1/internal-trade-orders/${inTransit.id}/cancel`,
       headers: writeHeaders(ownerCookie, 'req-internal-cancel-transit', {
-        'if-match': '"1"',
+        'if-match': `"${inTransit.version + 1}"`,
       }),
     });
     expect(cancelInTransit.statusCode).toBe(200);
     expect(cancelInTransit.json()).toMatchObject({
       status: '已取消',
-      version: 2,
+      version: inTransit.version + 2,
+      inTransitQty: '0',
     });
+
+    // 取消在途单必须在同一事务释放占用：批次在途归零、可用量恢复（D68③ / D73）
+    const batches = await test.database.query<{ in_transit_qty: string; available_qty: string }>(
+      `SELECT trim_scale(in_transit_qty) AS in_transit_qty,
+              trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY batch_no`,
+      [[BATCH_A_ID, BATCH_B_ID]],
+    );
+    expect(batches.rows.map((row) => row.in_transit_qty)).toEqual(['0', '0']);
+    expect(batches.rows.map((row) => row.available_qty)).toEqual(['1000', '1000']);
 
     const audits = await test.database.query<{ action: string }>(
       `SELECT action

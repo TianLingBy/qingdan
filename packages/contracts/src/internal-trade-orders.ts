@@ -27,11 +27,13 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - 写操作必记审计（D51）；普通读不记（D54 ②）。
  *
  * 本批明确不做（写进契约，防止后续顺手加端点）：
- * - **不做「发货 / 在途」端点**：进入在途要按 D31 锁定批次可用量（在途占用），依赖 inventory 写能力；
  * - **不做「到货确认 / 转司」端点**：转司要在同一事务里改批次 `company_id` 并解锁在途占用（D22 / D31 / D68③），
- *   同样依赖 inventory 写能力；
+ *   依赖 inventory 写能力已具备，但口径（确认人范围、C 草稿生成 D29）另案拍板；
  * - **不做内部定价规则表**：一期内部价手工填（D68①），系统不按成本价 / 加成自动算；
- * - **不做 N 单完成自动生成 C 单草稿**（D29，与 E 单同规则）：等结算模块落地后再加。
+ * - **不做 N 单完成自动生成 C 单草稿**（D29，与 E 单同规则）：等「到货确认」端点一起定。
+ *
+ * 已补（D73）：**发货 / 在途端点** `internal_trade.order.ship`——进入在途时按行锁定批次
+ * `in_transit_qty`（在途占用，D31），批次 `company_id` 不变，仍属发出公司。
  */
 
 /** decimal 字符串（D54 `numeric(18,6)`：最多 12 位整数 + 6 位小数，可负）。 */
@@ -188,13 +190,13 @@ export const InternalTradeOrderUpdateInputSchema = z
 export type InternalTradeOrderUpdateInput = z.infer<typeof InternalTradeOrderUpdateInputSchema>;
 
 /**
- * internal-trade 模块 N 内部交易单端点（5 条，第二批第一批切）。
+ * internal-trade 模块 N 内部交易单端点（6 条：第二批 5 条 + D73 发货）。
  *
  * operationId 以 `internal_trade` 开头（与功能域同名，registry 校验要求）；
  * 权限 scope 仍按功能域推导为 `internal_trade.read/create/update/delete`（D44）。
  * 审计：写操作必记（D51）；普通读不记（D54 ②）。
- * AI：开单属业务动作默认禁止；修改允许；取消属危险动作，默认禁止且必须给原因（D52① / D54 ⑥）。
- * 并发：update / cancel 强制 If-Match 强 ETag。
+ * AI：开单属业务动作默认禁止；修改允许；发货 / 取消属危险动作，默认禁止且必须给原因（D52① / D54 ⑥）。
+ * 并发：update / ship / cancel 强制 If-Match 强 ETag。
  * 取消：按四态映射后复用 `canCancel` / `assertCancelable`（D21 / D68②）。
  */
 export const INTERNAL_TRADE_ORDER_ROUTES: readonly RouteDef[] = [
@@ -246,6 +248,20 @@ export const INTERNAL_TRADE_ORDER_ROUTES: readonly RouteDef[] = [
     ai: { policy: 'allow' },
     requiresIfMatch: true,
     request: { body: InternalTradeOrderUpdateInputSchema },
+    response: { status: 200, schema: InternalTradeOrderSchema },
+  }),
+  defineRoute({
+    module: 'internal-trade',
+    operationId: 'internal_trade.order.ship',
+    method: 'POST',
+    path: '/api/v1/internal-trade-orders/{id}/ship',
+    domain: 'internal_trade',
+    action: 'update',
+    summary:
+      '内部交易单发货（进行中→在途；按行均分锁定批次在途占用 D31/D68③，批次仍归发出公司；AI 禁止）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
     response: { status: 200, schema: InternalTradeOrderSchema },
   }),
   defineRoute({
