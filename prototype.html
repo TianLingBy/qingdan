@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>轻单 · 可点击原型 v1（22 页新 IA）</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#fff; --line:#e3e6ea; --text:#1f2328; --dim:#6b7280;
+    --brand:#2563eb; --brand-soft:#e8f0fe; --warn:#b45309; --warn-soft:#fef3c7;
+    --ok:#15803d; --ok-soft:#dcfce7; --bad:#b91c1c; --bad-soft:#fee2e2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;color:var(--text);background:var(--bg)}
+  header{height:52px;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+  .logo{font-weight:700;font-size:15px;letter-spacing:.5px}
+  .logo small{font-weight:400;color:var(--dim);margin-left:6px;font-size:12px}
+  .grow{flex:1}
+  .role-box{display:flex;align-items:center;gap:8px;font-size:13px}
+  select{padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);font:inherit}
+  .layout{display:flex;min-height:calc(100vh - 52px)}
+  aside{width:204px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:12px 8px}
+  .group{margin-bottom:10px}
+  .group h4{margin:8px 8px 4px;font-size:11px;color:var(--dim);font-weight:600;letter-spacing:1px;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none;border-radius:4px;padding:2px 4px}
+  .group h4:hover{background:var(--bg);color:var(--text)}
+  .group h4 .arr{display:inline-block;width:10px;text-align:center;transition:transform .15s;font-size:10px}
+  .group.collapsed h4 .arr{transform:rotate(-90deg)}
+  .group .items{overflow:hidden}
+  .group.collapsed .items{display:none}
+  nav a{display:block;padding:7px 10px;border-radius:6px;color:var(--text);text-decoration:none;font-size:13px;cursor:pointer}
+  nav a:hover{background:var(--bg)}
+  nav a.on{background:var(--brand-soft);color:var(--brand);font-weight:600}
+  nav a.deny{color:#b6bcc4;cursor:not-allowed;text-decoration:line-through}
+  main{flex:1;padding:20px 24px 60px;min-width:0}
+  h1{font-size:19px;margin:0 0 4px}
+  .sub{color:var(--dim);font-size:12.5px;margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:14px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .kpi b{display:block;font-size:22px;line-height:1.2}
+  .kpi span{color:var(--dim);font-size:12px}
+  table{width:100%;border-collapse:collapse;background:var(--panel);font-size:13px}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{background:#fafbfc;color:var(--dim);font-weight:600;font-size:12px}
+  tr:hover td{background:#fcfcfd}
+  tr.clickable{cursor:pointer}
+  tr.disabled td{color:#b6bcc4;background:#fafafa}
+  .tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:12px;background:var(--bg);border:1px solid var(--line)}
+  .tag.draft{background:#f1f2f4}
+  .tag.pending{background:var(--warn-soft);border-color:#fde68a;color:var(--warn)}
+  .tag.doing{background:var(--brand-soft);border-color:#bfdbfe;color:var(--brand)}
+  .tag.done{background:var(--ok-soft);border-color:#bbf7d0;color:var(--ok)}
+  .tag.dead{background:var(--bad-soft);border-color:#fecaca;color:var(--bad)}
+  button{font:inherit;padding:5px 11px;border-radius:6px;border:1px solid var(--line);background:var(--panel);cursor:pointer}
+  button:hover{background:var(--bg)}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  button.primary:hover{filter:brightness(1.06)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .hint{background:var(--warn-soft);border:1px solid #fde68a;color:#78350f;border-radius:8px;padding:10px 12px;font-size:12.5px;margin-bottom:14px}
+  .hint b{color:#7c2d12}
+  .muted{color:var(--dim)}
+  .modal-mask{position:fixed;inset:0;background:rgba(20,23,28,.42);display:flex;align-items:flex-start;justify-content:center;padding:48px 16px;z-index:50;overflow:auto}
+  .modal{background:var(--panel);border-radius:10px;width:min(680px,100%);padding:18px 20px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
+  .modal h3{margin:0 0 2px;font-size:16px}
+  .kv{display:grid;grid-template-columns:96px 1fr;gap:4px 10px;font-size:13px;margin:12px 0}
+  .kv dt{color:var(--dim)}
+  .kv dd{margin:0}
+  .modal footer{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+  .steps{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0 0;padding:0;list-style:none}
+  .steps li{padding:3px 10px;border-radius:20px;background:var(--bg);border:1px solid var(--line);font-size:12px;color:var(--dim)}
+  .steps li.cur{background:var(--brand);border-color:var(--brand);color:#fff}
+  .empty{padding:28px;text-align:center;color:var(--dim);background:var(--panel);border:1px dashed var(--line);border-radius:8px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .seg button{border:none;border-radius:0;padding:5px 12px}
+  .seg button.on{background:var(--brand);color:#fff}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:900px){.two{grid-template-columns:1fr}}
+  .money{font-variant-numeric:tabular-nums}
+  .perm-toolbar{display:flex;align-items:center;gap:10px;margin:10px 0;flex-wrap:wrap}
+  .perm-toolbar select{padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);font-size:14px}
+  .perm-table{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+  .perm-table table{border-collapse:collapse;width:100%;min-width:640px}
+  .perm-table th,.perm-table td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:center;font-size:12px}
+  .perm-table .dom-name{text-align:left;font-weight:500;white-space:nowrap}
+  .perm-table th{background:var(--panel);color:var(--dim);font-weight:600;position:sticky;top:0}
+  .perm-table .chk-head{width:34px}
+  .perm-table .chk-cell{width:34px}
+  .perm-table input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--brand)}
+  .perm-table input[type=checkbox]:disabled{cursor:not-allowed;opacity:.4}
+  .perm-table .na{color:var(--dim);opacity:.45;font-size:12px}
+  .perm-table tr:hover td{background:var(--brand-soft)}
+  /* ===== 21 操作日志 / 22 API 与集成 ===== */
+  .table-wrap{overflow-x:auto;border-radius:8px}
+  .filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+  .filters label{font-size:12.5px;color:var(--dim)}
+  .filters select{padding:4px 8px;font-size:12.5px}
+  .filters button{padding:4px 10px;font-size:12.5px}
+  .ro-note{background:var(--bad-soft);border:1px solid #fecaca;color:#7f1d1d;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:10px}
+  .ro-note b{color:var(--bad)}
+  .integrations{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+  .int-card h4{margin:0 0 4px;font-size:14px}
+  .int-card p{margin:0;color:var(--dim);font-size:12.5px}
+  .code-line{display:flex;gap:8px;align-items:flex-start;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:10px 12px;font:12.5px/1.55 Consolas,"SFMono-Regular",Menlo,monospace;margin-top:10px;white-space:pre-wrap;word-break:break-all}
+  .code-line code{flex:1;white-space:pre-wrap;word-break:break-all}
+  .code-line button{flex:none;background:#1e293b;border-color:#334155;color:#e2e8f0;padding:2px 9px;font-size:12px}
+  .code-line button:hover{background:#334155}
+  .switch{display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;font-size:13px}
+  .switch input{appearance:none;-webkit-appearance:none;width:38px;height:21px;border-radius:20px;background:#d1d5db;position:relative;transition:.15s;cursor:pointer;flex:none;margin:0;border:none;outline:none}
+  .switch input:checked{background:var(--brand)}
+  .switch input::after{content:'';position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;transition:.15s}
+  .switch input:checked::after{transform:translateX(17px)}
+  .switch input:disabled{opacity:.45;cursor:not-allowed}
+  .switch input:focus-visible{box-shadow:0 0 0 3px var(--brand-soft)}
+  .scope-list{display:flex;gap:8px 16px;flex-wrap:wrap;margin:8px 0}
+  .scope-list label{font-size:13px;display:inline-flex;gap:4px;align-items:center;cursor:pointer}
+  .scope-list input{width:15px;height:15px;accent-color:var(--brand)}
+  .form-row{display:flex;flex-direction:column;gap:4px;margin:10px 0;font-size:13px}
+  .form-row>label{color:var(--dim)}
+  .form-row input,.form-row select,.form-row textarea{padding:6px 9px;border:1px solid var(--line);border-radius:6px;font:inherit;background:var(--panel)}
+  .token-plain{font:13px/1.5 Consolas,monospace;background:#0f172a;color:#e2e8f0;padding:10px 12px;border-radius:8px;word-break:break-all;margin:10px 0}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">轻单<small>可点击原型 v1 · 22 页新 IA · 假数据</small></div>
+  <div class="grow"></div>
+  <div class="role-box">
+    <span class="muted">以身份查看：</span>
+    <select id="roleSel"></select>
+  </div>
+  <button id="btnHelp">原型说明</button>
+</header>
+<div class="layout">
+  <aside><nav id="nav"></nav></aside>
+  <main id="view"></main>
+</div>
+
+<script>
+// ============ 岗位与功能域权限（D4/D44：预设岗位 + 功能域 × 动作） ============
+// 8 岗位；动作 8 项：查/建/编/审/出/删/看价/导出
+const ROLES = ['老板','经理','销售/售后','采购','质检','理货','拣货','财务'];
+
+// 每个功能域的默认权限（按岗位）。这里用「动作集合」表达，原型按它渲染按钮显隐。
+// 领域 key 对应 22 页 IA 的功能域（D44；D51/D52 追加操作日志、API 与集成）。
+const DOMAINS = {
+  'a':    {label:'采购单 A'},
+  'b':    {label:'加工单 B'},
+  'e':    {label:'销售单 E'},
+  'n':    {label:'内部交易单 N'},
+  'c':    {label:'结算单 C'},
+  'comm': {label:'提成'},
+  'r':    {label:'客户退货 R'},
+  's':    {label:'供应商退货 S'},
+  'i':    {label:'盘点调整 I'},
+  'prod': {label:'商品'},
+  'cust': {label:'客户'},
+  'supp': {label:'供应商'},
+  'plant':{label:'加工厂'},
+  'qty':  {label:'库存数量'},
+  'flow': {label:'库存流水'},
+  'stock':{label:'盘点'},
+  'emp':  {label:'员工'},
+  'perm': {label:'权限设置'},
+  'co':   {label:'公司管理'},
+  'profit':{label:'利润报表'},
+  'audit':{label:'操作日志'},
+  'api':  {label:'API 与集成'}
+};
+
+// 岗位能力：动作集合。老板全权；经理近乎全权但「权限设置」由老板独占；其余按 D44/D47 落。
+function capsOf(role, dom){
+  const c = {view:false,create:false,edit:false,approve:false,ship:false,del:false,price:false,export:false};
+  if(role === '老板') return Object.assign(c,{view:true,create:true,edit:true,approve:true,ship:true,del:true,price:true,export:true});
+  const isMgr = role === '经理';
+  // 财务：全部单据可读（D47），结算/提成/报表可操作，退货审批（D47），成本更正审批（D42）
+  const isFin = role === '财务';
+  const canPrice = (isMgr || isFin || role==='采购' || role==='销售/售后');
+  // 仓库岗：只看库存 + 加工（D44/D47）
+  const isWh = (role==='质检' || role==='理货' || role==='拣货');
+  const allOp = isMgr || role==='老板';
+  const mgrFin = (isMgr || isFin || role==='老板');
+  switch(dom){
+    case 'perm':   // 权限设置仅老板/经理
+      c.view = (role==='老板'||isMgr); c.edit = role==='老板'; break;
+    case 'profit': // 利润报表：财务/经理/老板可见并看价
+      c.view = mgrFin; c.price = mgrFin; break;
+    case 'c': // 结算单：财务主操，经理/老板可看
+      c.view = mgrFin; c.edit = isFin; c.approve = isFin; c.price = mgrFin; break;
+    case 'comm': // 提成：财务/经理/老板 + 销售/售后（看自己提成）
+      c.view = (mgrFin || role==='销售/售后'); c.edit = isFin; c.approve = isFin; c.price = mgrFin; break;
+    case 'a': // 采购单：采购/经理/财务/老板可见；采购可建可编，经理/财务可审
+      c.view = (role==='采购'||isMgr||isFin||role==='老板'); c.create = (role==='采购'||allOp); c.edit = (role==='采购'||allOp); c.approve = (isMgr||isFin||role==='老板'); c.price = canPrice; break;
+    case 'b': // 加工单：销售/经理/老板 + 仓库岗可见；销售可建，仓库岗只读
+      c.view = (role==='销售/售后'||isWh||isMgr||role==='老板'); c.create = (role==='销售/售后'||allOp); c.edit = (role==='销售/售后'||allOp); c.approve = allOp; c.price = canPrice; break;
+    case 'e': // 销售单：销售/经理/财务/老板可见；销售可建编，破下限需审批（经理/老板）
+      c.view = (role==='销售/售后'||isMgr||isFin||role==='老板'); c.create = (role==='销售/售后'||allOp); c.edit = (role==='销售/售后'||allOp); c.approve = (isMgr||role==='老板'); c.price = canPrice; break;
+    case 'n': // 内部交易：销售/经理/老板可见
+      c.view = (role==='销售/售后'||isMgr||role==='老板'); c.create = (role==='销售/售后'||allOp); c.edit = (role==='销售/售后'||allOp); c.price = canPrice; break;
+    case 'r': // 客户退货：销售/财务/经理/老板可见；多岗可录，录入需审批（老板/经理/财务 D47）
+      c.view = (role==='销售/售后'||isMgr||isFin||role==='老板'); c.create = (role==='销售/售后'||role==='老板'||isMgr||isFin); c.approve = (isMgr||isFin||role==='老板'); c.price = canPrice; break;
+    case 's': // 供应商退货：采购/财务/经理/老板可见；采购可录，审批同 D47
+      c.view = (role==='采购'||isMgr||isFin||role==='老板'); c.create = (role==='采购'||allOp||isFin); c.approve = (isMgr||isFin||role==='老板'); c.price = canPrice; break;
+    case 'i': // 盘点：仓管/质检可盘，经理/老板可见并审
+      c.view = (isWh||isMgr||role==='老板'); c.create = (role==='质检'||role==='理货'||role==='拣货'||allOp); c.approve = (isMgr||role==='老板'); break;
+    case 'qty': // 库存数量：仓库岗/采购/经理/老板可见；理货「仅删减」→ 库存减少调整申请（老板/经理审 D47）
+      c.view = (isWh||role==='采购'||isMgr||role==='老板'); c.create = (role==='理货'||role==='采购'||allOp); c.approve = (isMgr||role==='老板'); break;
+    case 'flow': // 库存流水：仓库岗/采购/财务/经理/老板可见
+      c.view = (isWh||role==='采购'||isMgr||isFin||role==='老板'); break;
+    case 'stock': // 盘点（菜单项）：仓库岗/经理/老板可见
+      c.view = (isWh||isMgr||role==='老板'); break;
+    case 'prod': // 商品资料：全岗位可见；采购可编；成本受看价
+      c.view = true; c.price = canPrice; c.edit = (role==='采购'||allOp); break;
+    case 'plant': // 加工厂档案：采购/经理/老板可见
+      c.view = (role==='采购'||isMgr||role==='老板'); c.edit = (role==='采购'||allOp); break;
+    case 'emp': // 员工：老板/经理
+      c.view = (role==='老板'||isMgr); c.edit = (role==='老板'||isMgr); break;
+    case 'co': // 公司管理：老板/经理
+      c.view = (role==='老板'||isMgr); c.edit = role==='老板'; break;
+    case 'cust': // 客户：销售/财务/经理/老板可见；销售可编
+      c.view = (role==='销售/售后'||isMgr||isFin||role==='老板'); c.edit = (role==='销售/售后'||role==='采购'||allOp); break;
+    case 'supp': // 供应商：采购/经理/老板可见（销售岗不可见 D4.1）
+      c.view = (role==='采购'||isMgr||role==='老板'); c.edit = (role==='采购'||allOp); break;
+    case 'audit': // 操作日志：老板/经理/财务可查；日志内金额另有「操作日志」域看价（原型假设，待拍板）
+      c.view = (role==='老板'||isMgr||isFin); c.price = (role==='老板'||isMgr); c.export = (role==='老板'||isMgr); break;
+    case 'api': // API 与集成：老板/经理可查；Token 新建/撤销与危险动作开关默认仅老板（原型假设，待拍板）
+      c.view = (role==='老板'||isMgr); c.create = role==='老板'; c.edit = role==='老板'; break;
+    default: break;
+  }
+  return c;
+}
+
+// ============ 假数据 ============
+const tagClass = s => ({'草稿':'draft','待审':'pending','进行中':'doing','待出库':'doing','已出库':'doing','运输中':'doing','已完成':'done','已取消':'dead','待收货':'pending','已结算':'done','在途':'doing','待审批':'pending'}[s]||'draft');
+
+const DB = {
+  // A 采购单
+  a: [
+    {no:'A-BJ01-20261103-001', supplier:'宁波塑料厂', mat:'不锈钢合页坯件', qty:500, cost:4300, status:'已完成', owner:'赵采购'},
+    {no:'A-BJ01-20261103-002', supplier:'温州五金城', mat:'铝合金型材',     qty:1200,cost:5040, status:'已完成', owner:'赵采购'},
+    {no:'A-BJ01-20261102-001', supplier:'江苏包材公司', mat:'包装纸箱',      qty:800, cost:1440, status:'待审',   owner:'赵采购'},
+    {no:'A-BJ01-20261103-003', supplier:'宁波塑料厂', mat:'质检辅料样件',    qty:60,  cost:720,  status:'待审',   owner:'孙质检'}
+  ],
+  // B 加工单（含损耗、归属单）
+  b: [
+    {no:'B-BJ01-20261103-001', mat:'不锈钢合页 4寸', input:500, loss:12, out:488, fee:1500, status:'进行中', owner:'王销售', belong:'E-BJ01-20261103-001'},
+    {no:'B-BJ01-20261103-002', mat:'铝合金把手',     input:1200,loss:0,  out:1200,fee:900,  status:'已完成', owner:'李销售', belong:'E-BJ01-20261103-002'},
+    {no:'B-BJ01-20261102-001', mat:'气撑杆 100N',    input:200, loss:200,out:0,   fee:600,  status:'已完成', owner:'王销售', belong:'—（全损耗·未挂单）'}
+  ],
+  // E 销售单
+  e: [
+    {no:'E-BJ01-20261103-001', customer:'杭州鸿运商行', amount:12800, status:'待审', owner:'王销售'},
+    {no:'E-BJ01-20261103-002', customer:'苏州明达五金', amount:4600,  status:'已完成', owner:'李销售'},
+    {no:'E-BJ01-20261102-001', customer:'宁波恒信电器', amount:2390,  status:'已完成', owner:'王销售'},
+    {no:'E-BJ01-20261101-001', customer:'上海永利贸易', amount:15600, status:'已完成', owner:'李销售'}
+  ],
+  // N 内部交易单
+  n: [
+    {no:'N-BJ01-20261103-001', from:'北京公司', to:'天津公司', mat:'铝合金把手', qty:400, price:4800, status:'在途', owner:'李销售'},
+    {no:'N-BJ01-20261102-001', from:'北京公司', to:'上海公司', mat:'密封胶条',   qty:600, price:1500, status:'已完成', owner:'王销售'}
+  ],
+  // C 结算单
+  c: [
+    {no:'C-BJ01-20261103-001', ref:'E-BJ01-20261103-002', sale:4600, cost:3150, gross:1450, margin:'31.5%', comm:290, loss:0, net:1450, status:'待确认', owner:'吴财务'},
+    {no:'C-BJ01-20261102-001', ref:'E-BJ01-20261102-001', sale:2390, cost:1680, gross:710,  margin:'29.7%', comm:142, loss:0, net:710,  status:'已结算', owner:'吴财务'},
+    {no:'C-BJ01-20261101-001', ref:'E-BJ01-20261101-001', sale:15600,cost:12000,gross:3600, margin:'23.1%', comm:720, loss:0, net:3600, status:'已结算', owner:'吴财务'}
+  ],
+  // 冲正：客户退货 R / 供应商退货 S / 盘点 I
+  r: [
+    {no:'R-BJ01-20261103-001', ref:'E-BJ01-20261102-001', type:'退货退款', way:'原路退款', amount:320, status:'待审批', owner:'王销售'},
+    {no:'R-BJ01-20261102-001', ref:'E-BJ01-20261101-001', type:'仅退款（减成交额）', way:'冲抵应收', amount:180, status:'已完成', owner:'李销售'}
+  ],
+  s: [
+    {no:'S-BJ01-20261103-001', ref:'A-BJ01-20261103-001', amount:430, status:'待审批', owner:'赵采购'}
+  ],
+  i: [
+    {no:'I-BJ01-20261103-001', wh:'主仓 A区', mat:'门吸套装', diff:-2, status:'待审批', owner:'孙质检'}
+  ],
+  // 商品（成本受看价权限）
+  products: [
+    {code:'P-1001', name:'不锈钢合页 4寸', spec:'50/箱', cost:8.6, price:15.5},
+    {code:'P-1002', name:'铝合金把手',     spec:'100/箱',cost:4.2, price:9.0},
+    {code:'P-1003', name:'门吸套装',       spec:'20/箱', cost:12.0,price:26.0},
+    {code:'P-1004', name:'密封胶条 5m',    spec:'200/箱',cost:1.8, price:4.5},
+    {code:'P-1005', name:'气撑杆 100N',    spec:'40/箱', cost:22.5,price:48.0}
+  ],
+  customers: [
+    {code:'C-001', name:'杭州鸿运商行', contact:'周经理', phone:'138****2210'},
+    {code:'C-002', name:'苏州明达五金', contact:'吴老板', phone:'139****8842'},
+    {code:'C-003', name:'宁波恒信电器', contact:'陈工',   phone:'137****5566'},
+    {code:'C-004', name:'上海永利贸易', contact:'徐总',   phone:'136****1120'}
+  ],
+  suppliers: [
+    {code:'S-001', name:'宁波塑料厂',  contact:'钱经理'},
+    {code:'S-002', name:'温州五金城',  contact:'孙老板'},
+    {code:'S-003', name:'江苏包材公司',contact:'刘女士'}
+  ],
+  plants: [
+    {code:'F-001', name:'众合五金加工厂', contact:'林厂长', price:'折合 3.0/件', note:'月结 30 天'},
+    {code:'F-002', name:'精工表面处理',   contact:'郑工',   price:'2.5/件',     note:'现金'}
+  ],
+  // 库存数量（四列 + 待执行占用进详情 D41）
+  inventory: [
+    {code:'P-1001', name:'不锈钢合页 4寸', in:488, remain:320, transit:0, pending:48, avail:272},
+    {code:'P-1002', name:'铝合金把手',     in:1200,remain:800, transit:400, pending:0, avail:400},
+    {code:'P-1003', name:'门吸套装',       in:96,  remain:80,  transit:0,  pending:20, avail:60},
+    {code:'P-1004', name:'密封胶条 5m',    in:4200,remain:4200,transit:0,  pending:0, avail:4200},
+    {code:'P-1005', name:'气撑杆 100N',    in:64,  remain:0,   transit:0,  pending:0, avail:0}
+  ],
+  // 库存流水
+  flows: [
+    {at:'11-03 09:30', batch:'BAT-1001', qty:+488, src:'B-BJ01-20261103-001', op:'王销售'},
+    {at:'11-03 09:32', batch:'BAT-1001', qty:-168, src:'E-BJ01-20261103-001', op:'王销售'},
+    {at:'11-03 08:15', batch:'BAT-1002', qty:+1200,src:'B-BJ01-20261103-002', op:'李销售'},
+    {at:'11-03 08:20', batch:'BAT-1002', qty:-400, src:'N-BJ01-20261103-001', op:'李销售'}
+  ],
+  // 利润报表（期间汇总 + 未归属损失下钻 D43）
+  profit: {gross:7260, loss:600, net:6660, unallocated:600, allocated:0},
+  lossDetail: [
+    {b:'B-BJ01-20261102-001', amt:600, reason:'全损耗（气撑杆 200 件报废）', belong:'—（未挂归属单）'}
+  ],
+  employees: [
+    {code:'000001', name:'张老板', role:'老板'},
+    {code:'000002', name:'李经理', role:'经理'},
+    {code:'000003', name:'王销售', role:'销售/售后'},
+    {code:'000004', name:'赵采购', role:'采购'},
+    {code:'000005', name:'孙质检', role:'质检'},
+    {code:'000006', name:'钱理货', role:'理货'},
+    {code:'000007', name:'周拣货', role:'拣货'},
+    {code:'000008', name:'吴财务', role:'财务'}
+  ],
+  companies: [
+    {code:'BJ01', name:'北京公司', head:'张老板'},
+    {code:'TJ01', name:'天津公司', head:'李经理'},
+    {code:'SH01', name:'上海公司', head:'徐总'}
+  ],
+  // API Token（D52：绑定员工，scope = 功能域 × 动作子集；明文只在创建时显示一次，服务端只存哈希）
+  tokens: [
+    {id:'tk_01', name:'财务对账机器人', emp:'000008', scope:['结算单 · 查','结算单 · 导出','利润报表 · 查'], expiry:'2027-03-31', lastUsed:'2026-11-04 09:12', status:'有效', ip:'203.0.113.24'},
+    {id:'tk_02', name:'MCP · 销售助手', emp:'000003', scope:['销售单 · 查','销售单 · 建','销售单 · 编','商品 · 查','库存数量 · 查'], expiry:'2026-12-31', lastUsed:'2026-11-04 09:58', status:'有效', ip:'不限制'},
+    {id:'tk_03', name:'CLI · 采购批处理', emp:'000004', scope:['采购单 · 查','采购单 · 建','采购单 · 编','采购单 · 导出'], expiry:'', lastUsed:'2026-11-03 14:05', status:'有效', ip:'198.51.100.7'},
+    {id:'tk_04', name:'盘点脚本（旧）', emp:'000005', scope:['盘点 · 查','库存流水 · 查'], expiry:'2026-10-01', lastUsed:'2026-09-28 11:20', status:'已过期', ip:'不限制'},
+    {id:'tk_05', name:'测试 Token（已撤销）', emp:'000002', scope:['销售单 · 查'], expiry:'', lastUsed:'2026-10-30 17:31', status:'已撤销', ip:'不限制'}
+  ],
+  // 操作日志（D51：只追加、不可改删；覆盖登录/权限变更/写操作/导出/看金额/看日志/AI/平台；业务失败也记）
+  auditLogs: [
+    {at:'2026-11-04 10:12:03', actorType:'员工', actor:'张老板', source:'Web', action:'权限设置.修改岗位权限', code:'perm.edit', obj:'采购岗位 · 编辑/审批', amount:null, result:'成功', err:'', reqId:'req_7f3a91c2', cat:'权限与 Token', reason:'复核“采购不能自审”规则（危险动作，原因必填）'},
+    {at:'2026-11-04 09:58:47', actorType:'AI', actor:'王销售（委托：AI 销售助手）', source:'MCP', action:'销售单.新建草稿', code:'sales.create', obj:'销售单 / E-BJ01-20261104-001', amount:4600, result:'成功', err:'', reqId:'req_a1b2c3d4', cat:'AI 调用', reason:'客户口头补单，AI 生成草稿待王销售确认'},
+    {at:'2026-11-04 09:58:12', actorType:'AI', actor:'王销售（委托：AI 销售助手）', source:'MCP', action:'库存数量.查', code:'inventory.read', obj:'可用量 / P-1001', amount:null, result:'失败', err:'E403 scope 不含 inventory.read', reqId:'req_9e8d7c6b', cat:'AI 调用', reason:''},
+    {at:'2026-11-04 09:31:20', actorType:'员工', actor:'吴财务', source:'Web', action:'结算单.确认结算', code:'settlement.confirm', obj:'结算单 C-BJ01-20261103-001', amount:4600, result:'成功', err:'', reqId:'req_55aa10d9', cat:'写入', reason:'财务核对无误，确认结算（危险动作）'},
+    {at:'2026-11-04 09:20:05', actorType:'员工', actor:'王销售', source:'Web', action:'利润报表.查看金额', code:'profit.price', obj:'利润报表 / 2026-11', amount:6660, result:'成功', err:'', reqId:'req_31ff0aa2', cat:'敏感读', reason:''},
+    {at:'2026-11-04 08:59:44', actorType:'员工', actor:'赵采购', source:'CLI', action:'采购单.导出 CSV', code:'purchase.export', obj:'采购单 / 2026-11-03 批次', amount:null, result:'成功', err:'', reqId:'req_c10b2f17', cat:'敏感读', reason:''},
+    {at:'2026-11-04 08:15:02', actorType:'员工', actor:'李经理', source:'Web', action:'登录', code:'auth.login', obj:'会话 / 北京公司', amount:null, result:'失败', err:'E401 密码错误（连续 2 次）', reqId:'req_0a9b8c7d', cat:'登录', reason:''},
+    {at:'2026-11-03 18:47:39', actorType:'员工', actor:'吴财务', source:'Web', action:'客户退货.审批', code:'returns.approve', obj:'客户退货 R-BJ01-20261103-001', amount:320, result:'成功', err:'', reqId:'req_44de1b6a', cat:'写入', reason:'退货退款，审批通过（危险动作）'},
+    {at:'2026-11-03 18:40:11', actorType:'AI', actor:'吴财务（委托：财务对账机器人）', source:'API', action:'结算单.导出 CSV', code:'settlement.export', obj:'结算单 / 2026-11-03', amount:3600, result:'成功', err:'', reqId:'req_ee12031c', cat:'AI 调用', reason:''},
+    {at:'2026-11-03 17:02:58', actorType:'员工', actor:'李经理', source:'Web', action:'操作日志.查看', code:'audit.view', obj:'操作日志 / 全部', amount:null, result:'成功', err:'', reqId:'req_7712aa09', cat:'敏感读', reason:''},
+    {at:'2026-11-03 16:35:10', actorType:'平台', actor:'平台运营（platform#0007）', source:'Web', action:'企业.暂停计费', code:'platform.billing.pause', obj:'企业 / 北京公司', amount:null, result:'成功', err:'', reqId:'req_pla00017', cat:'系统', reason:'欠费 3 天，平台运营后台操作'},
+    {at:'2026-11-03 15:20:31', actorType:'系统', actor:'system', source:'Job', action:'审计归档', code:'job.archive', obj:'操作日志 / 2026-10', amount:null, result:'成功', err:'', reqId:'req_job88a01', cat:'系统', reason:'到期归档不物理删除（D51②）'},
+    {at:'2026-11-03 14:05:22', actorType:'员工', actor:'张老板', source:'Web', action:'API Token.新建', code:'token.create', obj:'Token / 财务对账机器人', amount:null, result:'成功', err:'', reqId:'req_tok00031', cat:'权限与 Token', reason:'财务对账自动化'},
+    {at:'2026-11-03 11:30:45', actorType:'员工', actor:'赵采购', source:'Web', action:'采购单.新建', code:'purchase.create', obj:'采购单 A-BJ01-20261103-003', amount:720, result:'成功', err:'', reqId:'req_19ac7f3e', cat:'写入', reason:''},
+    {at:'2026-11-03 10:12:44', actorType:'员工', actor:'王销售', source:'Web', action:'销售单.提交（破下限）', code:'sales.create', obj:'销售单 / E-BJ01-20261103-001', amount:12800, result:'失败', err:'E422 售价低于批次成本，需老板/经理审批', reqId:'req_f0011223', cat:'写入', reason:''},
+    {at:'2026-11-02 09:03:12', actorType:'员工', actor:'孙质检', source:'Web', action:'商品成本.查看', code:'product.cost.read', obj:'商品 / P-1001', amount:8.6, result:'成功', err:'', reqId:'req_88aa2210', cat:'敏感读', reason:''},
+    {at:'2026-11-01 16:44:07', actorType:'AI', actor:'赵采购（委托：CLI 批处理）', source:'CLI', action:'采购单.新建', code:'purchase.create', obj:'采购单 A-BJ01-20261101-002', amount:5040, result:'成功', err:'', reqId:'req_7bcd0e41', cat:'AI 调用', reason:'批量补录历史采购单'}
+  ]
+};
+
+// ============ 导航（7 块，按 D44 功能域过滤） ============
+const NAV = [
+  {group:'', items:[['home','工作台',null],['board','业务全流程图',null]]},
+  {group:'单据', items:[
+    ['a','采购单 A','a'],
+    ['b','加工单 B','b'],
+    ['e','销售单 E','e'],
+    ['n','内部交易单 N','n'],
+    ['c','结算单 C','c'],
+    ['comm','提成','comm'],
+    ['r','客户退货 R','r'],
+    ['s','供应商退货 S','s'],
+    ['i','盘点调整 I','i']
+  ]},
+  {group:'资料', items:[
+    ['prod','商品资料','prod'],
+    ['cust','客户','cust'],
+    ['supp','供应商','supp'],
+    ['plant','加工厂档案','plant']
+  ]},
+  {group:'库存', items:[
+    ['qty','库存数量','qty'],
+    ['flow','库存流水','flow'],
+    ['stock','盘点','stock']
+  ]},
+  {group:'组织', items:[
+    ['emp','员工','emp'],
+    ['perm','权限设置','perm'],
+    ['co','公司管理','co']
+  ]},
+  {group:'系统', items:[
+    ['audit','操作日志','audit'],
+    ['api','API 与集成','api']
+  ]},
+  {group:'报表', items:[['profit','利润报表','profit']]},
+  {group:'', items:[]}
+];
+
+// ===== 21 操作日志 / 22 API 与集成 的静态配置 =====
+// 22 页接入示例：OpenAPI / CLI / MCP 各一行（纯静态文案，复制按钮走 clipboard + 降级）
+const API_BLOCKS = [
+  {k:'OpenAPI 3.1', tag:'唯一接口真源', desc:'GET /api/v1/openapi.json 产出 OpenAPI 3.1 文档；Web / CLI / MCP 都按它生成客户端，不允许只在前端实现业务逻辑（D52）。', cmd:'curl -H "Authorization: Bearer $QD_TOKEN" https://api.qingdan.example.com/api/v1/openapi.json'},
+  {k:'CLI', tag:'qingdan', desc:'qingdan <功能域> <动作> [--json] [--dry-run] [--reason "..."]；退出码 0 成功 / 2 用法错误 / 3 无权限 / 4 校验失败 / 5 并发冲突。', cmd:'qingdan sales create --customer C-001 --json --dry-run --reason "补录 11-03 销售单"'},
+  {k:'MCP', tag:'Agent 接入', desc:'MCP Server 的每个工具与一个 REST 接口一对一，权限与 Web 完全一致，不绕过服务端权限与审计；写操作必须带 reason。', cmd:'npx @qingdan/mcp-server --token "$QD_TOKEN" --scope sales.read,sales.write'}
+];
+// 新建 Token 时可勾选的 scope 预设（功能域 × 动作子集）
+const TOKEN_SCOPES = ['销售单 · 查','销售单 · 建','销售单 · 编','采购单 · 查','采购单 · 建','采购单 · 编','采购单 · 导出','结算单 · 查','结算单 · 导出','结算单 · 确认','库存数量 · 查','库存流水 · 查','盘点 · 查','利润报表 · 查','操作日志 · 查','API Token · 管'];
+const SCOPE_DOM = {'销售单':'e','采购单':'a','结算单':'c','库存数量':'qty','库存流水':'flow','盘点':'stock','利润报表':'profit','操作日志':'audit','API Token':'api'};
+const SCOPE_ACT = {'查':'view','建':'create','编':'edit','导出':'export','确认':'approve','管':'edit'};
+// D52.1①：token scope 不得超出创建人自己的授权
+function scopeAllowedForCreator(scope){
+  const parts = String(scope).split(' · ');
+  const dom = SCOPE_DOM[parts[0]], act = SCOPE_ACT[parts[1]];
+  return !!(dom && act && capsOf(state.role, dom)[act]);
+}
+
+const state = {role:'老板', page:'home', modal:null, detail:null, reqView:false, collapsed:new Set(), permRole:'老板', permOverride:{}, permDim:'role', permEmp:'000001', personOverride:{}, auditFilter:{actor:'全部', source:'全部', action:'全部', result:'全部', period:'全部时间'}, aiDanger:false, lastTokenPlain:null};
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// 8 动作：key + 中文名（底层模型，含 price 看价）
+const ACTS = [['view','查'],['create','建'],['edit','编'],['approve','审'],['ship','出'],['del','删'],['price','看价'],['export','导']];
+// 权限设置表格展示的动作列：去掉「看价」（看价=数据可见性，不属操作，不进勾选表格；price 底层模型保留）
+const ACTS_UI = ACTS.filter(([k])=>k!=='price');
+
+// 每个功能域「能力上支持」的动作（key 集合）。不支持的动作在表格里显示灰色「—」不可点。
+// 口径：单据类全生命周期(查建编审删导)；档案类(查建编删导，无审/出)；只读类(查+导)；特殊域按实际能力。
+const DOMAIN_ACTIONS = {
+  'a':    ['view','create','edit','approve','del','export'],     // 采购单
+  'b':    ['view','create','edit','approve','del','export'],     // 加工单
+  'e':    ['view','create','edit','approve','ship','del','export'], // 销售单（含出库）
+  'n':    ['view','create','edit','approve','ship','del','export'], // 内部交易单（含出库/签收）
+  'c':    ['view','edit','approve','export'],                    // 结算单（系统自动生成，不手建）
+  'comm': ['view','edit','approve','export'],                    // 提成
+  'r':    ['view','create','edit','approve','del','export'],     // 客户退货
+  's':    ['view','create','edit','approve','del','export'],     // 供应商退货
+  'i':    ['view','create','edit','approve','del','export'],     // 盘点调整
+  'prod': ['view','create','edit','del','export'],               // 商品档案
+  'cust': ['view','create','edit','del','export'],               // 客户档案
+  'supp': ['view','create','edit','del','export'],               // 供应商档案
+  'plant':['view','create','edit','del','export'],               // 加工厂档案
+  'qty':  ['view','create','approve','export'],                  // 库存数量（理货发起调整申请=建）
+  'flow': ['view','export'],                                     // 库存流水（只读）
+  'stock':['view','create','approve','export'],                  // 盘点
+  'emp':  ['view','create','edit','del','export'],               // 员工
+  'perm': ['view','edit'],                                       // 权限设置
+  'co':   ['view','create','edit','del','export'],               // 公司管理
+  'profit':['view','export'],                                    // 利润报表（只读）
+  'audit': ['view','export'],                                    // 操作日志（只读，可导出；无编辑/删除动作）
+  'api':   ['view','create','edit']                              // API 与集成（Token 新建/撤销）
+};
+// 读取某岗位某功能域的实际权限（优先取手动勾改覆盖值，否则用 capsOf 出厂默认）
+function permOf(role, dom){
+  const base = capsOf(role, dom);
+  const ov = (state.permOverride[role] && state.permOverride[role][dom]) || {};
+  return Object.assign({}, base, ov);
+}
+
+// ===== 员工个人级权限覆盖（D50：经理/老板给单个员工单独开关权限） =====
+// 员工编号 → 岗位（原型每人单岗；D4 一人多岗取并集，此处单岗即基线）
+function empOf(code){ return DB.employees.find(x=>x.code===code); }
+// 某员工的岗位并集基线（D4：一人多岗权限取并集；原型当前每人单岗）
+function empBasePerm(emp, dom){
+  // 单岗位基线
+  return capsOf(emp.role, dom);
+}
+// 某员工某功能域的最终生效权限 = 岗位并集基线 ⊕ 个人覆盖（可增可减，个人覆盖优先）
+function personPermOf(code, dom){
+  const emp = empOf(code);
+  const base = emp ? empBasePerm(emp, dom) : {view:false,create:false,edit:false,approve:false,ship:false,del:false,price:false,export:false};
+  const ov = (state.personOverride[code] && state.personOverride[code][dom]) || {};
+  return Object.assign({}, base, ov);
+}
+// 经理能否编辑该员工：经理不可改老板、财务、其他经理（D50）；老板全权
+function canEditPerson(code){
+  if(state.role === '老板') return true;
+  if(state.role !== '经理') return false;
+  const emp = empOf(code);
+  if(!emp) return false;
+  return !['老板','财务','经理'].includes(emp.role);
+}
+
+// 岗位 → 当前登录员工（原型固定代表一人；切岗位即换「登录人」）
+const ROLE_OPERATOR = { '老板':'张老板','经理':'李经理','销售/售后':'王销售','采购':'赵采购','质检':'孙质检','理货':'钱理货','拣货':'周拣货','财务':'吴财务' };
+// 判断某行是否「本人创建」：owner 命中当前登录人 → 可见完整金额（覆盖 D27 看价限制）
+const isOwner = owner => owner && owner === ROLE_OPERATOR[state.role];
+// 金额可见性：有「看价」权限，或该行是本人创建 → 显示金额，否则 —
+const canSeeMoney = (c, owner) => c.price || isOwner(owner);
+
+// 未完结状态：进行中的订单（待审/待确认/待审批等「待处理」也算未完结）
+const ACTIVE_STATUS = ['待审','进行中','待出库','已出库','运输中','待收货','在途','待确认','待审批','待结算'];
+// 各类单据的「我负责的进行中订单」渲染配置：label 前缀、展示字段
+const MY_DOCS = [
+  {key:'a', label:'采购单', dom:'a', statusOf:x=>x.status, ownerOf:x=>x.owner, cells:x=>[x.no,'采购',x.supplier, x.mat, x.status]},
+  {key:'b', label:'加工单', dom:'b', statusOf:x=>x.status, ownerOf:x=>x.owner, cells:x=>[x.no,'加工',x.mat, `${x.input}→${x.out}`, x.status]},
+  {key:'e', label:'销售单', dom:'e', statusOf:x=>x.status, ownerOf:x=>x.owner, cells:x=>[x.no,'销售',x.customer, '—', x.status]},
+  {key:'n', label:'内部交易', dom:'n', statusOf:x=>x.status, ownerOf:x=>x.owner, cells:x=>[x.no,'内部',`${x.from}→${x.to}`, x.mat, x.status]},
+  {key:'c', label:'结算单', dom:'c', statusOf:x=>x.status, ownerOf:x=>x.owner, cells:x=>[x.no,'结算',x.ref, '—', x.status]},
+  {key:'r', label:'客户退货', dom:'r', statusOf:x=>x.status, ownerOf:x=>x.owner, cells:x=>[x.no,'退货',x.ref, x.type, x.status]},
+  {key:'s', label:'供应商退货', dom:'s', statusOf:x=>x.status, ownerOf:x=>x.owner, cells:x=>[x.no,'退货',x.ref, '—', x.status]},
+  {key:'i', label:'盘点', dom:'i', statusOf:x=>x.status, ownerOf:x=>x.owner, cells:x=>[x.no,'盘点',x.wh, x.mat, x.status]},
+];
+// 收集「我负责的进行中订单」：owner 命中当前登录人 + 状态未完结
+function myActiveDocs(){
+  const me = ROLE_OPERATOR[state.role];
+  const out = [];
+  for(const d of MY_DOCS){
+    const list = DB[d.key];
+    if(!list) continue;
+    for(const x of list){
+      if(x.owner === me && ACTIVE_STATUS.includes(d.statusOf(x))){
+        out.push({...d, x});
+      }
+    }
+  }
+  return out;
+}
+
+function renderNav(){
+  let html = '';
+  for(const g of NAV){
+    if(!g.items.length) continue;
+    // 顶部「工作台/业务全流程图」（无分组标题）常显，不折叠；无权则直接不显示
+    if(!g.group){
+      for(const [key,label,dom] of g.items){
+        const c = dom ? capsOf(state.role, dom) : {view:true};
+        if(!c.view) continue; // 无权 → 直接隐藏
+        html += `<a data-nav="${key}" class="${state.page===key?'on':''}" title="进入">${label}</a>`;
+      }
+      continue;
+    }
+    // 有分组标题的：先筛出有权访问的子项，全无权则整组隐藏
+    const visibleItems = g.items.filter(([key,label,dom]) => dom ? capsOf(state.role, dom).view : true);
+    if(!visibleItems.length) continue; // 该分组下无任何可访问项 → 隐藏整个分组
+    const isOpen = !state.collapsed.has(g.group);
+    const cls = isOpen ? '' : 'collapsed';
+    html += `<div class="group ${cls}" data-group="${g.group}"><h4><span class="arr">▼</span>${g.group}</h4><div class="items">`;
+    for(const [key,label,dom] of visibleItems){
+      html += `<a data-nav="${key}" class="${state.page===key?'on':''}" title="进入">${label}</a>`;
+    }
+    html += '</div></div>';
+  }
+  $('#nav').innerHTML = html;
+}
+
+function pageHead(title, sub, extra=''){
+  return `<h1>${title}</h1><div class="sub">${sub}</div>${extra}`;
+}
+function roleBanner(dom){
+  const c = capsOf(state.role, dom);
+  const rights = ['查','新建','编辑','审批','出库','删除','看价','导出'].filter((k,i)=>[c.view,c.create,c.edit,c.approve,c.ship,c.del,c.price,c.export][i]).join(' / ') || '无操作权限';
+  return `<div class="hint">当前身份 <b>${state.role}</b> 对「${DOMAINS[dom].label}」可用：<b>${rights}</b>${c.price?'':'　<span style="color:#b45309">（金额/成本受「看价」权限隐藏）</span>'}</div>`;
+}
+// 只列出该功能域「能力上支持」且当前身份具备的动作（21/22 页用；老板不再显示未支持的动作）
+function rightsOf(dom){
+  const c = capsOf(state.role, dom);
+  const names = {view:'查',create:'新建',edit:'编辑',approve:'审批',ship:'出库',del:'删除',export:'导出'};
+  const list = (DOMAIN_ACTIONS[dom] || []).filter(k => c[k]).map(k => names[k]);
+  if(c.price) list.push('看价');
+  return list.join(' / ') || '无操作权限';
+}
+function tbl(cols, rows, rowAttrs){
+  if(!rows.length) return '<div class="empty">暂无数据</div>';
+  return '<table><thead><tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr></thead><tbody>' +
+    rows.map(r => `<tr ${rowAttrs?rowAttrs(r):''}>` + r.cells.map((v,i)=>`<td>${v}</td>`).join('') + '</tr>').join('') +
+    '</tbody></table>';
+}
+const money = n => '¥' + Number(n).toLocaleString();
+
+// ============ 页面 ============
+const pages = {
+  home(){
+    const todos = [];
+    if(capsOf(state.role,'a').approve) todos.push(['采购单待审', DB.a.filter(x=>x.status==='待审').length, 'a']);
+    if(capsOf(state.role,'e').approve) todos.push(['销售单待审', DB.e.filter(x=>x.status==='待审').length, 'e']);
+    if(capsOf(state.role,'c').approve) todos.push(['结算单待确认', DB.c.filter(x=>x.status==='待确认').length, 'c']);
+    if(capsOf(state.role,'r').approve) todos.push(['客户退货待审批', DB.r.filter(x=>x.status==='待审批').length, 'r']);
+    if(capsOf(state.role,'s').approve) todos.push(['供应商退货待审批', DB.s.filter(x=>x.status==='待审批').length, 's']);
+    if(capsOf(state.role,'i').approve) todos.push(['盘点待审批', DB.i.filter(x=>x.status==='待审批').length, 'i']);
+    const visible = todos.filter(t=>t[1]>0);
+    // 我负责的进行中订单
+    const myDocs = myActiveDocs();
+    const myTable = myDocs.length
+      ? tbl(['单号','类型','对象','内容','状态'], myDocs.map(d => ({x:d.x, cells:[`<a data-nav="${d.key}" style="color:var(--brand);text-decoration:none">${d.x.no}</a>`, d.label, d.cells(d.x)[2], d.cells(d.x)[3], `<span class="tag ${tagClass(d.statusOf(d.x))}">${d.statusOf(d.x)}</span>`]})))
+      : '';
+    return pageHead('工作台', `以 ${state.role} 身份看到的待办与进行中订单。工作台与业务全流程图对所有登录员工开放（D44），具体内容按权限与「本人负责」过滤。`) +
+      '<div class="cards">' + visible.map(([k,v])=>`<div class="kpi"><b>${v}</b><span>${k}</span></div>`).join('') +
+      `<div class="kpi"><b>${myDocs.length}</b><span>我负责的进行中订单</span></div>` +
+      (visible.length? '':'<div class="kpi"><b>0</b><span>当前无待办</span></div>') + '</div>' +
+      `<div class="card" style="margin-top:14px"><b>我负责的进行中订单（本人为负责人，含采购/加工/销售/退货等未完结单）</b>
+        <div class="muted" style="margin:6px 0 10px">只有负责人是「${ROLE_OPERATOR[state.role]}」且未完结的订单会出现在这里；点单号跳转对应单据页。</div>
+        ${myTable || '<div class="empty">当前没有你负责的进行中订单</div>'}</div>` +
+      `<div class="card"><b>下一步做什么（按你的权限）</b><div class="muted" style="margin-top:6px">` +
+      (visible.map(t=>'· 处理「'+t[0]+'」'+t[1]+' 笔').join('<br>') || '· 当前身份没有待审批事项，可浏览有权访问的资料页') + '</div></div>';
+  },
+  a(){
+    const c = capsOf(state.role,'a');
+    const rows = DB.a.map(x => ({x, cells:[x.no, x.supplier, x.mat, x.qty, canSeeMoney(c,x.owner)?money(x.cost):'—', `<span class="tag ${tagClass(x.status)}">${x.status}</span>`, x.owner]}));
+    return pageHead('采购单 A','原材料采购，入库即锁批次价（D5）。成本更正按 T1/T2/T3（D37）。') + roleBanner('a') +
+      (c.price?'':'<div class="hint">当前身份无「看价」权限，金额列已隐藏；<b>本人创建的订单可见完整金额</b>（D27）。</div>') +
+      `<div class="toolbar"><button class="primary" ${c.create?'':'disabled'}>+ 新建采购单</button>
+        <button ${c.approve?'':'disabled'}>审核</button></div>` +
+      tbl(['单号','供应商','物料','数量','货款','状态','经手'], rows);
+  },
+  b(){
+    const c = capsOf(state.role,'b');
+    const rows = DB.b.map(x => ({x, cells:[x.no, x.mat, `${x.input}→${x.out}`, x.loss, canSeeMoney(c,x.owner)?money(x.fee):'—', `<span class="tag ${tagClass(x.status)}">${x.status}</span>`, x.belong]}));
+    return pageHead('加工单 B','引用 A/B 批次 + 辅料 + 加工费 + 运费 + 损耗，产出新批次；「归属单」用于全损耗损失归属（D35）。') + roleBanner('b') +
+      (c.price?'':'<div class="hint">当前身份无「看价」权限，金额列已隐藏；<b>本人创建的订单可见完整金额</b>（D27）。</div>') +
+      `<div class="toolbar"><button class="primary" ${c.create?'':'disabled'}>+ 新建加工单</button></div>` +
+      tbl(['单号','物料','投入→产出','损耗','加工费','状态','归属单'], rows);
+  },
+  e(){
+    const c = capsOf(state.role,'e');
+    const rows = DB.e.map(x => ({x, cells:[x.no, x.customer, canSeeMoney(c,x.owner)?money(x.amount):'—', `<span class="tag ${tagClass(x.status)}">${x.status}</span>`, x.owner]}));
+    return pageHead('销售单 E','选 A/B 出售，售价随单据；破下限需审批（D20）；费用行 ≥0（D39）；内嵌「收款记录」块（D24）。') + roleBanner('e') +
+      (c.price?'':'<div class="hint">当前身份无「看价」权限，金额列已隐藏；<b>本人创建的订单可见完整金额</b>（D27）。</div>') +
+      '<div class="hint" style="background:var(--brand-soft);border-color:#bfdbfe;color:var(--brand)"><b>状态说明</b>：「已完成」= 单据业务走完（货已发出），不等于「已结算」；单头完成后才自动生成结算单草稿，由财务确认后变为「已结算」。</div>' +
+      `<div class="toolbar"><button class="primary" ${c.create?'':'disabled'}>+ 新建销售单</button></div>` +
+      tbl(['单号','客户','成交额','状态','经手'], rows);
+  },
+  n(){
+    const c = capsOf(state.role,'n');
+    const rows = DB.n.map(x => ({x, cells:[x.no, x.from, x.to, x.mat, x.qty, canSeeMoney(c,x.owner)?money(x.price):'—', `<span class="tag ${tagClass(x.status)}">${x.status}</span>`]}));
+    return pageHead('内部交易单 N','子公司间调货，在途批次锁定、签收转司（D22/D31）；集团看板一期不做（D45）。') + roleBanner('n') +
+      (c.price?'':'<div class="hint">当前身份无「看价」权限，金额列已隐藏；<b>本人创建的订单可见完整金额</b>（D27）。</div>') +
+      `<div class="toolbar"><button class="primary" ${c.create?'':'disabled'}>+ 新建内部交易单</button></div>` +
+      tbl(['单号','发出','接收','物料','数量','内部价','状态'], rows);
+  },
+  c(){
+    const c = capsOf(state.role,'c');
+    const price = c.price;
+    // 财务已确认（已结算）的沉底并置灰；状态显示统一用「已完成」
+    const sorted = [...DB.c].sort((a,b) => (a.status==='已结算'?1:0) - (b.status==='已结算'?1:0));
+    const showStatus = x => x.status==='已结算' ? '已完成' : x.status;
+    const rows = sorted.map(x => ({x, cells:[x.no, x.ref, price?money(x.sale):'—', price?money(x.cost):'—', price?money(x.gross):'—', price?x.margin:'—', price?money(x.comm):'—', price?money(x.net):'—', `<span class="tag ${tagClass(x.status)}">${showStatus(x)}</span>`]}));
+    return pageHead('结算单 C','唯一算毛利的单据；E/N 完成自动生成草稿、财务确认生效（D19/D29）；提成按 C 单结算、快照比例（D36）。') + roleBanner('c') +
+      (price?'':'<div class="hint">当前身份无「看价」权限，金额列已隐藏（D27）。</div>') +
+      '<div class="hint" style="background:var(--brand-soft);border-color:#bfdbfe;color:var(--brand)"><b>状态说明</b>：财务确认后结算完成（置灰沉底，状态显示「已完成」）；「待确认」= 草稿待财务确认。</div>' +
+      `<div class="toolbar"><button class="primary" ${c.edit?'':'disabled'}>确认结算</button></div>` +
+      tbl(['单号','来源单','售价','成本','毛利','毛利率','提成','净毛利','状态'], rows, r => r.x.status==='已结算' ? 'class="disabled"' : '');
+  },
+  comm(){
+    const c = capsOf(state.role,'comm');
+    const price = c.price;
+    const rows = DB.c.map(x => ({x, cells:[x.ref, x.owner, price?money(x.comm):'—', '比例快照 2%']}));
+    return pageHead('提成','按 C 单结算、快照比例；改比例不重算历史单（D5④）；减成交额退款重算提成（D40）。') + roleBanner('comm') +
+      (price?'':'<div class="hint">当前身份无「看价」权限，提成金额已隐藏。</div>') +
+      tbl(['结算单','归属人','提成金额','比例口径'], rows);
+  },
+  r(){
+    const c = capsOf(state.role,'r');
+    const rows = DB.r.map(x => ({x, cells:[x.no, x.ref, x.type, x.way, canSeeMoney(c,x.owner)?money(x.amount):'—', `<span class="tag ${tagClass(x.status)}">${x.status}</span>`]}));
+    return pageHead('客户退货 R','退货退款 / 仅退款（纠收款·减成交额）两型；退款只走收款记录负数行（D40）；录入需审批（老板/经理/财务 D47）。') + roleBanner('r') +
+      (c.price?'':'<div class="hint">当前身份无「看价」权限，金额列已隐藏；<b>本人创建的订单可见完整金额</b>（D27）。</div>') +
+      `<div class="toolbar"><button class="primary" ${c.create?'':'disabled'}>+ 新建客户退货</button>
+        <button ${c.approve?'':'disabled'}>审批</button></div>` +
+      tbl(['单号','原单','类型','退款方式','金额','状态'], rows);
+  },
+  s(){
+    const c = capsOf(state.role,'s');
+    const rows = DB.s.map(x => ({x, cells:[x.no, x.ref, canSeeMoney(c,x.owner)?money(x.amount):'—', `<span class="tag ${tagClass(x.status)}">${x.status}</span>`]}));
+    return pageHead('供应商退货 S','关联原 A 单、冲减应付；录入需审批（D47）。') + roleBanner('s') +
+      (c.price?'':'<div class="hint">当前身份无「看价」权限，金额列已隐藏；<b>本人创建的订单可见完整金额</b>（D27）。</div>') +
+      `<div class="toolbar"><button class="primary" ${c.create?'':'disabled'}>+ 新建供应商退货</button>
+        <button ${c.approve?'':'disabled'}>审批</button></div>` +
+      tbl(['单号','原采购单','金额','状态'], rows);
+  },
+  i(){
+    const c = capsOf(state.role,'i');
+    const rows = DB.i.map(x => ({x, cells:[x.no, x.wh, x.mat, (x.diff>0?'+':'')+x.diff, `<span class="tag ${tagClass(x.status)}">${x.status}</span>`]}));
+    return pageHead('盘点调整 I','定期清点仓库实物，发现账面与实际数量不一致时，用追加流水的方式记录差异，不改动原有库存数字。') + roleBanner('i') +
+      '<div class="hint" style="background:#f3f4f6;border-color:#e5e7eb;color:#6b7280">什么是盘点调整？清点仓库时，若账面数量与实际数量不一致（实物多了叫「盘盈」、少了叫「盘亏」），系统不会直接改掉原来的库存数字，而是追加一条调整流水把差异记下来，让库存记录始终可追溯、可查证。</div>' +
+      `<div class="toolbar"><button class="primary" ${c.create?'':'disabled'}>+ 新建盘点</button>
+        <button ${c.approve?'':'disabled'}>审批</button></div>` +
+      tbl(['单号','库区','物料','差异','状态'], rows);
+  },
+  prod(){
+    const c = capsOf(state.role,'prod');
+    const cols = ['编号','名称','规格'];
+    if(c.price) cols.push('成本价');
+    cols.push('售价');
+    const rows = DB.products.map(p => { const cells=[p.code,p.name,p.spec]; if(c.price) cells.push('¥'+p.cost.toFixed(2)); cells.push('¥'+p.price.toFixed(2)); return {p,cells}; });
+    return pageHead('商品资料','主数据 + 成本 + 批次 + 多规格；成本价受「看价」权限控制（D4.1）。') + roleBanner('prod') +
+      (c.price?'':'<div class="hint">当前身份看不到「成本价」列（列级权限演示）。</div>') +
+      `<div class="toolbar"><button class="primary" ${c.edit?'':'disabled'}>+ 新建商品</button></div>` +
+      tbl(cols, rows);
+  },
+  cust(){
+    const c = capsOf(state.role,'cust');
+    const rows = DB.customers.map(x => ({x, cells:[x.code, x.name, x.contact, x.phone]}));
+    return pageHead('客户','客户主数据。') + roleBanner('cust') +
+      `<div class="toolbar"><button class="primary" ${c.edit?'':'disabled'}>+ 新建客户</button></div>` +
+      tbl(['编号','名称','联系人','电话'], rows);
+  },
+  supp(){
+    const c = capsOf(state.role,'supp');
+    const rows = DB.suppliers.map(x => ({x, cells:[x.code, x.name, x.contact]}));
+    return pageHead('供应商','供应商主数据（销售岗不可见，D4.1）。') + roleBanner('supp') +
+      `<div class="toolbar"><button class="primary" ${c.edit?'':'disabled'}>+ 新建供应商</button></div>` +
+      tbl(['编号','名称','联系人'], rows);
+  },
+  plant(){
+    const c = capsOf(state.role,'plant');
+    const rows = DB.plants.map(x => ({x, cells:[x.code, x.name, x.contact, x.price, x.note]}));
+    return pageHead('加工厂档案','加工厂 / 历史加工价 / 比价；独立功能域（D44）。') + roleBanner('plant') +
+      `<div class="toolbar"><button class="primary" ${c.edit?'':'disabled'}>+ 新建加工厂</button></div>` +
+      tbl(['编号','名称','联系人','加工价','结算'], rows);
+  },
+  qty(){
+    const c = capsOf(state.role,'qty');
+    const rows = DB.inventory.map(x => ({x, cells:[x.code, x.name, x.in, x.remain, x.transit, `<b>${x.avail}</b>`]}));
+    return pageHead('库存数量','四列：入库量 / 剩余量 / 在途占用 / 可用量；可用量是唯一可引用数字（D38）。点击行看待执行占用明细（D41）。') + roleBanner('qty') +
+      `<div class="toolbar"><button ${c.create?'':'disabled'}>库存减少调整申请</button>
+        <button ${c.approve?'':'disabled'}>审批</button></div>` +
+      tbl(['编号','名称','入库量','剩余量','在途占用','可用量'], rows, r=>`class="clickable" data-act="qtyDetail" data-code="${r.x.code}"`);
+  },
+  flow(){
+    const c = capsOf(state.role,'flow');
+    const rows = DB.flows.map(x => ({x, cells:[x.at, x.batch, (x.qty>0?'+':'')+x.qty, x.src, x.op]}));
+    return pageHead('库存流水','只追加，四要素：数量/批次/来源单据/经手人（D2）。') + roleBanner('flow') +
+      tbl(['时间','批次','变动量','来源单据','经手'], rows);
+  },
+  stock(){
+    const c = capsOf(state.role,'stock');
+    return pageHead('盘点','盘点动作 + 盘盈盘亏冲正流水（D2）。') + roleBanner('stock') +
+      `<div class="toolbar"><button class="primary" ${c.create?'':'disabled'}>+ 发起盘点</button></div>` +
+      tbl(['单号','库区','物料','差异','状态'], DB.i.map(x=>({x,cells:[x.no,x.wh,x.mat,(x.diff>0?'+':'')+x.diff,`<span class="tag ${tagClass(x.status)}">${x.status}</span>`]})));
+  },
+  emp(){
+    const c = capsOf(state.role,'emp');
+    const rows = DB.employees.map(x => ({x, cells:[x.code, x.name, x.role]}));
+    return pageHead('员工','账号 + 岗位分配；一人多岗权限取并集（D4.2）。员工档案二期。') + roleBanner('emp') +
+      `<div class="toolbar"><button class="primary" ${c.edit?'':'disabled'}>+ 新增员工</button></div>` +
+      tbl(['个人编号','姓名','岗位'], rows);
+  },
+  perm(){
+    const isBoss = state.role === '老板';
+    const isMgr = state.role === '经理';
+    const canEditRole = isBoss; // 岗位级权限仅老板可改（D4）
+    const canEditEmp = isBoss || isMgr; // 员工个人级权限老板/经理可改（D50）
+    const dim = state.permDim;
+
+    const head = `<tr><th>功能域</th>${ACTS_UI.map(([k,l])=>`<th class="chk-head" title="${l}">${l}</th>`).join('')}</tr>`;
+
+    let body = '';
+    if(dim === 'role'){
+      // ===== 岗位维度（原有） =====
+      const editingRole = state.permRole;
+      const locked = editingRole === '老板'; // 老板岗位锁定
+      const roleOpts = ROLES.map(r => `<option ${r===editingRole?'selected':''}>${r}</option>`).join('');
+      body = `<div class="perm-toolbar">
+        <label style="font-size:13px">正在配置岗位：</label>
+        <select id="permRoleSel" ${canEditRole?'':'disabled'}>${roleOpts}</select>
+        ${locked?'<span class="tag">老板权限锁定</span>':''}
+        ${canEditRole?'':'<span class="muted" style="font-size:12px">仅老板可修改岗位权限</span>'}
+      </div>` +
+      `<div class="hint">勾选/取消即改该岗位权限；预设岗位也可改，「老板」岗位锁定。岗位权限是员工权限的<b>基线</b>（D4）。某功能域<b>不具备</b>的动作以「—」标注、不可配置。</div>` +
+      `<div class="perm-table"><table><thead>${head}</thead><tbody>${
+        Object.keys(DOMAINS).map(dom => {
+          const c = permOf(editingRole, dom);
+          const sup = DOMAIN_ACTIONS[dom] || [];
+          const checks = ACTS_UI.map(([key]) => {
+            if(!sup.includes(key)) return `<td class="chk-cell"><span class="na">—</span></td>`;
+            return `<td class="chk-cell"><input type="checkbox" data-perm data-role="${editingRole}" data-dom="${dom}" data-act="${key}" ${c[key]?'checked':''} ${(locked||!canEditRole)?'disabled':''}></td>`;
+          }).join('');
+          return `<tr><td class="dom-name">${DOMAINS[dom].label}</td>${checks}</tr>`;
+        }).join('')
+      }</tbody></table></div>`;
+    } else {
+      // ===== 员工维度（D50：经理/老板给单个员工单独开关权限） =====
+      const code = state.permEmp;
+      const emp = empOf(code);
+      const editable = canEditPerson(code) && canEditEmp;
+      const locked = !editable;
+      const empOpts = DB.employees.map(x => `<option value="${x.code}" ${x.code===code?'selected':''}>${x.code} · ${x.name}（${x.role}）</option>`).join('');
+      const lockNote = !canEditEmp
+        ? '<span class="muted" style="font-size:12px">仅老板/经理可改员工个人权限</span>'
+        : (locked ? '<span class="tag">该员工权限不可改（老板/财务/经理）</span>' : '');
+      body = `<div class="perm-toolbar">
+        <label style="font-size:13px">正在配置员工：</label>
+        <select id="permEmpSel" ${canEditEmp?'':'disabled'}>${empOpts}</select>
+        ${lockNote}
+      </div>` +
+      `<div class="hint">对单个员工在其<b>岗位权限基础上</b>单独开关权限（可增可减，个人覆盖优先于岗位并集）。勾选 = 该员工最终<b>生效</b>；与岗位基线不同的项会高亮标注。经理不可改老板/财务/其他经理（D50）。某功能域<b>不具备</b>的动作以「—」标注。</div>` +
+      `<div class="perm-table"><table><thead>${head}</thead><tbody>${
+        Object.keys(DOMAINS).map(dom => {
+          const base = emp ? empBasePerm(emp, dom) : {};
+          const eff = personPermOf(code, dom);
+          const sup = DOMAIN_ACTIONS[dom] || [];
+          const checks = ACTS_UI.map(([key]) => {
+            if(!sup.includes(key)) return `<td class="chk-cell"><span class="na">—</span></td>`;
+            const diff = eff[key] !== base[key]; // 与基线不同 → 高亮个人覆盖
+            const cls = diff ? ' style="accent-color:#b45309"' : '';
+            return `<td class="chk-cell"${diff?' style="background:var(--warn-soft) !important"':''}><input type="checkbox" data-pemp data-emp="${code}" data-dom="${dom}" data-act="${key}" ${eff[key]?'checked':''} ${locked?'disabled':''}${cls}></td>`;
+          }).join('');
+          return `<tr><td class="dom-name">${DOMAINS[dom].label}</td>${checks}</tr>`;
+        }).join('')
+      }</tbody></table></div>`;
+    }
+
+    return pageHead('权限设置','按岗位配置基线权限，或对单个员工做个人级增减（D4/D50）。打勾=允许，取消=禁止；「—」表示该功能域无此动作。') + roleBanner('perm') +
+      `<div class="seg" style="margin:12px 0">
+        <button data-pdim="role" class="${dim==='role'?'on':''}">按岗位配置</button>
+        <button data-pdim="emp" class="${dim==='emp'?'on':''}">按员工单独配置</button>
+      </div>` + body;
+  },
+  co(){
+    const c = capsOf(state.role,'co');
+    const rows = DB.companies.map(x => ({x, cells:[x.code, x.name, x.head]}));
+    return pageHead('公司管理','一个租户内多子公司，数据隔离、总部看全（D1）；一期不做集团看板（D45）。') + roleBanner('co') +
+      `<div class="toolbar"><button class="primary" ${c.edit?'':'disabled'}>+ 新建公司</button></div>` +
+      tbl(['公司码','名称','负责人'], rows);
+  },
+  profit(){
+    const c = capsOf(state.role,'profit');
+    const price = c.price;
+    const p = DB.profit;
+    const show = n => price ? money(n) : '—';
+    return pageHead('利润报表','期间毛利 / 全损耗损失 / 净毛利（D26）；未归属损失可下钻（D43）。') + roleBanner('profit') +
+      `<div class="cards">
+        <div class="kpi"><b>${show(p.gross)}</b><span>毛利</span></div>
+        <div class="kpi"><b style="color:#b91c1c">${show(p.loss)}</b><span>全损耗损失</span></div>
+        <div class="kpi"><b>${show(p.net)}</b><span>净毛利</span></div>
+      </div>` +
+      `<div class="card"><b>未归属损失（${price?money(p.unallocated):'金额受看价权限管'}）</b>
+        <div class="muted" style="margin:6px 0">C 单净毛利之和 ≠ 报表净毛利，差额 = 未归属损失（D26/D35），点击下钻：</div>
+        <button class="primary" data-act="lossDetail">查看未归属损失明细</button></div>`;
+  },
+  audit(){
+    const c = capsOf(state.role,'audit');
+    const f = state.auditFilter;
+    const now = new Date('2026-11-04T10:30:00');
+    const todayStr = '2026-11-04';
+    const parseAt = s => new Date(String(s).replace(' ','T'));
+    const daysOf = {'今天':0,'近 3 天':3,'近 7 天':7,'近 30 天':30};
+    const inPeriod = x => {
+      if(f.period === '全部时间') return true;
+      if(f.period === '今天') return String(x.at).slice(0,10) === todayStr;
+      const d = daysOf[f.period] || 30;
+      return parseAt(x.at).getTime() >= now.getTime() - d * 86400000;
+    };
+    const rows = DB.auditLogs.filter(x =>
+      (f.actor === '全部' || x.actorType === f.actor) &&
+      (f.source === '全部' || x.source === f.source) &&
+      (f.action === '全部' || x.cat === f.action) &&
+      (f.result === '全部' || x.result === f.result) &&
+      inPeriod(x)
+    ).sort((a,b) => a.at < b.at ? 1 : -1);
+    const opts = (arr, cur) => arr.map(v => `<option ${v===cur?'selected':''}>${esc(v)}</option>`).join('');
+    const actorCls = {'员工':'tag','AI':'tag doing','平台':'tag pending','系统':'tag draft'};
+    // 无「看价」权限 → 金额列脱敏（D27）；日志内金额由「操作日志」域看价控制（原型假设，见页首提示）
+    const amt = x => x.amount == null
+      ? '<span class="muted">—</span>'
+      : (c.price ? money(x.amount) : '<span class="muted" title="无日志看价权限，金额按 D27 脱敏">¥ ••••</span>');
+    const resultCell = x => x.result === '成功'
+      ? '<span class="tag done">成功</span>'
+      : `<span class="tag dead">失败</span>${x.err ? ` <span class="muted" style="font-size:11.5px">${esc(x.err)}</span>` : ''}`;
+    const body = rows.length ? `<div class="table-wrap"><table>
+      <caption style="caption-side:top;text-align:left;padding:0 0 8px;color:#7f1d1d;font-size:12.5px;font-weight:600">🔒 操作日志只追加、不可改删（D51）：本页没有编辑 / 删除入口，系统也不提供更新或删除接口</caption>
+      <thead><tr>${['时间','操作者类型','操作者','来源','动作','对象','金额','结果','请求 id'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(x => `<tr>
+        <td>${esc(x.at)}</td>
+        <td><span class="${actorCls[x.actorType]||'tag'}">${esc(x.actorType)}</span></td>
+        <td>${esc(x.actor)}</td>
+        <td>${esc(x.source)}</td>
+        <td>${esc(x.action)}<div class="muted" style="font-size:11.5px">${esc(x.code)}${x.reason ? ` · <span title="${esc(x.reason)}" style="cursor:help">⚠ 原因</span>` : ''}</div></td>
+        <td>${esc(x.obj)}</td>
+        <td class="money">${amt(x)}</td>
+        <td>${resultCell(x)}</td>
+        <td><span class="muted" style="font-family:Consolas,monospace;font-size:12px">${esc(x.reqId)}</span></td>
+      </tr>`).join('')}</tbody></table></div>`
+      : `<div class="empty">没有符合条件的操作日志（当前筛选 0 条）。操作日志只追加、不可改删；放宽筛选条件再试。</div>`;
+    return pageHead('操作日志','平台 / 员工 / AI 的全量审计（D51）：登录登出、权限与岗位变更、个人权限覆盖、全部写操作、导出、查看敏感金额、查看日志本身都会留痕；业务失败也落一条。') +
+      `<div class="hint">当前身份 <b>${esc(state.role)}</b> 对「操作日志」可用：<b>${rightsOf('audit')}</b>（只读页：无编辑 / 删除动作）</div>` +
+      (c.price ? '' : '<div class="hint">当前身份没有<b>日志内金额</b>的看价权限，金额列显示为掩码（D27 口径在审计视图的落地）。原型假设：日志金额由「操作日志」功能域自身的看价控制，待拍板。</div>') +
+      `<div class="filters">
+        <label>操作者类型</label><select id="afActor">${opts(['全部','员工','AI','平台','系统'], f.actor)}</select>
+        <label>来源</label><select id="afSource">${opts(['全部','Web','CLI','API','MCP','Job'], f.source)}</select>
+        <label>动作</label><select id="afAction">${opts(['全部','写入','敏感读','登录','权限与 Token','AI 调用','系统'], f.action)}</select>
+        <label>结果</label><select id="afResult">${opts(['全部','成功','失败'], f.result)}</select>
+        <label>时间段</label><select id="afPeriod">${opts(['全部时间','今天','近 3 天','近 7 天','近 30 天'], f.period)}</select>
+        <button data-act="afReset">重置筛选</button>
+      </div>` +
+      `<div class="toolbar">
+        <button ${c.export?'':'disabled'} data-act="auditExport">导出筛选结果（CSV）</button>
+        <span class="muted" style="font-size:12.5px">筛选后 ${rows.length} 条 / 全部 ${DB.auditLogs.length} 条；导出本身也会写一条操作日志（D51）</span>
+      </div>` + body;
+  },
+  api(){
+    const c = capsOf(state.role,'api');
+    const readonly = !(c.create || c.edit);
+    const statusCls = {'有效':'tag done','已过期':'tag pending','已撤销':'tag dead'};
+    const tokenRows = DB.tokens.map(t => {
+      const emp = empOf(t.emp);
+      return {t, cells:[
+        `<b>${esc(t.name)}</b><div class="muted" style="font-size:11.5px">IP 白名单：${esc(t.ip || '不限制')}</div>`,
+        `${esc(emp ? emp.name : '—')}<div class="muted" style="font-size:11.5px">${esc(t.emp)} · ${esc(emp ? emp.role : '')}</div>`,
+        t.scope.map(s=>`<span class="tag draft" style="margin:1px 2px 1px 0">${esc(s)}</span>`).join(''),
+        t.expiry || '<span class="muted">长期（季度复核）</span>',
+        esc(t.lastUsed || '—'),
+        `<span class="${statusCls[t.status] || 'tag'}">${esc(t.status)}</span>`,
+        `<button data-act="tokenRevoke" data-tok="${esc(t.id)}" ${(c.edit && t.status === '有效') ? '' : 'disabled'}>撤销</button>`
+      ]};
+    });
+    return pageHead('API 与集成','AI 友好型应用（D52）：所有业务能力先有服务层用例 + REST 接口，Web / CLI / MCP 只是客户端；OpenAPI 3.1 是接口真源。AI 用 API Token 认证，权限与人类同权、不放大（D52.1）。') +
+      `<div class="hint">当前身份 <b>${esc(state.role)}</b> 对「API 与集成」可用：<b>${rightsOf('api')}</b></div>` +
+      (readonly ? `<div class="hint">当前身份「${esc(state.role)}」对本页<b>只读</b>：可查看 Token 与接入方式，但不能新建 / 撤销 Token、不能调整「AI 危险动作」开关。原型假设：Token 管理默认仅老板可操作，待拍板。</div>` : '') +
+      `<div class="card">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <b>API Token</b>
+          <span class="muted" style="font-size:12.5px">绑定员工；生效权限 = 员工当前权限 ∩ token scope，每次请求重算（D52.1）</span>
+          <div class="grow"></div>
+          <button class="primary" data-act="tokenNew" ${c.create?'':'disabled'}>+ 新建 Token</button>
+        </div>
+        <div class="table-wrap">${tbl(['名称','绑定员工','scope','有效期','最后使用','状态','操作'], tokenRows)}</div>
+        <div class="muted" style="font-size:12px;margin-top:8px">明文 token 只在创建时返回一次，服务端只存哈希；撤销立即生效、不可恢复。每 token 单独限流，超限返回 429 + Retry-After（契约第三批 §2）。</div>
+      </div>` +
+      `<div class="card"><b>三种接入方式</b>
+        <div class="muted" style="font-size:12.5px;margin:4px 0 10px">REST 是唯一能力入口；Web / CLI / MCP 都是薄客户端，同一动作三种入口的行为、错误码与日志字段必须一致（D52 / 契约第三批 §4）。</div>
+        <div class="integrations">${API_BLOCKS.map((b,i)=>`<div class="kpi int-card">
+          <h4>${esc(b.k)} <span class="tag draft">${esc(b.tag)}</span></h4>
+          <p>${esc(b.desc)}</p>
+          <div class="code-line"><code>${esc(b.cmd)}</code><button data-act="copy" data-idx="${i}">复制</button></div>
+        </div>`).join('')}</div>
+      </div>` +
+      `<div class="card">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <b>AI 危险动作</b>
+          <label class="switch"><input type="checkbox" id="aiDanger" ${state.aiDanger?'checked':''} ${c.edit?'':'disabled'}><span>${state.aiDanger?'已开启':'默认关闭'}</span></label>
+          <span class="${state.aiDanger?'tag pending':'tag done'}">${state.aiDanger?'AI 可发起，走人工审批':'AI 一律不得执行'}</span>
+        </div>
+        <div class="muted" style="font-size:12.5px;margin-top:8px">
+          危险动作 = <b>删除 / 冲正 / 成本更正 / 结算确认 / 权限变更</b>。默认<b>禁止 AI 直接执行</b>，也不允许 AI 走审批（D52① 拟定默认值，🟡 待确认）。
+          租户可开启「允许 AI 走审批」：开启后 AI 仍只能<b>发起</b>，必须带 <code>reason</code>，且审批必须由人类完成——<b>AI 不能审批自己发起的动作，也不能担任任何审批人</b>（D52.1③）。
+          ${state.aiDanger?'<br><b style="color:#b45309">当前已开启：危险动作会进入人工审批队列，审批人只能是员工。</b>':''}
+        </div>
+      </div>` +
+      `<div class="card"><b>AI 权限不放大（D52.1）</b>
+        <ul style="margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--dim);line-height:1.8">
+          <li>生效权限 = 绑定员工<b>当前权限</b>（岗位并集 ⊕ 个人覆盖）<b>∩</b> token scope；每请求重新判定，不缓存授权。</li>
+          <li>创建 token 时 scope 只能从创建人自己的授权里选，超出直接拒绝创建；不提供租户级「上帝 token」。</li>
+          <li>员工停用 / 权限或岗位变更 / 公司集合变更 → 下一次请求立即生效；员工停用则 token 立即作废。</li>
+          <li>审计同时记「token 创建人」与「AI 操作者」，可反查是谁把权限委托给了 AI；审批只能由人类完成。</li>
+        </ul>
+      </div>`;
+  },
+  board(){
+    return pageHead('业务全流程图','可视化定位 = 手段；一期做业务全流程图（D7），实时看板与集团看板二期。全员可见。') +
+      '<div class="card">' +
+      '<b>主线链路</b><div style="margin-top:10px;font-size:13.5px">' +
+      ['采购单 A（原料入库·锁批次价）','加工单 B（委外加工·产出新批次·记损耗）','销售单 E（选批次出售·破下限审批）','结算单 C（算毛利提成）'].join(' <span class="muted">→</span> ') +
+      '</div><div class="muted" style="margin-top:8px">辅助：内部交易单 N（调货在途）、冲正单据 R/S/I（退货与盘点）、收款记录（内嵌 E 单）、利润报表（期间汇总）。</div></div>';
+  }
+};
+
+// ============ 详情弹层 ============
+function openQtyDetail(code){
+  const x = DB.inventory.find(v=>v.code===code);
+  state.modal = 'qty';
+  $('#modalRoot').innerHTML = `<div class="modal-mask"><div class="modal">
+    <h3>${esc(x.name)}（${esc(x.code)}）库存明细</h3>
+    <dl class="kv">
+      <dt>入库量</dt><dd>${x.in}</dd>
+      <dt>剩余量</dt><dd>${x.remain}（= 入库量 − 已引用量）</dd>
+      <dt>在途占用</dt><dd>${x.transit}</dd>
+      <dt>待执行占用</dt><dd>${x.pending}（已提交未出库单据占用，D41）</dd>
+      <dt>可用量</dt><dd><b>${x.avail}</b>（= 剩余量 − 在途占用 − 待执行占用，唯一可引用数字）</dd>
+    </dl>
+    <div class="muted" style="font-size:12.5px">提交即占用、取消同事务释放、出库只转已引用不重复扣（D41）。</div>
+    <footer><button class="primary" data-act="closeModal">关闭</button></footer>
+  </div></div>`;
+}
+function openLossDetail(){
+  state.modal = 'loss';
+  const rows = DB.lossDetail.map(x => ({x, cells:[x.b, money(x.amt), x.reason, x.belong]}));
+  $('#modalRoot').innerHTML = `<div class="modal-mask"><div class="modal" style="width:min(720px,100%)">
+    <h3>未归属损失明细</h3>
+    <div class="muted" style="font-size:12.5px">金额受「看价」权限管（D27）。归属单为空的损失只进期间汇总，不摊进任何 C 单（D35/D43）。</div>
+    ${tbl(['来源 B 单','损失金额','原因','归属单'], rows)}
+    <footer><button class="primary" data-act="closeModal">关闭</button></footer>
+  </div></div>`;
+}
+
+// ============ 22 API 与集成：Token 弹层与假数据交互 ============
+// 写一条操作日志（与页面同结构；演示「Token 新建/撤销也进审计」D51）
+function addAudit(actorType, actor, source, action, code, obj, amount, result, err, cat, reason){
+  DB.auditLogs.unshift({
+    at:'2026-11-04 10:31:00', actorType, actor, source, action, code, obj,
+    amount: amount == null ? null : amount, result, err: err || '',
+    reqId: 'req_' + Math.random().toString(36).slice(2, 10), cat, reason: reason || ''
+  });
+}
+function openTokenNew(){
+  if(!capsOf(state.role,'api').create){ toast('当前身份不能新建 Token'); return; }
+  const empOpts = DB.employees.map(e=>`<option value="${e.code}">${e.code} · ${esc(e.name)}（${esc(e.role)}）</option>`).join('');
+  const scopeBoxes = TOKEN_SCOPES.map(s=>`<label><input type="checkbox" data-tkscope value="${esc(s)}"> ${esc(s)}</label>`).join('');
+  state.modal = 'tokenNew';
+  $('#modalRoot').innerHTML = `<div class="modal-mask"><div class="modal" style="width:min(720px,100%)">
+    <h3>新建 API Token</h3>
+    <div class="muted" style="font-size:12.5px">机器身份，绑定员工。scope 只能从你（创建人）自己的授权里选，超出将被拒绝（D52.1①）；明文只在创建后显示一次。</div>
+    <div class="form-row"><label>名称</label><input id="tkName" placeholder="如：财务对账机器人 / MCP · 销售助手"></div>
+    <div class="form-row"><label>绑定员工（生效权限 = 该员工当前权限 ∩ scope）</label><select id="tkEmp">${empOpts}</select></div>
+    <div class="form-row"><label>scope（功能域 × 动作子集）</label><div class="scope-list">${scopeBoxes}</div></div>
+    <div class="form-row"><label>有效期（留空 = 长期，需季度复核）</label><input id="tkExpiry" type="date"></div>
+    <div class="form-row"><label>IP 白名单（可选，逗号分隔；留空 = 不限制）</label><input id="tkIp" placeholder="203.0.113.24, 198.51.100.7"></div>
+    <div class="form-row"><label>用途 / 原因（必填，进操作日志）</label><input id="tkReason" placeholder="如：财务对账自动化"></div>
+    <footer><button data-act="closeModal">取消</button><button class="primary" data-act="tokenSubmit">创建 Token</button></footer>
+  </div></div>`;
+}
+function openTokenCreated(plain, name, empCode){
+  const emp = empOf(empCode);
+  state.modal = 'tokenCreated';
+  $('#modalRoot').innerHTML = `<div class="modal-mask"><div class="modal">
+    <h3>Token 创建成功</h3>
+    <div class="hint" style="background:var(--warn-soft)">明文<b>只显示这一次</b>，关闭后无法再查看；服务端只存哈希。</div>
+    <div class="token-plain" id="tokenPlain">${esc(plain)}</div>
+    <dl class="kv">
+      <dt>名称</dt><dd>${esc(name)}</dd>
+      <dt>绑定员工</dt><dd>${esc(emp ? emp.name : '—')}（${esc(emp ? emp.role : '')}）</dd>
+      <dt>审计</dt><dd>已写一条「API Token.新建」操作日志（含原因与 token 创建人）</dd>
+    </dl>
+    <footer><button data-act="copyToken">复制 token</button><button class="primary" data-act="closeModal">我已保存</button></footer>
+  </div></div>`;
+}
+function createToken(){
+  if(!capsOf(state.role,'api').create){ toast('当前身份不能新建 Token'); return; }
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const name = val('tkName').trim();
+  const emp = val('tkEmp');
+  const scope = [...document.querySelectorAll('input[data-tkscope]:checked')].map(x=>x.value);
+  const expiry = val('tkExpiry');
+  const ip = val('tkIp').trim();
+  const reason = val('tkReason').trim();
+  if(!name){ toast('请填写 Token 名称'); return; }
+  if(!scope.length){ toast('至少勾选一个 scope'); return; }
+  if(!reason){ toast('新建 Token 属敏感操作，必须填写用途 / 原因'); return; }
+  const over = scope.filter(s => !scopeAllowedForCreator(s));
+  if(over.length){ toast('scope 超出创建人授权，已拒绝创建：' + over[0]); return; }
+  const plain = 'qd_live_' + Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,10);
+  const id = 'tk_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+  DB.tokens.unshift({id, name, emp, scope, expiry, lastUsed:'—', status:'有效', ip: ip || '不限制'});
+  addAudit('员工', ROLE_OPERATOR[state.role], 'Web', 'API Token.新建', 'token.create', 'Token / ' + name, null, '成功', '', '权限与 Token', reason);
+  state.lastTokenPlain = plain;
+  openTokenCreated(plain, name, emp);
+}
+function openTokenRevoke(id){
+  const t = DB.tokens.find(x=>x.id===id);
+  if(!t){ toast('Token 不存在'); return; }
+  if(t.status !== '有效'){ toast('该 Token 已失效，无需撤销'); return; }
+  if(!capsOf(state.role,'api').edit){ toast('当前身份不能撤销 Token'); return; }
+  const emp = empOf(t.emp);
+  state.modal = 'tokenRevoke';
+  $('#modalRoot').innerHTML = `<div class="modal-mask"><div class="modal">
+    <h3>撤销 Token：${esc(t.name)}</h3>
+    <div class="muted" style="font-size:12.5px">绑定员工 ${esc(emp ? emp.name : '—')}；scope：${esc(t.scope.join('、'))}。撤销<b>立即生效</b>、不可恢复，该 token 之后的所有请求返回 401。</div>
+    <div class="form-row"><label>撤销原因（必填，进操作日志）</label><input id="tkRevokeReason" placeholder="如：脚本迁移完成 / 员工离职"></div>
+    <footer><button data-act="closeModal">取消</button><button class="primary" data-act="tokenRevokeSubmit" data-tok="${esc(t.id)}">确认撤销</button></footer>
+  </div></div>`;
+}
+function revokeToken(id){
+  const t = DB.tokens.find(x=>x.id===id);
+  if(!t) return;
+  if(!capsOf(state.role,'api').edit){ toast('当前身份不能撤销 Token'); return; }
+  const el = document.getElementById('tkRevokeReason');
+  const reason = el ? el.value.trim() : '';
+  if(!reason){ toast('撤销 Token 属敏感操作，必须填写原因'); return; }
+  t.status = '已撤销';
+  addAudit('员工', ROLE_OPERATOR[state.role], 'Web', 'API Token.撤销', 'token.revoke', 'Token / ' + t.name, null, '成功', '', '权限与 Token', reason);
+  state.modal = null; $('#modalRoot').innerHTML = '';
+  toast('已撤销：' + t.name);
+  render();
+}
+function copyText(text){
+  const ok = () => toast('已复制到剪贴板');
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); ok(); } catch(e) { toast('复制失败，请手动选择文本'); }
+    ta.remove();
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, fallback);
+  else fallback();
+}
+
+function render(){
+  renderNav();
+  $('#view').innerHTML = (pages[state.page] || pages.home)();
+}
+
+document.addEventListener('click', e => {
+  const nav = e.target.closest('[data-nav]');
+  if(nav){
+    const key = nav.dataset.nav;
+    const item = NAV.flatMap(g=>g.items).find(i=>i[0]===key);
+    if(item && item[2] && !capsOf(state.role, item[2]).view){
+      alert(`${state.role} 无权访问「${item[1]}」`);
+      return;
+    }
+    state.page = key; state.modal = null;
+    // 进入某页时，自动展开它所在的分组
+    const grp = NAV.find(g=>g.items.some(it=>it[0]===key));
+    if(grp && grp.group){ state.collapsed.delete(grp.group); }
+    history.replaceState(null,'','#'+key);
+    render(); return;
+  }
+  // 点击分组标题：折叠/展开
+  const h4 = e.target.closest('.group h4');
+  if(h4){
+    const grp = h4.closest('.group').dataset.group;
+    if(state.collapsed.has(grp)) state.collapsed.delete(grp);
+    else state.collapsed.add(grp);
+    render(); return;
+  }
+  const el = e.target.closest('[data-act]');
+  if(!el || el.disabled) return;
+  const act = el.dataset.act;
+  if(act === 'qtyDetail'){ openQtyDetail(el.dataset.code); return; }
+  if(act === 'lossDetail'){ openLossDetail(); return; }
+  if(act === 'closeModal'){ state.modal=null; $('#modalRoot').innerHTML=''; render(); return; }
+  // ===== 21 操作日志 =====
+  if(act === 'auditExport'){ toast('原型：导出为假动作；导出动作本身会写一条操作日志（D51）。'); return; }
+  if(act === 'afReset'){
+    state.auditFilter = {actor:'全部', source:'全部', action:'全部', result:'全部', period:'全部时间'};
+    render(); return;
+  }
+  // ===== 22 API 与集成 =====
+  if(act === 'tokenNew'){ openTokenNew(); return; }
+  if(act === 'tokenSubmit'){ createToken(); return; }
+  if(act === 'tokenRevoke'){ openTokenRevoke(el.dataset.tok); return; }
+  if(act === 'tokenRevokeSubmit'){ revokeToken(el.dataset.tok); return; }
+  if(act === 'copy'){ copyText(API_BLOCKS[Number(el.dataset.idx)].cmd); return; }
+  if(act === 'copyToken'){ copyText(state.lastTokenPlain || ''); return; }
+  if(act === 'nop'){ toast('这一页是静态原型，按钮只演示显隐，不接后端。'); return; }
+});
+
+// 权限勾选表格：点勾/取消 → 记入 permOverride / personOverride
+document.addEventListener('change', e => {
+  if(e.target.matches('#permRoleSel')){
+    state.permRole = e.target.value; render(); return;
+  }
+  if(e.target.matches('#permEmpSel')){
+    state.permEmp = e.target.value; render(); return;
+  }
+  if(e.target.matches('input[data-perm]')){
+    const {role, dom, act} = e.target.dataset;
+    if(!state.permOverride[role]) state.permOverride[role] = {};
+    if(!state.permOverride[role][dom]) state.permOverride[role][dom] = {};
+    state.permOverride[role][dom][act] = e.target.checked;
+  }
+  if(e.target.matches('input[data-pemp]')){
+    const {emp, dom, act} = e.target.dataset;
+    if(!canEditPerson(emp)){ render(); return; } // 越权点击不生效
+    if(!state.personOverride[emp]) state.personOverride[emp] = {};
+    if(!state.personOverride[emp][dom]) state.personOverride[emp][dom] = {};
+    // 与岗位基线一致 → 删除覆盖（回到基线）；不一致 → 记个人覆盖（可增可减）
+    const base = empBasePerm(empOf(emp), dom);
+    if(e.target.checked === base[act]) delete state.personOverride[emp][dom][act];
+    else state.personOverride[emp][dom][act] = e.target.checked;
+    render(); return;
+  }
+  // ===== 21 操作日志筛选 =====
+  if(e.target.matches('#afActor')){ state.auditFilter.actor = e.target.value; render(); return; }
+  if(e.target.matches('#afSource')){ state.auditFilter.source = e.target.value; render(); return; }
+  if(e.target.matches('#afAction')){ state.auditFilter.action = e.target.value; render(); return; }
+  if(e.target.matches('#afResult')){ state.auditFilter.result = e.target.value; render(); return; }
+  if(e.target.matches('#afPeriod')){ state.auditFilter.period = e.target.value; render(); return; }
+  // ===== 22 AI 危险动作开关（默认关；无权限只读） =====
+  if(e.target.matches('#aiDanger')){
+    if(!capsOf(state.role,'api').edit){ render(); return; } // 越权切换不生效
+    state.aiDanger = e.target.checked;
+    render(); return;
+  }
+});
+
+// 维度切换（岗位 / 员工）
+document.addEventListener('click', e => {
+  const pd = e.target.closest('[data-pdim]');
+  if(pd){ state.permDim = pd.dataset.pdim; render(); }
+});
+
+let toastTimer = null;
+function toast(msg){
+  let t = $('#toast');
+  if(!t){ t = document.createElement('div'); t.id='toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#1f2328;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;z-index:99;opacity:.96';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ t.remove(); }, 2200);
+}
+
+$('#btnHelp').addEventListener('click', ()=>{
+  $('#modalRoot').innerHTML = `<div class="modal-mask"><div class="modal">
+    <h3>这是一份什么</h3>
+    <p class="muted" style="font-size:13px">轻单可点击原型 v1，按 D1-D52.1 拍板后的 <b>22 页新 IA</b> 重排。单文件、假数据、不连后端。</p>
+    <dl class="kv">
+      <dt>能验证</dt><dd>六类单据骨架、22 页范围、8 块导航、切换身份后的菜单与按钮显隐、四列库存与可用量、利润报表与未归属损失下钻、本人创建订单可见完整金额、权限设置页按岗位/员工双维度配置（员工个人级覆盖 D50）、操作日志只追加 + 多条件筛选 + 金额脱敏（D51）、API Token 假数据新建/撤销与三种接入示例、AI 危险动作开关默认关（D52/D52.1）</dd>
+      <dt>不能验证</dt><dd>性能、并发、真实数据量、离线行为、后端逻辑、字段级校验、真实 OpenAPI/CLI/MCP 调用</dd>
+      <dt>已落实口径</dt><dd>D1-D52.1；尤其 D38 四列、D40 仅退款两型、D43 利润报表、D45 集团看板一期不做、D50 员工个人级权限覆盖、D51 操作日志只追加、D52 接口真源与 Token、D52.1 AI 权限不放大</dd>
+      <dt>仍待定</dt><dd>契约第三批冻结（D51①/②、D52①/② 为拟定默认值）、操作日志页可见角色与日志金额看价口径（原型假设，待拍板）、M1 真实订单数字（L9）</dd>
+      <dt>UI 会持续改</dt><dd>本原型是划改底稿，界面、字段、交互都会按你的反馈继续迭代，不是最终定稿</dd>
+    </dl>
+    <footer><button class="primary" data-act="closeModal">知道了</button></footer>
+  </div></div>`;
+});
+
+// 初始化
+$('#roleSel').innerHTML = ROLES.map(r=>`<option>${r}</option>`).join('');
+const qs = new URLSearchParams(location.search);
+if(qs.get('role') && ROLES.includes(qs.get('role'))) state.role = qs.get('role');
+if(qs.get('dim') === 'emp') state.permDim = 'emp';
+if(qs.get('emp') && DB.employees.some(x=>x.code===qs.get('emp'))) state.permEmp = qs.get('emp');
+const hashPage = location.hash.replace('#','');
+if(hashPage && pages[hashPage]) state.page = hashPage;
+// 深链进入无权页面 → 回工作台（与导航可见性同一套权限判定，避免绕过菜单）
+const initItem = NAV.flatMap(g=>g.items).find(i=>i[0]===state.page);
+if(initItem && initItem[2] && !capsOf(state.role, initItem[2]).view) state.page = 'home';
+$('#roleSel').value = state.role;
+$('#roleSel').addEventListener('change', e=>{
+  state.role = e.target.value; state.reqView = false;
+  const item = NAV.flatMap(g=>g.items).find(i=>i[0]===state.page);
+  if(item && item[2] && !capsOf(state.role, item[2]).view) state.page = 'home';
+  render();
+});
+document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ state.modal=null; $('#modalRoot').innerHTML=''; render(); } });
+const modalRoot = document.createElement('div'); modalRoot.id='modalRoot'; document.body.appendChild(modalRoot);
+render();
+</script>
+</body>
+</html>

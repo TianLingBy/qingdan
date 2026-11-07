@@ -1,0 +1,309 @@
+name: route-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: route-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  route:
+    name: route
+    runs-on: ubuntu-latest
+    steps:
+      - name: Route changed paths
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- qingdan-route -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+
+            // 与 docs/OWNERSHIP.md 保持一致；按前缀匹配，越具体的规则越靠前。
+            const rules = [
+              {
+                prefixes: ['apps/api/src/platform/'],
+                owner: 'TianLingBy',
+                notify: ['Vince-Leong', 'karryL921', 'lozy66'],
+                label: 'scope:platform',
+                reason: 'platform 内核，动之前必须经负责人批准',
+                critical: true,
+              },
+              {
+                prefixes: ['apps/api/migrations/'],
+                owner: 'TianLingBy',
+                notify: ['Vince-Leong', 'karryL921', 'lozy66'],
+                label: 'scope:migrations',
+                reason: '数据库迁移会改变共享数据结构',
+                critical: true,
+              },
+              {
+                prefixes: ['packages/contracts/'],
+                owner: 'TianLingBy',
+                notify: ['Vince-Leong', 'lozy66', 'karryL921', '2696708617-web'],
+                label: 'scope:contracts',
+                reason: '契约变更影响全部客户端',
+                critical: true,
+              },
+              {
+                prefixes: ['packages/cli/'],
+                owner: 'TianLingBy',
+                notify: ['Vince-Leong'],
+                label: 'scope:cli',
+                reason: 'CLI 客户端需要跟随契约联动',
+              },
+              {
+                prefixes: ['packages/mcp/'],
+                owner: 'TianLingBy',
+                notify: ['Vince-Leong'],
+                label: 'scope:mcp',
+                reason: 'MCP 客户端需要跟随契约联动',
+              },
+              {
+                prefixes: [
+                  'apps/api/src/modules/masterdata/',
+                  'apps/api/src/modules/inventory/',
+                  'apps/api/src/modules/processing/',
+                  'apps/api/src/modules/internal-trade/',
+                ],
+                owner: 'Vince-Leong',
+                notify: ['TianLingBy'],
+                label: 'scope:backend',
+                reason: '后端业务模块变更',
+              },
+              {
+                prefixes: ['apps/web/'],
+                owner: 'karryL921',
+                notify: ['TianLingBy', 'lozy66'],
+                label: 'scope:web',
+                reason: '前端页面变更',
+              },
+              {
+                prefixes: ['docs/decisions.md'],
+                owner: 'TianLingBy',
+                notify: ['Vince-Leong', 'lozy66', 'karryL921', '2696708617-web'],
+                label: 'scope:decisions',
+                reason: '口径真源变更，只允许追加',
+                critical: true,
+              },
+              {
+                prefixes: ['docs/轻单_接口契约'],
+                owner: 'TianLingBy',
+                notify: ['Vince-Leong', 'lozy66', 'karryL921', '2696708617-web'],
+                label: 'scope:contracts',
+                reason: '接口契约文档变更',
+                critical: true,
+              },
+              {
+                prefixes: ['tests/'],
+                owner: 'TianLingBy',
+                notify: [],
+                label: 'scope:tests',
+                reason: '测试门禁变更',
+              },
+              {
+                prefixes: ['tools/'],
+                owner: 'TianLingBy',
+                notify: [],
+                label: 'scope:tools',
+                reason: '仓库工具变更',
+              },
+              {
+                prefixes: ['.github/'],
+                owner: 'TianLingBy',
+                notify: [],
+                label: 'scope:ci',
+                reason: 'CI 与协作流程变更',
+              },
+              {
+                prefixes: ['docs/'],
+                owner: 'TianLingBy',
+                notify: [],
+                label: 'scope:docs',
+                reason: '其他文档变更',
+              },
+            ];
+
+            const labelMeta = {
+              'scope:platform': ['5319e7', 'platform 内核'],
+              'scope:migrations': ['c5def5', '数据库迁移'],
+              'scope:contracts': ['1d76db', '接口契约'],
+              'scope:cli': ['0e8a16', 'CLI 客户端'],
+              'scope:mcp': ['006b75', 'MCP 客户端'],
+              'scope:backend': ['fbca04', '后端业务模块'],
+              'scope:web': ['d93f0b', 'Web 前端'],
+              'scope:decisions': ['b60205', '口径决策'],
+              'scope:tests': ['bfd4f2', '测试门禁'],
+              'scope:tools': ['bfdadc', '仓库工具'],
+              'scope:ci': ['ededed', 'CI 与协作流程'],
+              'scope:docs': ['d4c5f9', '文档'],
+              '需批准': ['b60205', '严重变更，需负责人批准'],
+            };
+
+            async function safely(actionName, action) {
+              try {
+                return await action();
+              } catch (error) {
+                core.warning(`${actionName}失败：${error.message}`);
+                return null;
+              }
+            }
+
+            async function ensureLabel(name) {
+              const [color, description] = labelMeta[name] || ['ededed', ''];
+              try {
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name,
+                  color,
+                  description,
+                });
+              } catch (error) {
+                if (error.status === 409 || error.status === 422) return;
+                core.warning(`创建标签 ${name}失败：${error.message}`);
+              }
+            }
+
+            const filesResponse = await safely('读取 PR 改动文件', () =>
+              github.paginate(github.rest.pulls.listFiles, {
+                owner,
+                repo,
+                pull_number: issue_number,
+                per_page: 100,
+              })
+            );
+
+            if (!filesResponse) {
+              core.warning('无法读取改动文件，本次跳过自动路由');
+              return;
+            }
+
+            const matches = [];
+            for (const file of filesResponse) {
+              const path = file.filename || file.path;
+              const rule = rules.find((candidate) =>
+                candidate.prefixes.some((prefix) => path.startsWith(prefix))
+              );
+              if (rule) matches.push({ path, rule });
+            }
+
+            const labels = [...new Set(matches.map(({ rule }) => rule.label))];
+            if (matches.some(({ rule }) => rule.critical)) labels.push('需批准');
+
+            for (const label of [...new Set(labels)]) {
+              await safely(`确认标签 ${label}`, () => ensureLabel(label));
+              await safely(`给 PR 打标签 ${label}`, () =>
+                github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number,
+                  labels: [label],
+                })
+              );
+            }
+
+            const bodyLines = [
+              marker,
+              '## PR 自动路由',
+              '',
+            ];
+
+            if (matches.length === 0) {
+              bodyLines.push(
+                `本次 ${filesResponse.length} 个改动文件未命中受管路径，无需自动通知。`
+              );
+            } else {
+              bodyLines.push(
+                `本次命中 ${matches.length} 个受管文件（共 ${filesResponse.length} 个改动文件）：`,
+                ''
+              );
+              for (const { path, rule } of matches) {
+                const watchers = [
+                  `@${rule.owner}（负责人/批准者）`,
+                  rule.notify.length
+                    ? `需通知：${rule.notify.map((user) => `@${user}`).join('、')}`
+                    : '无需额外通知',
+                ];
+                bodyLines.push(
+                  `- \`${path}\`：${watchers.join('；')}。原因：${rule.reason}；标签：\`${rule.label}\`。`
+                );
+              }
+              if (labels.includes('需批准')) {
+                bodyLines.push('', '检测到契约/迁移/platform 等严重变更，已加 `需批准` 标签。');
+              }
+            }
+
+            const body = bodyLines.join('\n');
+            const comments = await safely('读取 PR 评论', () =>
+              github.paginate(github.rest.issues.listComments, {
+                owner,
+                repo,
+                issue_number,
+                per_page: 100,
+              })
+            );
+
+            if (!comments) {
+              core.warning('无法读取已有评论，本次不创建路由评论');
+              return;
+            }
+
+            const existing = comments.find(
+              (comment) => comment.body && comment.body.includes(marker)
+            );
+            if (existing) {
+              await safely('更新 PR 路由评论', () =>
+                github.rest.issues.updateComment({
+                  owner,
+                  repo,
+                  comment_id: existing.id,
+                  body,
+                })
+              );
+            } else {
+              await safely('创建 PR 路由评论', () =>
+                github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number,
+                  body,
+                })
+              );
+            }
+
+  fields:
+    name: fields
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate blocking fields
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request?.body || '';
+
+            if (!body.trim()) {
+              core.setFailed(
+                'PR 描述为空。请使用 .github/pull_request_template.md，补齐 `Blocked by:` 与 `Blocks:`；没有阻塞也写「无」。'
+              );
+              return;
+            }
+
+            const hasBlockedBy = /\bBlocked\s+by\s*:/i.test(body);
+            const hasBlocks = /(?:^|\n)\s*(?:[-*]\s*)?Blocks\s*:/i.test(body);
+            const missing = [];
+            if (!hasBlockedBy) missing.push('Blocked by:');
+            if (!hasBlocks) missing.push('Blocks:');
+
+            if (missing.length > 0) {
+              core.setFailed(
+                `缺少阻塞字段：${missing.join('、')}。请使用 .github/pull_request_template.md，补齐 \`- Blocked by: 无\` 与 \`- Blocks: 无\`；没有阻塞也写「无」。`
+              );
+            }

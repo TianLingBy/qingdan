@@ -1,0 +1,25 @@
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+out/
+bin/
+obj/
+*.log
+
+# 构建产物（可重建，不入库）
+packages/contracts/openapi.json
+coverage/
+*.tsbuildinfo
+
+# 本地环境与密钥（凭证一律不进仓库）
+.env
+.env.*
+!.env.example
+
+# 编辑器 / 系统
+.vs/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
