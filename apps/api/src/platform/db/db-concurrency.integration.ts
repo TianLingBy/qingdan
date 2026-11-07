@@ -71,7 +71,7 @@ async function main(): Promise<void> {
         [tenantA, tenantB],
       );
       await tx.query(
-        `INSERT INTO company (id, tenant_id, name, code, level, status) VALUES ($1, $2, 'L3 公司 A', 'L3A', 1, '启用')`,
+        `INSERT INTO company (id, tenant_id, name, code, level, status) VALUES ($1, $2, 'L3 公司 A', '9001', 1, '启用')`,
         [companyA, tenantA],
       );
       await tx.query(
