@@ -45,8 +45,6 @@
 
 ## 当前状态
 
-🙋 **认领（赖皓妍，2026-11-06）**：认领 **M1-G 前端接线**（`apps/web` 登录页 + 会话态 + 统一错误体，UI 视觉接手）。开放项均已裁定（D53/D54/D55/D56/D57），无待拍板项。以下为主线既有状态，保留不覆盖：
-
 🔄 **进行中**：**M1 核心可用（2026-11-04）**——`platform` 注册表里 10 个端点**全部实现**（不再有 501）：health / openapi.json / 登录 / 登出 / me / 操作日志查询 / API Token 建查撤 / 员工个人级权限覆盖写入。认证内核（会话 Cookie + Bearer、同源 CSRF、每请求现算权限、Bearer 优先、代理头默认不信任）与 5 个跨 RLS 的 SECURITY DEFINER 函数已落地；**独立审查报的 7 项问题全部修完（D60）**；`apps/api` 测试 46 → **112** 例全绿，全量门禁 `tests\run.ps1` `ALL PASSED (7 files)`。**未验证**：真实 PostgreSQL 18 实例（本地无 PG，只在 PGlite PG18 跑过）、CLI/MCP 端到端「登录→查看→写→审计落库」、production 的短信与 Secure Cookie 运行时路径。
 
 ## 已完成
@@ -66,26 +64,17 @@
   - **审计**：`writer.ts` 增 `recordAudit(db, event)`（有租户走 outbox → flush，失败抛出；无租户走 `audit_append_unscoped`）；`withAudit` 在有 `tenantId` 时先设 `app.tenant_id`，否则 FORCE RLS 下业务 + outbox 写不进。
   - **测试**：`apps/api` 46 → **112** 例（新增 66：会话存储 7 / 认证主体 9+ / 插件 8+ / DB 函数 4 / 登录闭环 10 / Token 6 / 审计查询 2 / 权限覆盖 10 / 失败审计与续期等）；`pnpm -C apps/api test` 与全量 `tests\run.ps1`（`ALL PASSED (7 files)`）均绿。
   - **独立代码审查整改（2026-11-04，D60）**：PR #2 用 DSH 原生审查跑出 7 项，全部修完——① 非老板可给自己/下属授权超出自身权限（越权）→ 加「授予 ⊆ 自身权限」+ 禁止改自己；② `trustProxy: true` 让 `ip_allowlist` 可被 `X-Forwarded-For` 伪造 → 改配置驱动、默认不信任代理头；③ 写操作失败路径不落审计 → 统一 catch 补 `result='fail'`，并修 `recordAuditFailure` 的 RLS 前置；④ 滑动续期只续库不续 Cookie → 续期时重发 `Set-Cookie`；⑤ `If-Match` 的 `version` 无读出口 → `ApiToken` 补 `version`、权限覆盖的 `If-Match` 改选填；⑥ 经理/财务按岗位名匹配可改名绕过 → `position.preset_key`（迁移 `0003_platform_preset_key.sql`）；⑦ 配了 `PUBLIC_BASE_URL` 仍认任意 Host → 配了就只认它。
-- **M1-G 前端接线（2026-11-06，赖皓妍）**——登录页 + 会话态 + 统一错误体兜底，UI 视觉接手前把路由壳接上真实接口：
-  - **认证 API 层 `apps/web/src/api/auth.ts`**：login / logout / fetchMe 对齐契约；会话形态 = 服务端 HttpOnly Cookie（Web 端不持 token，`apiClient.getToken` 保持 null 不发 Authorization）；一期口径 D54④ 只做「手机号 + 验证码」，不预留企业注册/入企表单。
-  - **会话态 `apps/web/src/session/session.ts`**：真源是服务端（`GET /auth/me`），`ensureSession` 把 401/`UNAUTHENTICATED` 视为「未登录」正常信号返回 null，5xx/网络错误如实上抛；`useSession` 三态（loading/authenticated/anonymous）；`clearSessionCache` 只清会话键。前端只做展示不做权限判定（D15/D50）。
-  - **路由门禁 `apps/web/src/router/guard.ts` + `router.tsx` 重构**：rootRoute 无壳 → `/login`（公开，已登录访问回工作台；接口不可用也按未登录处理保证登录页可渲染）→ 无路径布局路由 `authed`（beforeLoad `requireSession` 未登录跳 /login + AppLayout）→ 其余 21 页仍由 `ROUTE_TABLE` 生成（login 从受保护组剔除，路由表仍是 22 页唯一真源）。新增 `defaultErrorComponent` 统一错误体兜底页（展示 message + 追踪号 requestId）。
-  - **登录页 `apps/web/src/pages/LoginPage.tsx` + `login-form.ts`**：纯逻辑校验（阈值对齐契约 phone 6-32 / code 1-16）与错误文案（`VALIDATION_FAILED`/`RATE_LIMITED`/`NOT_IMPLEMENTED` 各自口语化，其余以服务端 message 为主，防枚举文案由服务端定）；服务端 `requestId` 以「追踪号」展示；提交中禁重复提交；aria-invalid/describedby 无障碍标注。
-  - **壳接会话 `AppLayout.tsx`**：顶栏显示当前登录人 displayName + 登出按钮（登出请求失败也清本地缓存回登录页，Cookie 由门禁下次再校验）；移除「骨架阶段未接真实接口」文案。
-  - **测试**：`apps/web` 43 → **49** 例（新增 `login-form.test.ts` 14 例 + `session.test.ts` 6 例）；全量 `tests\run.ps1`（`ALL PASSED (7 files)`）绿。
-  - **视觉（2026-11-06，赖皓妍）**：黑白简约现代风落地——登录页毛玻璃卡片（`backdrop-blur-2xl` + 背景黑白灰光斑）、错误态黑白化（黑底白字警示块）、占位页徽章去彩色；视觉口径登记 `docs/awesome-design.md`。
 
 
 ## 进行中
 
 - **M1 已完成的部分（2026-11-04）**：登录 / 登出 / me、API Token 建查撤、操作日志查询、员工个人级权限覆盖写入；认证内核与迁移 `0002_platform_m1.sql`。详见「已完成 · M1」。
-- **M1-G 前端接线已完成（2026-11-06，赖皓妍）**，详见「已完成 · M1-G」；UI 视觉美化待接手。
-- **M1 剩余（下一段）**：CLI/MCP 端到端冒烟（登录 → 查看 → 一个写操作 → 审计落库，需真实 PostgreSQL 或 CI 的 postgres:18 job）；开发者后台（`/api/v1/admin/**`，D54⑤）与运营后台手动计费（D1）尚未开工；单据框架 / 审批 / 待办属 platform 范围但排在 business 模块前面单独一段。
+- **M1 剩余（下一段）**：CLI/MCP 端到端冒烟（登录 → 查看 → 一个写操作 → 审计落库，需真实 PostgreSQL 或 CI 的 postgres:18 job）；`apps/web` 登录页与 22 页壳接真实接口；开发者后台（`/api/v1/admin/**`，D54⑤）与运营后台手动计费（D1）尚未开工；单据框架 / 审批 / 待办属 platform 范围但排在 business 模块前面单独一段。
 
 ## 下一步
 
 - **M1-F 端到端**：在 CI 的 `postgres:18` job 上跑「CLI 登录 → `/auth/me` → 一次写操作 → 查审计有记录」，把它变成 `tests/platform-e2e.test.ps1` 的断言（本机无 PG，只能放 CI 或等本地装 PG 18）。
-- **M1-G 视觉（待接手）**：功能接线已完成（登录页/会话态/统一错误体兜底页），视觉打磨由 UI 接手；其余 21 页仍为 PlaceholderPage，随 business 模块逐页实装。
+- **M1-G 前端接线**：`apps/web` 登录页 + 会话态 + 统一错误体；赖皓妍（UI）接手视觉前，先把路由壳接上真实接口。
 - **M1-H**：开发者后台 `/api/v1/admin/**`（平台方跨租户，`actorType=platform`，账号独立体系，D54⑤）与平台级审计（`tenant_id IS NULL` 行目前只写不读）。
 - 待裁决已清零：原三条（审计读权限 / 单号时区与取号粒度 / `is_owner` 字段）已由 **D59** 一次性裁定并落地。
 
@@ -108,5 +97,4 @@
 - 口径：`docs/decisions.md`（D1/D4/D8/D13/D14/D15/D16/D21/D44/D48/D50）
 - 契约：`docs/轻单_接口契约第一批_v1_20261103.md` §1/§2/§10
 - 原型：`docs/prototype-v0.md` §1/§2/§3
-- 视觉：`docs/awesome-design.md`（黑白简约视觉语言 + 毛玻璃口径，页面实装前对齐）
 - 原型页面：`prototype.html`
