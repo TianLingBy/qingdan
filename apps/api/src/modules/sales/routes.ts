@@ -12,6 +12,7 @@ import {
 } from '../../platform/http/route-mount.js';
 import {
   cancelSalesOrder,
+  completeSalesOrder,
   createSalesOrder,
   getSalesOrder,
   listSalesOrders,
@@ -36,12 +37,13 @@ import {
  * - 取消必须复用 `assertCancelable`（D21），有下游时先取消下游；
  * - E 单详情内嵌收款块，余额由 SQL 聚合（D24）；
  * - R 客户退货录入按 D47 校验老板 / 经理 / 财务岗位；
- * - 出库 / 完成端点本批未登记（依赖 inventory 写路径，D41）。
+ * - 完成端点按 D72 接线：扣库存 + 生成 C 单草稿（D70 端口，同事务）。
  */
 
 const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'sales.order.create': 'sales_order',
   'sales.order.update': 'sales_order',
+  'sales.order.complete': 'sales_order',
   'sales.order.cancel': 'sales_order',
   'sales.receipt.create': 'sales_receipt',
   'customer_return.create': 'customer_return',
@@ -99,6 +101,14 @@ export function registerSalesRoutes(app: FastifyInstance): void {
     'sales.order.update': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await updateSalesOrder({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+    'sales.order.complete': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await completeSalesOrder({
         database: instance.database,
         request,
         reply,

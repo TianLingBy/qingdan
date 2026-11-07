@@ -3549,6 +3549,44 @@ paths:
                       - amount
                     additionalProperties: false
               additionalProperties: false
+  /api/v1/sales-orders/{id}/complete:
+    post:
+      operationId: sales.order.complete
+      summary: 完成销售单（D72：扣减批次可用量 + 生成 C 单草稿，同事务；仅「进行中」可完成；AI 默认禁止）
+      tags:
+        - sales
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: sales.update
+      x-module: sales
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_sales_order_complete
+      x-requires-if-match: true
   /api/v1/sales-orders/{id}/cancel:
     post:
       operationId: sales.order.cancel
