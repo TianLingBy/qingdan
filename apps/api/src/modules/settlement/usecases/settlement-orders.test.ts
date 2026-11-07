@@ -25,10 +25,10 @@ import {
 const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000008001';
 
 const APPROVE_SCOPE: ScopeMatrix = [
-  { domain: 'settlement', actions: ['read', 'approve'] },
+  { domain: 'settlement', actions: ['read', 'approve', 'view_price'] },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [
-  { domain: 'settlement', actions: ['read'] },
+  { domain: 'settlement', actions: ['read', 'view_price'] },
 ];
 
 interface FakeRequestInput {
@@ -392,6 +392,7 @@ describe('settlement C 结算单用例（PGlite + seed 演示租户）', () => {
       `SELECT action, result, reason
          FROM audit_log
         WHERE object_id = $1
+          AND action <> 'amount.detail'
         ORDER BY occurred_at, id`,
       [id],
     );
@@ -402,5 +403,33 @@ describe('settlement C 结算单用例（PGlite + seed 演示租户）', () => {
         reason: '财务复核确认',
       },
     ]);
+  });
+
+  it('确认响应同样按看价脱敏：有 approve 但无 view_price 时金额为 null（D78）', async () => {
+    const id = '01900000-0000-7000-8000-000000008901';
+    await insertDraft({
+      id,
+      orderNo: 'C-0001-20261107-0901',
+      sourceDocId: '01900000-0000-7000-8000-000000008902',
+    });
+    const noViewPrice: ScopeMatrix = [
+      { domain: 'settlement', actions: ['read', 'approve'] },
+    ];
+
+    const confirmed = await confirmSettlementOrder(
+      confirmCtx(
+        id,
+        { scope: noViewPrice },
+        { headers: { 'if-match': '"1"' }, auditReason: '财务复核确认' },
+      ).ctx,
+    );
+
+    expect(confirmed.status).toBe('已结算');
+    expect(confirmed.totalSaleAmount).toBeNull();
+    expect(confirmed.grossProfit).toBeNull();
+    expect(confirmed.netProfit).toBeNull();
+    expect(confirmed.commissionAmount).toBeNull();
+    // 比例不是金额，不脱敏；本单无归属人 → 快照 0（D77 ③）。
+    expect(confirmed.commissionRateSnapshot).toBe('0');
   });
 });

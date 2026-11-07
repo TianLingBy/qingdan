@@ -5202,7 +5202,7 @@ paths:
   /api/v1/settlement-orders:
     get:
       operationId: settlement.order.list.read
-      summary: 结算单列表（按公司/状态/来源单类型/单号检索；普通读不记审计，D15）
+      summary: 结算单列表（按公司/状态/来源单类型/单号检索；无看价权限时金额字段为 null，D15 / D27 / D78）
       tags:
         - settlement
       security:
@@ -5291,7 +5291,7 @@ paths:
   /api/v1/settlement-orders/{id}:
     get:
       operationId: settlement.order.detail.read
-      summary: 结算单详情（内嵌确认判定 confirmable；普通读不记审计，D19）
+      summary: 结算单详情（内嵌确认判定 confirmable；无 settlement.view_price 时金额字段为 null，D27 / D78；看过金额记 amount.detail，D51①）
       tags:
         - settlement
       security:
@@ -7876,29 +7876,43 @@ components:
             - 待确认
             - 已结算
         totalSaleAmount:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         totalCostAmount:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         grossProfit:
-          type: string
-          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         grossMarginRate:
-          type: string
-          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         relatedLossAmount:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         netProfit:
-          type: string
-          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         commissionRateSnapshot:
           type: string
           pattern: ^\d{1,12}(\.\d{1,6})?$
         commissionAmount:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         commissionOwnerId:
           anyOf:
             - type: string
@@ -7962,29 +7976,43 @@ components:
             - 待确认
             - 已结算
         totalSaleAmount:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         totalCostAmount:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         grossProfit:
-          type: string
-          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         grossMarginRate:
-          type: string
-          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         relatedLossAmount:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         netProfit:
-          type: string
-          pattern: ^-?\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         commissionRateSnapshot:
           type: string
           pattern: ^\d{1,12}(\.\d{1,6})?$
         commissionAmount:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         commissionOwnerId:
           anyOf:
             - type: string
