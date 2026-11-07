@@ -18,6 +18,7 @@ import {
 } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { v7 as uuidv7 } from 'uuid';
+import { recordAmountDetailRead } from '../../../platform/audit/sensitive-read.js';
 import { withAudit, type AuditEvent } from '../../../platform/audit/writer.js';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
@@ -25,6 +26,7 @@ import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import * as repo from '../repo.js';
+import { maskPurchaseOrderAmounts } from '../services/masking.js';
 
 /**
  * 采购单 A 用例（D15 / D16 / D21 / D39 / D51 / D52 / D52.1 / D54）。
@@ -223,9 +225,16 @@ export async function listPurchaseOrders(
 
   const query = parseListQuery(ctx.request);
 
-  return withTenant(database, principal.tenantId, (tx) =>
+  const canViewPrice = allowsScope(principal.scope, 'purchase', 'view_price');
+  const page = await withTenant(database, principal.tenantId, (tx) =>
     repo.listPurchaseOrders(repoContext(tx, principal), query),
   );
+  return {
+    items: page.items.map((order) =>
+      maskPurchaseOrderAmounts(order, canViewPrice),
+    ),
+    nextCursor: page.nextCursor,
+  };
 }
 
 /** 采购单详情（普通读，不记审计）；内嵌取消判定 cancelable（D21）。 */
@@ -248,7 +257,17 @@ export async function getPurchaseOrder(ctx: PurchaseOrderContext): Promise<Purch
   });
   if (!detail) throw new AppError('NOT_FOUND', '采购单不存在');
 
-  return detail;
+  const canViewPrice = allowsScope(principal.scope, 'purchase', 'view_price');
+  await recordAmountDetailRead(database, {
+    request: ctx.request,
+    principal,
+    domain: 'purchase',
+    operationId: 'purchase.order.detail.read',
+    objectType: OBJECT_TYPE,
+    objectId: detail.id,
+    companyId: detail.companyId,
+  });
+  return maskPurchaseOrderAmounts(detail, canViewPrice);
 }
 
 /** 开采购单：201 + 同事务取号 / 审计（D16 / D51）。 */
@@ -295,7 +314,11 @@ export async function createPurchaseOrder(
   });
 
   ctx.reply.status(201);
-  return order;
+  // D79：写路径返回的真实金额同样按看价权限脱敏（脱敏只发生在响应上）。
+  return maskPurchaseOrderAmounts(
+    order,
+    allowsScope(principal.scope, 'purchase', 'view_price'),
+  );
 }
 
 /** 修改采购单：If-Match 强 ETag；仅「进行中」可改；成功后回新 ETag（D4 / D51）。 */
@@ -334,7 +357,11 @@ export async function updatePurchaseOrder(
   });
 
   ctx.reply.header('ETag', etagOf(order.version));
-  return order;
+  // D79：写路径返回的真实金额同样按看价权限脱敏（脱敏只发生在响应上）。
+  return maskPurchaseOrderAmounts(
+    order,
+    allowsScope(principal.scope, 'purchase', 'view_price'),
+  );
 }
 
 /**
@@ -391,5 +418,9 @@ export async function cancelPurchaseOrder(
   });
 
   ctx.reply.header('ETag', etagOf(order.version));
-  return order;
+  // D79：写路径返回的真实金额同样按看价权限脱敏（脱敏只发生在响应上）。
+  return maskPurchaseOrderAmounts(
+    order,
+    allowsScope(principal.scope, 'purchase', 'view_price'),
+  );
 }

@@ -11,7 +11,9 @@ import {
   PurchaseOrderCreateInputSchema,
   PurchaseOrderDetailSchema,
   PurchaseOrderFeeSchema,
+  PurchaseOrderFeeViewSchema,
   PurchaseOrderLineSchema,
+  PurchaseOrderLineViewSchema,
   PurchaseOrderListQuerySchema,
   PurchaseOrderSchema,
   PurchaseOrderStatusSchema,
@@ -306,8 +308,8 @@ describe('采购单契约（purchase）', () => {
     }
 
     expect(z.globalRegistry.get(PurchaseOrderSchema)?.id).toBe('PurchaseOrder');
-    expect(z.globalRegistry.get(PurchaseOrderLineSchema)?.id).toBe('PurchaseOrderLine');
-    expect(z.globalRegistry.get(PurchaseOrderFeeSchema)?.id).toBe('PurchaseOrderFee');
+    expect(z.globalRegistry.get(PurchaseOrderLineViewSchema)?.id).toBe('PurchaseOrderLine');
+    expect(z.globalRegistry.get(PurchaseOrderFeeViewSchema)?.id).toBe('PurchaseOrderFee');
     expect(z.globalRegistry.get(PurchaseOrderDetailSchema)?.id).toBe('PurchaseOrderDetail');
 
     const doc = buildOpenApiDocument(ROUTES);
