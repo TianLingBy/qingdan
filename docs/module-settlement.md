@@ -46,11 +46,12 @@ C 单 3 端点已实现（2026-11-05）；本模块端点 0 个 501
 
 ## 进行中
 
-- **2026-11-07 D70 端口就绪（Issue #79）**：pps/api/src/modules/settlement/services/drafts.ts 提供
+- **2026-11-07 D70 端口就绪（Issue #79）**：apps/api/src/modules/settlement/services/drafts.ts 提供
   SettlementDraftPort.createDraft(tx, command)——金额与佣金费率快照由来源模块算好传入，settlement 不读 E/N 表；
-  同事务、来源单唯一（重复 409）、实现在 outbox 追加一行审计并返回 uditId 由调用方提交后 flush。
-  端口已在 egisterModules() 注册（platform/services/registry.ts），测试 services/drafts.test.ts 3 例。
-  **尚未接线**：E/N 单没有「完成」端点，等来源侧定义完成态后直接在同一个事务里调本端口。
+  同事务、来源单唯一（重复 409）、实现在 outbox 追加一行审计并返回 auditId 由调用方提交后 flush。
+  端口已在 registerModules() 注册（platform/services/registry.ts），测试 services/drafts.test.ts 3 例。
+  **已接线 E 单**（D72，2026-11-07）：`sales.order.complete` 在同一事务里调本端口生成草稿；N 单完成仍未接线。
+  草稿的 `relatedLossAmount` 与提成比例/金额本期由调用方传 `0`（D35 / D5④ 未落地，见 D72 ④）。
 
 ## 下一步
 

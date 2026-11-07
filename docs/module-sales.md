@@ -37,7 +37,7 @@
 
 ## 当前状态
 
-E 单 5 + 收款记录 2 + R 客户退货 3 端点全部实现（2026-11-05）；本模块端点 0 个 501
+E 单 6（5 + D72 完成）+ 收款记录 2 + R 客户退货 3 端点全部实现；本模块端点 0 个 501
 
 ## 已完成
 
@@ -47,11 +47,18 @@ E 单 5 + 收款记录 2 + R 客户退货 3 端点全部实现（2026-11-05）�
 
 ## 进行中
 
-- 无。
+- **2026-11-07 E 单「完成」端点（D72 / #79 接线）**：POST /api/v1/sales-orders/{id}/complete（scope sales.update，
+  强 ETag，AI 禁止 + 必须给原因）。同一事务内：按行全量扣减批次可用量（atchIds 间均分、末批承余量）→ 调
+  StockFlowPort.applyAdjustment 写 inventory_flow（source_doc_type='E'）→ 调 SettlementDraftPort.createDraft
+  生成 C 单草稿（总售价 = 单据总金额、总成本 = Σ 行数量 × cost_floor）→ 单头改「已完成」。
+  **两处占位**：relatedLossAmount 与提成比例/金额本期写 0（D35 损失归集、D5④ 提成配置尚未落地，见 D72 ④），
+  已记在审计 changes.placeholders 里，明面上不装成算对。
+  **未做**：出库/发货（ship）与部分发货；N 单完成（转司 + 在途量）另案。
 
 ## 下一步
 
 - 拍板两个开放项 → 追加 decisions.md。
+- D72 的损失归集（D35）：需要 processing 侧提供「B 单损失按归属单汇总」端口，属下一号决策候选。
 - 等 inventory 批次引用接口 + platform 审批框架就绪后开工；先做 E 单录入，再做收款记录，最后做 R。
 
 ## 已知问题 / 坑

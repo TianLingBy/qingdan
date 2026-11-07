@@ -24,6 +24,10 @@ import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
+import {
+  settlementDraftPort,
+  stockFlowPort,
+} from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 
 /**
@@ -423,6 +427,137 @@ export async function cancelSalesOrder(
       version: cancelled.version,
     };
     return cancelled;
+  });
+
+  ctx.reply.header('ETag', etagOf(order.version));
+  return order;
+}
+
+/** 六个小数位的定点整数（D54 `numeric(18,6)`）：避免浮点算数量。 */
+const SCALE = 1_000_000n;
+
+function toMicro(value: string): bigint {
+  const negative = value.startsWith('-');
+  const [intPart, fracPart = ''] = (negative ? value.slice(1) : value).split('.');
+  const frac = `${fracPart}000000`.slice(0, 6);
+  const micro = BigInt(intPart ?? '0') * SCALE + BigInt(frac);
+  return negative ? -micro : micro;
+}
+
+function fromMicro(micro: bigint): string {
+  const negative = micro < 0n;
+  const abs = negative ? -micro : micro;
+  const intPart = abs / SCALE;
+  const fracPart = (abs % SCALE).toString().padStart(6, '0').replace(/0+$/, '');
+  const body = fracPart === '' ? `${intPart}` : `${intPart}.${fracPart}`;
+  return negative ? `-${body}` : body;
+}
+
+/**
+ * 完成销售单（D72）：扣减批次可用量 + 生成 C 单草稿，同一事务。
+ *
+ * - 权限 `sales.update`；AI 默认禁止（会锁定库存与结算额）；
+ * - 仅「进行中」可完成；If-Match 强 ETag；
+ * - 库存扣减粒度：**按行全量扣减，批次间均分，除不尽的余量由最后一个批次承接**（D72）；
+ * - C 草稿：总售价 = 单据总金额（含费用行），总成本 = Σ(行数量 × 行加权平均批次成本)；
+ *   本单相关损失与提成比例本期取 `0`（D35 损失归集、D5④ 提成配置尚未落地，见 D72 ③④）。
+ */
+export async function completeSalesOrder(
+  ctx: SalesOrderWriteContext,
+): Promise<SalesOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'sales.order.complete');
+  requireScope(principal, 'update');
+  assertHumanCredential(principal, '完成销售单（会锁定库存与结算额）');
+
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const handledBy = principal.employeeId;
+
+  const audit = auditEventOf(ctx.request, principal, 'sales.order.complete', id, {
+    beforeStatus: '进行中',
+    afterStatus: '已完成',
+  });
+
+  const order = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const source = await repo.loadSalesOrderCompletionSource(context, id);
+    if (!source) throw new AppError('NOT_FOUND', '销售单不存在');
+    if (source.order.status !== '进行中') {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        '只有「进行中」的销售单可完成，已完成/已取消不可再次完成',
+        { status: source.order.status },
+      );
+    }
+
+    let totalCostMicro = 0n;
+    const stockFlows: { batchId: string; delta: string }[] = [];
+    for (const line of source.lines) {
+      if (line.batchIds.length === 0) {
+        throw new AppError(
+          'VALIDATION_FAILED',
+          `第 ${line.lineNo} 行没有引用批次，无法完成（D22）`,
+          { lineNo: line.lineNo },
+        );
+      }
+      const qtyMicro = toMicro(line.qty);
+      totalCostMicro += (qtyMicro * toMicro(line.costFloor)) / SCALE;
+
+      const count = BigInt(line.batchIds.length);
+      const base = qtyMicro / count;
+      const remainder = qtyMicro - base * count;
+      line.batchIds.forEach((batchId, index) => {
+        const share = index === line.batchIds.length - 1 ? base + remainder : base;
+        if (share === 0n) return;
+        stockFlows.push({ batchId, delta: fromMicro(-share) });
+      });
+    }
+
+    for (const flow of stockFlows) {
+      await stockFlowPort().applyAdjustment(tx, {
+        tenantId: principal.tenantId,
+        companyId: source.order.companyId,
+        batchId: flow.batchId,
+        delta: flow.delta,
+        sourceDocType: 'E',
+        sourceDocId: id,
+        handledBy,
+      });
+    }
+
+    const draft = await settlementDraftPort().createDraft(tx, {
+      tenantId: principal.tenantId,
+      companyId: source.order.companyId,
+      sourceDocType: 'E',
+      sourceDocId: id,
+      totalSaleAmount: source.order.totalAmount,
+      totalCostAmount: fromMicro(totalCostMicro),
+      relatedLossAmount: '0',
+      commissionRateSnapshot: '0',
+      commissionAmount: '0',
+      createdBy: handledBy,
+      requestId: requestIdFor(ctx.request),
+    });
+
+    const completed = await repo.completeSalesOrder(context, id, expectedVersion);
+    if (!completed) throw new AppError('NOT_FOUND', '销售单不存在');
+
+    audit.companyId = completed.companyId;
+    audit.changeSummary = {
+      beforeStatus: '进行中',
+      afterStatus: completed.status,
+      version: completed.version,
+      stockFlowCount: stockFlows.length,
+      settlementOrderId: draft.id,
+      settlementOrderNo: draft.orderNo,
+      totalSaleAmount: source.order.totalAmount,
+      totalCostAmount: fromMicro(totalCostMicro),
+      commissionRateSnapshot: '0',
+      relatedLossAmount: '0',
+      placeholders: ['relatedLossAmount', 'commissionRateSnapshot'],
+    };
+    return completed;
   });
 
   ctx.reply.header('ETag', etagOf(order.version));

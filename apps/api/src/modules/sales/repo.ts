@@ -824,6 +824,108 @@ export async function cancelSalesOrder(
   return getSalesOrder(ctx, id);
 }
 
+/** 完成态所需的行/批次快照（D72：按行均分到所引批次，末尾批次承余量）。 */
+export interface SalesOrderCompletionSource {
+  readonly order: SalesOrder;
+  readonly lines: readonly {
+    readonly lineNo: number;
+    readonly qty: string;
+    readonly costFloor: string;
+    readonly batchIds: readonly string[];
+  }[];
+}
+
+/**
+ * 读取「完成」所需数据：单头 + 行 + 引用批次。
+ *
+ * 只读、不开事务（由用例在 `withAudit` 的事务里调用），
+ * 跨公司 / 跨租户等同不存在（D15）。
+ */
+export async function loadSalesOrderCompletionSource(
+  ctx: SalesOrderRepoContext,
+  id: string,
+): Promise<SalesOrderCompletionSource | null> {
+  const order = await getSalesOrder(ctx, id);
+  if (!order) return null;
+
+  const result = await ctx.tx.query<{
+    line_no: number;
+    qty: string;
+    cost_floor: string;
+    batch_ids: string[];
+  }>(
+    `SELECT l.line_no,
+            trim_scale(l.qty) AS qty,
+            trim_scale(l.cost_floor) AS cost_floor,
+            COALESCE(
+              array_agg(b.batch_id ORDER BY b.line_no)
+                FILTER (WHERE b.batch_id IS NOT NULL),
+              '{}'
+            ) AS batch_ids
+       FROM sales_order_line l
+       LEFT JOIN sales_order_line_batch b
+         ON b.order_line_id = l.id
+        AND b.tenant_id = l.tenant_id
+      WHERE l.order_id = $1::uuid
+        AND l.tenant_id = $2
+      GROUP BY l.id, l.line_no, l.qty, l.cost_floor
+      ORDER BY l.line_no`,
+    [id, ctx.tenantId],
+  );
+
+  return {
+    order,
+    lines: result.rows.map((row) => ({
+      lineNo: row.line_no,
+      qty: row.qty,
+      costFloor: row.cost_floor,
+      batchIds: row.batch_ids,
+    })),
+  };
+}
+
+/**
+ * 完成销售单：仅「进行中」可完成（D19 三态）。
+ *
+ * 库存扣减与 C 草稿由用例在同一事务内调 D70 端口完成，本函数只改状态。
+ */
+export async function completeSalesOrder(
+  ctx: SalesOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<SalesOrder | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE sales_order
+        SET status = '已完成',
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '进行中'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) {
+    const current = await loadSalesOrderState(ctx, id);
+    if (!current) return null;
+    if (current.version !== expectedVersion) {
+      throw new AppError(
+        'VERSION_CONFLICT',
+        '销售单版本与 If-Match 不一致，请重新读取后重试',
+        { expected: expectedVersion, current: current.version },
+      );
+    }
+    throw new AppError(
+      'VALIDATION_FAILED',
+      '只有「进行中」的销售单可完成，已完成/已取消不可再次完成',
+      { status: current.status },
+    );
+  }
+
+  return getSalesOrder(ctx, id);
+}
+
 /**
  * E 单收款记录（D24 / D34）。
  *
