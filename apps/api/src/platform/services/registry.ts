@@ -52,6 +52,11 @@ export interface SettlementDraftCommand {
   readonly relatedLossAmount?: string;
   readonly commissionRateSnapshot: string;
   readonly commissionAmount: string;
+  /**
+   * 提成归属人（来源单负责人，D77 ②）。草稿期只记「是谁」，比例在确认结算时按
+   * `commission_rate` 配置解析并快照——来源模块不读提成配置，settlement 不读来源表。
+   */
+  readonly commissionOwnerId?: string | null;
   /** 人类发起人（AI 发起时是委托人）。 */
   readonly createdBy: string;
   readonly requestId?: string | null;

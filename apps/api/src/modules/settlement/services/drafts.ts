@@ -33,7 +33,8 @@ export async function createSettlementDraft(
     `INSERT INTO settlement_order
        (id, tenant_id, company_id, order_no, source_doc_type, source_doc_id,
         total_sale_amount, total_cost_amount, gross_profit, gross_margin_rate,
-        related_loss_amount, net_profit, commission_rate_snapshot, commission_amount)
+        related_loss_amount, net_profit, commission_rate_snapshot, commission_amount,
+        commission_owner_id)
      VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6::uuid,
              $7::numeric, $8::numeric,
              $7::numeric - $8::numeric,
@@ -41,7 +42,7 @@ export async function createSettlementDraft(
                   ELSE round(($7::numeric - $8::numeric) / $7::numeric, 6) END,
              $9::numeric,
              ($7::numeric - $8::numeric) - $9::numeric,
-             $10::numeric, $11::numeric)
+             $10::numeric, $11::numeric, $12::uuid)
      ON CONFLICT (tenant_id, source_doc_type, source_doc_id) DO NOTHING
      RETURNING id, version`,
     [
@@ -56,6 +57,7 @@ export async function createSettlementDraft(
       relatedLoss,
       command.commissionRateSnapshot,
       command.commissionAmount,
+      command.commissionOwnerId ?? null,
     ],
   );
 
@@ -83,6 +85,7 @@ export async function createSettlementDraft(
       totalSaleAmount: command.totalSaleAmount,
       totalCostAmount: command.totalCostAmount,
       relatedLossAmount: relatedLoss,
+      commissionOwnerId: command.commissionOwnerId ?? null,
     },
     result: 'success',
     requestId: command.requestId ?? `port-${id}`,

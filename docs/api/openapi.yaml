@@ -5363,6 +5363,174 @@ paths:
         reasonRequired: true
       x-mcp-tool: qingdan_settlement_order_confirm
       x-requires-if-match: true
+  /api/v1/commission-rates:
+    get:
+      operationId: commission.rate.list.read
+      summary: 提成比例配置列表（按公司 / 员工检索；普通读不记审计，D15 / D77）
+      tags:
+        - commission
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: employeeId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CommissionRate"
+                  nextCursor:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                      - type: "null"
+                required:
+                  - items
+                  - nextCursor
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: commission.read
+      x-module: settlement
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_commission_rate_list_read
+    post:
+      operationId: commission.rate.create
+      summary: 新增提成比例配置（同员工 + 公司 + 生效日唯一；AI 默认禁止，D77）
+      tags:
+        - commission
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "201":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommissionRate"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: commission.create
+      x-module: settlement
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_commission_rate_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                companyId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                employeeId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                rate:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                effectiveFrom:
+                  type: string
+                  pattern: ^\d{4}-\d{2}-\d{2}$
+              required:
+                - companyId
+                - employeeId
+                - rate
+                - effectiveFrom
+              additionalProperties: false
+  /api/v1/commission-rates/{id}:
+    delete:
+      operationId: commission.rate.delete
+      summary: 删除提成比例配置（已结算单靠快照冻结，不受影响；AI 默认禁止，D77 ④）
+      tags:
+        - commission
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommissionRate"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: commission.delete
+      x-module: settlement
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_commission_rate_delete
 components:
   schemas:
     AuditLog:
@@ -7731,6 +7899,12 @@ components:
         commissionAmount:
           type: string
           pattern: ^\d{1,12}(\.\d{1,6})?$
+        commissionOwnerId:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
         version:
           type: integer
           minimum: -9007199254740991
@@ -7759,6 +7933,7 @@ components:
         - netProfit
         - commissionRateSnapshot
         - commissionAmount
+        - commissionOwnerId
         - version
         - createdAt
         - updatedAt
@@ -7810,6 +7985,12 @@ components:
         commissionAmount:
           type: string
           pattern: ^\d{1,12}(\.\d{1,6})?$
+        commissionOwnerId:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
         version:
           type: integer
           minimum: -9007199254740991
@@ -7853,10 +8034,55 @@ components:
         - netProfit
         - commissionRateSnapshot
         - commissionAmount
+        - commissionOwnerId
         - version
         - createdAt
         - updatedAt
         - confirmable
+      additionalProperties: false
+    CommissionRate:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        employeeId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        rate:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        effectiveFrom:
+          type: string
+          pattern: ^\d{4}-\d{2}-\d{2}$
+        createdBy:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - employeeId
+        - rate
+        - effectiveFrom
+        - createdBy
+        - createdAt
+        - updatedAt
       additionalProperties: false
   securitySchemes:
     cookieAuth:

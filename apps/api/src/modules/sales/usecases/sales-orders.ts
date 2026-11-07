@@ -536,6 +536,8 @@ export async function completeSalesOrder(
       relatedLossAmount: '0',
       commissionRateSnapshot: '0',
       commissionAmount: '0',
+      // D77 ②：提成归属人 = 来源单负责人；比例在结算确认时按配置解析并快照。
+      commissionOwnerId: source.order.handlerId,
       createdBy: handledBy,
       requestId: requestIdFor(ctx.request),
     });
@@ -555,6 +557,7 @@ export async function completeSalesOrder(
       totalCostAmount: fromMicro(totalCostMicro),
       commissionRateSnapshot: '0',
       relatedLossAmount: '0',
+      commissionOwnerId: source.order.handlerId,
       placeholders: ['relatedLossAmount', 'commissionRateSnapshot'],
     };
     return completed;

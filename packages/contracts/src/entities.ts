@@ -36,6 +36,7 @@ import {
   InternalTradeOrderSchema,
 } from './internal-trade-orders.js';
 import { SettlementOrderDetailSchema, SettlementOrderSchema } from './settlement-orders.js';
+import { CommissionRateSchema } from './commission-rates.js';
 
 /**
  * 契约实体登记表（D57 ①）：每个实体必须在此登记并带 globalRegistry id，
@@ -234,4 +235,5 @@ export const ENTITIES = [
   { name: 'InternalTradeOrderDetail', schema: InternalTradeOrderDetailSchema },
   { name: 'SettlementOrder', schema: SettlementOrderSchema },
   { name: 'SettlementOrderDetail', schema: SettlementOrderDetailSchema },
+  { name: 'CommissionRate', schema: CommissionRateSchema },
 ] as const;
