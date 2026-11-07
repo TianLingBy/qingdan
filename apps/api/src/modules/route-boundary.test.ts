@@ -1,9 +1,28 @@
 import { MODULE_KEYS, ROUTES, modulesOf, routesOfModule } from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 import { testConfig } from '../platform/config.js';
 import { MOUNTED_MODULE_KEYS } from './index.js';
+
+/** D70 静态边界：跨模块 import 的落点必须仍在 `src/modules/<模块>/` 下。 */
+const OTHER_MODULE_RE = /[\\/]modules[\\/]([a-z-]+)[\\/]/;
+
+function listSourceFiles(dir: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listSourceFiles(full));
+      continue;
+    }
+    if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) files.push(full);
+  }
+  return files;
+}
 
 /**
  * 路由挂载边界（Issue #15 / D62）。
@@ -291,5 +310,34 @@ describe('路由挂载边界（platform / masterdata / inventory / sales / purch
     const response = await app.inject({ method: 'GET', url: '/api/v1/health' });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: 'ok', version: '9.9.9' });
+  });
+
+  it('D70 边界：业务模块不跨模块 import 对方的 repo / schema', () => {
+    const modulesRoot = fileURLToPath(new URL('.', import.meta.url));
+    const violations: string[] = [];
+
+    for (const moduleName of MOUNTED_MODULE_KEYS) {
+      if (moduleName === 'platform') continue;
+      const moduleDir = path.join(modulesRoot, moduleName);
+      for (const file of listSourceFiles(moduleDir)) {
+        const source = readFileSync(file, 'utf8');
+        for (const match of source.matchAll(/from '([^']+)'/g)) {
+          const specifier = match[1]!;
+          if (!specifier.startsWith('.')) continue;
+          const resolved = path.resolve(path.dirname(file), specifier);
+          const other = OTHER_MODULE_RE.exec(resolved);
+          if (!other) continue;
+          const targetModule = other[1]!;
+          if (targetModule === moduleName || targetModule === 'platform') continue;
+          if (/(?:^|\/)(?:repo|schema)(?:\.js)?$/.test(
+            resolved.replace(/\\/g, '/').replace(new RegExp(`^.*/modules/${targetModule}/`), ''),
+          )) {
+            violations.push(`${path.relative(modulesRoot, file)} → ${targetModule}`);
+          }
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
   });
 });
