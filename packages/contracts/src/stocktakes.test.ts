@@ -11,7 +11,9 @@ import {
   STOCKTAKE_STATUSES,
   StocktakeApprovableSchema,
   StocktakeCreateInputSchema,
+  StocktakeDecreaseInputSchema,
   StocktakeDetailSchema,
+  StocktakeIncreaseInputSchema,
   StocktakeListQuerySchema,
   StocktakeSchema,
   StocktakeStatusSchema,
@@ -62,8 +64,8 @@ const CREATE = {
 const byId = new Map(STOCKTAKE_ROUTES.map((route) => [route.operationId, route]));
 
 describe('盘点调整契约（stocktake）', () => {
-  it('4 条端点全部登记并汇总进 ROUTES，且归属 inventory', () => {
-    expect(STOCKTAKE_ROUTES).toHaveLength(4);
+  it('5 条端点全部登记并汇总进 ROUTES，且归属 inventory（D71 拆盘盈/盘亏）', () => {
+    expect(STOCKTAKE_ROUTES).toHaveLength(5);
     for (const route of STOCKTAKE_ROUTES) expect(route.module).toBe('inventory');
 
     const inventoryIds = routesOfModule(ROUTES, 'inventory').map((r) => r.operationId);
@@ -76,7 +78,8 @@ describe('盘点调整契约（stocktake）', () => {
     expect(actual).toEqual(
       [
         'GET /api/v1/stocktakes stocktake.list.read',
-        'POST /api/v1/stocktakes stocktake.create',
+        'POST /api/v1/stocktakes/increases stocktake.increase.create',
+        'POST /api/v1/stocktakes/decreases stocktake.decrease.create',
         'GET /api/v1/stocktakes/{id} stocktake.detail.read',
         'POST /api/v1/stocktakes/{id}/approve stocktake.approve',
       ].sort(),
@@ -84,7 +87,9 @@ describe('盘点调整契约（stocktake）', () => {
 
     expect(byId.get('stocktake.list.read')?.scope).toBe('stocktake.read');
     expect(byId.get('stocktake.detail.read')?.scope).toBe('stocktake.read');
-    expect(byId.get('stocktake.create')?.scope).toBe('stocktake.create');
+    // D71：盘盈 = create（入账增加）、盘亏 = delete（「仅删减」）。
+    expect(byId.get('stocktake.increase.create')?.scope).toBe('stocktake.create');
+    expect(byId.get('stocktake.decrease.create')?.scope).toBe('stocktake.delete');
     // 审批是 approve 动作，不是 update（D44 / D47）。
     expect(byId.get('stocktake.approve')?.scope).toBe('stocktake.approve');
     for (const route of STOCKTAKE_ROUTES) expect(route.domain).toBe('stocktake');
@@ -95,7 +100,8 @@ describe('盘点调整契约（stocktake）', () => {
   });
 
   it('响应码：发起 201、审批 200、读 200', () => {
-    expect(byId.get('stocktake.create')?.response?.status).toBe(201);
+    expect(byId.get('stocktake.increase.create')?.response?.status).toBe(201);
+    expect(byId.get('stocktake.decrease.create')?.response?.status).toBe(201);
     expect(byId.get('stocktake.approve')?.response?.status).toBe(200);
     expect(byId.get('stocktake.list.read')?.response?.status).toBe(200);
     expect(byId.get('stocktake.detail.read')?.response?.status).toBe(200);
@@ -104,12 +110,14 @@ describe('盘点调整契约（stocktake）', () => {
   it('普通读不记审计；发起 / 审批 audit=write（D51 / D54 ②）', () => {
     expect(byId.get('stocktake.list.read')?.audit).toEqual({ kind: 'none', required: false });
     expect(byId.get('stocktake.detail.read')?.audit).toEqual({ kind: 'none', required: false });
-    expect(byId.get('stocktake.create')?.audit).toEqual({ kind: 'write', required: true });
+    expect(byId.get('stocktake.increase.create')?.audit).toEqual({ kind: 'write', required: true });
+    expect(byId.get('stocktake.decrease.create')?.audit).toEqual({ kind: 'write', required: true });
     expect(byId.get('stocktake.approve')?.audit).toEqual({ kind: 'write', required: true });
   });
 
   it('AI 边界：发起默认禁止；审批只能人类 → forbid + 必须给原因（D52 / D54 ⑥）', () => {
-    expect(byId.get('stocktake.create')?.ai).toEqual({ policy: 'forbid', reasonRequired: false });
+    expect(byId.get('stocktake.increase.create')?.ai).toEqual({ policy: 'forbid', reasonRequired: false });
+    expect(byId.get('stocktake.decrease.create')?.ai).toEqual({ policy: 'forbid', reasonRequired: false });
     expect(byId.get('stocktake.approve')?.ai).toEqual({
       policy: 'forbid',
       reasonRequired: true,
@@ -118,7 +126,8 @@ describe('盘点调整契约（stocktake）', () => {
 
   it('审批强制 If-Match 强 ETag', () => {
     expect(byId.get('stocktake.approve')?.requiresIfMatch).toBe(true);
-    expect(byId.get('stocktake.create')?.requiresIfMatch).toBe(false);
+    expect(byId.get('stocktake.increase.create')?.requiresIfMatch).toBe(false);
+    expect(byId.get('stocktake.decrease.create')?.requiresIfMatch).toBe(false);
   });
 
   it('状态是审批流三态 `待审批 / 已批准 / 已驳回`，不复用 HEADER_STATES', () => {
@@ -187,6 +196,30 @@ describe('盘点调整契约（stocktake）', () => {
       const result = StocktakeCreateInputSchema.safeParse({ ...CREATE, bookQty, actualQty });
       expect(result.success, `${bookQty} / ${actualQty}`).toBe(false);
       expect(result.error?.issues[0]?.message).toBe('无差异不需要盘点单');
+    }
+  });
+
+  it('盘盈 / 盘亏方向锁死在各自的入参 schema 上（D71）', () => {
+    const surplus = { ...CREATE, bookQty: '100', actualQty: '104.5' };
+    const shortage = { ...CREATE, bookQty: '100', actualQty: '95.5' };
+
+    expect(StocktakeIncreaseInputSchema.safeParse(surplus).success).toBe(true);
+    expect(StocktakeIncreaseInputSchema.safeParse(shortage).success).toBe(false);
+    expect(StocktakeIncreaseInputSchema.safeParse(shortage).error?.issues[0]?.message).toBe(
+      '盘盈单要求实盘量大于账面量',
+    );
+
+    expect(StocktakeDecreaseInputSchema.safeParse(shortage).success).toBe(true);
+    expect(StocktakeDecreaseInputSchema.safeParse(surplus).success).toBe(false);
+    expect(StocktakeDecreaseInputSchema.safeParse(surplus).error?.issues[0]?.message).toBe(
+      '盘亏单要求实盘量小于账面量',
+    );
+
+    // 相等（含写法差异）两个方向都拒绝。
+    for (const schema of [StocktakeIncreaseInputSchema, StocktakeDecreaseInputSchema]) {
+      expect(schema.safeParse({ ...CREATE, bookQty: '100', actualQty: '100.000' }).success).toBe(
+        false,
+      );
     }
   });
 
@@ -354,13 +387,31 @@ describe('盘点调整契约（stocktake）', () => {
       .sort();
     expect(queryNames).toEqual(['companyId', 'cursor', 'keyword', 'limit', 'status']);
 
-    expect(list.post?.['operationId']).toBe('stocktake.create');
-    expect(list.post?.['x-module']).toBe('inventory');
-    expect(list.post?.['x-scope']).toBe('stocktake.create');
-    expect(list.post?.['x-audit']).toEqual({ kind: 'write', required: true });
-    expect(list.post?.['x-ai-policy']).toEqual({ policy: 'forbid', reasonRequired: false });
-    expect(list.post?.['x-mcp-tool']).toBe('qingdan_stocktake_create');
-    expect(list.post?.responses).toHaveProperty('201');
+    const increases = doc.paths['/api/v1/stocktakes/increases'] as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(increases.post?.['operationId']).toBe('stocktake.increase.create');
+    expect(increases.post?.['x-module']).toBe('inventory');
+    expect(increases.post?.['x-scope']).toBe('stocktake.create');
+    expect(increases.post?.['x-audit']).toEqual({ kind: 'write', required: true });
+    expect(increases.post?.['x-ai-policy']).toEqual({
+      policy: 'forbid',
+      reasonRequired: false,
+    });
+    expect(increases.post?.['x-mcp-tool']).toBe('qingdan_stocktake_increase_create');
+    expect(increases.post?.responses).toHaveProperty('201');
+
+    const decreases = doc.paths['/api/v1/stocktakes/decreases'] as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(decreases.post?.['operationId']).toBe('stocktake.decrease.create');
+    // D71：盘亏用 delete 动作（＝「仅删减」），权限据此区分盘盈。
+    expect(decreases.post?.['x-scope']).toBe('stocktake.delete');
+    expect(decreases.post?.['x-audit']).toEqual({ kind: 'write', required: true });
+    expect(decreases.post?.['x-mcp-tool']).toBe('qingdan_stocktake_decrease_create');
+    expect(decreases.post?.responses).toHaveProperty('201');
 
     const detail = doc.paths['/api/v1/stocktakes/{id}'] as Record<
       string,

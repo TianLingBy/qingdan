@@ -229,11 +229,12 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
     cookie: string,
     requestId: string,
     payload: Record<string, unknown>,
+    direction: 'increases' | 'decreases',
     extra: Record<string, string> = {},
   ) {
     return app.inject({
       method: 'POST',
-      url: '/api/v1/stocktakes',
+      url: `/api/v1/stocktakes/${direction}`,
       headers: writeHeaders(cookie, requestId, extra),
       payload,
     });
@@ -569,6 +570,7 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       warehouseCookie,
       'req-stocktake-create-warehouse',
       payload,
+      'increases',
     );
     expect(noPermission.statusCode).toBe(403);
     expect(noPermission.json()).toMatchObject({ code: 'FORBIDDEN' });
@@ -577,6 +579,7 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       ownerCookie,
       'req-stocktake-create-no-difference',
       { ...payload, actualQty: '50.000000' },
+      'increases',
     );
     expect(noDifference.statusCode).toBe(422);
     const noDifferenceBody = noDifference.json() as {
@@ -594,6 +597,7 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       ownerCookie,
       'req-stocktake-create-cross-company',
       { ...payload, batchId: BATCH_3_ID },
+      'increases',
     );
     expect(crossCompany.statusCode).toBe(422);
     expect(crossCompany.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
@@ -601,7 +605,7 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
     const aiToken = await createAiToken('req-stocktake-create-ai-token');
     const aiWithoutReason = await app.inject({
       method: 'POST',
-      url: '/api/v1/stocktakes',
+      url: '/api/v1/stocktakes/increases',
       headers: {
         authorization: `Bearer ${aiToken}`,
         'x-request-id': 'req-stocktake-create-ai-no-reason',
@@ -613,7 +617,7 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
 
     const aiForbidden = await app.inject({
       method: 'POST',
-      url: '/api/v1/stocktakes',
+      url: '/api/v1/stocktakes/increases',
       headers: {
         authorization: `Bearer ${aiToken}`,
         'x-reason': 'AI 尝试发起盘点',
@@ -628,6 +632,7 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       ownerCookie,
       'req-stocktake-create-ok',
       payload,
+      'increases',
     );
     expect(created.statusCode).toBe(201);
     expect(created.headers.etag).toBe('"1"');
@@ -645,6 +650,30 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       remark: '盘盈测试',
       version: 1,
     });
+
+    // D71 方向锁：把盘亏数据发到盘盈端点 → 422，文案说清方向。
+    const wrongDirection = await createStocktakeRequest(
+      ownerCookie,
+      'req-stocktake-create-wrong-direction',
+      { ...payload, actualQty: '45' },
+      'increases',
+    );
+    expect(wrongDirection.statusCode).toBe(422);
+    expect(
+      (wrongDirection.json() as { details?: { issues?: { message: string }[] } }).details?.issues?.some(
+        (issue) => issue.message.includes('盘盈单要求实盘量大于账面量'),
+      ),
+    ).toBe(true);
+
+    // D71 角色矩阵：仓管只有「仅删减」，盘亏可发起（201）——这里只验权限，不动批次。
+    const warehouseDecrease = await createStocktakeRequest(
+      warehouseCookie,
+      'req-stocktake-decrease-warehouse',
+      { ...payload, actualQty: '45', remark: '盘亏测试' },
+      'decreases',
+    );
+    expect(warehouseDecrease.statusCode).toBe(201);
+    expect(warehouseDecrease.json()).toMatchObject({ diffQty: '-5', status: '待审批' });
   });
 
   it('盘点列表 / 详情：公司隔离、状态筛选、approvable、普通读不记审计', async () => {

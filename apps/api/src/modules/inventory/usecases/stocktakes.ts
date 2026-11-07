@@ -1,6 +1,8 @@
 import {
   AppError,
   StocktakeCreateInputSchema,
+  StocktakeDecreaseInputSchema,
+  StocktakeIncreaseInputSchema,
   StocktakeListQuerySchema,
   allowsScope,
   clampLimit,
@@ -26,7 +28,8 @@ import { applyStockAdjustment } from '../services/stock-flow.js';
 /**
  * 盘点调整 I 用例（D15 / D16 / D47 / D51 / D52 / D54 / D60 / D67）。
  *
- * - 权限：读 `stocktake.read`；发起 `stocktake.create`；审批 `stocktake.approve`；
+ * - 权限：读 `stocktake.read`；盘盈 `stocktake.create`；盘亏 `stocktake.delete`（仅删减）；
+ *   审批 `stocktake.approve`（D71）；
  * - 公司隔离：读写均由 repo 带可见公司集合，跨公司等同不存在；
  * - 单号：创建时在业务事务内取 `I` 号（D16）；
  * - 差异：客户端只传账面量 / 实盘量，`diffQty = actualQty - bookQty` 由 SQL 计算；
@@ -93,7 +96,7 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create' | 'approve',
+  action: 'read' | 'create' | 'delete' | 'approve',
 ): void {
   if (!allowsScope(principal.scope, 'stocktake', action)) {
     throw new AppError('FORBIDDEN', `缺少 stocktake.${action} 权限`);
@@ -186,8 +189,11 @@ function parseStocktakeId(request: FastifyRequest): string {
   return id;
 }
 
-function parseCreateInput(body: unknown): StocktakeCreateInput {
-  const parsed = StocktakeCreateInputSchema.safeParse(body);
+function parseCreateInput(
+  body: unknown,
+  schema: typeof StocktakeCreateInputSchema,
+): StocktakeCreateInput {
+  const parsed = schema.safeParse(body);
   if (!parsed.success) {
     throw new AppError('VALIDATION_FAILED', '请求体不合法', {
       issues: issuesOf(parsed.error),
@@ -286,20 +292,27 @@ export async function getStocktake(
   return detailOf(stocktake);
 }
 
-/** 发起盘点单：201 + 同事务取 I 号 / 服务端算差异 / 审计（D16 / D47 / D51）。 */
-export async function createStocktake(
+/** 盘盈 / 盘亏两个发起端点的差异只在这里（D71）：权限动作、入参 schema、审计 action。 */
+interface CreateSpec {
+  readonly operationId: 'stocktake.increase.create' | 'stocktake.decrease.create';
+  readonly scopeAction: 'create' | 'delete';
+  readonly schema: typeof StocktakeCreateInputSchema;
+}
+
+async function createStocktakeWith(
   ctx: StocktakeWriteContext,
+  spec: CreateSpec,
 ): Promise<Stocktake> {
   const principal = requirePrincipal(ctx.request);
-  const database = requireDatabase(ctx, 'stocktake.create');
-  requireScope(principal, 'create');
+  const database = requireDatabase(ctx, spec.operationId);
+  requireScope(principal, spec.scopeAction);
   assertHumanCreation(principal);
 
-  const input = parseCreateInput(ctx.request.body);
+  const input = parseCreateInput(ctx.request.body, spec.schema);
   assertCompanyVisible(principal, input.companyId);
 
   const id = uuidv7();
-  const audit = auditEventOf(ctx.request, principal, 'stocktake.create', id, {
+  const audit = auditEventOf(ctx.request, principal, spec.operationId, id, {
     companyId: input.companyId,
     batchId: input.batchId,
     bookQty: input.bookQty,
@@ -330,6 +343,31 @@ export async function createStocktake(
 
   ctx.reply.status(201);
   return created;
+}
+
+/**
+ * 发起盘盈单（实盘量 > 账面量）：权限 `stocktake.create`（D71）。
+ * 201 + 同事务取 I 号 / 服务端算差异 / 审计（D16 / D47 / D51）。
+ */
+export async function createStocktakeIncrease(
+  ctx: StocktakeWriteContext,
+): Promise<Stocktake> {
+  return await createStocktakeWith(ctx, {
+    operationId: 'stocktake.increase.create',
+    scopeAction: 'create',
+    schema: StocktakeIncreaseInputSchema as unknown as typeof StocktakeCreateInputSchema,
+  });
+}
+
+/** 发起盘亏单（实盘量 < 账面量）：权限 `stocktake.delete`（仅删减，D47 / D71）。 */
+export async function createStocktakeDecrease(
+  ctx: StocktakeWriteContext,
+): Promise<Stocktake> {
+  return await createStocktakeWith(ctx, {
+    operationId: 'stocktake.decrease.create',
+    scopeAction: 'delete',
+    schema: StocktakeDecreaseInputSchema as unknown as typeof StocktakeCreateInputSchema,
+  });
 }
 
 /**

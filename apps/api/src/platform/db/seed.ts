@@ -73,10 +73,12 @@ const POSITIONS: readonly PositionSeed[] = [
     presetKey: 'manager',
     permissions: [
       ...['purchase', 'processing', 'sales', 'internal_trade', 'settlement', 'customer_return',
-        'supplier_return', 'stocktake', 'product', 'customer', 'supplier', 'processor',
+        'supplier_return', 'product', 'customer', 'supplier', 'processor',
         'inventory_qty', 'inventory_flow', 'company', 'profit_report'].flatMap((domain) =>
         perms(domain, ['read']),
       ),
+      // D71：经理可录盘盈/盘亏，且按 D47「老板或经理审批」必须持 approve。
+      ...perms('stocktake', ['read', 'create', 'delete', 'approve']),
       ...perms('employee', ['read']),
       ...perms('permission', ['read', 'update']),
       ...perms('audit', ['read']),
@@ -135,7 +137,8 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('inventory_qty', ['read', 'update']),
       ...perms('inventory_flow', ['read', 'create']),
       ...perms('stocktake_page', ['read', 'create']),
-      ...perms('stocktake', ['read']),
+      // D47「理货可发起减少调整申请」+ D71：仓管只给删减（盘亏），不给盘盈。
+      ...perms('stocktake', ['read', 'delete']),
       ...perms('processing', ['read', 'update']),
       ...perms('purchase', ['read']),
     ],
@@ -151,6 +154,8 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('product', ['read', 'create', 'update']),
       ...perms('supplier', ['read', 'create', 'update']),
       ...perms('inventory_qty', ['read']),
+      // D71：采购可录盘盈盘亏（两个方向都可发起），审批仍归老板/经理。
+      ...perms('stocktake', ['read', 'create', 'delete']),
       ...perms('settlement', ['read']),
     ],
   },

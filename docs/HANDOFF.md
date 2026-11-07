@@ -11,9 +11,9 @@
 | 项 | 结论 |
 |---|---|
 | 仓库 / 阶段 | `D:\Desktop\dsh\Qingdan`，私有仓 `github.com/TianLingBy/qingdan`；阶段 4 分工开发。 |
-| 契约 | 八张单据全线登记，OpenAPI 规模 paths=50 / operations=81 / schemas=37；生成物勿手改。 |
-| 实现 | masterdata 22、platform 员工 4、sales 10（E 5 + 收款 2 + R 3）、purchase 8（A 5 + S 3）、processing 5、internal-trade 5、settlement 3、inventory 3 只读 + 盘点 I 4 全部可用；**81 个 operation 已无 501**。 |
-| 当前主线 | ①**#79 模块间调用通道（P0，等负责人拍板 D70）**：E/N 完成 → C 草稿（D19）+ 单据 → 库存流水；②**#84 盘点权限口径（P1，等负责人拍板 D71）**：D47 的理货仅减 / 采购可录入 / 经理审批；③前端登录页重做——**先落 #3 成员档案**；④提成、利润报表、打印导出契约尚未登记。 |
+| 契约 | 八张单据全线登记，OpenAPI 规模 paths=52 / operations=82 / schemas=37（D71 把盘点发起拆成盘盈/盘亏两条）；生成物勿手改。 |
+| 实现 | masterdata 22、platform 员工 4、sales 10（E 5 + 收款 2 + R 3）、purchase 8（A 5 + S 3）、processing 5、internal-trade 5、settlement 3、inventory 3 只读 + 盘点 I 5 全部可用；**82 个 operation 已无 501**。 |
+| 当前主线 | ①**#79 模块间调用通道（D70 已拍板，待落地）**：E/N 完成 → C 草稿（D19）+ 单据 → 库存流水；②**#84 盘点权限已按 D71 落地**（盘盈/盘亏两端点 + 角色矩阵），待 review 后关 issue；③前端登录页重做——**先落 #3 成员档案**；④提成、利润报表、打印导出契约尚未登记。 |
 | 前端 | `apps/web` 已回到 22 页骨架态：#82/#83 的 M1-G 登录页接线与黑白毛玻璃视觉已由 **#90 撤回**（2026-11-07 合并）。 |
 
 ## 1. 最近状态（截至 2026-11-07 晚）
@@ -21,14 +21,14 @@
 | 项 | 值 |
 |---|---|
 | main | `ec399a5`（#90 撤回 M1-G 前端接线）。 |
-| OpenAPI | `pnpm openapi` 生成 `docs/api/openapi.yaml`：paths=50 / operations=81 / schemas=37。 |
-| 已登记 | A 采购 5、B 加工 5、E 销售 5 + 收款 2、N 内部交易 5、C 结算 3、R 客户退货 3、S 供应商退货 3、盘点 I 4、库存只读 3；另含 masterdata 22 与 platform 员工/岗位/公司。 |
+| OpenAPI | `pnpm openapi` 生成 `docs/api/openapi.yaml`：paths=52 / operations=82 / schemas=37。 |
+| 已登记 | A 采购 5、B 加工 5、E 销售 5 + 收款 2、N 内部交易 5、C 结算 3、R 客户退货 3、S 供应商退货 3、盘点 I 5（盘盈/盘亏各一条 create）、库存只读 3；另含 masterdata 22 与 platform 员工/岗位/公司。 |
 | 已挂载 | `MOUNTED_MODULE_KEYS`：platform / masterdata / inventory / sales / purchase / processing / internal-trade / settlement。 |
-| 决策 | 已到 D69：D63 客户账期、D64 加工厂报价、D65 员工岗位公司口径、D66 员工三项裁定、D67 库存四列+生成列、D68 N 单口径与状态、D69 C 单损失快照。**D70（#79 模块间通道）、D71（#84 盘点权限）待负责人拍板。** |
+| 决策 | 已到 D71：D63 客户账期、D64 加工厂报价、D65 员工岗位公司口径、D66 员工三项裁定、D67 库存四列+生成列、D68 N 单口径与状态、D69 C 单损失快照、**D70 模块间通道（platform 内部服务端口）**、**D71 盘点权限（盘盈 create / 盘亏 delete + 角色矩阵）**。下一号 D72。 |
 | 迁移 | 已到 `0017`：`0010` purchase_orders、`0011` supplier_returns、`0012` processing_orders、`0013` sales_orders、`0014` sales_receipts_returns、`0015` internal_trade_orders、`0016` settlement_orders、`0017` inventory_stocktakes（更早见 §2）。 |
 | 11-06/07 合并 | #82/#83 前端 M1-G（**已被 #90 撤回**）、#86 加工单修改不清空费用明细、#88 N 单不虚报在途量、#89 盘点审计记录保管人快照（#84 发现 2 已解）。 |
 | CI | 7 项，含 `route` / `fields`（PR 描述必带 `Blocked by:` 与 `Blocks:`）、`e2e` 与 `spec-drift`；契约和路由测试均不得绕过。 |
-| 盘点约束 | inventory 仅允许 `stocktake.create`、`stocktake.approve` 两个写动作（已实现），`inventory.test.ts` 使用显式白名单。 |
+| 盘点约束 | inventory 写动作 = `stocktake.increase.create`（scope `stocktake.create`）、`stocktake.decrease.create`（scope `stocktake.delete`）、`stocktake.approve`；`inventory.test.ts` 用显式白名单，新增盘点写端点必须同步白名单。 |
 
 ## 2. 已完成（不用重做）
 
@@ -55,8 +55,8 @@
 
 ## 4. 下一步（按谁能领）
 
-1. **负责人拍板 D70（#79 模块间调用通道）**——推荐 A：platform 暴露进程内服务端口（`stockFlowService` / `settlementDraftService`），调用方只拿接口不碰表，服务内部带服务身份 + 审计。拍板后 Lead 追加 `decisions.md` → 契约标记 → 落地实现。
-2. **负责人拍板 D71（#84 盘点权限口径）**——推荐把 `stocktake.create` 拆成 `create_decrease` / `create_increase`：理货只授 decrease，采购授两者，老板/经理持 approve；并决定盘点单是否新增 `custodian_id` 快照（推荐新增，走 `0018` 迁移）。
+1. **D70 落地（#79 模块间调用通道）**：D70 已拍板（platform 内部服务端口、同事务、各记审计）。代码尚未动，下一步按 `apps/api/src/platform/services/registry.ts` 建端口 → inventory 提供 `StockFlowPort`、settlement 提供 `SettlementDraftPort` → 接「E/N 完成生成 C 草稿」与「单据出入库流水」。
+2. **D71 代码已写、待 review 合并**：`stocktake.increase.create` / `stocktake.decrease.create` 两条端点 + 角色矩阵（经理补 approve、采购 read/create/delete、纯仓管 read/delete）+ 方向锁 422。合并后关 #84。
 3. **赖皓妍：先落 #3 成员档案 PR**，合并后再接 #4 登录页（接口已全部就绪，可真联调）。
 4. **Lead：报表与输出契约**。提成、利润报表、打印导出尚未登记，按「决策 → 契约 → 注册表 → `pnpm openapi` → spec-drift」推进。
 

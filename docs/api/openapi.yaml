@@ -3043,9 +3043,10 @@ paths:
         policy: allow
         reasonRequired: false
       x-mcp-tool: qingdan_stocktake_list_read
+  /api/v1/stocktakes/increases:
     post:
-      operationId: stocktake.create
-      summary: 发起盘点单（只传账面量/实盘量，差异量服务端算；无差异拒绝；盘盈盘亏走冲正流水 D47）
+      operationId: stocktake.increase.create
+      summary: 发起盘盈单（实盘量 > 账面量；差异量服务端算；盘盈走冲正流水 D47；权限 stocktake.create，D71）
       tags:
         - stocktake
       security:
@@ -3073,7 +3074,71 @@ paths:
       x-ai-policy:
         policy: forbid
         reasonRequired: false
-      x-mcp-tool: qingdan_stocktake_create
+      x-mcp-tool: qingdan_stocktake_increase_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                companyId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                batchId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                bookQty:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                actualQty:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                remark:
+                  anyOf:
+                    - type: string
+                      maxLength: 200
+                    - type: "null"
+              required:
+                - companyId
+                - batchId
+                - bookQty
+                - actualQty
+              additionalProperties: false
+  /api/v1/stocktakes/decreases:
+    post:
+      operationId: stocktake.decrease.create
+      summary: 发起盘亏单（实盘量 < 账面量；只追加冲正流水、不物理删除 D47；权限 stocktake.delete = 仅删减，D71）
+      tags:
+        - stocktake
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "201":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stocktake"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: stocktake.delete
+      x-module: inventory
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: false
+      x-mcp-tool: qingdan_stocktake_decrease_create
       requestBody:
         required: true
         content:
