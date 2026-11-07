@@ -300,10 +300,21 @@ export async function confirmSettlementOrder(
   audit.companyId = state.companyId;
 
   const order = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    // D77 ③：确认时按归属人在本公司的配置解析比例；没配置记 0（不猜默认比例）。
+    const commissionRate =
+      state.commissionOwnerId === null
+        ? '0'
+        : ((await repo.resolveCommissionRate(
+            context,
+            state.companyId,
+            state.commissionOwnerId,
+          )) ?? '0');
     const confirmed = await repo.confirmSettlementOrder(
-      repoContext(tx, principal),
+      context,
       id,
       expectedVersion,
+      commissionRate,
     );
     if (!confirmed) {
       throw new AppError(
@@ -317,6 +328,7 @@ export async function confirmSettlementOrder(
       version: confirmed.version,
       relatedLossAmount: confirmed.relatedLossAmount,
       netProfit: confirmed.netProfit,
+      commissionOwnerId: confirmed.commissionOwnerId,
       commissionRateSnapshot: confirmed.commissionRateSnapshot,
       commissionAmount: confirmed.commissionAmount,
     };

@@ -17,6 +17,8 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  *   结算后退货的毛利 / 提成重算走 F4b 并留痕。
  * - **提成以 C 单为单位结算、不跨单归并**（D36）：`commissionRateSnapshot` 是**结算时快照**，
  *   之后改比例不影响本单（D5④「改比例不重算历史单」）；一期提成仅为报表数字（D11）。
+ * - **提成归属人**（D77 ②）：`commissionOwnerId` 是来源单负责人，由来源模块生成草稿时传入；
+ *   确认结算时按它在**本公司**解析比例（见 `commission-rates.ts`），无配置则比例记 0。
  * - **金额一律 decimal 字符串**（D54 `numeric(18,6)`），不用 `number`；
  *   `grossProfit` / `grossMarginRate` / `netProfit` 是**服务端计算值**，客户端不传。
  * - 写操作必记审计（D51）；普通读不记（D54 ②）；**结算确认属审批动作**，
@@ -25,8 +27,8 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * 本批明确不做（写进契约，防止后续顺手加端点）：
  * - **不做 create**：C 单草稿由 E/N 单「已完成」时系统内部自动生成（D19 / D29）；
  * - **不做取消 / 冲正**：结算后不可冲正，错账走 R 退货（D2③）；
- * - **不做提成规则配置端点与利润报表端点**：提成规则与报表属后续批次
- *   （利润报表是 `profit_report` 域，D43）；
+ * - **不做提成规则配置端点与利润报表端点**：提成规则见 `commission-rates.ts`（D77，
+ *   已从「后续批次」提前到本批）；利润报表是 `profit_report` 域（D43），仍未做；
  * - **不做部分结算 / 多次结算**（D19）；
  * - **不做 R 退货触发的毛利 / 提成重算端点**：F4b 重算在退货批次落地（D30 / D40）。
  */
@@ -97,6 +99,11 @@ export const SettlementOrderSchema = z.object({
   commissionRateSnapshot: NonNegativeDecimal,
   /** 提成金额：负毛利记 0（D5④），一期仅为报表数字（D11）。 */
   commissionAmount: NonNegativeDecimal,
+  /**
+   * 提成归属人：来源单负责人（D77 ②）。草稿生成时写入；确认结算时按它在**本公司**
+   * `effectiveFrom <= 结算日` 的最新配置解析比例。历史草稿可能为 null（比例记 0）。
+   */
+  commissionOwnerId: z.string().uuid().nullable(),
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
   version: z.number().int(),
   createdAt: z.string().datetime(),

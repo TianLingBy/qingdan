@@ -194,6 +194,19 @@ describe('settlement C 结算单 HTTP（PGlite + seed 演示租户）', () => {
       orderNo: 'C-0001-20261105-0301',
       sourceDocId: '01900000-0000-7000-8000-000000009401',
     });
+    // D77 ③：确认时按归属人在本公司的配置解析比例，这里给老板配 5%。
+    await test.database.query(
+      `UPDATE settlement_order SET commission_owner_id = $1::uuid
+        WHERE id = $2::uuid`,
+      [DEMO_IDS.ownerEmployeeId, id],
+    );
+    await test.database.query(
+      `INSERT INTO commission_rate
+         (id, tenant_id, company_id, employee_id, rate, effective_from, created_by)
+       VALUES ('01900000-0000-7000-8000-000000009501', $1, $2::uuid, $3::uuid,
+               '0.05', CURRENT_DATE, $3::uuid)`,
+      [DEMO_IDS.tenantId, DEMO_IDS.companyId, DEMO_IDS.ownerEmployeeId],
+    );
     const url = `/api/v1/settlement-orders/${id}/confirm`;
 
     const missingIfMatch = await app.inject({

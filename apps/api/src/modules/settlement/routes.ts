@@ -12,6 +12,11 @@ import {
   getSettlementOrder,
   listSettlementOrders,
 } from './usecases/settlement-orders.js';
+import {
+  createCommissionRate,
+  deleteCommissionRate,
+  listCommissionRates,
+} from './usecases/commission-rates.js';
 
 /**
  * settlement 模块骨架（契约第一批 §3.4 C 结算单首批 3 条）。
@@ -30,6 +35,8 @@ import {
 
 const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'settlement.order.confirm': 'settlement_order',
+  'commission.rate.create': 'commission_rate',
+  'commission.rate.delete': 'commission_rate',
 };
 
 /** 无数据库时保持模块骨架语义：501 + operationId。 */
@@ -80,6 +87,39 @@ export function registerSettlementRoutes(app: FastifyInstance): void {
     }) => {
       assertDatabaseConfigured(instance, route);
       return await confirmSettlementOrder({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+    'commission.rate.list.read': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listCommissionRates({
+        database: instance.database,
+        request,
+      });
+    },
+    'commission.rate.create': async ({
+      app: instance,
+      request,
+      reply,
+      route,
+    }) => {
+      assertDatabaseConfigured(instance, route);
+      return await createCommissionRate({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+    'commission.rate.delete': async ({
+      app: instance,
+      request,
+      reply,
+      route,
+    }) => {
+      assertDatabaseConfigured(instance, route);
+      return await deleteCommissionRate({
         database: instance.database,
         request,
         reply,

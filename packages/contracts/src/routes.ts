@@ -22,6 +22,7 @@ import { SUPPLIER_RETURN_ROUTES } from './supplier-returns.js';
 import { PROCESSING_ORDER_ROUTES } from './processing-orders.js';
 import { INTERNAL_TRADE_ORDER_ROUTES } from './internal-trade-orders.js';
 import { SETTLEMENT_ORDER_ROUTES } from './settlement-orders.js';
+import { COMMISSION_RATE_ROUTES } from './commission-rates.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -240,6 +241,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...INTERNAL_TRADE_ORDER_ROUTES,
   // —— settlement 模块：C 结算单首批 3 条（list/detail/confirm，契约第一批 §3.4）——
   ...SETTLEMENT_ORDER_ROUTES,
+  // —— settlement 模块：提成比例配置 3 条（list/create/delete，D77）——
+  ...COMMISSION_RATE_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;

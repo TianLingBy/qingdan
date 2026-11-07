@@ -37,12 +37,13 @@
 
 ## 当前状态
 
-C 单 3 端点已实现（2026-11-05）；本模块端点 0 个 501
+C 单 3 端点 + 提成比例配置 3 端点已实现（2026-11-07）；本模块端点 0 个 501
 
 ## 已完成
 
 - 模块边界与功能域映射已登记。
 - **2026-11-05 C 单 3 端点实现（PR #77）**：`apps/api/migrations/0016_settlement_orders.sql`（来源单唯一约束 + 金额约束 + ENABLE/FORCE RLS，禁删授权）+ `modules/settlement/{repo.ts,usecases/settlement-orders.ts,routes.ts}`；list/detail/confirm 接 HTTP；confirm 需 `settlement.approve`、AI 禁止审批（D52.1，必须带 reason）、成功后冻结 `related_loss_amount_snapshot`（**D69 落地**）；一期一单一次结算（D19）。**未做**：E/N 完成态自动生成 C 单草稿（无跨模块读取通道，`TODO(D19)` 留在迁移与用例里）。测试 +4（apps/api 41 文件 295 例），tsc 0，全量门禁 ALL PASSED。
+- **2026-11-07 提成比例配置 + 确认时算提成（D77，Issue #96）**：`apps/api/migrations/0018_settlement_commission.sql`（`commission_rate` 表：租户+公司+员工+生效日唯一、rate CHECK 0..1、RLS；`settlement_order.commission_owner_id` 可空列）+ `packages/contracts/src/commission-rates.ts`（3 端点：list / create / delete）+ `modules/settlement/{repo.ts,usecases/commission-rates.ts,routes.ts}`；确认结算时按归属人在本公司的**最新生效比例**解析（无配置记 0、负毛利记 0）并同事务快照，改配置不影响已结算单。E 单完成时把来源单负责人写进 `commission_owner_id`（D72 ④ 的提成占位由本项收口）；`SettlementDraftPort` 命令新增 `commissionOwnerId`。测试：契约 253 例（+13）、api 314 例（+4，含配置 CRUD / 权限与公司隔离 / 算提成 / 负毛利与无配置）；`pnpm openapi` → paths 55 / operations 86 / schemas 38。
 
 ## 进行中
 
@@ -57,6 +58,7 @@ C 单 3 端点已实现（2026-11-05）；本模块端点 0 个 501
 
 - 拍板四个开放项 → 追加 decisions.md。
 - 等 sales 的「E 单完成」事件与 processing 的损失记录就绪后开工。
+- 提成「按岗」配置（D5④ 另一半）待 platform 岗位解析端口落地；利润报表（#97）待口径（D26/D43）。
 
 ## 已知问题 / 坑
 
