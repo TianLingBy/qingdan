@@ -75,9 +75,23 @@ export interface SettlementDraftPort {
   createDraft(tx: SqlClient, command: SettlementDraftCommand): Promise<SettlementDraftReceipt>;
 }
 
+/** 员工归属查询（D70 / D80）：调用方不直读 platform 的 `employee_company_position`。 */
+export interface EmployeeMembershipQuery {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly employeeId: string;
+}
+
+/** 员工目录端口：由 platform 实现（员工表归 platform）。 */
+export interface EmployeeDirectoryPort {
+  /** 该员工在指定公司是否有岗位记录（`employee_company_position` 存在即算，D65）。 */
+  belongsToCompany(tx: SqlClient, query: EmployeeMembershipQuery): Promise<boolean>;
+}
+
 export interface ServiceRegistry {
   readonly stockFlow?: StockFlowPort;
   readonly settlementDraft?: SettlementDraftPort;
+  readonly employeeDirectory?: EmployeeDirectoryPort;
 }
 
 let registry: ServiceRegistry = {};
@@ -108,4 +122,13 @@ export function settlementDraftPort(): SettlementDraftPort {
     });
   }
   return registry.settlementDraft;
+}
+
+export function employeeDirectoryPort(): EmployeeDirectoryPort {
+  if (!registry.employeeDirectory) {
+    throw new AppError('NOT_IMPLEMENTED', 'platform 未注册 EmployeeDirectoryPort（D70 / D80）', {
+      port: 'EmployeeDirectoryPort',
+    });
+  }
+  return registry.employeeDirectory;
 }
