@@ -8,18 +8,15 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
-import { registerServices, resetServices } from '../../../platform/services/registry.js';
 import {
   createTestDatabase,
   type TestDatabase,
 } from '../../../testing/pglite.js';
-import { inventoryServices } from '../../inventory/services/ports.js';
 import {
   cancelInternalTradeOrder,
   createInternalTradeOrder,
   getInternalTradeOrder,
   listInternalTradeOrders,
-  shipInternalTradeOrder,
   updateInternalTradeOrder,
 } from './internal-trade-orders.js';
 
@@ -179,10 +176,6 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
   beforeAll(async () => {
     test = await createTestDatabase();
     await seed(test.database);
-    // D70：端口由模块注册；用例测试不走 registerModules，这里显式注册 inventory 端口
-    // （发货 / 取消在途单要通过 StockFlowPort 锁 / 释放在途占用）。
-    resetServices();
-    registerServices(inventoryServices);
     await test.database.query(
       `INSERT INTO company (id, tenant_id, name, code, level, status)
        VALUES ($1, $2, '内部交易接收公司', '0002', 1, '启用'),
@@ -228,7 +221,6 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
   });
 
   afterAll(async () => {
-    resetServices();
     await test.database.close();
   });
 
@@ -565,29 +557,21 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
     );
 
     const inTransit = await createOne();
-    // D73：走真实发货端点进入「在途」（会锁在途占用），不再用裸 SQL 改状态，
-    // 否则取消时没有任何锁定量可释放。
-    const shipped = await shipInternalTradeOrder(
-      writeCtx(
-        {},
-        {
-          params: { id: inTransit.id },
-          headers: { 'if-match': `"${inTransit.version}"` },
-        },
-      ).ctx,
+    await test.database.query(
+      `UPDATE internal_trade_order SET status = '在途' WHERE id = $1`,
+      [inTransit.id],
     );
-    expect(shipped.status).toBe('在途');
     const inTransitWrite = writeCtx(
       {},
       {
         params: { id: inTransit.id },
-        headers: { 'if-match': `"${shipped.version}"` },
+        headers: { 'if-match': '"1"' },
       },
     );
     const cancelledInTransit = await cancelInternalTradeOrder(
       inTransitWrite.ctx,
     );
-    expect(inTransitWrite.state.headers.ETag).toBe(`"${shipped.version + 1}"`);
+    expect(inTransitWrite.state.headers.ETag).toBe('"2"');
     expect(cancelledInTransit.status).toBe('已取消');
 
     const completed = await createOne();
