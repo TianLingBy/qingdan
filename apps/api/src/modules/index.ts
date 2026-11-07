@@ -1,13 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppConfig } from '../platform/config.js';
+import { registerServices, resetServices } from '../platform/services/registry.js';
 import { registerInternalTradeRoutes } from './internal-trade/routes.js';
 import { registerInventoryRoutes } from './inventory/routes.js';
+import { inventoryServices } from './inventory/services/ports.js';
 import { registerMasterdataRoutes } from './masterdata/routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
 import { registerProcessingRoutes } from './processing/routes.js';
 import { registerPurchaseRoutes } from './purchase/routes.js';
 import { registerSalesRoutes } from './sales/routes.js';
 import { registerSettlementRoutes } from './settlement/routes.js';
+import { settlementServices } from './settlement/services/drafts.js';
 
 /**
  * 业务模块挂载登记（D62 / Issue #15）。
@@ -35,6 +38,11 @@ export interface RegisterModulesOptions {
 
 /** 依次注册已接线模块；顺序与 `MOUNTED_MODULE_KEYS` 一致。 */
 export function registerModules(app: FastifyInstance, options: RegisterModulesOptions): void {
+  // D70：模块间调用通道——先清空（测试会重复建 app），再由各模块注册自己的端口实现。
+  resetServices();
+  registerServices(inventoryServices);
+  registerServices(settlementServices);
+
   registerPlatformRoutes(app, { version: options.version, config: options.config });
   registerMasterdataRoutes(app);
   registerInventoryRoutes(app);

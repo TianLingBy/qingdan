@@ -68,6 +68,13 @@
 
 ## 进行中
 
+- **D70 模块间调用通道（2026-11-07，Issue #79）**：pps/api/src/platform/services/registry.ts 提供纯 interface 端口注册表
+  （egisterServices / esetServices / stockFlowPort() / settlementDraftPort()），首批实现方为 inventory 与 settlement。
+  规则：调用方传当前事务，端口内不开事务、不按租户再包一层；各模块各记审计并带 sourceDocType/sourceDocId；
+  不设独立服务账号（权限按人类发起人 scope 判定）；oute-boundary.test.ts 新增静态断言，禁止业务模块跨模块 import 对方的 epo/schema。
+  **⚠ 偏离拍板原文一处**：拍板写的是 StockFlowPort.applyAdjustment 直接复用 inventory 的库存写服务，落到代码即
+  modules/inventory/services/ports.ts 委托 services/stock-flow.ts（工具名/参数与 pplyStockAdjustment 一致）；未新增库存写路径。
+
 - **M1 已完成的部分（2026-11-04）**：登录 / 登出 / me、API Token 建查撤、操作日志查询、员工个人级权限覆盖写入；认证内核与迁移 `0002_platform_m1.sql`。详见「已完成 · M1」。
 - **M1 剩余（下一段）**：CLI/MCP 端到端冒烟（登录 → 查看 → 一个写操作 → 审计落库，需真实 PostgreSQL 或 CI 的 postgres:18 job）；`apps/web` 登录页与 22 页壳接真实接口；开发者后台（`/api/v1/admin/**`，D54⑤）与运营后台手动计费（D1）尚未开工；单据框架 / 审批 / 待办属 platform 范围但排在 business 模块前面单独一段。
 
