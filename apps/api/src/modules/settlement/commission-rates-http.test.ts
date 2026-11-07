@@ -223,6 +223,16 @@ describe('commission 提成配置与确认算提成（PGlite + seed 演示租户
     expect(otherCompany.statusCode).toBe(403);
   });
 
+  it('D80：员工不属于所选公司时拒绝配置（422）', async () => {
+    const stranger = await createRate({
+      employeeId: '01900000-0000-7000-8000-000000009901',
+      effectiveFrom: '2026-02-01',
+      requestId: 'req-commission-stranger',
+    });
+    expect(stranger.statusCode).toBe(422);
+    expect(stranger.body).toMatchObject({ code: 'VALIDATION_FAILED' });
+  });
+
   it('确认结算：按配置比例快照并算提成，改配置不影响已结算单', async () => {
     const draftId = '01900000-0000-7000-8000-000000009611';
     await insertDraft({

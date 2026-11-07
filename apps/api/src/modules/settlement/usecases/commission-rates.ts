@@ -14,6 +14,7 @@ import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
+import { employeeDirectoryPort } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 
 /**
@@ -225,6 +226,20 @@ export async function createCommissionRate(
   );
 
   const created = await withAudit(database, audit, async (tx) => {
+    // D80：员工必须属于所选公司（走 platform 端口，不直读 employee_company_position）。
+    const belongs = await employeeDirectoryPort().belongsToCompany(tx, {
+      tenantId: principal.tenantId,
+      companyId: input.companyId,
+      employeeId: input.employeeId,
+    });
+    if (!belongs) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        '该员工不属于所选公司，不能配置提成比例（D80）',
+        { employeeId: input.employeeId, companyId: input.companyId },
+      );
+    }
+
     const result = await repo.createCommissionRate(
       repoContext(tx, principal),
       {
