@@ -64,6 +64,7 @@ async function main(): Promise<void> {
     const tenantB = randomUUID();
     const companyA = randomUUID();
     const productA = randomUUID();
+    const employeeA = randomUUID();
 
     await database.transaction(async (tx) => {
       await tx.query(
@@ -73,6 +74,11 @@ async function main(): Promise<void> {
       await tx.query(
         `INSERT INTO company (id, tenant_id, name, code, level, status) VALUES ($1, $2, 'L3 公司 A', '9001', 1, '启用')`,
         [companyA, tenantA],
+      );
+      await tx.query(
+        `INSERT INTO employee (id, tenant_id, employee_no, phone, name, status, is_owner)
+         VALUES ($1, $2, '900001', '90000000001', 'L3 仓管', '启用', false)`,
+        [employeeA, tenantA],
       );
       await tx.query(
         `INSERT INTO product (id, tenant_id, company_id, name, specification, unit, status) VALUES ($1, $2, $3, 'L3 商品', '标准', '个', '启用')`,
@@ -103,9 +109,9 @@ async function main(): Promise<void> {
     await check('批次行锁（FOR UPDATE 挡住第二个写者）', async () => {
       const batchId = randomUUID();
       await database.query(
-        `INSERT INTO inventory_batch (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost, inbound_qty)
-         VALUES ($1, $2, $3, $4, 'L3-LOCK-1', 5, 10)`,
-        [batchId, tenantA, companyA, productA],
+        `INSERT INTO inventory_batch (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost, inbound_qty, custodian_id)
+         VALUES ($1, $2, $3, $4, 'L3-LOCK-1', 5, 10, $5)`,
+        [batchId, tenantA, companyA, productA, employeeA],
       );
 
       let releaseHolder: () => void = () => undefined;
@@ -148,8 +154,8 @@ async function main(): Promise<void> {
     // --- 3. RLS：qingdan_app 只能看到 app.tenant_id 对应的租户 -----------------
     await check('RLS 跨租户不可见（qingdan_app + app.tenant_id）', async () => {
       await database.query(
-        `INSERT INTO inventory_batch (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost, inbound_qty)
-         VALUES ($1, $2, $3, $4, 'L3-RLS-1', 5, 5)`,
+        `INSERT INTO inventory_batch (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost, inbound_qty, custodian_id)
+         VALUES ($1, $2, $3, $4, 'L3-RLS-1', 5, 5, $5)`,
         [randomUUID(), tenantA, companyA, productA],
       );
 
@@ -188,9 +194,9 @@ async function main(): Promise<void> {
       const batchId = randomUUID();
       await database.query(
         `INSERT INTO inventory_batch
-           (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost, inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty)
-         VALUES ($1, $2, $3, $4, 'L3-GEN-1', 5, 10, 3, 2, 1)`,
-        [batchId, tenantA, companyA, productA],
+           (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost, inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty, custodian_id)
+         VALUES ($1, $2, $3, $4, 'L3-GEN-1', 5, 10, 3, 2, 1, $5)`,
+        [batchId, tenantA, companyA, productA, employeeA],
       );
       const row = await database.query<{ remaining_qty: string; available_qty: string }>(
         `SELECT remaining_qty::text AS remaining_qty, available_qty::text AS available_qty
