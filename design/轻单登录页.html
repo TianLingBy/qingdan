@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 QINGDAN · 登录</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background:
+      radial-gradient(900px 600px at 78% 18%, rgba(255,255,255,0.08), transparent 60%),
+      linear-gradient(135deg, #17181a 0%, #0b0b0c 55%, #131315 100%);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px; color: #171717;
+  }
+
+  /* ===== 应用窗口（desktop.png 样式） ===== */
+  .window {
+    position: relative;
+    width: min(1100px, 100%); height: min(680px, 100%);
+    background: #fff; border-radius: 10px; overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+    border: 1px solid rgba(255,255,255,.14);
+    display: flex; flex-direction: column;
+  }
+  .titlebar {
+    height: 38px; background: #141414; color: #d9d9d9;
+    display: flex; align-items: center; flex: none; user-select: none;
+  }
+  .titlebar .app { display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: 12.5px; }
+  .titlebar .app .logo {
+    width: 18px; height: 18px; border-radius: 5px; background: #fafafa; color: #0a0a0a;
+    font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center;
+  }
+  .titlebar .controls { margin-left: auto; display: flex; height: 100%; }
+  .titlebar .controls span {
+    width: 46px; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #c9c9c9; cursor: default; transition: background .12s;
+  }
+  .titlebar .controls span:hover { background: rgba(255,255,255,.08); }
+  .titlebar .controls span.close:hover { background: #c42b1c; color: #fff; }
+
+  .content { flex: 1; display: flex; min-height: 0; }
+
+  /* ===== 左侧品牌区（静态，黑白） ===== */
+  .brand {
+    width: 42%; flex: none; background: #0a0a0a; color: #fff;
+    display: flex; flex-direction: column; justify-content: space-between; padding: 44px 48px;
+  }
+  .brand .mark { display: flex; align-items: baseline; gap: 12px; }
+  .brand .mark .name { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+  .brand .mark .en { font-size: 12px; letter-spacing: .2em; color: #a3a3a3; }
+  .brand .statement h2 { font-size: 30px; line-height: 1.4; font-weight: 600; letter-spacing: -0.02em; }
+  .brand .statement p { margin-top: 16px; font-size: 14px; line-height: 1.7; color: #a3a3a3; max-width: 34em; }
+  .brand .foot { border-top: 1px solid #262626; padding-top: 16px; font-size: 12px; color: #a3a3a3; }
+
+  /* ===== 右侧表单区 ===== */
+  .form-side { flex: 1; display: flex; align-items: center; justify-content: center; padding: 32px; min-width: 0; }
+  .form-wrap { width: 100%; max-width: 360px; }
+
+  .form-wrap h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+  .form-wrap .sub { margin-top: 8px; font-size: 14px; color: #737373; }
+
+  .field { margin-top: 20px; }
+  .field:first-of-type { margin-top: 32px; }
+  .field label { display: block; font-size: 14px; font-weight: 500; color: #404040; }
+  .field input {
+    margin-top: 6px; width: 100%; height: 44px; border: 1px solid #d4d4d4; border-radius: 8px;
+    padding: 0 12px; font-size: 14px; color: #171717; background: #fff;
+    transition: border-color .15s, box-shadow .15s, transform .15s; outline: none;
+  }
+  .field input::placeholder { color: #737373; }
+  /* 聚焦呼吸：边框黑线明暗交替（阴影保持静态，不参与呼吸） */
+  @keyframes input-breath {
+    0%, 100% { border-color: #171717; }
+    50%      { border-color: #8a8a8a; }
+  }
+  .field input:focus {
+    border-color: #171717; transform: translateY(-3px);
+    box-shadow: 0 0 0 3px rgba(23,23,23,.10), 0 10px 20px rgba(0,0,0,.12);
+    animation: input-breath 2.4s ease-in-out infinite;
+  }
+  .field input.invalid { border-color: #171717; }
+  .field .error { margin-top: 6px; font-size: 12px; color: #dc2626; display: none; }
+  .field.has-error .error { display: block; }
+
+  /* ===== 按钮：悬浮上浮 + 按压回落 ===== */
+  .btn {
+    margin-top: 32px; width: 100%; height: 44px; border: 0; border-radius: 8px;
+    background: #0a0a0a; color: #fff; font-size: 14px; font-weight: 500; letter-spacing: .1em;
+    cursor: pointer; transition: transform .15s, background .15s, box-shadow .15s;
+  }
+  .btn:hover { background: #262626; transform: translateY(-2px); box-shadow: 0 10px 20px rgba(0,0,0,.18); }
+  .btn:active { transform: translateY(0); background: #171717; box-shadow: none; }
+  .btn:focus-visible { outline: 2px solid #0a0a0a; outline-offset: 2px; }
+
+  .hint { margin-top: 20px; font-size: 13px; color: #404040; display: none; }
+  .hint.show { display: block; }
+  .hint.ok { color: #16a34a; }
+
+  .footnote { margin-top: 28px; border-top: 1px solid #e5e5e5; padding-top: 16px; font-size: 12px; line-height: 1.6; color: #737373; }
+
+  /* ===== 首页视图（占满标题栏以下空间） ===== */
+  .home { display: none; flex: 1; min-height: 0; flex-direction: column; }
+  .home.show { display: flex; }
+  .home-topbar {
+    flex: none; height: 52px; border-bottom: 1px solid #e5e5e5;
+    display: flex; align-items: center; padding: 0 24px;
+  }
+  .home-topbar .brand-mini { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; }
+  .home-topbar .brand-mini .logo {
+    width: 22px; height: 22px; border-radius: 6px; background: #0a0a0a; color: #fff;
+    font-size: 12px; display: flex; align-items: center; justify-content: center;
+  }
+  .home-topbar .user {
+    margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 13px; color: #404040;
+  }
+  .home-topbar .user .avatar {
+    width: 28px; height: 28px; border-radius: 50%; background: #0a0a0a; color: #fff;
+    font-size: 12px; display: flex; align-items: center; justify-content: center;
+  }
+  .home-topbar .user .logout {
+    border: 1px solid #d4d4d4; background: #fff; border-radius: 6px; padding: 5px 14px;
+    font-size: 13px; color: #171717; cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  .home-topbar .user .logout:hover { background: #f5f5f5; border-color: #a3a3a3; }
+
+  .home-main { flex: 1; padding: 32px 24px; overflow: auto; background: #fafafa; }
+  .home-main .inner { max-width: 880px; margin: 0 auto; }
+  .home-main h2 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+  .home-main .welcome { margin-top: 8px; font-size: 14px; color: #737373; }
+  .cards { margin-top: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card {
+    background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 20px;
+    transition: box-shadow .15s, transform .15s;
+  }
+  .card:hover { box-shadow: 0 8px 20px rgba(0,0,0,.08); transform: translateY(-2px); }
+  .card .k { font-size: 12px; color: #737373; }
+  .card .v { margin-top: 8px; font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+  .card .t { margin-top: 6px; font-size: 12px; color: #a3a3a3; }
+  .home-note {
+    margin-top: 24px; border-top: 1px solid #e5e5e5; padding-top: 16px;
+    font-size: 12px; line-height: 1.6; color: #737373;
+  }
+
+  /* ===== Toast：登录成功，顶部居中，自动消失 ===== */
+  .toast {
+    position: absolute; top: 52px; left: 50%; z-index: 50;
+    transform: translate(-50%, -16px); opacity: 0; pointer-events: none;
+    background: #0a0a0a; color: #fff; font-size: 13.5px; letter-spacing: .02em;
+    padding: 10px 20px; border-radius: 8px;
+    box-shadow: 0 12px 28px rgba(0,0,0,.35);
+    display: flex; align-items: center; gap: 8px;
+    transition: transform .25s ease, opacity .25s ease;
+  }
+  .toast.show { transform: translate(-50%, 0); opacity: 1; }
+  .toast .dot {
+    width: 16px; height: 16px; border-radius: 50%; background: #fff; color: #0a0a0a;
+    font-size: 10px; display: flex; align-items: center; justify-content: center; flex: none;
+  }
+
+  @media (max-width: 768px) {
+    .brand { display: none; }
+    .window { height: 100%; }
+    .cards { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="window">
+    <!-- Toast：登录成功 -->
+    <div class="toast" id="toast" role="status"><span class="dot">&#10003;</span><span id="toast-text">登录成功</span></div>
+
+    <div class="titlebar">
+      <div class="app"><span class="logo">单</span>轻单 QINGDAN</div>
+      <div class="controls"><span>&#x2500;</span><span>&#x25A1;</span><span class="close">&#x2715;</span></div>
+    </div>
+
+    <div class="content">
+      <div class="brand">
+        <div class="mark"><span class="name">轻单</span><span class="en">QINGDAN</span></div>
+        <div class="statement">
+          <h2>每一笔内部交易，<br>都算得清成本。</h2>
+          <p>采购、加工、销售、内部交易与结算，一套口径跑通；权限服务端判定，数据只给该看的人。</p>
+        </div>
+        <div class="foot">集团内部交易与成本归集 · 内部系统</div>
+      </div>
+
+      <div class="form-side">
+        <!-- 登录表单视图 -->
+        <div class="form-wrap" id="login-view">
+          <h1>登录</h1>
+          <p class="sub">使用管理员分配的手机号登录</p>
+
+          <form id="login-form" novalidate>
+            <div class="field" id="field-phone">
+              <label for="phone">手机号</label>
+              <input id="phone" name="phone" type="tel" inputmode="numeric" autocomplete="tel"
+                     placeholder="请输入手机号" maxlength="11">
+              <p class="error" id="phone-error">请输入手机号</p>
+            </div>
+
+            <div class="field" id="field-code">
+              <label for="code">验证码</label>
+              <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code"
+                     placeholder="请输入验证码" maxlength="16">
+              <p class="error" id="code-error">请输入验证码</p>
+            </div>
+
+            <button type="submit" class="btn">登 录</button>
+            <p class="hint" id="hint"></p>
+          </form>
+
+          <p class="footnote">企业注册与入企暂未开放（一期），账号由管理员统一创建。<br>演示测试账号：12345678900 / 1234</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 首页视图（占满标题栏以下整个窗口） -->
+    <div class="home" id="home-view">
+      <div class="home-topbar">
+        <div class="brand-mini"><span class="logo">单</span>轻单 QINGDAN</div>
+        <div class="user">
+          <span class="avatar">演</span>
+          <span>演示用户 · 12345678900</span>
+          <button type="button" class="logout" id="logout-btn">退 出</button>
+        </div>
+      </div>
+      <div class="home-main">
+        <div class="inner">
+          <h2>首页</h2>
+          <p class="welcome">欢迎回来，演示用户。这是首页占位——业务页面将随各模块逐页实装。</p>
+          <div class="cards">
+            <div class="card"><div class="k">本月采购单</div><div class="v">—</div><div class="t">待采购模块接入</div></div>
+            <div class="card"><div class="k">在途内部交易</div><div class="v">—</div><div class="t">待内部交易模块接入</div></div>
+            <div class="card"><div class="k">待办审批</div><div class="v">—</div><div class="t">待审批模块接入</div></div>
+          </div>
+          <p class="home-note">一期口径：账号由管理员统一创建；此处数据为占位，接口接线后替换为真实数据。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  var PHONE_LENGTH = 11;
+  var DEMO_PHONE = '12345678900';
+  var DEMO_CODE = '1234';
+
+  var form = document.getElementById('login-form');
+  var phoneInput = document.getElementById('phone');
+  var codeInput = document.getElementById('code');
+  var fieldPhone = document.getElementById('field-phone');
+  var fieldCode = document.getElementById('field-code');
+  var phoneError = document.getElementById('phone-error');
+  var codeError = document.getElementById('code-error');
+  var hint = document.getElementById('hint');
+  var loginView = document.getElementById('login-view');
+  var homeView = document.getElementById('home-view');
+  var contentArea = document.querySelector('.content');
+  var toast = document.getElementById('toast');
+  var toastTimer = null;
+
+  function setError(field, input, errorEl, message) {
+    if (message) {
+      field.classList.add('has-error');
+      input.classList.add('invalid');
+      errorEl.textContent = message;
+    } else {
+      field.classList.remove('has-error');
+      input.classList.remove('invalid');
+    }
+  }
+
+  function validatePhone() {
+    var v = phoneInput.value.trim();
+    if (v.length === 0) return '请输入手机号';
+    if (!/^\d{11}$/.test(v)) return '手机号需为 ' + PHONE_LENGTH + ' 位数字';
+    return null;
+  }
+
+  function validateCode() {
+    var v = codeInput.value;
+    if (v.length === 0) return '请输入验证码';
+    if (!/^\d{4}$/.test(v)) return '验证码需为 4 位数字';
+    return null;
+  }
+
+  // 输入即清除红色错误
+  phoneInput.addEventListener('input', function () { setError(fieldPhone, phoneInput, phoneError, null); });
+  codeInput.addEventListener('input', function () { setError(fieldCode, codeInput, codeError, null); });
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var phoneMsg = validatePhone();
+    var codeMsg = validateCode();
+    setError(fieldPhone, phoneInput, phoneError, phoneMsg);
+    setError(fieldCode, codeInput, codeError, codeMsg);
+
+    if (phoneMsg || codeMsg) { hint.className = 'hint'; return; }
+
+    var phone = phoneInput.value.trim();
+    var code = codeInput.value.trim();
+
+    if (phone === DEMO_PHONE && code === DEMO_CODE) {
+      // 测试账号：登录成功 → 进入首页 + 顶部 toast 提示
+      hint.className = 'hint';
+      loginView.style.display = 'none';
+      contentArea.style.display = 'none';
+      homeView.classList.add('show');
+      showToast('登录成功');
+      return;
+    }
+    // 格式正确但验证码不对：红字提示在验证码输入框下方
+    setError(fieldCode, codeInput, codeError, '验证码错误（演示测试码：' + DEMO_CODE + '）');
+    hint.className = 'hint';
+  });
+
+  // Toast：显示 2.4 秒后自动消失；重复触发时先清掉上一个计时器
+  function showToast(text) {
+    document.getElementById('toast-text').textContent = text;
+    toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2400);
+  }
+
+  document.getElementById('logout-btn').addEventListener('click', function () {
+    phoneInput.value = ''; codeInput.value = '';
+    setError(fieldPhone, phoneInput, phoneError, null);
+    setError(fieldCode, codeInput, codeError, null);
+    hint.className = 'hint';
+    homeView.classList.remove('show');
+    contentArea.style.display = '';
+    loginView.style.display = '';
+    phoneInput.focus();
+  });
+</script>
+</body>
+</html>
