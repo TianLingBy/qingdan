@@ -15,7 +15,7 @@ describe('取号服务（D16 / D48）', () => {
   beforeAll(async () => {
     test = await createTestDatabase();
     await test.database.transaction(async (tx) => {
-      await tx.query(`INSERT INTO tenant (id, name, plan, status) VALUES ($1, '取号租户', '基础版', '启用')`, [TENANT]);
+      await tx.query(`INSERT INTO tenant (id, name, status) VALUES ($1, '取号租户', '启用')`, [TENANT]);
       await tx.query(
         `INSERT INTO company (id, tenant_id, name, code) VALUES ($1, $2, '取号公司', '0001')`,
         [COMPANY, TENANT],

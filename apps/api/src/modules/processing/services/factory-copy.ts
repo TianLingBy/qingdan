@@ -1,4 +1,4 @@
-import type { ProcessingOrder } from '@qingdan/contracts';
+import type { ProcessingMaterialInput, ProcessingOrder } from '@qingdan/contracts';
 
 /**
  * 加工单发厂联 HTML（prints.ts 契约）。
@@ -24,10 +24,12 @@ function text(value: string | null): string {
   return value === null ? NO_VALUE : escapeHtml(value);
 }
 
-/** 材料批次按契约顺序逗号分隔；空数组（契约不允许）也回落「—」。 */
-function batchList(batchIds: readonly string[]): string {
-  if (batchIds.length === 0) return NO_VALUE;
-  return batchIds.map((batchId) => escapeHtml(batchId)).join(', ');
+/** 材料批次按契约顺序逗号分隔，每行渲染「批号 × 数量」；空数组（契约不允许）也回落「—」。 */
+function batchList(materialBatchIds: readonly ProcessingMaterialInput[]): string {
+  if (materialBatchIds.length === 0) return NO_VALUE;
+  return materialBatchIds
+    .map((row) => `${escapeHtml(row.batchId)} × ${escapeHtml(row.qty)}`)
+    .join(', ');
 }
 
 /** 日期取 ISO 的日期段；发厂联不展示秒级时间。 */

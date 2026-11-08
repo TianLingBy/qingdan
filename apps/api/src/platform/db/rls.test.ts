@@ -33,8 +33,8 @@ describe('RLS 租户隔离（PGlite + 普通角色）', () => {
   beforeAll(async () => {
     test = await createTestDatabase();
     await test.database.transaction(async (tx) => {
-      await tx.query(`INSERT INTO tenant (id, name, plan, status) VALUES ($1, '租户A', '基础版', '启用')`, [TENANT_A]);
-      await tx.query(`INSERT INTO tenant (id, name, plan, status) VALUES ($1, '租户B', '基础版', '启用')`, [TENANT_B]);
+      await tx.query(`INSERT INTO tenant (id, name, status) VALUES ($1, '租户A', '启用')`, [TENANT_A]);
+      await tx.query(`INSERT INTO tenant (id, name, status) VALUES ($1, '租户B', '启用')`, [TENANT_B]);
       await tx.query(
         `INSERT INTO company (id, tenant_id, name, code) VALUES ($1, $2, '公司A', '0001')`,
         [COMPANY_A, TENANT_A],

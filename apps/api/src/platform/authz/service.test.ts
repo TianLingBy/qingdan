@@ -19,8 +19,8 @@ describe('权限判定（D15 / D50 / D52.1，三层合并 + token 交集）', ()
   beforeAll(async () => {
     test = await createTestDatabase();
     await test.database.transaction(async (tx) => {
-      await tx.query(`INSERT INTO tenant (id, name, plan, status) VALUES ($1, '权限租户', '基础版', '启用')`, [TENANT]);
-      await tx.query(`INSERT INTO tenant (id, name, plan, status) VALUES ($1, '别的租户', '基础版', '启用')`, [TENANT_OTHER]);
+      await tx.query(`INSERT INTO tenant (id, name, status) VALUES ($1, '权限租户', '启用')`, [TENANT]);
+      await tx.query(`INSERT INTO tenant (id, name, status) VALUES ($1, '别的租户', '启用')`, [TENANT_OTHER]);
       await tx.query(`INSERT INTO company (id, tenant_id, name, code) VALUES ($1, $2, '公司A', '0001')`, [COMPANY_A, TENANT]);
       await tx.query(`INSERT INTO company (id, tenant_id, name, code) VALUES ($1, $2, '公司B', '0002')`, [COMPANY_B, TENANT]);
 

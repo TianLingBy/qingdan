@@ -2,6 +2,7 @@ import {
   AppError,
   encodeCursor,
   type CursorPayload,
+  type ProcessingMaterialInput,
   type ProcessingOrder,
   type ProcessingOrderCreateInput,
   type ProcessingOrderFee,
@@ -191,12 +192,16 @@ async function queryHeader(
 async function queryMaterialBatchIds(
   ctx: ProcessingOrderRepoContext,
   orderIds: readonly string[],
-): Promise<Map<string, string[]>> {
-  const grouped = new Map<string, string[]>();
+): Promise<Map<string, ProcessingMaterialInput[]>> {
+  const grouped = new Map<string, ProcessingMaterialInput[]>();
   if (orderIds.length === 0) return grouped;
 
-  const result = await ctx.tx.query<{ order_id: string; batch_id: string }>(
-    `SELECT order_id, batch_id
+  const result = await ctx.tx.query<{
+    order_id: string;
+    batch_id: string;
+    qty: string | number;
+  }>(
+    `SELECT order_id, batch_id, qty
        FROM processing_order_material_batch
       WHERE tenant_id = $1
         AND order_id = ANY($2::uuid[])
@@ -204,9 +209,9 @@ async function queryMaterialBatchIds(
     [ctx.tenantId, [...orderIds]],
   );
   for (const row of result.rows) {
-    const ids = grouped.get(row.order_id) ?? [];
-    ids.push(row.batch_id);
-    grouped.set(row.order_id, ids);
+    const rows = grouped.get(row.order_id) ?? [];
+    rows.push({ batchId: row.batch_id, qty: decimal(row.qty) });
+    grouped.set(row.order_id, rows);
   }
   return grouped;
 }
@@ -409,10 +414,10 @@ async function assertHandlerInTenant(
 /** 材料投入批次必须属于加工单公司（D22）；去重后一次查询。 */
 async function assertMaterialBatchesInCompany(
   ctx: ProcessingOrderRepoContext,
-  batchIds: readonly string[],
+  materialBatchIds: readonly ProcessingMaterialInput[],
   companyId: string,
 ): Promise<void> {
-  const unique = [...new Set(batchIds)];
+  const unique = [...new Set(materialBatchIds.map((row) => row.batchId))];
   const result = await ctx.tx.query<{ id: string }>(
     `SELECT id
        FROM inventory_batch
@@ -460,14 +465,22 @@ async function insertMaterialBatches(
   ctx: ProcessingOrderRepoContext,
   orderId: string,
   companyId: string,
-  batchIds: readonly string[],
+  materialBatchIds: readonly ProcessingMaterialInput[],
 ): Promise<void> {
-  for (const [index, batchId] of batchIds.entries()) {
+  for (const [index, material] of materialBatchIds.entries()) {
     await ctx.tx.query(
       `INSERT INTO processing_order_material_batch
-         (id, tenant_id, company_id, order_id, line_no, batch_id)
-       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::uuid)`,
-      [uuidv7(), ctx.tenantId, companyId, orderId, index + 1, batchId],
+         (id, tenant_id, company_id, order_id, line_no, batch_id, qty)
+       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::uuid, $7::amount)`,
+      [
+        uuidv7(),
+        ctx.tenantId,
+        companyId,
+        orderId,
+        index + 1,
+        material.batchId,
+        material.qty,
+      ],
     );
   }
 }

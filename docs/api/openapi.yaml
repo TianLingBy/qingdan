@@ -4787,9 +4787,19 @@ paths:
                 materialBatchIds:
                   type: array
                   items:
-                    type: string
-                    format: uuid
-                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                    type: object
+                    properties:
+                      batchId:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      qty:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                    required:
+                      - batchId
+                      - qty
+                    additionalProperties: false
                 inputQty:
                   type: string
                   pattern: ^\d{1,12}(\.\d{1,6})?$
@@ -4938,9 +4948,19 @@ paths:
                 materialBatchIds:
                   type: array
                   items:
-                    type: string
-                    format: uuid
-                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                    type: object
+                    properties:
+                      batchId:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      qty:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                    required:
+                      - batchId
+                      - qty
+                    additionalProperties: false
                 inputQty:
                   type: string
                   pattern: ^\d{1,12}(\.\d{1,6})?$
@@ -5022,6 +5042,122 @@ paths:
         reasonRequired: true
       x-mcp-tool: qingdan_processing_order_cancel
       x-requires-if-match: true
+  /api/v1/processing-orders/{id}/complete:
+    post:
+      operationId: processing.order.complete
+      summary: 完成加工单：确认损耗、扣材料、生成产出批次并锁价
+      tags:
+        - processing
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                  status:
+                    type: string
+                    const: 已完成
+                  lossQty:
+                    type: string
+                    pattern: ^\d{1,12}(\.\d{1,6})?$
+                  sellableQty:
+                    type: string
+                    pattern: ^\d{1,12}(\.\d{1,6})?$
+                  outputBatch:
+                    anyOf:
+                      - type: object
+                        properties:
+                          id:
+                            type: string
+                            format: uuid
+                            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                          batchNo:
+                            type: string
+                          qty:
+                            type: string
+                            pattern: ^\d{1,12}(\.\d{1,6})?$
+                          lockedUnitCost:
+                            type: string
+                            pattern: ^\d{1,12}(\.\d{1,6})?$
+                        required:
+                          - id
+                          - batchNo
+                          - qty
+                          - lockedUnitCost
+                        additionalProperties: false
+                      - type: "null"
+                  lossRecord:
+                    anyOf:
+                      - type: object
+                        properties:
+                          lossQty:
+                            type: string
+                            pattern: ^\d{1,12}(\.\d{1,6})?$
+                          description:
+                            type: string
+                        required:
+                          - lossQty
+                          - description
+                        additionalProperties: false
+                      - type: "null"
+                required:
+                  - id
+                  - status
+                  - lossQty
+                  - sellableQty
+                  - outputBatch
+                  - lossRecord
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processing.approve
+      x-module: processing
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: false
+      x-mcp-tool: qingdan_processing_order_complete
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lossQty:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                custodianId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                confirmFullLoss:
+                  type: boolean
+              required:
+                - lossQty
+              additionalProperties: false
   /api/v1/internal-trade-orders:
     get:
       operationId: internal_trade.order.list.read
@@ -8006,9 +8142,19 @@ components:
         materialBatchIds:
           type: array
           items:
-            type: string
-            format: uuid
-            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            type: object
+            properties:
+              batchId:
+                type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              qty:
+                type: string
+                pattern: ^\d{1,12}(\.\d{1,6})?$
+            required:
+              - batchId
+              - qty
+            additionalProperties: false
         auxMaterials:
           anyOf:
             - type: string
@@ -8122,9 +8268,19 @@ components:
         materialBatchIds:
           type: array
           items:
-            type: string
-            format: uuid
-            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            type: object
+            properties:
+              batchId:
+                type: string
+                format: uuid
+                pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+              qty:
+                type: string
+                pattern: ^\d{1,12}(\.\d{1,6})?$
+            required:
+              - batchId
+              - qty
+            additionalProperties: false
         auxMaterials:
           anyOf:
             - type: string
