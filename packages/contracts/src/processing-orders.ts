@@ -148,6 +148,8 @@ export const ProcessingOrderSchema = z.object({
   processorId: z.string(),
   /** 加工厂名只读回显，避免列表二次查询。 */
   processorName: z.string(),
+  /** 成品商品：开单时由契约保证必填；历史单为 null（#150 决策 A）。 */
+  outputProductId: z.string().nullable(),
   status: ProcessingOrderStatusSchema,
   /** 经手人。 */
   handlerId: z.string(),
@@ -261,6 +263,8 @@ export const ProcessingOrderCreateInputSchema = z
   .object({
     companyId: z.string().uuid(),
     processorId: z.string().uuid(),
+    /** 成品商品：开单必填，完成时据此确定产出批次的商品（#150 决策 A）。 */
+    outputProductId: z.string().uuid(),
     handlerId: z.string().uuid(),
     materialBatchIds: ProcessingMaterialBatchIdsSchema,
     inputQty: NonNegativeDecimal,
@@ -287,6 +291,8 @@ export type ProcessingOrderCreateInput = z.infer<typeof ProcessingOrderCreateInp
 export const ProcessingOrderUpdateInputSchema = z
   .object({
     processorId: z.string().uuid().optional(),
+    /** 成品商品：可选修改（#150 决策 A）。 */
+    outputProductId: z.string().uuid().optional(),
     handlerId: z.string().uuid().optional(),
     materialBatchIds: ProcessingMaterialBatchIdsSchema.optional(),
     inputQty: NonNegativeDecimal.optional(),
