@@ -19,8 +19,13 @@ import type { SqlClient } from '../../platform/db/client.js';
  * - confirm 使用 version + status 条件原子更新，保证一期一单一次结算；
  * - 提成比例在确认同一原子 UPDATE 内落快照与金额（D77 ③），并发下不会读到配置变化。
  *
- * TODO(D19)：E / N 完成态自动生成草稿需要跨模块公开用例通道；本 repo 不直读
- * E / N 表，也不在 settlement 模块内伪造来源单状态。
+ * D19 现状：E 单完成态已由 sales 模块经 D70 跨模块公开用例通道
+ * （platform/services/registry.ts 的 settlementDraftPort → 本模块 services/drafts.ts）
+ * 自动生成 C 单草稿；N 单（内部交易）完成态尚未接入，属于 internal-trade 模块的接线工作。
+ * 本 repo 仍不直读 E / N 表，也不在 settlement 模块内伪造来源单状态。
+ *
+ * 注：migrations/0016_settlement_orders.sql 里「草稿生成通道尚未接入」的注释已过期，
+ * 但迁移文件受 checksum 保护（改历史迁移会让已部署库启动失败），故不在该文件内修改。
  */
 
 export interface SettlementOrderRepoContext {
