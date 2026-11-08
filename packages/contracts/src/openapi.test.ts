@@ -52,7 +52,7 @@ describe('OpenAPI 3.1 发射', () => {
     expect(doc.components.securitySchemes.bearerAuth).toMatchObject({ type: 'http', scheme: 'bearer' });
     const tags = (doc.tags as Array<{ name: string }>).map((t) => t.name);
     expect(tags).toEqual(DOMAIN_KEYS);
-    expect(tags).toHaveLength(22);
+    expect(tags).toHaveLength(23);
   });
 
   it('公开端点不要求认证', () => {

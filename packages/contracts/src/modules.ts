@@ -13,6 +13,7 @@ export const MODULES = {
   sales: '销售（E / N 单）',
   settlement: '结算（C 单）',
   'internal-trade': '内部交易（I / R / S 单）',
+  payment: '支付（商户配置 / 回调 / 对账）',
   test: '测试支撑（不承载业务口径）',
 } as const;
 

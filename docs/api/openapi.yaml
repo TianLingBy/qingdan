@@ -51,6 +51,8 @@ tags:
     description: 操作日志
   - name: api_integration
     description: API 与集成
+  - name: payment
+    description: 在线支付（客户扫码 / 回调）
 paths:
   /api/v1/health:
     get:
@@ -713,6 +715,7 @@ paths:
                           - profit_report
                           - audit
                           - api_integration
+                          - payment
                       actions:
                         minItems: 1
                         type: array
@@ -827,6 +830,7 @@ paths:
                           - profit_report
                           - audit
                           - api_integration
+                          - payment
                       actions:
                         minItems: 1
                         type: array
@@ -1367,6 +1371,7 @@ paths:
                           - profit_report
                           - audit
                           - api_integration
+                          - payment
                       action:
                         type: string
                         enum:
@@ -5827,6 +5832,58 @@ paths:
         policy: allow
         reasonRequired: false
       x-mcp-tool: qingdan_sales_order_export
+  /api/v1/payments/{channel}/callback:
+    post:
+      operationId: payment.callback.receive
+      summary: 第三方支付异步回调：验签→金额校验→幂等入账，匿名可达
+      tags:
+        - payment
+      security: []
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean
+                  duplicate:
+                    type: boolean
+                  receiptId:
+                    anyOf:
+                      - type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      - type: "null"
+                required:
+                  - received
+                  - duplicate
+                  - receiptId
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: payment.create
+      x-module: payment
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_payment_callback_receive
+      x-idempotent: true
 components:
   schemas:
     AuditLog:
@@ -6618,6 +6675,7 @@ components:
                   - profit_report
                   - audit
                   - api_integration
+                  - payment
               actions:
                 minItems: 1
                 type: array

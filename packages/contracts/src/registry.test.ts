@@ -38,8 +38,10 @@ describe('注册表自检', () => {
     }
   });
 
-  it('写操作必须记审计（D51）', () => {
-    for (const r of ROUTES.filter((x) => x.method !== 'GET')) {
+  it('写操作必须记审计（D51；匿名公开回调无本系统操作者，不记）', () => {
+    // payment.callback.receive 由第三方支付平台匿名投递（#101），没有本系统操作者，
+    // 故 audit.kind = none；其验签 / 幂等由 handler 负责。
+    for (const r of ROUTES.filter((x) => x.method !== 'GET' && !x.publicAccess)) {
       expect(r.audit.required, r.operationId).toBe(true);
       expect(r.audit.kind, r.operationId).toBe('write');
     }
