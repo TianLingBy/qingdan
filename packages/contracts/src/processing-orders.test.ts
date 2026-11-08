@@ -31,6 +31,7 @@ import {
 const BATCH_ID = '00000000-0000-4000-8000-000000000020';
 const BATCH_ID_2 = '00000000-0000-4000-8000-000000000021';
 const PROCESSOR_ID = '00000000-0000-4000-8000-000000000030';
+const OUTPUT_PRODUCT_ID = '01900000-0000-7000-8000-000000000001';
 const HANDLER_ID = '00000000-0000-4000-8000-000000000040';
 const COMPANY_ID = '00000000-0000-4000-8000-000000000050';
 const ORDER_ID = '00000000-0000-4000-8000-000000000060';
@@ -53,6 +54,7 @@ const ORDER = {
   orderNo: 'B-0001-20261105-0001',
   processorId: PROCESSOR_ID,
   processorName: '王五加工厂',
+  outputProductId: OUTPUT_PRODUCT_ID,
   status: '进行中',
   handlerId: HANDLER_ID,
   materialBatchIds: [MATERIAL],
@@ -83,6 +85,7 @@ const DETAIL = {
 const CREATE_INPUT = {
   companyId: COMPANY_ID,
   processorId: PROCESSOR_ID,
+  outputProductId: OUTPUT_PRODUCT_ID,
   handlerId: HANDLER_ID,
   materialBatchIds: [MATERIAL],
   inputQty: '100',
@@ -367,6 +370,7 @@ describe('加工单契约（processing）', () => {
         'inputQty',
         'lossQty',
         'materialBatchIds',
+        'outputProductId',
         'processorId',
       ].sort(),
     );

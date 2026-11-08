@@ -90,6 +90,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
         materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',
@@ -237,6 +238,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
         materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',
@@ -616,6 +618,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
         materialBatchIds: [{ batchId: BATCH_ID, qty: '10.000000' }],
         inputQty: '10',

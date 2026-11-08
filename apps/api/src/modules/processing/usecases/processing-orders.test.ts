@@ -154,6 +154,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       body: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
         materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',
@@ -297,6 +298,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
             materialBatchIds: [],
             inputQty: '1',
@@ -313,6 +315,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
             materialBatchIds: [{ batchId: BATCH_ID, qty: '5.000000' }],
             inputQty: '5',
@@ -332,6 +335,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: OTHER_COMPANY_ID,
             processorId: PROCESSOR_2_ID,
+            outputProductId: PRODUCT_2_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
             materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
@@ -348,6 +352,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_2_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
             materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
@@ -364,6 +369,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
             materialBatchIds: [
               { batchId: '01900000-0000-7000-8000-000000001123', qty: '1.000000' },
@@ -384,6 +390,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
             materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
@@ -400,6 +407,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
             materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
