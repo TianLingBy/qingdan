@@ -1,13 +1,29 @@
-import { Link, Outlet } from '@tanstack/react-router';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Link, Outlet, useNavigate } from '@tanstack/react-router';
 import { BROWSER_BASELINE_LABEL } from '../browser-baseline';
+import { authApi, authKeys } from '../pages/auth/auth-api';
 import { routesByDomain } from '../router/routes';
+import { clearSessionCache } from '../router/session-guard';
 
 /**
- * AppLayout：左侧按功能域分组的导航 + 顶栏。
- * 只是骨架：不做登录态、不做权限过滤（服务端判定，D15/D27；前端隐藏不算数）。
+ * AppLayout：左侧按功能域分组的导航 + 顶栏（当前登录人 / 退出）。
+ *
+ * 顶栏的姓名与「退出登录」来自 `GET /auth/me`；导航仍是全量 22 页，
+ * 入口显隐按 `me.scope` 做的前端过滤留到各业务页落地时统一处理（D15/D27：判定以后端为准）。
  */
 export function AppLayout() {
   const groups = routesByDomain();
+  const navigate = useNavigate();
+  const me = useQuery({ queryKey: authKeys.me, queryFn: () => authApi.me() });
+
+  const logout = useMutation({
+    mutationFn: () => authApi.logout(),
+    onSuccess: async () => {
+      // 先离开受保护页面再清缓存，避免清缓存瞬间用旧 access 去重取 /auth/me。
+      await navigate({ to: '/login' });
+      clearSessionCache();
+    },
+  });
 
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-900">
@@ -40,10 +56,37 @@ export function AppLayout() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-6">
-          <div className="text-sm text-slate-500">骨架阶段：仅页面壳，未接真实接口</div>
-          <div className="text-xs text-slate-400" title={BROWSER_BASELINE_LABEL}>
-            浏览器基线：{BROWSER_BASELINE_LABEL}
+        <header className="flex h-14 items-center justify-between gap-3 border-b border-slate-200 bg-white px-6">
+          <p className="min-w-0 truncate text-sm text-slate-600">
+            {me.data ? (
+              <>
+                你好，<span className="font-medium text-slate-900">{me.data.displayName}</span>
+                {me.data.companyIds.length > 0 && (
+                  <span className="ml-2 text-xs text-slate-400">
+                    可访问 {me.data.companyIds.length} 家公司
+                  </span>
+                )}
+              </>
+            ) : me.isError ? (
+              '登录信息读取失败'
+            ) : (
+              '正在确认登录状态…'
+            )}
+          </p>
+
+          <div className="flex shrink-0 items-center gap-3">
+            {logout.isError && <span className="text-xs text-red-600">退出失败，请重试</span>}
+            <span className="hidden text-xs text-slate-400 sm:inline" title={BROWSER_BASELINE_LABEL}>
+              浏览器基线：{BROWSER_BASELINE_LABEL}
+            </span>
+            <button
+              type="button"
+              onClick={() => logout.mutate()}
+              disabled={logout.isPending}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {logout.isPending ? '退出中…' : '退出登录'}
+            </button>
           </div>
         </header>
 

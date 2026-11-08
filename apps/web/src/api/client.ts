@@ -262,6 +262,9 @@ export class ApiClient {
         headers: finalHeaders,
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: combinedSignal,
+        // 会话走 HttpOnly Cookie（D59⑦），脚本读不到也就不带 Authorization：
+        // 必须显式 include，部署到与 API 不同源时才不会丢会话。
+        credentials: 'include',
       });
     } catch (error) {
       // 网络层失败不是统一错误体，归一为 ApiError，避免调用方拿到原生 TypeError。
