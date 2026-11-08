@@ -73,6 +73,7 @@ describe('加工单打印（发厂联）', () => {
       payload: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
         materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',

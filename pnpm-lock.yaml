@@ -63,6 +63,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@qingdan/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@tanstack/react-query':
         specifier: ^5.105.3
         version: 5.105.3(@types/react@19.3.0)(react@19.3.1)
