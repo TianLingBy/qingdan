@@ -68,7 +68,7 @@ async function main(): Promise<void> {
 
     await database.transaction(async (tx) => {
       await tx.query(
-        `INSERT INTO tenant (id, name, plan, status) VALUES ($1, 'L3 租户 A', '基础版', '启用'), ($2, 'L3 租户 B', '基础版', '启用')`,
+        `INSERT INTO tenant (id, name, status) VALUES ($1, 'L3 租户 A', '启用'), ($2, 'L3 租户 B', '启用')`,
         [tenantA, tenantB],
       );
       await tx.query(
