@@ -12,7 +12,7 @@
 | 订单 | 李祖怡 | `lozy66` | 八类单据（A/B/E/N/C/R/S/I）的详情、流转展示、冲正入口、打印与导出 |
 | 仓库（库存） | 梁海俊 | `Vince-Leong` | `masterdata` / `inventory` / `processing` / `internal-trade` 后端业务用例 |
 | 人员 | 梁海俊 | `Vince-Leong` | **2026-11-08 起由赖皓妍整体转交**；与仓库板块同由海俊负责 |
-| 前端 UI 设计 | 何永上、赖皓妍 | 待接入 / `karryL921` | **只做视觉设计**：设计规范、公共组件库、22 页视觉设计稿。不写业务页面实现 |
+| 前端 UI 设计 | 何永上、赖皓妍 | `Meow-Yay` / `karryL921` | **只做视觉设计**：设计规范、公共组件库、22 页视觉设计稿。不写业务页面实现 |
 | 主线 | 负责人 + DSH 智能体 | `TianLingBy` | `platform` 内核与审计、`packages/contracts`、`purchase`、`sales`、`settlement`、`test` 底座、部署运营 |
 
 补充口径：
