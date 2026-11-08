@@ -74,7 +74,7 @@ describe('加工单打印（发厂联）', () => {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
-        materialBatchIds: [BATCH_ID],
+        materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',
         auxMaterials: '纸箱',
         fees: [FEE],
@@ -154,6 +154,7 @@ describe('加工单打印（发厂联）', () => {
     expect(doc.content).toContain(order.orderNo);
     expect(doc.content).toContain('发厂联加工厂');
     expect(doc.content).toContain(BATCH_ID);
+    expect(doc.content).toContain('100.000000');
     expect(doc.content).toContain('加工费');
     expect(doc.content).toContain('发厂联');
   });

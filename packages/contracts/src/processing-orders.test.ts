@@ -9,6 +9,8 @@ import {
   PROCESSING_ORDER_ROUTES,
   ProcessingMaterialBatchIdsSchema,
   ProcessingOrderCancelableSchema,
+  ProcessingOrderCompleteBodySchema,
+  ProcessingOrderCompleteResultSchema,
   ProcessingOrderCreateInputSchema,
   ProcessingOrderDetailSchema,
   ProcessingOrderFeeSchema,
@@ -31,6 +33,10 @@ const BATCH_ID_2 = '00000000-0000-4000-8000-000000000021';
 const PROCESSOR_ID = '00000000-0000-4000-8000-000000000030';
 const HANDLER_ID = '00000000-0000-4000-8000-000000000040';
 const COMPANY_ID = '00000000-0000-4000-8000-000000000050';
+const ORDER_ID = '00000000-0000-4000-8000-000000000060';
+const OUTPUT_BATCH_ID = '00000000-0000-4000-8000-000000000061';
+
+const MATERIAL = { batchId: BATCH_ID, qty: '100' } as const;
 
 const FEE = {
   feeName: '加工费',
@@ -49,7 +55,7 @@ const ORDER = {
   processorName: '王五加工厂',
   status: '进行中',
   handlerId: HANDLER_ID,
-  materialBatchIds: [BATCH_ID],
+  materialBatchIds: [MATERIAL],
   auxMaterials: '纸箱',
   fees: [FEE],
   inputQty: '100',
@@ -78,7 +84,7 @@ const CREATE_INPUT = {
   companyId: COMPANY_ID,
   processorId: PROCESSOR_ID,
   handlerId: HANDLER_ID,
-  materialBatchIds: [BATCH_ID],
+  materialBatchIds: [MATERIAL],
   inputQty: '100',
   auxMaterials: '纸箱',
   fees: [FEE],
@@ -87,8 +93,8 @@ const CREATE_INPUT = {
 } as const;
 
 describe('加工单契约（processing）', () => {
-  it('5 条端点全部登记并汇总进 ROUTES，且归属 processing', () => {
-    expect(PROCESSING_ORDER_ROUTES).toHaveLength(5);
+  it('6 条端点全部登记并汇总进 ROUTES，且归属 processing', () => {
+    expect(PROCESSING_ORDER_ROUTES).toHaveLength(6);
     for (const route of PROCESSING_ORDER_ROUTES) expect(route.module).toBe('processing');
 
     const processingIds = routesOfModule(ROUTES, 'processing').map((r) => r.operationId);
@@ -104,6 +110,7 @@ describe('加工单契约（processing）', () => {
         'GET /api/v1/processing-orders/{id} processing.order.detail.read',
         'PATCH /api/v1/processing-orders/{id} processing.order.update',
         'POST /api/v1/processing-orders/{id}/cancel processing.order.cancel',
+        'POST /api/v1/processing-orders/{id}/complete processing.order.complete',
       ].sort(),
     );
 
@@ -113,6 +120,7 @@ describe('加工单契约（processing）', () => {
     expect(byId.get('processing.order.create')?.scope).toBe('processing.create');
     expect(byId.get('processing.order.update')?.scope).toBe('processing.update');
     expect(byId.get('processing.order.cancel')?.scope).toBe('processing.delete');
+    expect(byId.get('processing.order.complete')?.scope).toBe('processing.approve');
   });
 
   it('普通读不记审计；写操作全部 audit=write（D51）', () => {
@@ -126,12 +134,13 @@ describe('加工单契约（processing）', () => {
       'processing.order.create',
       'processing.order.update',
       'processing.order.cancel',
+      'processing.order.complete',
     ]) {
       expect(byId.get(id)?.audit, id).toEqual({ kind: 'write', required: true });
     }
   });
 
-  it('AI 口径：开单禁止、修改允许、取消禁止且必须给原因；update/cancel 带强 ETag', () => {
+  it('AI 口径：开单/完成禁止、修改允许、取消禁止且必须给原因；update/cancel/complete 带强 ETag', () => {
     const byId = new Map(PROCESSING_ORDER_ROUTES.map((r) => [r.operationId, r]));
     expect(byId.get('processing.order.create')?.ai).toEqual({
       policy: 'forbid',
@@ -145,11 +154,25 @@ describe('加工单契约（processing）', () => {
       policy: 'forbid',
       reasonRequired: true,
     });
+    expect(byId.get('processing.order.complete')?.ai).toEqual({
+      policy: 'forbid',
+      reasonRequired: false,
+    });
+    expect(byId.get('processing.order.complete')?.audit).toEqual({
+      kind: 'write',
+      required: true,
+    });
 
     expect(byId.get('processing.order.update')?.requiresIfMatch).toBe(true);
     expect(byId.get('processing.order.cancel')?.requiresIfMatch).toBe(true);
+    expect(byId.get('processing.order.complete')?.requiresIfMatch).toBe(true);
     expect(byId.get('processing.order.create')?.requiresIfMatch).toBe(false);
     expect(byId.get('processing.order.create')?.response?.status).toBe(201);
+    expect(byId.get('processing.order.complete')?.method).toBe('POST');
+    expect(byId.get('processing.order.complete')?.response?.status).toBe(200);
+    expect(byId.get('processing.order.complete')?.summary).toBe(
+      '完成加工单：确认损耗、扣材料、生成产出批次并锁价',
+    );
   });
 
   it('状态只复用 documents.ts 的 HEADER_STATES，不另造枚举（§10）', () => {
@@ -164,12 +187,32 @@ describe('加工单契约（processing）', () => {
     expect(ProcessingOrderSchema.safeParse({ ...ORDER, status: 'completed' }).success).toBe(false);
   });
 
-  it('材料投入批次至少 1 条（F2b），空数组 / 缺失 / 非 uuid 一律拒绝', () => {
-    expect(ProcessingMaterialBatchIdsSchema.safeParse([BATCH_ID]).success).toBe(true);
-    expect(ProcessingMaterialBatchIdsSchema.safeParse([BATCH_ID, BATCH_ID_2]).success).toBe(true);
+  it('材料投入按行记录批次 + 数量（F2b），至少 1 条，qty 为非负 decimal', () => {
+    expect(ProcessingMaterialBatchIdsSchema.safeParse([MATERIAL]).success).toBe(true);
+    expect(
+      ProcessingMaterialBatchIdsSchema.safeParse([
+        MATERIAL,
+        { batchId: BATCH_ID_2, qty: '0.5' },
+      ]).success,
+    ).toBe(true);
+    expect(
+      ProcessingMaterialBatchIdsSchema.safeParse([{ batchId: BATCH_ID, qty: '0' }]).success,
+    ).toBe(true);
+
+    // 空数组 / 非数组 / 旧版 uuid 数组 / 缺 qty / 非 uuid / 负 qty 一律拒绝。
     expect(ProcessingMaterialBatchIdsSchema.safeParse([]).success).toBe(false);
     expect(ProcessingMaterialBatchIdsSchema.safeParse('not-an-array').success).toBe(false);
-    expect(ProcessingMaterialBatchIdsSchema.safeParse(['not-a-uuid']).success).toBe(false);
+    expect(ProcessingMaterialBatchIdsSchema.safeParse([BATCH_ID]).success).toBe(false);
+    expect(ProcessingMaterialBatchIdsSchema.safeParse([{ batchId: BATCH_ID }]).success).toBe(false);
+    expect(
+      ProcessingMaterialBatchIdsSchema.safeParse([{ batchId: 'not-a-uuid', qty: '1' }]).success,
+    ).toBe(false);
+    expect(
+      ProcessingMaterialBatchIdsSchema.safeParse([{ batchId: BATCH_ID, qty: '-1' }]).success,
+    ).toBe(false);
+    expect(
+      ProcessingMaterialBatchIdsSchema.safeParse([{ batchId: BATCH_ID, qty: 1 }]).success,
+    ).toBe(false);
 
     // 实体与开单入参同样执行该口径。
     expect(ProcessingOrderSchema.safeParse({ ...ORDER, materialBatchIds: [] }).success).toBe(false);
@@ -178,6 +221,60 @@ describe('加工单契约（processing）', () => {
     ).toBe(false);
     const { materialBatchIds: _omitted, ...withoutBatches } = CREATE_INPUT;
     expect(ProcessingOrderCreateInputSchema.safeParse(withoutBatches).success).toBe(false);
+  });
+
+  it('材料各行 qty 合计必须等于 inputQty（定点精确比较，不用浮点）', () => {
+    expect(ProcessingOrderCreateInputSchema.safeParse(CREATE_INPUT).success).toBe(true);
+
+    // 0.1 + 0.2 用 Number 相加会得到 0.30000000000000004；定点求和必须相等。
+    expect(
+      ProcessingOrderCreateInputSchema.safeParse({
+        ...CREATE_INPUT,
+        inputQty: '0.3',
+        materialBatchIds: [
+          { batchId: BATCH_ID, qty: '0.1' },
+          { batchId: BATCH_ID_2, qty: '0.2' },
+        ],
+      }).success,
+    ).toBe(true);
+
+    // qty 为 0 合法（投入量为 0 时）。
+    expect(
+      ProcessingOrderCreateInputSchema.safeParse({
+        ...CREATE_INPUT,
+        inputQty: '0',
+        materialBatchIds: [{ batchId: BATCH_ID, qty: '0' }],
+      }).success,
+    ).toBe(true);
+
+    // 合计不等被拒，并给出中文报错。
+    const mismatch = ProcessingOrderCreateInputSchema.safeParse({
+      ...CREATE_INPUT,
+      inputQty: '99.999999',
+    });
+    expect(mismatch.success).toBe(false);
+    if (!mismatch.success) {
+      expect(JSON.stringify(mismatch.error.issues)).toContain(
+        '材料投入各行数量合计必须等于投入量 inputQty',
+      );
+    }
+
+    // 改单同时给出材料与投入量时同样校验；只给一项时留给实现侧结合库内值校验。
+    expect(
+      ProcessingOrderUpdateInputSchema.safeParse({
+        materialBatchIds: [MATERIAL],
+        inputQty: '99',
+      }).success,
+    ).toBe(false);
+    expect(
+      ProcessingOrderUpdateInputSchema.safeParse({
+        materialBatchIds: [MATERIAL],
+        inputQty: '100',
+      }).success,
+    ).toBe(true);
+    expect(ProcessingOrderUpdateInputSchema.safeParse({ materialBatchIds: [MATERIAL] }).success).toBe(
+      true,
+    );
   });
 
   it('费用明细：金额负数被拒（D39，refine 校验，不只是注释）', () => {
@@ -279,7 +376,9 @@ describe('加工单契约（processing）', () => {
     expect(ProcessingOrderUpdateInputSchema.safeParse({}).success).toBe(false);
     expect(ProcessingOrderUpdateInputSchema.safeParse({ handlerId: HANDLER_ID }).success).toBe(true);
     expect(
-      ProcessingOrderUpdateInputSchema.safeParse({ materialBatchIds: [BATCH_ID_2] }).success,
+      ProcessingOrderUpdateInputSchema.safeParse({
+        materialBatchIds: [{ batchId: BATCH_ID_2, qty: '50' }],
+      }).success,
     ).toBe(true);
     expect(ProcessingOrderUpdateInputSchema.safeParse({ materialBatchIds: [] }).success).toBe(false);
     expect(
@@ -355,9 +454,87 @@ describe('加工单契约（processing）', () => {
     ).toBe(false);
     expect(DETAIL.cancelable).toEqual(canCancel('进行中', false));
 
-    // 本批没有「验收/完成」端点，也没有独立损失记录端点。
+    // 完成端点已登记（approve）；仍没有独立损失记录端点。
     const ids = PROCESSING_ORDER_ROUTES.map((r) => r.operationId);
-    expect(ids.some((id) => /complete|accept|loss/.test(id))).toBe(false);
+    expect(ids).toContain('processing.order.complete');
+    expect(ids.some((id) => /accept|loss/.test(id))).toBe(false);
+  });
+
+  it('完成入参：lossQty 必填且非负；custodianId / confirmFullLoss 可选（F3 / G2）', () => {
+    expect(ProcessingOrderCompleteBodySchema.safeParse({ lossQty: '0' }).success).toBe(true);
+    expect(
+      ProcessingOrderCompleteBodySchema.safeParse({
+        lossQty: '1.5',
+        custodianId: HANDLER_ID,
+        confirmFullLoss: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      ProcessingOrderCompleteBodySchema.safeParse({ lossQty: '1.5', confirmFullLoss: false }).success,
+    ).toBe(true);
+
+    // lossQty 缺失 / 负数 / 非字符串一律拒绝。
+    expect(ProcessingOrderCompleteBodySchema.safeParse({}).success).toBe(false);
+    expect(
+      ProcessingOrderCompleteBodySchema.safeParse({ custodianId: HANDLER_ID }).success,
+    ).toBe(false);
+    expect(ProcessingOrderCompleteBodySchema.safeParse({ lossQty: '-1' }).success).toBe(false);
+    expect(ProcessingOrderCompleteBodySchema.safeParse({ lossQty: 1 }).success).toBe(false);
+
+    // custodianId 必须是 uuid；confirmFullLoss 必须是布尔。
+    expect(
+      ProcessingOrderCompleteBodySchema.safeParse({ lossQty: '1', custodianId: 'not-a-uuid' })
+        .success,
+    ).toBe(false);
+    expect(
+      ProcessingOrderCompleteBodySchema.safeParse({ lossQty: '1', confirmFullLoss: 'true' }).success,
+    ).toBe(false);
+  });
+
+  it('完成结果：status 字面量「已完成」，产出批次 / 损失记录可空（D5 / G2）', () => {
+    const RESULT = {
+      id: ORDER_ID,
+      status: '已完成',
+      lossQty: '2',
+      sellableQty: '98',
+      outputBatch: {
+        id: OUTPUT_BATCH_ID,
+        batchNo: 'O-0001-20261105-0001',
+        qty: '98',
+        lockedUnitCost: '10.5',
+      },
+      lossRecord: { lossQty: '2', description: '自然损耗' },
+    } as const;
+
+    expect(ProcessingOrderCompleteResultSchema.safeParse(RESULT).success).toBe(true);
+    // 全损耗：不生成产出批次。
+    expect(
+      ProcessingOrderCompleteResultSchema.safeParse({
+        ...RESULT,
+        lossQty: '100',
+        sellableQty: '0',
+        outputBatch: null,
+      }).success,
+    ).toBe(true);
+    expect(ProcessingOrderCompleteResultSchema.safeParse({ ...RESULT, lossRecord: null }).success).toBe(
+      true,
+    );
+
+    expect(
+      ProcessingOrderCompleteResultSchema.safeParse({ ...RESULT, status: '进行中' }).success,
+    ).toBe(false);
+    expect(ProcessingOrderCompleteResultSchema.safeParse({ ...RESULT, lossQty: '-1' }).success).toBe(
+      false,
+    );
+    expect(
+      ProcessingOrderCompleteResultSchema.safeParse({
+        ...RESULT,
+        outputBatch: { ...RESULT.outputBatch, qty: '-1' },
+      }).success,
+    ).toBe(false);
+    expect(ProcessingOrderCompleteResultSchema.safeParse({ ...RESULT, id: 'not-a-uuid' }).success).toBe(
+      false,
+    );
   });
 
   it('实体已登记（ENTITIES / globalRegistry / components.schemas 三处一致）', () => {
@@ -386,6 +563,12 @@ describe('加工单契约（processing）', () => {
     expect(order.properties).toHaveProperty('materialBatchIds');
     expect(order.properties).toHaveProperty('inputQty');
     expect(order.properties).toHaveProperty('sellableQty');
+    // 材料投入按行：每行是 { batchId, qty }，不再是 uuid 数组。
+    const materials = order.properties.materialBatchIds as {
+      items?: { properties?: Record<string, unknown> };
+    };
+    expect(materials.items?.properties).toHaveProperty('batchId');
+    expect(materials.items?.properties).toHaveProperty('qty');
   });
 
   it('OpenAPI 发射出 processing 端点与 x-module / x-scope / x-audit / x-mcp-tool 标记', () => {
@@ -423,5 +606,16 @@ describe('加工单契约（processing）', () => {
     expect(cancel.post?.['x-ai-policy']).toEqual({ policy: 'forbid', reasonRequired: true });
     expect(cancel.post?.['x-mcp-tool']).toBe('qingdan_processing_order_cancel');
     expect(cancel.post?.['x-requires-if-match']).toBe(true);
+
+    const complete = doc.paths['/api/v1/processing-orders/{id}/complete'] as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(complete.post?.['x-scope']).toBe('processing.approve');
+    expect(complete.post?.['x-audit']).toEqual({ kind: 'write', required: true });
+    expect(complete.post?.['x-ai-policy']).toEqual({ policy: 'forbid', reasonRequired: false });
+    expect(complete.post?.['x-mcp-tool']).toBe('qingdan_processing_order_complete');
+    expect(complete.post?.['x-requires-if-match']).toBe(true);
+    expect(complete.post?.responses).toHaveProperty('200');
   });
 });

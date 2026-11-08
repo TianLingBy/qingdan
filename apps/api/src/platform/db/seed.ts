@@ -179,7 +179,7 @@ const EMPLOYEES: readonly EmployeeSeed[] = [
 
 async function seedTenant(tx: SqlClient): Promise<void> {
   await tx.query(
-    `INSERT INTO tenant (id, name, plan, status) VALUES ($1, $2, '基础版', '启用')
+    `INSERT INTO tenant (id, name, status) VALUES ($1, $2, '启用')
      ON CONFLICT (id) DO NOTHING`,
     [DEMO_TENANT_ID, TENANT_NAME],
   );
