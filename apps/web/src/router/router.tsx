@@ -1,7 +1,13 @@
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router';
+import type { ComponentType } from 'react';
 import { AppLayout } from '../layouts/AppLayout';
+import {
+  ProcessorsPage,
+  ProductsPage,
+  SuppliersPage,
+} from '../pages/masterdata/MasterdataPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
-import { DEFAULT_ROUTE_PATH, ROUTE_TABLE } from './routes';
+import { DEFAULT_ROUTE_PATH, ROUTE_TABLE, type RouteEntry } from './routes';
 
 /**
  * TanStack Router 编码路由（file-based 生成器不用，保持骨架无额外构建步骤）。
@@ -30,11 +36,22 @@ const indexRoute = createRoute({
   },
 });
 
+const IMPLEMENTED_PAGES: Partial<Record<RouteEntry['id'], ComponentType>> = {
+  products: ProductsPage,
+  suppliers: SuppliersPage,
+  processors: ProcessorsPage,
+};
+
+function PageForEntry({ entry }: { entry: RouteEntry }) {
+  const Page = IMPLEMENTED_PAGES[entry.id];
+  return Page ? <Page /> : <PlaceholderPage entry={entry} />;
+}
+
 const pageRoutes = ROUTE_TABLE.map((entry) =>
   createRoute({
     getParentRoute: () => rootRoute,
     path: entry.path,
-    component: () => <PlaceholderPage entry={entry} />,
+    component: () => <PageForEntry entry={entry} />,
   }),
 );
 
