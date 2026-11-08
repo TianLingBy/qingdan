@@ -2,6 +2,7 @@ import {
   AppError,
   encodeCursor,
   type CursorPayload,
+  type ProcessingMaterialInput,
   type ProcessingOrder,
   type ProcessingOrderCreateInput,
   type ProcessingOrderFee,
@@ -67,6 +68,7 @@ interface HeaderRow {
   processor_name: string;
   status: string;
   handler_id: string;
+  output_product_id: string | null;
   aux_materials: string | null;
   input_qty: string | number;
   loss_qty: string | number | null;
@@ -103,6 +105,7 @@ const HEADER_COLUMNS = `o.id,
   p.name AS processor_name,
   o.status,
   o.handler_id,
+  o.output_product_id,
   o.aux_materials,
   trim_scale(o.input_qty) AS input_qty,
   trim_scale(o.loss_qty) AS loss_qty,
@@ -147,6 +150,7 @@ function mapHeader(row: HeaderRow): Omit<ProcessingOrder, 'materialBatchIds' | '
     processorName: row.processor_name,
     status: row.status as ProcessingOrderStatus,
     handlerId: row.handler_id,
+    outputProductId: row.output_product_id,
     auxMaterials: row.aux_materials,
     inputQty: decimal(row.input_qty),
     lossQty: nullableDecimal(row.loss_qty),
@@ -191,12 +195,16 @@ async function queryHeader(
 async function queryMaterialBatchIds(
   ctx: ProcessingOrderRepoContext,
   orderIds: readonly string[],
-): Promise<Map<string, string[]>> {
-  const grouped = new Map<string, string[]>();
+): Promise<Map<string, ProcessingMaterialInput[]>> {
+  const grouped = new Map<string, ProcessingMaterialInput[]>();
   if (orderIds.length === 0) return grouped;
 
-  const result = await ctx.tx.query<{ order_id: string; batch_id: string }>(
-    `SELECT order_id, batch_id
+  const result = await ctx.tx.query<{
+    order_id: string;
+    batch_id: string;
+    qty: string | number;
+  }>(
+    `SELECT order_id, batch_id, qty
        FROM processing_order_material_batch
       WHERE tenant_id = $1
         AND order_id = ANY($2::uuid[])
@@ -204,9 +212,9 @@ async function queryMaterialBatchIds(
     [ctx.tenantId, [...orderIds]],
   );
   for (const row of result.rows) {
-    const ids = grouped.get(row.order_id) ?? [];
-    ids.push(row.batch_id);
-    grouped.set(row.order_id, ids);
+    const rows = grouped.get(row.order_id) ?? [];
+    rows.push({ batchId: row.batch_id, qty: decimal(row.qty) });
+    grouped.set(row.order_id, rows);
   }
   return grouped;
 }
@@ -409,10 +417,10 @@ async function assertHandlerInTenant(
 /** 材料投入批次必须属于加工单公司（D22）；去重后一次查询。 */
 async function assertMaterialBatchesInCompany(
   ctx: ProcessingOrderRepoContext,
-  batchIds: readonly string[],
+  materialBatchIds: readonly ProcessingMaterialInput[],
   companyId: string,
 ): Promise<void> {
-  const unique = [...new Set(batchIds)];
+  const unique = [...new Set(materialBatchIds.map((row) => row.batchId))];
   const result = await ctx.tx.query<{ id: string }>(
     `SELECT id
        FROM inventory_batch
@@ -460,14 +468,22 @@ async function insertMaterialBatches(
   ctx: ProcessingOrderRepoContext,
   orderId: string,
   companyId: string,
-  batchIds: readonly string[],
+  materialBatchIds: readonly ProcessingMaterialInput[],
 ): Promise<void> {
-  for (const [index, batchId] of batchIds.entries()) {
+  for (const [index, material] of materialBatchIds.entries()) {
     await ctx.tx.query(
       `INSERT INTO processing_order_material_batch
-         (id, tenant_id, company_id, order_id, line_no, batch_id)
-       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::uuid)`,
-      [uuidv7(), ctx.tenantId, companyId, orderId, index + 1, batchId],
+         (id, tenant_id, company_id, order_id, line_no, batch_id, qty)
+       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::uuid, $7::amount)`,
+      [
+        uuidv7(),
+        ctx.tenantId,
+        companyId,
+        orderId,
+        index + 1,
+        material.batchId,
+        material.qty,
+      ],
     );
   }
 }
@@ -535,10 +551,10 @@ export async function insertProcessingOrder(
 
   await ctx.tx.query(
     `INSERT INTO processing_order
-       (id, tenant_id, company_id, order_no, processor_id, handler_id,
+       (id, tenant_id, company_id, order_no, processor_id, handler_id, output_product_id,
         status, aux_materials, input_qty, loss_qty, sellable_qty, attribution_doc)
-     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid,
-             '进行中', $7, $8::amount, $9::amount, $10::amount, $11)`,
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7::uuid,
+             '进行中', $8, $9::amount, $10::amount, $11::amount, $12)`,
     [
       input.id,
       ctx.tenantId,
@@ -546,6 +562,7 @@ export async function insertProcessingOrder(
       input.orderNo,
       input.processorId,
       input.handlerId,
+      input.outputProductId,
       input.auxMaterials ?? null,
       input.inputQty,
       lossQty,
@@ -611,6 +628,10 @@ export async function updateProcessingOrder(
   if (input.handlerId !== undefined) {
     params.push(input.handlerId);
     sets.push(`handler_id = $${params.length}::uuid`);
+  }
+  if (input.outputProductId !== undefined) {
+    params.push(input.outputProductId);
+    sets.push(`output_product_id = $${params.length}::uuid`);
   }
   if (input.inputQty !== undefined) {
     params.push(input.inputQty);

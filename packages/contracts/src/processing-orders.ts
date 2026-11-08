@@ -15,22 +15,21 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  *   不得走 B 单，否则批次成本公式被污染；schema 层用 `refine` 拒绝空数组；
  * - **B 单费用行金额必须 ≥ 0**（D39）：加工费 / 运杂费为负无现实意义，schema 层直接拒绝；
  * - **损耗量由我方人员在验收时一次填入，事后不改**（F3）：创建时可为空（null），
- *   本批不提供「验收 / 完成」端点，故修改入参也**不接收** `lossQty`；
+ *   完成端点一次性填入（`POST /complete`），修改入参仍**不接收** `lossQty`；
  * - **状态直接复用** `documents.ts` 的 `HEADER_STATES`（进行中 / 已完成 / 已取消，§10），
  *   不另造英文枚举（D54 §9-6）；
  * - **取消规则复用** `documents.ts` 的 `canCancel` / `assertCancelable`（D21），
  *   本文件不重写一套级联判断；
  * - 写操作必记审计（D51）；普通读不记（D54 ②）。
  *
- * 产出批次与全损耗（本批只写字段注释，不建端点）：
+ * 产出批次与全损耗（完成端点 `processing.order.complete`）：
  * - 可售量 > 0 时，完成时生成产出批次并锁价：
  *   `批次单价 =（引用材料成本 + 辅料 + 加工费 + 运杂费）÷ 可售量`（D5），
  *   材料成本全额进产出批次、只摊量不减价（D5 损耗口径）；
- * - 可售量 = 0（全损耗）→ 需**二次确认**，**不生成产出批次**，
+ * - 可售量 = 0（全损耗）→ 需**二次确认**（`confirmFullLoss`），**不生成产出批次**，
  *   材料与加工费**全额记为损失**并留痕（G2 / D26），投入批次库存照常扣减。
  *
  * 本批明确不做（等后续批次）：
- * - **不做「验收 / 完成」端点**：完成要按 D5 公式生成产出批次并锁价，依赖 inventory 写能力；
  * - **不做损失记录的独立端点**（§9）：损失记录 `lossRecord` 只作为详情里的精简只读视图占位；
  * - **不做「包工包料走 A 单」的运行时校验实现**：F2b 是业务规则，
  *   本批只在 schema 层锁「至少一条材料投入」，跨单类型判断留到实现时补。
@@ -51,15 +50,43 @@ export const ProcessingOrderStatusSchema = z.enum(HEADER_STATES);
 export type ProcessingOrderStatus = z.infer<typeof ProcessingOrderStatusSchema>;
 
 /**
- * 材料投入批次（§3.2 / F2b）：**至少 1 条**，否则拒绝。
- * 只校验形状；「只能引用本公司批次」的归属校验由实现侧按 D22 做。
+ * 材料投入行（§3.2 / F2b）：按行记录「批次 + 投入数量」。
+ * `qty` 为 decimal 字符串（D54 `numeric(18,6)`，非负）。
+ */
+export const ProcessingMaterialInputSchema = z.object({
+  batchId: z.string().uuid(),
+  qty: NonNegativeDecimal,
+});
+export type ProcessingMaterialInput = z.infer<typeof ProcessingMaterialInputSchema>;
+
+/**
+ * 材料投入明细（§3.2 / F2b）：**至少 1 条**，否则拒绝。
+ * 只校验形状；「只能引用本公司批次」的归属校验由实现侧按 D22 做；
+ * 「各行 `qty` 合计 = 请求体里的 `inputQty`」由开单 / 改单入参在请求体层校验。
  */
 export const ProcessingMaterialBatchIdsSchema = z
-  .array(z.string().uuid())
-  .refine((ids) => ids.length > 0, {
+  .array(ProcessingMaterialInputSchema)
+  .refine((rows) => rows.length > 0, {
     message: 'B 单必须至少引用 1 个材料投入批次（F2b；包工包料请走 A 单）',
   });
 export type ProcessingMaterialBatchIds = z.infer<typeof ProcessingMaterialBatchIdsSchema>;
+
+/** `numeric(18,6)` 定点整数（微单位，×1e6）：用于精确求和，避免浮点误差。 */
+function toMicros(value: string): bigint {
+  const [int, frac = ''] = value.split('.');
+  return BigInt(`${int}${frac.padEnd(6, '0')}`);
+}
+
+/** 判断材料各行 `qty` 合计是否严格等于请求体里的 `inputQty`（定点比较）。 */
+function materialQtySumEqualsInput(value: {
+  materialBatchIds: readonly { qty: string }[];
+  inputQty: string;
+}): boolean {
+  const sum = value.materialBatchIds.reduce((acc, row) => acc + toMicros(row.qty), 0n);
+  return sum === toMicros(value.inputQty);
+}
+
+const MATERIAL_QTY_SUM_MESSAGE = '材料投入各行数量合计必须等于投入量 inputQty（F2b / D5）';
 
 /**
  * 归属单（D18 / D35）：可挂 E 或 N 单，选填；用于全损耗损失归属。
@@ -121,10 +148,12 @@ export const ProcessingOrderSchema = z.object({
   processorId: z.string(),
   /** 加工厂名只读回显，避免列表二次查询。 */
   processorName: z.string(),
+  /** 成品商品：开单时由契约保证必填；历史单为 null（#150 决策 A）。 */
+  outputProductId: z.string().nullable(),
   status: ProcessingOrderStatusSchema,
   /** 经手人。 */
   handlerId: z.string(),
-  /** 材料投入批次：至少 1 条（F2b）；只能引用本公司批次（D22，实现侧校验）。 */
+  /** 材料投入明细（批次 + 行数量）：至少 1 条（F2b）；只能引用本公司批次（D22，实现侧校验）。 */
   materialBatchIds: ProcessingMaterialBatchIdsSchema,
   /** 辅料：选填，默认我方采购，进成本（§3.2）。 */
   auxMaterials: z.string().max(500).nullable(),
@@ -155,18 +184,62 @@ export const ProcessingOrderCancelableSchema: z.ZodType<CancelDecision> = z.obje
 export type ProcessingOrderCancelable = z.infer<typeof ProcessingOrderCancelableSchema>;
 
 /**
- * 加工单详情（§3.2）：在列表实体上补产出批次占位、损失记录与取消判定。
- * - `outputBatchId`：产出批次，**本批恒为 null 占位**；完成端点落地后按 D5 生成批次并回填；
- * - `lossRecord`：损失记录精简视图（§9），非全损耗时为 null；
+ * 加工单详情（§3.2）：在列表实体上补产出批次、损失记录与取消判定。
+ * - `outputBatchId`：完成前为 null；完成后按 D5 生成产出批次并回填；
+ * - `lossRecord`：损失记录精简视图（§9），无损耗时为 null；
  * - `cancelable`：由 `canCancel` 推导（D21）。
  */
 export const ProcessingOrderDetailSchema = ProcessingOrderSchema.extend({
-  /** 产出批次：本批恒 null；可售量 = 0（全损耗）时也不生成（G2）。 */
+  /** 产出批次：完成前为 null；可售量 = 0（全损耗）时也不生成（G2）。 */
   outputBatchId: z.string().nullable(),
   lossRecord: ProcessingOrderLossRecordSchema.nullable(),
   cancelable: ProcessingOrderCancelableSchema,
 });
 export type ProcessingOrderDetail = z.infer<typeof ProcessingOrderDetailSchema>;
+
+/**
+ * 完成加工单入参（D5 / F3 / G2）：
+ * - `lossQty` 必填：验收时一次填入、事后不改（F3）；
+ * - `custodianId` 选填：损失保管人（uuid）；
+ * - `confirmFullLoss` 选填：可售量为 0（全损耗）时必须二次确认（G2 / D26）。
+ */
+export const ProcessingOrderCompleteBodySchema = z.object({
+  lossQty: NonNegativeDecimal,
+  custodianId: z.string().uuid().optional(),
+  confirmFullLoss: z.boolean().optional(),
+});
+export type ProcessingOrderCompleteBody = z.infer<typeof ProcessingOrderCompleteBodySchema>;
+
+/** 完成时生成的产出批次（D5）：数量与锁定单价均为 decimal 字符串。 */
+export const ProcessingOrderCompleteOutputBatchSchema = z.object({
+  id: z.string().uuid(),
+  batchNo: z.string(),
+  qty: NonNegativeDecimal,
+  lockedUnitCost: NonNegativeDecimal,
+});
+export type ProcessingOrderCompleteOutputBatch = z.infer<typeof ProcessingOrderCompleteOutputBatchSchema>;
+
+/** 完成结果里的损失记录精简视图：损耗量 + 说明。 */
+export const ProcessingOrderCompleteLossRecordSchema = z.object({
+  lossQty: NonNegativeDecimal,
+  description: z.string(),
+});
+export type ProcessingOrderCompleteLossRecord = z.infer<typeof ProcessingOrderCompleteLossRecordSchema>;
+
+/**
+ * 完成加工单结果（D5 / G2）：
+ * - 可售量 > 0 时回产出批次（已锁价）；全损耗时 `outputBatch` 为 null；
+ * - `lossRecord` 仅在产生损耗时非空（全损耗亦同）。
+ */
+export const ProcessingOrderCompleteResultSchema = z.object({
+  id: z.string().uuid(),
+  status: z.literal('已完成'),
+  lossQty: NonNegativeDecimal,
+  sellableQty: NonNegativeDecimal,
+  outputBatch: ProcessingOrderCompleteOutputBatchSchema.nullable(),
+  lossRecord: ProcessingOrderCompleteLossRecordSchema.nullable(),
+});
+export type ProcessingOrderCompleteResult = z.infer<typeof ProcessingOrderCompleteResultSchema>;
 
 /**
  * 加工单列表查询：公司 / 加工厂 / 状态 / 关键字（单号或加工厂名），游标分页。
@@ -182,23 +255,30 @@ export const ProcessingOrderListQuerySchema = PageQuerySchema.extend({
 /**
  * 开单入参（§3.2）：
  * - **不接收单号**（服务端按 D16 生成）；
- * - 材料投入批次至少 1 条（F2b）；
+ * - 材料投入至少 1 行（F2b），且各行 `qty` 合计必须等于 `inputQty`；
  * - 费用明细至少 1 行、金额 ≥ 0（§3.2 加工费/运杂费必填；D39）；
  * - 损耗量创建时可空（验收时一次填入，F3）；可售量由实现侧计算，不由入参传入。
  */
-export const ProcessingOrderCreateInputSchema = z.object({
-  companyId: z.string().uuid(),
-  processorId: z.string().uuid(),
-  handlerId: z.string().uuid(),
-  materialBatchIds: ProcessingMaterialBatchIdsSchema,
-  inputQty: NonNegativeDecimal,
-  auxMaterials: z.string().max(500).nullable().optional(),
-  fees: z
-    .array(ProcessingOrderFeeInputSchema)
-    .min(1, 'B 单至少 1 行费用明细（加工费 / 运杂费，§3.2）'),
-  attributionDoc: AttributionDocSchema.nullable().optional(),
-  lossQty: NonNegativeDecimal.nullable().optional(),
-});
+export const ProcessingOrderCreateInputSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    processorId: z.string().uuid(),
+    /** 成品商品：开单必填，完成时据此确定产出批次的商品（#150 决策 A）。 */
+    outputProductId: z.string().uuid(),
+    handlerId: z.string().uuid(),
+    materialBatchIds: ProcessingMaterialBatchIdsSchema,
+    inputQty: NonNegativeDecimal,
+    auxMaterials: z.string().max(500).nullable().optional(),
+    fees: z
+      .array(ProcessingOrderFeeInputSchema)
+      .min(1, 'B 单至少 1 行费用明细（加工费 / 运杂费，§3.2）'),
+    attributionDoc: AttributionDocSchema.nullable().optional(),
+    lossQty: NonNegativeDecimal.nullable().optional(),
+  })
+  .refine(materialQtySumEqualsInput, {
+    message: MATERIAL_QTY_SUM_MESSAGE,
+    path: ['materialBatchIds'],
+  });
 export type ProcessingOrderCreateInput = z.infer<typeof ProcessingOrderCreateInputSchema>;
 
 /**
@@ -206,10 +286,13 @@ export type ProcessingOrderCreateInput = z.infer<typeof ProcessingOrderCreateInp
  * **只有「进行中」的加工单可改**（服务端按 D4 状态机校验；状态不是入参）。
  * **不含 `lossQty`**：损耗量验收时一次填入、事后不改（F3）；
  * **不含 `orderNo` / `status` / `sellableQty`**：单号服务端生成、状态走状态机、可售量由实现侧派生。
+ * 同时给出 `materialBatchIds` 与 `inputQty` 时，各行 `qty` 合计必须等于 `inputQty`（同请求体校验）。
  */
 export const ProcessingOrderUpdateInputSchema = z
   .object({
     processorId: z.string().uuid().optional(),
+    /** 成品商品：可选修改（#150 决策 A）。 */
+    outputProductId: z.string().uuid().optional(),
     handlerId: z.string().uuid().optional(),
     materialBatchIds: ProcessingMaterialBatchIdsSchema.optional(),
     inputQty: NonNegativeDecimal.optional(),
@@ -217,17 +300,25 @@ export const ProcessingOrderUpdateInputSchema = z
     fees: z.array(ProcessingOrderFeeInputSchema).optional(),
     attributionDoc: AttributionDocSchema.nullable().optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, { message: '至少修改一个字段' });
+  .refine((value) => Object.keys(value).length > 0, { message: '至少修改一个字段' })
+  .refine(
+    (value) =>
+      value.materialBatchIds === undefined ||
+      value.inputQty === undefined ||
+      materialQtySumEqualsInput({ materialBatchIds: value.materialBatchIds, inputQty: value.inputQty }),
+    { message: MATERIAL_QTY_SUM_MESSAGE, path: ['materialBatchIds'] },
+  );
 export type ProcessingOrderUpdateInput = z.infer<typeof ProcessingOrderUpdateInputSchema>;
 
 /**
- * processing 模块 B 加工单端点（5 条，共第一批）。
+ * processing 模块 B 加工单端点（6 条，共第一批 + 完成）。
  *
- * 权限：`processing.read` / `.create` / `.update` / `.delete`（scope = domain.action，D44）。
+ * 权限：`processing.read` / `.create` / `.update` / `.approve` / `.delete`
+ *      （scope = domain.action，D44）。
  * 审计：写操作必记（D51）；普通读不记（D54 ②）。
- * AI：**开单属业务动作，默认禁止**（与既有写端点口径一致）；
+ * AI：**开单 / 完成属业务动作，默认禁止**（与既有写端点口径一致）；
  *     修改允许；**取消属危险动作，默认禁止且必须给原因**（D52① / D54 ⑥）。
- * 并发：update / cancel 强制 If-Match 强 ETag。
+ * 并发：update / cancel / complete 强制 If-Match 强 ETag。
  * 取消：规则复用 `documents.ts` 的 `assertCancelable`（D21：有下游不可取消，先取消下游）。
  */
 export const PROCESSING_ORDER_ROUTES: readonly RouteDef[] = [
@@ -294,5 +385,19 @@ export const PROCESSING_ORDER_ROUTES: readonly RouteDef[] = [
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
     response: { status: 200, schema: ProcessingOrderSchema },
+  }),
+  defineRoute({
+    module: 'processing',
+    operationId: 'processing.order.complete',
+    method: 'POST',
+    path: '/api/v1/processing-orders/{id}/complete',
+    domain: 'processing',
+    action: 'approve',
+    summary: '完成加工单：确认损耗、扣材料、生成产出批次并锁价',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid' },
+    requiresIfMatch: true,
+    request: { body: ProcessingOrderCompleteBodySchema },
+    response: { status: 200, schema: ProcessingOrderCompleteResultSchema },
   }),
 ];

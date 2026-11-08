@@ -90,8 +90,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
-        materialBatchIds: [BATCH_ID],
+        materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',
         auxMaterials: '纸箱',
         fees: [FEE],
@@ -237,8 +238,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
-        materialBatchIds: [BATCH_ID],
+        materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',
         fees: [FEE],
       },
@@ -249,7 +251,10 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
 
   it('开单 → 201 + B 单号 + decimal 字符串 + 强 ETag；详情占位；审计落库', async () => {
     const response = await createOrder(nextRequestId('create-ok'), {
-      materialBatchIds: [BATCH_ID, BATCH_2_ID],
+      materialBatchIds: [
+        { batchId: BATCH_ID, qty: '100.000000' },
+        { batchId: BATCH_2_ID, qty: '0.500000' },
+      ],
       inputQty: '100.5',
       lossQty: '0.5',
       attributionDoc: 'N-0001-20261105-0001',
@@ -277,7 +282,10 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       processorName: 'HTTP加工厂',
       handlerId: DEMO_IDS.ownerEmployeeId,
       status: '进行中',
-      materialBatchIds: [BATCH_ID, BATCH_2_ID],
+      materialBatchIds: [
+        { batchId: BATCH_ID, qty: '100.000000' },
+        { batchId: BATCH_2_ID, qty: '0.500000' },
+      ],
       inputQty: '100.5',
       lossQty: '0.5',
       sellableQty: '100',
@@ -353,7 +361,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(crossProcessor.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
 
     const crossBatch = await createOrder(nextRequestId('cross-batch'), {
-      materialBatchIds: ['01900000-0000-7000-8000-000000002424'],
+      materialBatchIds: [
+        { batchId: '01900000-0000-7000-8000-000000002424', qty: '100.000000' },
+      ],
     });
     expect(crossBatch.statusCode).toBe(422);
     expect(crossBatch.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
@@ -388,7 +398,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       nextCursor: string | null;
     };
     expect(page.items.map((item) => item.id)).toEqual([created.id]);
-    expect(page.items[0]?.materialBatchIds).toEqual([BATCH_ID]);
+    expect(page.items[0]?.materialBatchIds).toEqual([
+      { batchId: BATCH_ID, qty: '100.000000' },
+    ]);
     expect(page.nextCursor).toBeNull();
   });
 
@@ -455,7 +467,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
         'if-match': '"1"',
       }),
       payload: {
-        materialBatchIds: [BATCH_2_ID],
+        materialBatchIds: [{ batchId: BATCH_2_ID, qty: '20.000000' }],
         inputQty: '20',
         auxMaterials: null,
         fees: [FEE],
@@ -465,7 +477,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(ok.headers.etag).toBe('"2"');
     expect(ok.json()).toMatchObject({
       version: 2,
-      materialBatchIds: [BATCH_2_ID],
+      materialBatchIds: [{ batchId: BATCH_2_ID, qty: '20.000000' }],
       inputQty: '20',
       lossQty: '2',
       sellableQty: '18',
@@ -606,8 +618,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
-        materialBatchIds: [BATCH_ID],
+        materialBatchIds: [{ batchId: BATCH_ID, qty: '10.000000' }],
         inputQty: '10',
         fees: [FEE],
       },

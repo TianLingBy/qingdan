@@ -154,8 +154,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       body: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
-        materialBatchIds: [BATCH_ID],
+        materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',
         auxMaterials: '纸箱',
         fees: [FEE],
@@ -234,7 +235,10 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
 
   it('开单：B 单号、材料批次、费用、损耗 / 可售量、审计均落库', async () => {
     const created = await createOne({
-      materialBatchIds: [BATCH_ID, BATCH_2_ID],
+      materialBatchIds: [
+        { batchId: BATCH_ID, qty: '60.000000' },
+        { batchId: BATCH_2_ID, qty: '40.000000' },
+      ],
       inputQty: '100',
       lossQty: '4',
       attributionDoc: 'E-0001-20261105-0001',
@@ -248,7 +252,10 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     expect(created.processorName).toBe('用例加工厂');
     expect(created.status).toBe('进行中');
     expect(created.version).toBe(1);
-    expect(created.materialBatchIds).toEqual([BATCH_ID, BATCH_2_ID]);
+    expect(created.materialBatchIds).toEqual([
+      { batchId: BATCH_ID, qty: '60.000000' },
+      { batchId: BATCH_2_ID, qty: '40.000000' },
+    ]);
     expect(created.fees).toEqual([
       FEE,
       { feeName: '运杂费', qty: '2', unitPrice: '5.5', amount: '11', remark: null },
@@ -291,6 +298,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
             materialBatchIds: [],
             inputQty: '1',
@@ -307,8 +315,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: [BATCH_ID],
+            materialBatchIds: [{ batchId: BATCH_ID, qty: '5.000000' }],
             inputQty: '5',
             lossQty: '6',
             fees: [FEE],
@@ -326,8 +335,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: OTHER_COMPANY_ID,
             processorId: PROCESSOR_2_ID,
+            outputProductId: PRODUCT_2_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: [BATCH_ID],
+            materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
             fees: [FEE],
           },
@@ -342,8 +352,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_2_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: [BATCH_ID],
+            materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
             fees: [FEE],
           },
@@ -358,8 +369,11 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: ['01900000-0000-7000-8000-000000001123'],
+            materialBatchIds: [
+              { batchId: '01900000-0000-7000-8000-000000001123', qty: '1.000000' },
+            ],
             inputQty: '1',
             fees: [FEE],
           },
@@ -376,8 +390,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: [BATCH_ID],
+            materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
             fees: [FEE],
           },
@@ -392,8 +407,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: [BATCH_ID],
+            materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
             fees: [FEE],
           },
@@ -493,7 +509,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       params: { id: created.id },
       headers: { 'if-match': '"1"' },
       body: {
-        materialBatchIds: [BATCH_2_ID],
+        materialBatchIds: [{ batchId: BATCH_2_ID, qty: '120.000000' }],
         inputQty: '120',
         auxMaterials: null,
         attributionDoc: 'N-0001-20261105-0002',
@@ -503,7 +519,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     const updated = await updateProcessingOrder(ctx);
     expect(state.headers.ETag).toBe('"2"');
     expect(updated.version).toBe(2);
-    expect(updated.materialBatchIds).toEqual([BATCH_2_ID]);
+    expect(updated.materialBatchIds).toEqual([
+      { batchId: BATCH_2_ID, qty: '120.000000' },
+    ]);
     expect(updated.inputQty).toBe('120');
     expect(updated.lossQty).toBe('4');
     expect(updated.sellableQty).toBe('116');
