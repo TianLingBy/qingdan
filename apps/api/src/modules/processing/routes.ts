@@ -5,9 +5,11 @@ import {
   cancelProcessingOrder,
   createProcessingOrder,
   getProcessingOrder,
+  getProcessingOrderForPrint,
   listProcessingOrders,
   updateProcessingOrder,
 } from './usecases/processing-orders.js';
+import { renderProcessingOrderFactoryCopy } from './services/factory-copy.js';
 
 /**
  * processing 模块端点挂载（契约第一批 §3.2 B 加工单首批 5 条）。
@@ -61,6 +63,18 @@ export function registerProcessingRoutes(app: FastifyInstance): void {
       const detail = await getProcessingOrder({ database: instance.database, request });
       reply.header('ETag', etagOf(detail.version));
       return detail;
+    },
+    'processing.order.print': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const { order, companyName } = await getProcessingOrderForPrint({
+        database: instance.database,
+        request,
+      });
+      return {
+        contentType: 'text/html',
+        content: renderProcessingOrderFactoryCopy(order, companyName),
+        filename: `加工单-${order.orderNo}.html`,
+      };
     },
     'processing.order.update': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);

@@ -10,6 +10,7 @@ import {
   decodeCursor,
   etagOf,
   type CursorPayload,
+  type PrintDocument,
   type SalesOrder,
   type SalesOrderCreateInput,
   type SalesOrderDetail,
@@ -19,7 +20,7 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { v7 as uuidv7 } from 'uuid';
 import { recordAmountDetailRead } from '../../../platform/audit/sensitive-read.js';
-import { withAudit, type AuditEvent } from '../../../platform/audit/writer.js';
+import { recordAudit, withAudit, type AuditEvent } from '../../../platform/audit/writer.js';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
@@ -108,7 +109,7 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create' | 'update' | 'delete',
+  action: 'read' | 'create' | 'update' | 'delete' | 'export',
 ): void {
   if (!allowsScope(principal.scope, 'sales', action)) {
     throw new AppError('FORBIDDEN', `缺少 sales.${action} 权限`);
@@ -271,6 +272,141 @@ export async function listSalesOrders(
   };
 }
 
+/** 导出上限：超过直接 400，避免一次查询把进程内存打满（D54 ② 未规定上限）。 */
+const EXPORT_MAX_ROWS = 5000;
+
+/** UTF-8 BOM（U+FEFF）：让 Excel 按 UTF-8 识别中文。 */
+const UTF8_BOM = String.fromCharCode(0xfeff);
+
+/** RFC4180：含逗号 / 引号 / CRLF 的字段用双引号包裹，内部引号双写。 */
+function escapeCsvField(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+function csvLine(fields: readonly string[]): string {
+  return fields.map(escapeCsvField).join(',');
+}
+
+/** 金额统一两位小数（四舍五入），用定点整数避免浮点误差。 */
+function formatAmount2(value: string): string {
+  const micro = toMicro(value);
+  const cents = micro >= 0n ? (micro + 5_000n) / 10_000n : (micro - 5_000n) / 10_000n;
+  const negative = cents < 0n;
+  const abs = negative ? -cents : cents;
+  return `${negative ? '-' : ''}${abs / 100n}.${(abs % 100n)
+    .toString()
+    .padStart(2, '0')}`;
+}
+
+function sumQty(lines: readonly { readonly qty: string }[]): string {
+  return fromMicro(lines.reduce((total, line) => total + toMicro(line.qty), 0n));
+}
+
+function exportDateStamp(now: Date): string {
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}${month}${day}`;
+}
+
+/**
+ * 销售单列表导出 CSV（`sales.order.export`，敏感读，D54 ②）。
+ *
+ * - 权限：`sales.export`；数据范围仍走列表同款租户 + 可见公司过滤；
+ * - 不分页：一次取全部符合条件行，超过 5000 行报 400（不静默截断）；
+ * - 金额按 `sales.view_price` 脱敏：无权限时金额列留空，并加一行 CSV 注释说明；
+ * - 成功必记 `action='export'` 审计；失败由 route-mount 统一补 fail 审计。
+ */
+export async function exportSalesOrders(
+  ctx: SalesOrderContext,
+): Promise<PrintDocument> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'sales.order.export');
+  requireScope(principal, 'export');
+  const query = parseListQuery(ctx.request);
+  const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
+
+  const page = await withTenant(database, principal.tenantId, (tx) =>
+    repo.listSalesOrders(repoContext(tx, principal), {
+      companyId: query.companyId,
+      customerId: query.customerId,
+      status: query.status,
+      keyword: query.keyword,
+      limit: EXPORT_MAX_ROWS,
+    }),
+  );
+  if (page.nextCursor !== null) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      `导出结果超过 ${EXPORT_MAX_ROWS} 行，请缩小筛选条件`,
+      { limit: EXPORT_MAX_ROWS },
+    );
+  }
+
+  const rows = page.items.map((order) => [
+    order.orderNo,
+    order.createdAt.slice(0, 10),
+    order.customerName,
+    order.status,
+    order.handlerId,
+    sumQty(order.lines),
+    canViewPrice && order.totalAmount !== null
+      ? formatAmount2(order.totalAmount)
+      : '',
+  ]);
+  const body: string[] = [];
+  if (!canViewPrice) body.push('# 当前账号无看价权限，金额列已留空');
+  body.push(
+    csvLine(['单号', '日期', '客户', '状态', '经办人', '数量合计', '金额合计']),
+    ...rows.map(csvLine),
+  );
+  // RFC4180 使用 CRLF。
+  const content = UTF8_BOM + body.join('\r\n') + '\r\n';
+
+  const audit = auditEventOf(ctx.request, principal, 'export', null, {
+    operationId: 'sales.order.export',
+    companyId: query.companyId ?? null,
+    customerId: query.customerId ?? null,
+    status: query.status ?? null,
+    keyword: query.keyword ?? null,
+    rowCount: rows.length,
+    canViewPrice,
+  });
+  audit.companyId = query.companyId ?? null;
+  await recordAudit(database, audit);
+
+  return {
+    contentType: 'text/csv',
+    content,
+    filename: `销售单-${exportDateStamp(new Date())}.csv`,
+  };
+}
+
+/** 详情装配：单头 + 行 + 费用 + 空收款块 + 取消判定（详情与打印共用）。 */
+async function loadSalesOrderDetail(
+  tx: SqlClient,
+  principal: Principal,
+  id: string,
+): Promise<SalesOrderDetail | null> {
+  const order = await repo.getSalesOrder(repoContext(tx, principal), id);
+  if (!order) return null;
+  const downstream = await repo.hasDirectDownstream(
+    repoContext(tx, principal),
+    {
+      id: order.id,
+      companyId: order.companyId,
+      status: order.status,
+      version: order.version,
+    },
+  );
+  return {
+    ...order,
+    /** 收款记录端点不在本任务范围，详情按契约返回空块与零余额。 */
+    receipts: [],
+    receiptBalance: '0',
+    cancelable: canCancel(order.status, downstream),
+  };
+}
+
 /** 销售单详情（普通读，不记审计）；本批收款块为空占位。 */
 export async function getSalesOrder(
   ctx: SalesOrderContext,
@@ -280,26 +416,9 @@ export async function getSalesOrder(
   requireScope(principal, 'read');
   const id = parseOrderId(ctx.request);
 
-  const detail = await withTenant(database, principal.tenantId, async (tx) => {
-    const order = await repo.getSalesOrder(repoContext(tx, principal), id);
-    if (!order) return null;
-    const downstream = await repo.hasDirectDownstream(
-      repoContext(tx, principal),
-      {
-        id: order.id,
-        companyId: order.companyId,
-        status: order.status,
-        version: order.version,
-      },
-    );
-    return {
-      ...order,
-      /** 收款记录端点不在本任务范围，详情按契约返回空块与零余额。 */
-      receipts: [],
-      receiptBalance: '0',
-      cancelable: canCancel(order.status, downstream),
-    };
-  });
+  const detail = await withTenant(database, principal.tenantId, (tx) =>
+    loadSalesOrderDetail(tx, principal, id),
+  );
   if (!detail) throw new AppError('NOT_FOUND', '销售单不存在');
   const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
   await recordAmountDetailRead(database, {
@@ -312,6 +431,51 @@ export async function getSalesOrder(
     companyId: detail.companyId,
   });
   return maskSalesOrderDetailAmounts(detail, canViewPrice);
+}
+
+export interface SalesOrderPrintSource {
+  /** 已按看价权限脱敏的详情（无权限时金额为 null）。 */
+  readonly detail: SalesOrderDetail;
+  readonly companyName: string;
+}
+
+/**
+ * 打印取数（prints.ts：单张打印按普通读处理，不记 `amount.detail`）。
+ *
+ * 与详情端点共用装配与公司可见性逻辑；金额仍按 `sales.view_price` 脱敏，
+ * 由渲染层把 null 显示为「—」。公司名暂无跨模块端口，只读 `company.name`。
+ */
+export async function getSalesOrderForPrint(
+  ctx: SalesOrderContext,
+): Promise<SalesOrderPrintSource> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'sales.order.print');
+  requireScope(principal, 'read');
+  const id = parseOrderId(ctx.request);
+
+  const source = await withTenant(database, principal.tenantId, async (tx) => {
+    const detail = await loadSalesOrderDetail(tx, principal, id);
+    if (!detail) return null;
+    const company = await tx.query<{ name: string }>(
+      `SELECT name
+         FROM company
+        WHERE id = $1::uuid
+          AND tenant_id = $2`,
+      [detail.companyId, principal.tenantId],
+    );
+    // 销售单可见即公司必然存在；缺失时退回公司 id，避免打印 500。
+    return {
+      detail,
+      companyName: company.rows[0]?.name ?? detail.companyId,
+    };
+  });
+  if (!source) throw new AppError('NOT_FOUND', '销售单不存在');
+
+  const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
+  return {
+    detail: maskSalesOrderDetailAmounts(source.detail, canViewPrice),
+    companyName: source.companyName,
+  };
 }
 
 /** 开销售单：201 + 同事务取 E 号 / 审计（D16 / D51）。 */

@@ -23,6 +23,7 @@ import { PROCESSING_ORDER_ROUTES } from './processing-orders.js';
 import { INTERNAL_TRADE_ORDER_ROUTES } from './internal-trade-orders.js';
 import { SETTLEMENT_ORDER_ROUTES } from './settlement-orders.js';
 import { COMMISSION_RATE_ROUTES } from './commission-rates.js';
+import { PRINT_ROUTES } from './prints.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -243,6 +244,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...SETTLEMENT_ORDER_ROUTES,
   // —— settlement 模块：提成比例配置 3 条（list/create/delete，D77）——
   ...COMMISSION_RATE_ROUTES,
+  // —— 打印 / 导出 3 条（销售单打印、加工单打印、销售单列表导出）——
+  ...PRINT_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;
