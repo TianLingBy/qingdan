@@ -31,8 +31,9 @@ import { maskSettlementAmounts } from '../services/masking.js';
  * - 金额：服务端不接收 body 金额；确认时由 SQL 以毛利 - 相关损失计算净毛利。
  * - 一期一单一次结算：重复确认返回 422，并发版本变化返回 409。
  *
- * TODO(D19 / D29)：E / N 完成态自动生成 C 单草稿不在本批端点内；待跨模块公开
- * 用例通道落地后接入，禁止 settlement 直读 E / N 表。
+ * D19 现状：E 单完成态已由 sales 模块经 D70 通道（settlementDraftPort →
+ * services/drafts.ts）自动生成 C 单草稿；N 单完成态尚未接线，属 internal-trade 模块。
+ * 本模块仍禁止直读 E / N 表，草稿只经公开用例通道写入。
  */
 
 const OBJECT_TYPE = 'settlement_order';
