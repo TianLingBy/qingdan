@@ -281,6 +281,38 @@ export async function getProcessingOrder(
   return detail;
 }
 
+/**
+ * 加工单打印取数（普通读，不记审计）：详情实体 + 公司名。
+ * processing 无 `view_price` 脱敏口径，金额与数量按实体原样返回。
+ */
+export async function getProcessingOrderForPrint(
+  ctx: ProcessingOrderContext,
+): Promise<{ order: ProcessingOrder; companyName: string }> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'processing.order.print');
+  requireScope(principal, 'read');
+  const id = parseOrderId(ctx.request);
+
+  const source = await withTenant(database, principal.tenantId, async (tx) => {
+    const order = await repo.getProcessingOrder(repoContext(tx, principal), id);
+    if (!order) return null;
+    const company = await tx.query<{ name: string }>(
+      `SELECT name
+         FROM company
+        WHERE id = $1::uuid
+          AND tenant_id = $2`,
+      [order.companyId, principal.tenantId],
+    );
+    // 加工单可见即公司必然存在；缺失时退回公司 id，避免打印 500。
+    return {
+      order,
+      companyName: company.rows[0]?.name ?? order.companyId,
+    };
+  });
+  if (!source) throw new AppError('NOT_FOUND', '加工单不存在');
+  return source;
+}
+
 /** 开加工单：201 + 同事务取 B 单号 / 审计（D16 / D51）。 */
 export async function createProcessingOrder(
   ctx: ProcessingOrderWriteContext,

@@ -15,7 +15,9 @@ import {
   cancelSalesOrder,
   completeSalesOrder,
   createSalesOrder,
+  exportSalesOrders,
   getSalesOrder,
+  getSalesOrderForPrint,
   listSalesOrders,
   updateSalesOrder,
 } from './usecases/sales-orders.js';
@@ -30,6 +32,7 @@ import {
   listCustomerReturns,
 } from './usecases/customer-returns.js';
 import { maskSalesOrderDetailAmounts } from './services/masking.js';
+import { renderSalesOrderCustomerCopy } from './services/customer-copy.js';
 
 /**
  * sales 模块（E 销售单一期 5 条 + 收款记录 2 条 + R 客户退货 3 条）。
@@ -47,6 +50,7 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'sales.order.update': 'sales_order',
   'sales.order.complete': 'sales_order',
   'sales.order.cancel': 'sales_order',
+  'sales.order.export': 'sales_order',
   'sales.receipt.create': 'sales_receipt',
   'customer_return.create': 'customer_return',
 };
@@ -106,6 +110,26 @@ export function registerSalesRoutes(app: FastifyInstance): void {
         { ...detail, ...receiptBlock },
         canViewPrice,
       );
+    },
+    'sales.order.export': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await exportSalesOrders({
+        database: instance.database,
+        request,
+      });
+    },
+    'sales.order.print': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      // 复用详情取数 + view_price 脱敏；无权限时金额为 null，由渲染层显示「—」。
+      const { detail, companyName } = await getSalesOrderForPrint({
+        database: instance.database,
+        request,
+      });
+      return {
+        contentType: 'text/html',
+        content: renderSalesOrderCustomerCopy(detail, companyName),
+        filename: `销售单-${detail.orderNo}.html`,
+      };
     },
     'sales.order.update': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
