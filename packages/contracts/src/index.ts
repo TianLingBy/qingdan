@@ -20,6 +20,7 @@ export * from './settlement-orders.js';
 export * from './commission-rates.js';
 export * from './prints.js';
 export * from './payments.js';
+export * from './billings.js';
 export * from './errors.js';
 export * from './authz.js';
 export * from './audit.js';

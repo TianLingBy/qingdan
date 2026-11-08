@@ -1,5 +1,5 @@
 /**
- * 功能域词表（D44 的 20 个功能域 + D52 追加的操作日志/API 与集成 + #101 在线支付 = 23 个）。
+ * 功能域词表（D44 的 20 个功能域 + D52 追加的操作日志/API 与集成 + #101 在线支付 + 订阅计费 = 24 个）。
  *
  * 这是 scope、审计 action、权限覆盖、tag、MCP 工具名共用的唯一键空间：
  * 任何模块不得自造 domain key，新增功能域必须同时改这里与 docs/decisions.md。
@@ -29,6 +29,7 @@ export const DOMAINS = {
   audit: '操作日志',
   api_integration: 'API 与集成',
   payment: '在线支付（客户扫码 / 回调）',
+  billing: '订阅与计费（平台收取商家费用）',
 } as const;
 
 export type DomainKey = keyof typeof DOMAINS;

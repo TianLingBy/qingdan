@@ -7,6 +7,7 @@ import { inventoryServices } from './inventory/services/ports.js';
 import { registerMasterdataRoutes } from './masterdata/routes.js';
 import { registerPaymentRoutes } from './payment/routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
+import { billingEntitlementService } from './platform/services/entitlement.js';
 import { platformServices } from './platform/services/ports.js';
 import { registerProcessingRoutes } from './processing/routes.js';
 import { registerPurchaseRoutes } from './purchase/routes.js';
@@ -45,6 +46,7 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   // D70：模块间调用通道——先清空（测试会重复建 app），再由各模块注册自己的端口实现。
   resetServices();
   registerServices(platformServices);
+  registerServices(billingEntitlementService);
   registerServices(inventoryServices);
   registerServices(settlementServices);
   registerServices(salesServices);
