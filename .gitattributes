@@ -26,3 +26,10 @@ tools/pre-commit text eol=lf
 
 # 协议与公开法律文本一律 LF（AGPL 原文是官方逐字副本，行尾不能被本机 autocrlf 改掉）
 LICENSE          text eol=lf
+
+# 容器与部署配置一律 LF：Dockerfile / Caddyfile 带 CRLF 会在 Linux 构建时报
+# 「unknown instruction」或把 \r 带进指令行；env 文件的 \r 会被当成值的一部分。
+Dockerfile       text eol=lf
+.dockerignore    text eol=lf
+.env.example     text eol=lf
+Caddyfile        text eol=lf

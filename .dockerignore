@@ -1,0 +1,27 @@
+# 构建上下文裁剪：只让 Docker 看到源码与清单，避免把本机依赖/产物/密钥打进镜像。
+
+# 版本库与编辑器
+.git
+.gitignore
+.github
+.claude
+.cursor
+.vscode
+.idea
+
+# 依赖与构建产物（镜像里会重新安装、重新编译）
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+coverage
+
+# 本地环境与密钥（.env 由 compose 的 env_file 在运行时注入，不进入镜像）
+.env
+.env.*
+!.env.example
+
+# 本地产物与临时文件
+ops/backups
+*.log
+.tmp-*

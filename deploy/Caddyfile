@@ -1,0 +1,10 @@
+# 现在没有域名：SITE_ADDRESS 未设置时回落到 :80，先走 HTTP。
+# 有域名并完成备案后：在 .env 设 SITE_ADDRESS=qingdan.example.com，Caddy 自动申请证书并切到 443。
+
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+	reverse_proxy api:3000
+	log {
+		output stdout
+	}
+}

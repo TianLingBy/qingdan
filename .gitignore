@@ -17,6 +17,9 @@ coverage/
 .env.*
 !.env.example
 
+# 备份产物（本地/服务器生成，不入库）
+ops/backups/
+
 # 编辑器 / 系统
 .vs/
 .idea/

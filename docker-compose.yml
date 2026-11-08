@@ -1,0 +1,82 @@
+# 轻单生产编排（Compose v2，不写 version 字段）。
+# 使用前：cp .env.example .env，填好密码与商户密钥；.env 已被 .gitignore 忽略。
+# 启动顺序：postgres 健康 -> api 健康 -> caddy；迁移由 tools profile 手动执行，不随应用自启。
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    # PostgreSQL 18 的默认 PGDATA 是 /var/lib/postgresql/18/docker，
+    # 官方建议把命名卷挂到父目录 /var/lib/postgresql，跨容器重建才能保住数据。
+    volumes:
+      - pgdata:/var/lib/postgresql
+    env_file: .env
+    healthcheck:
+      # $$ 转义：变量在容器内展开，不依赖 compose 解析 .env 的时机。
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      target: runtime
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "3000"
+    healthcheck:
+      # slim 镜像没有 curl，用 Node 24 自带的 fetch 探活公开健康端点。
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # 只把站点地址给 Caddy，不把数据库等密钥暴露给它。
+      # 未设置时回落到 :80；设置域名后 Caddy 自动申请证书并监听 443。
+      SITE_ADDRESS: "${SITE_ADDRESS:-:80}"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 一次性迁移服务：首次部署与每次升级手动执行
+  #   docker compose --profile tools run --rm migrate
+  migrate:
+    build:
+      context: .
+      target: builder
+    command: pnpm -C apps/api migrate
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+    restart: "no"
+
+volumes:
+  pgdata:
+  caddydata:
+  caddyconfig:
