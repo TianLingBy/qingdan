@@ -25,6 +25,7 @@ import { SETTLEMENT_ORDER_ROUTES } from './settlement-orders.js';
 import { COMMISSION_RATE_ROUTES } from './commission-rates.js';
 import { PRINT_ROUTES } from './prints.js';
 import { PAYMENT_ROUTES } from './payments.js';
+import { BILLING_ROUTES } from './billings.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -249,6 +250,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...PRINT_ROUTES,
   // —— payment 模块：在线支付回调 1 条（#101，匿名可达 / 幂等）——
   ...PAYMENT_ROUTES,
+  // —— billing：平台订阅 2 条（读 / 运营调整，一期仅契约）——
+  ...BILLING_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;

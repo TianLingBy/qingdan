@@ -88,6 +88,24 @@ export interface EmployeeDirectoryPort {
   belongsToCompany(tx: SqlClient, query: EmployeeMembershipQuery): Promise<boolean>;
 }
 
+/** 公司订阅查询（一期只读，不拦请求；D1/D12：到期只提示续费）。 */
+export interface BillingEntitlementQuery {
+  readonly companyId: string;
+}
+
+/** 订阅快照：`expiresAt = null` 表示永久。 */
+export interface BillingEntitlement {
+  readonly plan: string;
+  readonly expiresAt: string | null;
+  readonly expired: boolean;
+  readonly dueSoon: boolean;
+}
+
+/** 订阅端口：由 platform 实现（company 表的 plan / expires_at / status）。 */
+export interface BillingEntitlementPort {
+  getEntitlement(tx: SqlClient, query: BillingEntitlementQuery): Promise<BillingEntitlement>;
+}
+
 /** 支付回调查单入参：只按公司 + E 单单号定位，不解析单号前缀。 */
 export interface FindSalesOrderByNoInput {
   readonly companyId: string;
@@ -142,6 +160,7 @@ export interface ServiceRegistry {
   readonly settlementDraft?: SettlementDraftPort;
   readonly employeeDirectory?: EmployeeDirectoryPort;
   readonly salesReceipt?: SalesReceiptPort;
+  readonly billingEntitlement?: BillingEntitlementPort;
 }
 
 let registry: ServiceRegistry = {};
@@ -190,4 +209,13 @@ export function salesReceiptPort(): SalesReceiptPort {
     });
   }
   return registry.salesReceipt;
+}
+
+export function billingEntitlementPort(): BillingEntitlementPort {
+  if (!registry.billingEntitlement) {
+    throw new AppError('NOT_IMPLEMENTED', 'platform 未注册 BillingEntitlementPort（D70）', {
+      port: 'BillingEntitlementPort',
+    });
+  }
+  return registry.billingEntitlement;
 }

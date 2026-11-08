@@ -1,6 +1,18 @@
-import { ROUTES, buildOpenApiDocument, routesOfModule, type OpenApiDocument } from '@qingdan/contracts';
-import type { FastifyInstance } from 'fastify';
+import {
+  AppError,
+  CompanySubscriptionUpdateSchema,
+  ROUTES,
+  allowsScope,
+  buildOpenApiDocument,
+  routesOfModule,
+  type OpenApiDocument,
+  type RouteDef,
+} from '@qingdan/contracts';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { withTenant } from '../../platform/auth/tenant-context.js';
 import type { AppConfig } from '../../platform/config.js';
+import type { Database } from '../../platform/db/client.js';
+import { requestIdFor } from '../../platform/http/request-id.js';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
 import { createApiToken, listApiTokens, revokeApiToken } from './usecases/api-tokens.js';
 import { listAuditLogs } from './usecases/audit-logs.js';
@@ -14,6 +26,7 @@ import { login } from './usecases/login.js';
 import { logout } from './usecases/logout.js';
 import { me } from './usecases/me.js';
 import { updatePermissionOverrides } from './usecases/permission-overrides.js';
+import { getCompanySubscription, updateCompanySubscription } from './usecases/subscription.js';
 
 /**
  * platform 端点挂载。
@@ -43,6 +56,19 @@ function openApiDocument(): OpenApiDocument {
 }
 
 /** 失败审计的 objectType：按端点推断；未登记的回退 `http_request`。 */
+/** 无数据库时保持骨架语义：501 + operationId（与 sales 等模块同一约定）。 */
+function requireDatabase(instance: FastifyInstance, route: RouteDef): Database {
+  const database = instance.database;
+  if (!database) {
+    throw new AppError(
+      'NOT_IMPLEMENTED',
+      `${route.operationId} 尚未实现（数据库未配置）`,
+      { operationId: route.operationId },
+    );
+  }
+  return database;
+}
+
 const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'platform.auth.login': 'session',
   'platform.auth.logout': 'session',
@@ -54,7 +80,28 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'platform.employee.create': 'employee',
   'platform.employee.update': 'employee',
   'platform.employee.disable': 'employee',
+  'billing.subscription.update': 'company',
 };
+
+function userAgentOf(request: FastifyRequest): string | null {
+  const raw = request.headers['user-agent'];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return typeof value === 'string' ? value : null;
+}
+
+/**
+ * 订阅调整按契约强制 X-Reason（运营写操作）。错误码表里没有 400，
+ * 这里显式映射，仍走统一错误体与 mountRoutes 的失败审计。
+ */
+class MissingReasonError extends AppError {
+  override get status(): number {
+    return 400;
+  }
+
+  constructor() {
+    super('VALIDATION_FAILED', '本端点必须提供 X-Reason 说明调整原因', { header: 'X-Reason' });
+  }
+}
 
 export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRoutesOptions): void {
   const handlers: RouteHandlers = {
@@ -88,6 +135,64 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
       listAuditLogs({ database: instance.database, request }),
     'platform.permission.update': ({ app: instance, request, reply }) =>
       updatePermissionOverrides({ database: instance.database, request, reply }),
+    'billing.subscription.read': async ({ app: instance, request, route }) => {
+      const database = requireDatabase(instance, route);
+      const principal = request.principal;
+      if (!principal) throw new AppError('UNAUTHENTICATED');
+      if (!allowsScope(principal.scope, 'billing', 'read')) {
+        throw new AppError('FORBIDDEN', '缺少 billing.read 权限');
+      }
+      // 契约无 companyId 入参：取当前主体可见公司集合中的第一家公司。
+      const companyId = principal.companyIds[0];
+      if (!companyId) {
+        throw new AppError('NOT_FOUND', '当前账号未绑定任何公司');
+      }
+      return await withTenant(database, principal.tenantId, (tx) =>
+        getCompanySubscription(tx, companyId),
+      );
+    },
+    'billing.subscription.update': async ({ app: instance, request, route }) => {
+      const database = requireDatabase(instance, route);
+      const principal = request.principal;
+      if (!principal) throw new AppError('UNAUTHENTICATED');
+      if (!allowsScope(principal.scope, 'billing', 'update')) {
+        throw new AppError('FORBIDDEN', '缺少 billing.update 权限');
+      }
+
+      if (!request.auditReason) throw new MissingReasonError();
+
+      const parsed = CompanySubscriptionUpdateSchema.safeParse(request.body);
+      if (!parsed.success) {
+        throw new AppError('VALIDATION_FAILED', '订阅修改入参不合法', {
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path.map(String).join('.'),
+            message: issue.message,
+          })),
+        });
+      }
+
+      // 契约无 companyId 入参：与读端点一致，取当前主体可见公司的第一家公司。
+      const companyId = principal.companyIds[0];
+      if (!companyId) {
+        throw new AppError('NOT_FOUND', '当前账号未绑定任何公司');
+      }
+
+      return await updateCompanySubscription(database, {
+        companyId,
+        patch: parsed.data,
+        reason: request.auditReason,
+        actor: {
+          tenantId: principal.tenantId,
+          actorType: principal.actorType,
+          actorId: principal.actorId,
+          credentialId: principal.credentialId,
+          source: request.auditSource,
+          requestId: requestIdFor(request),
+          ip: request.ip,
+          userAgent: userAgentOf(request),
+        },
+      });
+    },
   };
 
   mountRoutes(app, {

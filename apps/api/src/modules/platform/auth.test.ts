@@ -284,7 +284,7 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
       companyIds: [DEMO_IDS.companyId],
     });
     // 老板 = 全功能域 × 全动作（D15 / D59⑥）。
-    expect(body.scope.length).toBe(23);
+    expect(body.scope.length).toBe(24);
     expect(body.scope.find((entry) => entry.domain === 'sales')?.actions).toEqual(
       expect.arrayContaining(['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'export']),
     );
