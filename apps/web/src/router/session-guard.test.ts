@@ -75,4 +75,35 @@ describe('会话判定（GET /auth/me 为唯一依据）', () => {
     expect(client.getQueryData(['auth', 'me'])).toBeUndefined();
     expect(client.getQueryData(['masterdata', 'products'])).toBeUndefined();
   });
+
+  it('退出登录必须先让 me 失效：否则 /login 守卫会拿旧会话把人弹回应用内', async () => {
+    const client = freshClient();
+    const queryKey = ['auth', 'me', 'test-logout'] as const;
+    let calls = 0;
+
+    // 登录态：第一次读会话命中缓存外的真实接口
+    const loggedIn = await readSession({
+      load: async () => {
+        calls += 1;
+        return ME;
+      },
+      client,
+      queryKey,
+    });
+    expect(loggedIn).not.toBeNull();
+
+    // 退出登录：只清 me 缓存，下一次读会话必须重新打接口并拿到 401
+    client.removeQueries({ queryKey });
+    const afterLogout = await readSession({
+      load: async () => {
+        calls += 1;
+        throw new ApiError({ code: 'UNAUTHENTICATED', message: '未登录', status: 401 });
+      },
+      client,
+      queryKey,
+    });
+
+    expect(afterLogout).toBeNull();
+    expect(calls).toBe(2);
+  });
 });

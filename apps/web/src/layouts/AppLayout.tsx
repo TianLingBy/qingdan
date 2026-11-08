@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useNavigate } from '@tanstack/react-router';
 import { BROWSER_BASELINE_LABEL } from '../browser-baseline';
 import { authApi, authKeys } from '../pages/auth/auth-api';
@@ -14,12 +14,15 @@ import { clearSessionCache } from '../router/session-guard';
 export function AppLayout() {
   const groups = routesByDomain();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const me = useQuery({ queryKey: authKeys.me, queryFn: () => authApi.me() });
 
   const logout = useMutation({
     mutationFn: () => authApi.logout(),
     onSuccess: async () => {
-      // 先离开受保护页面再清缓存，避免清缓存瞬间用旧 access 去重取 /auth/me。
+      // 必须先丢掉缓存的 me：否则 /login 的守卫会读到旧的「已登录」会话，把人又弹回应用内，
+      // 表现为「点了退出没反应」。
+      queryClient.removeQueries({ queryKey: authKeys.me });
       await navigate({ to: '/login' });
       clearSessionCache();
     },
