@@ -269,6 +269,7 @@ paths:
                             - profit_report
                             - audit
                             - api_integration
+                            - payment
                         actions:
                           type: array
                           items:
@@ -1176,6 +1177,7 @@ paths:
                           - profit_report
                           - audit
                           - api_integration
+                          - payment
                       actions:
                         type: array
                         items:
@@ -6031,6 +6033,7 @@ components:
                   - profit_report
                   - audit
                   - api_integration
+                  - payment
               actions:
                 type: array
                 items:
@@ -6142,6 +6145,7 @@ components:
                   - profit_report
                   - audit
                   - api_integration
+                  - payment
               actions:
                 type: array
                 items:
