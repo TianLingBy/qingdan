@@ -37,7 +37,7 @@ packages/
   mcp/                 MCP Server（工具与 REST 一对一，不绕权限与审计）
 tests/                 PowerShell 契约测试，入口 tests/run.ps1
 tools/                 受控工具：pre-commit hook 源文件
-docs/                  OpenAPI 说明书、ADR、spike 与模块模板
+docs/                  OpenAPI 说明书、ADR、spike 与模块模板；`docs/members/` 放成员档案（复制 `_template.md` 填）
 ```
 
 ## 本地运行
