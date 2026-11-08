@@ -88,10 +88,60 @@ export interface EmployeeDirectoryPort {
   belongsToCompany(tx: SqlClient, query: EmployeeMembershipQuery): Promise<boolean>;
 }
 
+/** 支付回调查单入参：只按公司 + E 单单号定位，不解析单号前缀。 */
+export interface FindSalesOrderByNoInput {
+  readonly companyId: string;
+  readonly orderNo: string;
+}
+
+/** 支付回调可用的销售单快照：金额均为 decimal 字符串（D54）。 */
+export interface SalesOrderForPayment {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly totalAmount: string;
+  /** 已收款合计（含退款负数行），由 sales 侧 SQL 聚合。 */
+  readonly receivedAmount: string;
+}
+
+/** 由支付回调生成一笔收款记录的命令。 */
+export interface SalesReceiptFromPaymentCommand {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly orderId: string;
+  readonly amount: string;
+  readonly channel: 'wechat' | 'alipay';
+  readonly transactionId: string;
+  /** 来源渠道 / 第三方交易号等留痕信息。 */
+  readonly remark: string;
+}
+
+export interface SalesReceiptFromPaymentResult {
+  readonly receiptId: string;
+}
+
+/**
+ * 收款写入端口：由 sales 实现（D70 / #101）。
+ *
+ * 支付模块不直读 `sales_order` / `sales_receipt`；金额校验所需的余额也由本端口聚合。
+ */
+export interface SalesReceiptPort {
+  findOrderByNo(
+    tx: SqlClient,
+    input: FindSalesOrderByNoInput,
+  ): Promise<SalesOrderForPayment | null>;
+  /** 写收款行 + 审计（同事务）；收款写入复用 sales 既有 path。 */
+  createReceiptFromPayment(
+    tx: SqlClient,
+    command: SalesReceiptFromPaymentCommand,
+  ): Promise<SalesReceiptFromPaymentResult>;
+}
+
 export interface ServiceRegistry {
   readonly stockFlow?: StockFlowPort;
   readonly settlementDraft?: SettlementDraftPort;
   readonly employeeDirectory?: EmployeeDirectoryPort;
+  readonly salesReceipt?: SalesReceiptPort;
 }
 
 let registry: ServiceRegistry = {};
@@ -131,4 +181,13 @@ export function employeeDirectoryPort(): EmployeeDirectoryPort {
     });
   }
   return registry.employeeDirectory;
+}
+
+export function salesReceiptPort(): SalesReceiptPort {
+  if (!registry.salesReceipt) {
+    throw new AppError('NOT_IMPLEMENTED', 'sales 未注册 SalesReceiptPort（D70 / #101）', {
+      port: 'SalesReceiptPort',
+    });
+  }
+  return registry.salesReceipt;
 }

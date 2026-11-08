@@ -64,8 +64,10 @@ describe('D21 取消级联', () => {
 });
 
 describe('D51 / D54 审计与 AI 边界', () => {
-  it('全部写操作 100% 记审计', () => {
-    const writes = ROUTES.filter((r) => r.method !== 'GET');
+  it('全部写操作 100% 记审计（匿名公开回调除外）', () => {
+    // payment.callback.receive 是第三方支付平台的匿名投递（#101），无本系统操作者，
+    // audit.kind = none；验签 / 金额校验 / 幂等入账由 handler 负责。
+    const writes = ROUTES.filter((r) => r.method !== 'GET' && !r.publicAccess);
     expect(writes.length).toBeGreaterThan(0);
     for (const r of writes) {
       expect(r.audit.required, r.operationId).toBe(true);

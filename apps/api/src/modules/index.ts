@@ -5,11 +5,13 @@ import { registerInternalTradeRoutes } from './internal-trade/routes.js';
 import { registerInventoryRoutes } from './inventory/routes.js';
 import { inventoryServices } from './inventory/services/ports.js';
 import { registerMasterdataRoutes } from './masterdata/routes.js';
+import { registerPaymentRoutes } from './payment/routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
 import { platformServices } from './platform/services/ports.js';
 import { registerProcessingRoutes } from './processing/routes.js';
 import { registerPurchaseRoutes } from './purchase/routes.js';
 import { registerSalesRoutes } from './sales/routes.js';
+import { salesServices } from './sales/services/receipts-port.js';
 import { registerSettlementRoutes } from './settlement/routes.js';
 import { settlementServices } from './settlement/services/drafts.js';
 
@@ -28,6 +30,7 @@ export const MOUNTED_MODULE_KEYS = [
   'processing',
   'internal-trade',
   'settlement',
+  'payment',
 ] as const;
 
 export interface RegisterModulesOptions {
@@ -44,6 +47,7 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerServices(platformServices);
   registerServices(inventoryServices);
   registerServices(settlementServices);
+  registerServices(salesServices);
 
   registerPlatformRoutes(app, { version: options.version, config: options.config });
   registerMasterdataRoutes(app);
@@ -53,4 +57,5 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerProcessingRoutes(app);
   registerInternalTradeRoutes(app);
   registerSettlementRoutes(app);
+  registerPaymentRoutes(app);
 }
