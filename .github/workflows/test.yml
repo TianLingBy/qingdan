@@ -79,6 +79,11 @@ jobs:
         if: hashFiles('tests/db-concurrency.test.ps1') != ''
         run: pwsh -NoProfile -File ./tests/db-concurrency.test.ps1
 
+      - name: 业务流 e2e（真 PG）
+        shell: pwsh
+        if: hashFiles('tests/e2e-business-flow.test.ps1') != ''
+        run: pwsh -NoProfile -File ./tests/e2e-business-flow.test.ps1
+
       - name: 说明（db-concurrency.test.ps1 尚未落地）
         if: hashFiles('tests/db-concurrency.test.ps1') == ''
         run: |
