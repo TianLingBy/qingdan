@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../api/client';
 import { allows, type ScopeAction } from '../../lib/access';
 import { MASKED_AMOUNT, formatMoney } from '../../lib/decimal';
+import { useEmployeeLabel } from '../../lib/employee-directory';
 import { authApi, authKeys } from '../auth/auth-api';
 import {
   SETTLEMENT_SOURCE_LABEL,
@@ -37,7 +38,6 @@ import {
   formatCommissionRate,
   formatRate,
   lossNote,
-  ownerLabel,
   settlementQueryKeys,
   settlementsApi,
   sourceDocText,
@@ -99,6 +99,7 @@ function DetailPanel({
   onClose,
   onConfirm,
 }: DetailPanelProps) {
+  const employeeLabel = useEmployeeLabel();
   const blocked = confirmBlockedText(order.confirmable.reason);
   const note = commissionNote(order.commissionRateSnapshot, order.commissionAmount);
   const loss = lossNote(order.grossProfit, order.relatedLossAmount);
@@ -185,11 +186,8 @@ function DetailPanel({
           </div>
           <div>
             <dt className="text-xs text-slate-500">提成归属人</dt>
-            <dd
-              className="mt-0.5 font-mono text-xs"
-              title="员工 id 前 8 位：本批没有员工列表端点，取不到姓名（见 #102 回报）"
-            >
-              {ownerLabel(order.commissionOwnerId)}
+            <dd className="mt-0.5 text-xs" title={order.commissionOwnerId ?? undefined}>
+              {employeeLabel(order.commissionOwnerId)}
             </dd>
           </div>
         </dl>

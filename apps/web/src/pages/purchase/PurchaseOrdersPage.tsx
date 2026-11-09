@@ -21,6 +21,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { allows, type ScopeAction } from '../../lib/access';
+import { useEmployeeLabel } from '../../lib/employee-directory';
 import { authApi, authKeys } from '../auth/auth-api';
 import { extractIssues, masterdataApi, optionalText } from '../masterdata/masterdata-api';
 import {
@@ -631,6 +632,7 @@ function DetailPanel({
 }
 
 export function PurchaseOrdersPage() {
+  const employeeLabel = useEmployeeLabel();
   const queryClient = useQueryClient();
   const me = useQuery({ queryKey: authKeys.me, queryFn: authApi.me });
   const meData = me.data;
@@ -1012,7 +1014,7 @@ export function PurchaseOrdersPage() {
                   <td className="px-4 py-3 text-slate-600">
                     {order.handlerId === meData?.employeeId
                       ? (meData?.displayName ?? '本人')
-                      : shortId(order.handlerId)}
+                      : employeeLabel(order.handlerId)}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">

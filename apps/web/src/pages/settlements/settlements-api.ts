@@ -184,12 +184,6 @@ export function formatCommissionRate(rate: string): string {
   return formatRate(rate);
 }
 
-/** 提成归属人：契约只回 id，页面没有员工目录，显示 id 前 8 位。 */
-export function ownerLabel(ownerId: string | null): string {
-  if (ownerId === null) return '—';
-  return ownerId.slice(0, 8);
-}
-
 /** 提成金额为 0 且比例也为 0 时，说明「本公司没配提成比例」（D77 ②），不是算错。 */
 export function commissionNote(rate: string, amount: string | null): string | null {
   if (Number(rate) === 0 && (amount === null || Number(amount) === 0)) {

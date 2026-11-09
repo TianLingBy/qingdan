@@ -22,6 +22,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { allows, type ScopeAction } from '../../lib/access';
+import { useEmployeeLabel } from '../../lib/employee-directory';
 import {
   formatMoney,
   formatQty,
@@ -424,6 +425,7 @@ function DetailPanel({
   onEdit,
   onCancel,
 }: DetailPanelProps) {
+  const employeeLabel = useEmployeeLabel();
   const lineTotal = sumDecimal(order.lines.map((line) => line.amount));
   const cancelReason = cancelDisabledReason(order.cancelable.reason);
 
@@ -436,7 +438,7 @@ function DetailPanel({
             <StatusBadge status={order.status} />
             <span>{tradeRouteText(order)}</span>
             <span className="text-slate-300">|</span>
-            <span>经手人 {shortId(order.handlerId)}</span>
+            <span>经手人 {employeeLabel(order.handlerId)}</span>
             <span className="text-slate-300">|</span>
             <span>开单 {formatDateTime(order.createdAt)}</span>
           </p>

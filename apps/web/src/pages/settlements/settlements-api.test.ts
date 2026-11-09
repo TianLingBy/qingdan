@@ -12,7 +12,6 @@ import {
   formatCommissionRate,
   formatRate,
   lossNote,
-  ownerLabel,
   sourceDocText,
 } from './settlements-api';
 
@@ -80,11 +79,6 @@ describe('来源单与提成归属人（契约只回 id）', () => {
       sourceDocText('E', '01a1bf69-545e-7265-b209-ff4f133e169e', 'E-0001-20261109-0002'),
     ).toBe('销售单 E · E-0001-20261109-0002');
     expect(sourceDocText('N', 'abc', null)).toBe('内部交易单 N · abc');
-  });
-
-  it('提成归属人为空时是破折号，不是 undefined', () => {
-    expect(ownerLabel(null)).toBe('—');
-    expect(ownerLabel('01900000-0000-7000-8000-000000000021')).toBe('01900000');
   });
 });
 
