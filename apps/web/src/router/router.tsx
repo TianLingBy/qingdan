@@ -16,6 +16,7 @@ import { CompaniesPage } from '../pages/companies/CompaniesPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
 import { ProcessingOrdersPage } from '../pages/processing/ProcessingOrdersPage';
 import { PurchaseOrdersPage } from '../pages/purchase/PurchaseOrdersPage';
+import { ReversalsPage } from '../pages/reversals/ReversalsPage';
 import { SalesOrdersPage } from '../pages/sales/SalesOrdersPage';
 import { WorkbenchPage } from '../pages/workbench/WorkbenchPage';
 import type { ImplementedPageId } from './implemented';
@@ -123,9 +124,10 @@ const IMPLEMENTED_PAGES: { [K in ImplementedPageId]: ComponentType } = {
   'api-integration': ApiIntegrationPage,
   'processing-orders': ProcessingOrdersPage,
   'sales-orders': SalesOrdersPage,
+  reversals: ReversalsPage,
 };
 
-// `IMPLEMENTED_PAGE_IDS` 是 as const 元组，键一定是上面这 8 个；此处只是把窄类型放宽回路由 id。
+// `IMPLEMENTED_PAGE_IDS` 是 as const 元组，键一定是上面这 9 个；此处只是把窄类型放宽回路由 id。
 const implementedPageMap: Partial<Record<RouteEntry['id'], ComponentType>> = IMPLEMENTED_PAGES;
 
 function PageForEntry({ entry }: { entry: RouteEntry }) {
