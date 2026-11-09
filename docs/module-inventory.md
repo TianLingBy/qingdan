@@ -21,8 +21,8 @@
 
 ## 开放项
 
-- `StockFlowPort.createBatch` 已由 #136 拍板命令与返回结构，#147 未把接口写入 `apps/api/src/platform/services/registry.ts`，由主线补齐。
-- #100 成本更正 T1/T2/T3 尚缺“成本更正金额”持久化结构；`inventory_flow` 只有数量 `delta`，不能承载成本差额。
+- `StockFlowPort.createBatch` 已由 #136 拍板命令与返回结构，#147 未把接口写入 `apps/api/src/platform/services/registry.ts`，由主线补齐；负责人待办：[#162](https://github.com/TianLingBy/qingdan/issues/162)。
+- #100 成本更正 T1/T2/T3 尚缺“成本更正金额”持久化结构；`inventory_flow` 只有数量 `delta`，不能承载成本差额；负责人待办：[#163](https://github.com/TianLingBy/qingdan/issues/163)。
 - #100 判定下游引用需读 processing / sales / settlement 数据；按 D70 必须由主线提供只读引用端口或经批准的报表视图。
 
 ## 验收标准
@@ -45,8 +45,8 @@
 
 ## 进行中
 
-- #137：等待负责人把 #136 已批准的 `CreateBatchCommand` / `CreateBatchReceipt` 与 `createBatch` 方法补进平台 `StockFlowPort`，随后在 `apps/api/src/modules/inventory/services/ports.ts` 接线。
-- #100：等待主线确定成本更正金额的落库位置、T1/T2/T3 端点契约，以及判定下游引用所用的 D70 只读端口。
+- #137：等待负责人处理 #162，把 `CreateBatchCommand` / `CreateBatchReceipt` 与 `createBatch` 方法补进平台 `StockFlowPort`，随后在 `apps/api/src/modules/inventory/services/ports.ts` 接线。
+- #100：等待负责人处理 #163，确定成本更正金额的落库位置、T1/T2/T3 端点契约，以及判定下游引用所用的 D70 只读端口。
 
 ## 下一步
 
