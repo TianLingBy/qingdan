@@ -17,6 +17,11 @@ import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount
 import { createApiToken, listApiTokens, revokeApiToken } from './usecases/api-tokens.js';
 import { listAuditLogs } from './usecases/audit-logs.js';
 import {
+  createCompany,
+  listCompanies,
+  updateCompany,
+} from './usecases/companies.js';
+import {
   createEmployee,
   disableEmployee,
   listEmployees,
@@ -25,6 +30,12 @@ import {
 import { login } from './usecases/login.js';
 import { logout } from './usecases/logout.js';
 import { me } from './usecases/me.js';
+import {
+  createPosition,
+  disablePosition,
+  listPositions,
+  updatePosition,
+} from './usecases/positions.js';
 import { updatePermissionOverrides } from './usecases/permission-overrides.js';
 import { getCompanySubscription, updateCompanySubscription } from './usecases/subscription.js';
 
@@ -80,6 +91,11 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'platform.employee.create': 'employee',
   'platform.employee.update': 'employee',
   'platform.employee.disable': 'employee',
+  'platform.company.create': 'company',
+  'platform.company.update': 'company',
+  'platform.position.create': 'position',
+  'platform.position.update': 'position',
+  'platform.position.delete': 'position',
   'billing.subscription.update': 'company',
 };
 
@@ -135,6 +151,20 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
       listAuditLogs({ database: instance.database, request }),
     'platform.permission.update': ({ app: instance, request, reply }) =>
       updatePermissionOverrides({ database: instance.database, request, reply }),
+    'platform.company.list': ({ app: instance, request }) =>
+      listCompanies({ database: instance.database, request }),
+    'platform.company.create': ({ app: instance, request, reply }) =>
+      createCompany({ database: instance.database, request, reply }),
+    'platform.company.update': ({ app: instance, request, reply }) =>
+      updateCompany({ database: instance.database, request, reply }),
+    'platform.position.list': ({ app: instance, request }) =>
+      listPositions({ database: instance.database, request }),
+    'platform.position.create': ({ app: instance, request, reply }) =>
+      createPosition({ database: instance.database, request, reply }),
+    'platform.position.update': ({ app: instance, request, reply }) =>
+      updatePosition({ database: instance.database, request, reply }),
+    'platform.position.delete': ({ app: instance, request, reply }) =>
+      disablePosition({ database: instance.database, request, reply }),
     'billing.subscription.read': async ({ app: instance, request, route }) => {
       const database = requireDatabase(instance, route);
       const principal = request.principal;
