@@ -20,6 +20,7 @@ export const IMPLEMENTED_PAGE_IDS = [
   'purchase-orders',
   'processing-orders',
   'sales-orders',
+  'internal-trades',
   'reversals',
   // 组织（#171 / #172 已落地，补登记）
   'employees',
