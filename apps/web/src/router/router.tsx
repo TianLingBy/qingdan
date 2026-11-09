@@ -16,6 +16,8 @@ import { PlaceholderPage } from '../pages/PlaceholderPage';
 import { ProcessingOrdersPage } from '../pages/processing/ProcessingOrdersPage';
 import { PurchaseOrdersPage } from '../pages/purchase/PurchaseOrdersPage';
 import { SalesOrdersPage } from '../pages/sales/SalesOrdersPage';
+import { WorkbenchPage } from '../pages/workbench/WorkbenchPage';
+import type { ImplementedPageId } from './implemented';
 import { DEFAULT_ROUTE_PATH, ROUTE_TABLE, type RouteEntry } from './routes';
 import { readSession } from './session-guard';
 
@@ -102,7 +104,12 @@ const appLayoutRoute = createRoute({
   },
 });
 
-const IMPLEMENTED_PAGES: Partial<Record<RouteEntry['id'], ComponentType>> = {
+/**
+ * 已落地 id → 组件。键集合由 `implemented.ts` 的 `IMPLEMENTED_PAGE_IDS` 约束：
+ * 加了 id 却没写组件，这里编译期就报错，避免「登记了但打不开 / 打了标却是占位页」。
+ */
+const IMPLEMENTED_PAGES: { [K in ImplementedPageId]: ComponentType } = {
+  workbench: WorkbenchPage,
   products: ProductsPage,
   suppliers: SuppliersPage,
   processors: ProcessorsPage,
@@ -116,8 +123,11 @@ const IMPLEMENTED_PAGES: Partial<Record<RouteEntry['id'], ComponentType>> = {
   'sales-orders': SalesOrdersPage,
 };
 
+// `IMPLEMENTED_PAGE_IDS` 是 as const 元组，键一定是上面这 7 个；此处只是把窄类型放宽回路由 id。
+const implementedPageMap: Partial<Record<RouteEntry['id'], ComponentType>> = IMPLEMENTED_PAGES;
+
 function PageForEntry({ entry }: { entry: RouteEntry }) {
-  const Page = IMPLEMENTED_PAGES[entry.id];
+  const Page = implementedPageMap[entry.id];
   return Page ? <Page /> : <PlaceholderPage entry={entry} />;
 }
 

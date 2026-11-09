@@ -24,6 +24,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
+import { allows, type ScopeAction } from '../../lib/access';
 import {
   MASKED_AMOUNT,
   formatMoney,
@@ -755,9 +756,7 @@ export function ProcessingOrdersPage() {
   const queryClient = useQueryClient();
   const me = useQuery({ queryKey: authKeys.me, queryFn: authApi.me });
   const meData = me.data;
-  const can = (action: string) =>
-    meData?.scope.some((entry) => entry.domain === 'processing' && entry.actions.includes(action)) ??
-    false;
+  const can = (action: ScopeAction) => allows(meData?.scope, 'processing', action);
   const canViewPrice = can('view_price');
   const companyIds = meData?.companyIds ?? [];
 

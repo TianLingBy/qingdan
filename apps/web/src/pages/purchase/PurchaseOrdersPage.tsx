@@ -20,6 +20,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
+import { allows, type ScopeAction } from '../../lib/access';
 import { authApi, authKeys } from '../auth/auth-api';
 import { extractIssues, masterdataApi, optionalText } from '../masterdata/masterdata-api';
 import {
@@ -633,9 +634,7 @@ export function PurchaseOrdersPage() {
   const queryClient = useQueryClient();
   const me = useQuery({ queryKey: authKeys.me, queryFn: authApi.me });
   const meData = me.data;
-  const can = (action: string) =>
-    meData?.scope.some((entry) => entry.domain === 'purchase' && entry.actions.includes(action)) ??
-    false;
+  const can = (action: ScopeAction) => allows(meData?.scope, 'purchase', action);
   const canViewPrice = can('view_price');
   const companyIds = meData?.companyIds ?? [];
 
