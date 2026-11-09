@@ -33,6 +33,7 @@ import {
   commissionNote,
   confirmBlockedText,
   fetchSourceDocNo,
+  fetchSourceDocNoMap,
   formatCommissionRate,
   formatRate,
   lossNote,
@@ -326,6 +327,31 @@ export function SettlementsPage() {
   const nextCursor = list.data?.nextCursor ?? null;
   const detailOrder = detail.data;
 
+  /**
+   * 来源单号批量映射（契约缺口补齐）：列表逐行发详情不划算，按类型各拉一页来源单建映射。
+   * 只在当前页真出现该类型时才查；失败 / 无来源单读权限 → 空表 → 退回 id 前 8 位。
+   */
+  const hasE = rows.some((order) => order.sourceDocType === 'E');
+  const hasN = rows.some((order) => order.sourceDocType === 'N');
+  const eDocNos = useQuery({
+    queryKey: settlementQueryKeys.sourceDocMap('E'),
+    queryFn: () => fetchSourceDocNoMap('E'),
+    enabled: hasE,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const nDocNos = useQuery({
+    queryKey: settlementQueryKeys.sourceDocMap('N'),
+    queryFn: () => fetchSourceDocNoMap('N'),
+    enabled: hasN,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const docNoOf = (order: SettlementOrder): string | undefined => {
+    const map = order.sourceDocType === 'E' ? eDocNos.data : nDocNos.data;
+    return map?.get(order.sourceDocId);
+  };
+
   return (
     <section className="mx-auto max-w-7xl space-y-5">
       <header>
@@ -448,7 +474,7 @@ export function SettlementsPage() {
                     </button>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                    {sourceDocText(order.sourceDocType, order.sourceDocId)}
+                    {sourceDocText(order.sourceDocType, order.sourceDocId, docNoOf(order))}
                   </td>
                   <td className="px-4 py-3">
                     <Money value={order.totalSaleAmount} canView={canViewPrice} />

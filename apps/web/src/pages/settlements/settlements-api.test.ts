@@ -8,6 +8,7 @@ import {
   commissionNote,
   confirmBlockedText,
   fetchSourceDocNo,
+  fetchSourceDocNoMap,
   formatCommissionRate,
   formatRate,
   lossNote,
@@ -15,10 +16,10 @@ import {
   sourceDocText,
 } from './settlements-api';
 
-// 来源单单号解析要跨模块取来源单详情，这里把两个 api 换成桩（真实请求在联调里验证）。
-vi.mock('../sales/sales-api', () => ({ salesApi: { detail: vi.fn() } }));
+// 来源单单号解析要跨模块取来源单详情 / 列表，这里把两个 api 换成桩（真实请求在联调里验证）。
+vi.mock('../sales/sales-api', () => ({ salesApi: { detail: vi.fn(), list: vi.fn() } }));
 vi.mock('../internal-trades/internal-trades-api', () => ({
-  internalTradesApi: { detail: vi.fn() },
+  internalTradesApi: { detail: vi.fn(), list: vi.fn() },
 }));
 
 /**
@@ -103,6 +104,26 @@ describe('来源单单号解析（C 单契约没有 sourceDocNo）', () => {
   it('没有来源单读权限（403）时吞掉错误回 null，退回 id 前缀', async () => {
     vi.mocked(salesApi.detail).mockRejectedValueOnce(new Error('403 Forbidden'));
     await expect(fetchSourceDocNo('E', 'e-1')).resolves.toBeNull();
+  });
+
+  it('列表用批量映射：按类型各拉一页来源单，建成 id → 单号', async () => {
+    vi.mocked(salesApi.list).mockResolvedValueOnce({
+      items: [{ id: 'e-1', orderNo: 'E-0001-20261109-0002' }],
+      nextCursor: null,
+    } as never);
+
+    const map = await fetchSourceDocNoMap('E');
+
+    expect(salesApi.list).toHaveBeenCalledWith({ limit: 200 });
+    expect(map.get('e-1')).toBe('E-0001-20261109-0002');
+    expect(map.size).toBe(1);
+  });
+
+  it('批量映射拿不到（403 / 网络）时回空表，列表退回 id 前缀而不是整页报错', async () => {
+    vi.mocked(internalTradesApi.list).mockRejectedValueOnce(new Error('403 Forbidden'));
+    const map = await fetchSourceDocNoMap('N');
+    expect(map.size).toBe(0);
+    expect(map.get('n-1')).toBeUndefined();
   });
 });
 

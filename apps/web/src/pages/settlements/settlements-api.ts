@@ -75,6 +75,8 @@ export const settlementQueryKeys = {
   detail: (id: string | null) => ['settlements', 'detail', id] as const,
   sourceDoc: (type: SettlementSourceDocType | null, id: string | null) =>
     ['settlements', 'source-doc', type, id] as const,
+  sourceDocMap: (type: SettlementSourceDocType) =>
+    ['settlements', 'source-doc-map', type] as const,
 };
 
 /**
@@ -84,7 +86,7 @@ export const settlementQueryKeys = {
  * 两条边界：
  * - 调用者可能只有 `settlement.read`、没有 `sales.read` → 来源单详情 403，
  *   **吞掉错误回 `null`**，退回 id 前 8 位，不让详情面板整体报错；
- * - 只做详情，不做列表：列表每行各发一条请求不划算，列表继续显示 id 前 8 位。
+ * - 只做详情，不做列表：列表改用下面的 `fetchSourceDocNoMap` 批量换。
  */
 export async function fetchSourceDocNo(
   type: SettlementSourceDocType,
@@ -95,6 +97,27 @@ export async function fetchSourceDocNo(
     return doc.orderNo;
   } catch {
     return null;
+  }
+}
+
+/**
+ * 来源单单号**批量**映射：列表用。
+ *
+ * 逐行发详情请求不划算（一页 50 行就是 50 条），改成按类型拉一页来源单建成 `id → 单号`，
+ * 一次最多 200 张（`MAX_PAGE_LIMIT`）覆盖整页。边界同 `fetchSourceDocNo`：403 或失败就回空表，
+ * 列表退回 id 前 8 位；比 200 张更老的来源单也解不出来，同样退回。
+ */
+export async function fetchSourceDocNoMap(
+  type: SettlementSourceDocType,
+): Promise<ReadonlyMap<string, string>> {
+  try {
+    const page =
+      type === 'E'
+        ? await salesApi.list({ limit: 200 })
+        : await internalTradesApi.list({ limit: 200 });
+    return new Map(page.items.map((item) => [item.id, item.orderNo]));
+  } catch {
+    return new Map();
   }
 }
 
