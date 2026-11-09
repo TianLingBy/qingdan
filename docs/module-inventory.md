@@ -42,7 +42,7 @@
 - 2026-11-08：批次与入库流水同事务写入；商品跨公司、非法数量/单价拒绝；事务回滚测试。
 - 2026-11-08：定向测试 5 项、inventory 测试 23 项、完整 API 测试 366 项均通过；API 类型检查与 ESLint 通过。
 - 2026-11-09：#150 已按方案 A 合并到主干，`processing_order.output_product_id` 与 contracts/repo 已就绪。
-- 2026-11-09：#137 分支 `e88bf21` 已推送，PR #157 的 head 与远端一致；本地 API 55 个测试文件 / 366 项和全仓 typecheck 通过，PR 的 7 项 CI 全部通过。
+- 2026-11-09：#137 分支 `e88bf21` 已推送；随后同步最新 `main` 并以 merge commit `814eb72` 更新 PR #157，远端 head 一致且可合并。合并后 `pnpm -r build`、`pnpm -r test`（API 57 个文件 / 381 项）与 `pwsh -NoProfile -File tests\run.ps1`（`ALL PASSED (7 files)`）全部通过；PR 的 7 项 CI 全部通过。
 
 ## 进行中
 
