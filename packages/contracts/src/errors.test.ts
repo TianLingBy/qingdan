@@ -4,8 +4,9 @@ import { ApiErrorBodySchema } from './errors.js';
 import { etagOf, parseIfMatch, MoneySchema, Money2Schema } from './envelope.js';
 
 describe('错误码封闭枚举（D54 缺口 2）', () => {
-  it('11 个错误码齐全且都有 HTTP 状态与 CLI 退出码', () => {
-    expect(ERROR_CODE_KEYS).toHaveLength(11);
+  it('12 个错误码齐全且都有 HTTP 状态与 CLI 退出码', () => {
+    // 2026-11-10 负责人拍板新增 STATE_CONFLICT（11 → 12），用于「状态不允许」类 409。
+    expect(ERROR_CODE_KEYS).toHaveLength(12);
     for (const code of ERROR_CODE_KEYS) {
       expect(ERROR_CODES[code].status).toBeGreaterThanOrEqual(400);
       expect([1, 3, 4, 5]).toContain(ERROR_CODES[code].cliExit);
@@ -15,6 +16,7 @@ describe('错误码封闭枚举（D54 缺口 2）', () => {
   it('关键映射符合 D54：422 校验 / 409 冲突 / 428 前置 / 429 限流', () => {
     expect(httpStatusFor('VALIDATION_FAILED')).toBe(422);
     expect(httpStatusFor('VERSION_CONFLICT')).toBe(409);
+    expect(httpStatusFor('STATE_CONFLICT')).toBe(409);
     expect(httpStatusFor('IDEMPOTENCY_CONFLICT')).toBe(409);
     expect(httpStatusFor('PRECONDITION_REQUIRED')).toBe(428);
     expect(httpStatusFor('RATE_LIMITED')).toBe(429);
@@ -22,6 +24,13 @@ describe('错误码封闭枚举（D54 缺口 2）', () => {
     expect(cliExitFor('PRECONDITION_REQUIRED')).toBe(CLI_EXIT.VALIDATION);
     expect(cliExitFor('FORBIDDEN')).toBe(CLI_EXIT.FORBIDDEN);
     expect(cliExitFor('VERSION_CONFLICT')).toBe(CLI_EXIT.CONFLICT);
+    expect(cliExitFor('STATE_CONFLICT')).toBe(CLI_EXIT.CONFLICT);
+  });
+
+  it('三个 409 互不混淆：版本 / 状态 / 幂等各是独立错误码', () => {
+    expect(httpStatusFor('VERSION_CONFLICT')).toBe(httpStatusFor('STATE_CONFLICT'));
+    expect(ERROR_CODES.VERSION_CONFLICT.message).not.toBe(ERROR_CODES.STATE_CONFLICT.message);
+    expect(ERROR_CODES.STATE_CONFLICT.message).not.toBe(ERROR_CODES.IDEMPOTENCY_CONFLICT.message);
   });
 
   it('AppError 生成统一错误体', () => {

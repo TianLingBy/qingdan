@@ -16,6 +16,8 @@
 # 1. 准备环境变量（.env 不入库，里面都是真实密钥）
 cp .env.example .env
 #    必改：POSTGRES_PASSWORD、DATABASE_URL 里的同名密码
+#    必改：PUBLIC_BASE_URL —— 填最终对外基址（如 https://qingdan.example.com；没域名时填 http://<服务器IP>）。
+#          模板里是本地开发用的 http://localhost:5173，直接拿去生产 API 会拒绝启动（见第五节「上线前检查清单」）
 #    可选：SITE_ADDRESS（填域名即自动 HTTPS，留空为 :80 纯 HTTP）
 
 # 2. 只起数据库，等它 healthy
@@ -73,7 +75,23 @@ docker compose up -d api
 **注意**：镜像回滚不自动回滚数据库；迁移是前向 only，回滚旧镜像前先确认旧代码兼容当前库结构，
 必要时用备份恢复到新库验证。
 
-## 五、常见故障
+## 五、上线前检查清单
+
+每次部署/换机逐项打勾，缺一项都可能在浏览器里表现为「页面能开、一保存就 403」：
+
+- [ ] `PUBLIC_BASE_URL` = 用户实际访问的地址（协议 + 域名或 IP，**不带结尾斜杠**）。
+  - 有域名：`https://qingdan.example.com`（配 `SITE_ADDRESS=qingdan.example.com`，Caddy 自动签证书）。
+  - 域名备案没下来：先 `http://<服务器公网IP>` + `SITE_ADDRESS=:80`（纯 HTTP，只用于内部联调）。
+  - **不能填** `localhost` / `127.0.0.1` / `0.0.0.0` / `::1`：`NODE_ENV=production` 下 API 会直接拒绝启动
+    （`apps/api/src/platform/config.ts` 的 `assertPublicBaseUrl`），这是刻意 fail-fast，不是 bug。
+- [ ] `SITE_ADDRESS` 与 `PUBLIC_BASE_URL` 指向同一个对外地址（只改其中一个会让浏览器 Origin 与配置不一致）。
+- [ ] `NODE_ENV=production`、`TRUST_PROXY=true`（在 Caddy 后面，用于取真实客户端 IP 与协议）。
+- [ ] `POSTGRES_PASSWORD` / `DATABASE_URL` 里的密码一致且已换掉模板值；`.env` 未入库。
+- [ ] 迁移已跑：`docker compose --profile tools run --rm migrate`（不随应用自启，升级时手动执行）。
+- [ ] 健康检查通过：`curl -fsS http://127.0.0.1:3000/api/v1/health` 返回 200。
+- [ ] 浏览器实测一次**写操作**（新增商品/客户）：返回 200/201 而不是 403。
+
+## 六、常见故障
 
 | 现象 | 排查 |
 | --- | --- |
