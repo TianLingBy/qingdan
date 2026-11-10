@@ -35,9 +35,37 @@ export interface StockAdjustmentReceipt {
   readonly custodianId: string;
 }
 
+/** 新建库存批次命令（D5 锁价 / D16 取号 / D70 端口；由 A 单入库、B 单产出方发起，#136/#162）。 */
+export interface CreateBatchCommand {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly productId: string;
+  /** 入库数量（A 单按行数量 / B 单产出可售量），decimal 字符串（D54）。 */
+  readonly qty: string;
+  /** 锁定单价：入库即锁，不随采购价变动（D5）。 */
+  readonly lockedUnitCost: string;
+  /** 保管人（库存批次责任人，F5）；B 单完成时不传则继承 handler_id，由调用方决定后传入。 */
+  readonly custodianId: string;
+  /** 来源单据类型：A 采购入库 / B 加工产出。 */
+  readonly sourceDocType: 'A' | 'B';
+  readonly sourceDocId: string;
+  /** 经手人（人类发起人；AI 发起时是委托人，D52）——inventory_flow.handled_by NOT NULL。 */
+  readonly handledBy: string;
+}
+
+export interface CreateBatchReceipt {
+  readonly batchId: string;
+  /** 系统取号结果，形如 PB-0001-20261110-0001（D16 变体，platform/numbering 的 takeBatchNo）。 */
+  readonly batchNo: string;
+  readonly availableQty: string;
+  readonly custodianId: string;
+}
+
 /** 库存写入端口：由 inventory 实现，内部就是 `inventory/services/stock-flow.ts`。 */
 export interface StockFlowPort {
   applyAdjustment(tx: SqlClient, command: StockAdjustmentCommand): Promise<StockAdjustmentReceipt>;
+  /** 新建入库批次（只签名；接线归 #137，A 单入库 / B 单产出调用）。 */
+  createBatch(tx: SqlClient, command: CreateBatchCommand): Promise<CreateBatchReceipt>;
 }
 
 /** C 结算单草稿命令（D19 / D70；由 E / N 单完成方发起）。 */
