@@ -27,10 +27,13 @@ import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import {
+  batchDirectoryPort,
+  productDirectoryPort,
   settlementDraftPort,
   stockFlowPort,
 } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
+import type { SalesOrderPrintLabels } from '../services/customer-copy.js';
 import {
   maskSalesOrderAmounts,
   maskSalesOrderDetailAmounts,
@@ -437,6 +440,8 @@ export interface SalesOrderPrintSource {
   /** 已按看价权限脱敏的详情（无权限时金额为 null）。 */
   readonly detail: SalesOrderDetail;
   readonly companyName: string;
+  /** 打印用展示文案：商品名 / 批次号（D70 端口取数，取不到时渲染层退回短 id）。 */
+  readonly labels: SalesOrderPrintLabels;
 }
 
 /**
@@ -445,6 +450,34 @@ export interface SalesOrderPrintSource {
  * 与详情端点共用装配与公司可见性逻辑；金额仍按 `sales.view_price` 脱敏，
  * 由渲染层把 null 显示为「—」。公司名暂无跨模块端口，只读 `company.name`。
  */
+/**
+ * 打印展示文案（商品名 / 批次号）：走 D70 端口，未注册端口时退回空表，
+ * 由渲染层显示短 id——打印不能因为端口没接线就 500。
+ */
+async function loadPrintLabels(
+  tx: SqlClient,
+  tenantId: string,
+  detail: SalesOrderDetail,
+): Promise<SalesOrderPrintLabels> {
+  const productIds = [...new Set(detail.lines.map((line) => line.productId))];
+  const batchIds = [...new Set(detail.lines.flatMap((line) => line.batchIds))];
+  try {
+    const [products, batches] = await Promise.all([
+      productDirectoryPort().lookupProducts(tx, { tenantId, productIds }),
+      batchDirectoryPort().lookupBatchNos(tx, { tenantId, batchIds }),
+    ]);
+    return {
+      productName: Object.fromEntries(products.map((item) => [item.id, item.name])),
+      batchNo: Object.fromEntries(batches.map((item) => [item.id, item.batchNo])),
+    };
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'NOT_IMPLEMENTED') {
+      return { productName: {}, batchNo: {} };
+    }
+    throw error;
+  }
+}
+
 export async function getSalesOrderForPrint(
   ctx: SalesOrderContext,
 ): Promise<SalesOrderPrintSource> {
@@ -464,9 +497,11 @@ export async function getSalesOrderForPrint(
       [detail.companyId, principal.tenantId],
     );
     // 销售单可见即公司必然存在；缺失时退回公司 id，避免打印 500。
+    const labels = await loadPrintLabels(tx, principal.tenantId, detail);
     return {
       detail,
       companyName: company.rows[0]?.name ?? detail.companyId,
+      labels,
     };
   });
   if (!source) throw new AppError('NOT_FOUND', '销售单不存在');
@@ -475,6 +510,7 @@ export async function getSalesOrderForPrint(
   return {
     detail: maskSalesOrderDetailAmounts(source.detail, canViewPrice),
     companyName: source.companyName,
+    labels: source.labels,
   };
 }
 

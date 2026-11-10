@@ -12,7 +12,7 @@ import { ACTION_WORDS, DOMAIN_WORDS } from '../employees/domain-words';
  * - 模板动作 = 8 动作去掉 `view_price`（D4：看价是数据可见性开关，不进操作勾选表）；
  * - 新建：`POST /positions`（presetKey 不传 = 自定义岗位；预设标识只能服务端定，D60②）；
  * - 改模板：`PATCH /positions/{id}`，If-Match 强 ETag，改完即时生效（computeAuthz 每请求现算）；
- * - 停用：`DELETE /positions/{id}`（软删除；被员工占用 → 422 POSITION_IN_USE，人话提示）；
+ * - 停用：`DELETE /positions/{id}`（软删除；被员工占用 → 409 STATE_CONFLICT，人话提示）；
  * - 个人级覆盖在员工页（#6），本页只管岗位模板。
  *
  * 词表复用 `employees/domain-words.ts`（唯一真源 contracts/domains.ts，有防漂移抽查）。
@@ -110,7 +110,13 @@ export function PermissionsPage() {
       void invalidate();
     },
     onError: (e) => {
-      if (e instanceof ApiError && e.status === 422) {
+      // 409 有两种：别人的版本冲突（刷新重试即可）与本岗位被员工占用（要先改绑员工），
+      // 用 code + details.reason 区分，别把后者说成「版本冲突」。
+      if (
+        e instanceof ApiError &&
+        e.code === 'STATE_CONFLICT' &&
+        (e.details as { reason?: string } | null)?.reason === 'POSITION_IN_USE'
+      ) {
         setError('停用失败：该岗位仍有员工占用。请先把员工改绑到其他岗位。');
       } else {
         setError(describeError(e, '停用失败'));
@@ -429,6 +435,13 @@ function labelOfAction(key: string): string {
 function describeError(e: unknown, fallback: string): string {
   if (e instanceof ApiError) {
     if (e.status === 428) return `${fallback}：缺少 If-Match 版本头，请刷新后重试。`;
+    const reason = (e.details as { reason?: string } | null)?.reason;
+    if (e.code === 'STATE_CONFLICT') {
+      if (reason === 'POSITION_IN_USE') {
+        return `${fallback}：该岗位仍有员工占用，请先把员工改绑到其他岗位。`;
+      }
+      return `${fallback}：当前状态不允许该操作，请按提示调整后重试。`;
+    }
     if (e.status === 409) return `${fallback}：版本冲突（别人已先改过），请刷新后重试。`;
     if (e.status === 403) return `${fallback}：缺少权限设置权限（permission.update），请联系老板开通。`;
     return `${fallback}：${e.message}（${e.code}）`;

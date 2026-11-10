@@ -459,15 +459,15 @@ export async function disablePosition(ctx: PositionContext): Promise<Position> {
       }
 
       // 被员工占用 → 拒绝：软删除不发生，岗位保持启用。
-      // 错误码口径：封闭枚举内暂无业务占用 409，沿用「手机号被占用」的 422 + reason
-      // （契约注释建议 409，待 Lead 冻结新错误码后另行迁移，见 PR 说明）。
+      // 口径（2026-11-10 负责人拍板 + 新增 STATE_CONFLICT）：资源存在、版本也对，
+      // 只是「当前状态不允许删」→ 409 状态冲突；`reason=POSITION_IN_USE` 供前端给人话提示。
       const inUse = await tx.query<{ count: string }>(
         `SELECT count(*) AS count FROM employee_company_position
           WHERE position_id = $1 AND tenant_id = $2`,
         [id, principal.tenantId],
       );
       if (Number(inUse.rows[0]?.count ?? '0') > 0) {
-        throw new AppError('VALIDATION_FAILED', '该岗位仍有员工占用，请先调整员工的岗位后再停用', {
+        throw new AppError('STATE_CONFLICT', '该岗位仍有员工占用，请先调整员工的岗位后再停用', {
           reason: 'POSITION_IN_USE',
           positionId: id,
         });

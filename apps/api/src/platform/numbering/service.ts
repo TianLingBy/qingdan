@@ -20,11 +20,17 @@ import type { SqlClient } from '../db/client.js';
 export const DOCUMENT_SEQUENCE_MAX = 9999;
 export const EMPLOYEE_SEQUENCE_MAX = 999999;
 export const EMPLOYEE_SCOPE_KEY = 'employee';
+/** 批次号流水上限（D16 变体；#162，与单据同容量）。 */
+export const BATCH_SEQUENCE_MAX = 9999;
 
 function monthKey(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   return `${year}${month}`;
+}
+
+function pad(value: number | string, length: number): string {
+  return String(value).padStart(length, '0');
 }
 
 /**
@@ -126,4 +132,66 @@ export async function takeEmployeeNo(tx: SqlClient, tenantId: string): Promise<s
     );
   }
   return formatEmployeeNo(Number(row.last_value));
+}
+
+/**
+ * 批次号流水的计数键：按「公司 + 年月」分开（#136/#162；批次无类型维度，前缀固定 PB）。
+ */
+export function batchScopeKey(date: Date, companyId: string): string {
+  return `batch:${companyId}:${monthKey(date)}`;
+}
+
+interface BatchSequenceRow {
+  last_value: number;
+  company_code: string;
+}
+
+/**
+ * 取下一个批次号：`PB-公司码(4)-日期(8)-流水(4)`，例 `PB-0001-20261110-0001`（#136/#162）。
+ *
+ * 与 `takeDocumentNo` 同一套原子自增 / 用满显式失败 / UTC 日期口径；
+ * 必须传业务事务的 tx（同事务取号，回滚即弃号）。
+ */
+export async function takeBatchNo(tx: SqlClient, companyId: string, date: Date): Promise<string> {
+  const scopeKey = batchScopeKey(date, companyId);
+  const result = await tx.query<BatchSequenceRow>(
+    `WITH company_row AS (
+       SELECT id, tenant_id, code AS company_code
+       FROM company
+       WHERE id = $1
+     ), upserted AS (
+       INSERT INTO number_sequence (tenant_id, scope_key, last_value)
+       SELECT tenant_id, $2, 1 FROM company_row
+       ON CONFLICT (tenant_id, scope_key) DO UPDATE
+         SET last_value = number_sequence.last_value + 1,
+             updated_at = now()
+         WHERE number_sequence.last_value < $3
+       RETURNING last_value
+     )
+     SELECT u.last_value, c.company_code
+     FROM upserted u
+     CROSS JOIN company_row c`,
+    [companyId, scopeKey, BATCH_SEQUENCE_MAX],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    const company = await tx.query('SELECT 1 FROM company WHERE id = $1', [companyId]);
+    if (company.rows.length === 0) {
+      throw new AppError('NOT_FOUND', '公司不存在', { companyId });
+    }
+    // 容量耗尽必须显式失败，禁止回绕（同 takeDocumentNo）。
+    throw new AppError(
+      'VALIDATION_FAILED',
+      `批次号在 ${monthKey(date)} 的月流水已用满 ${BATCH_SEQUENCE_MAX}，需扩容后再入库`,
+      { scopeKey },
+    );
+  }
+
+  const companyCode = Number(row.company_code);
+  if (!Number.isInteger(companyCode) || companyCode < 1 || companyCode > 9999) {
+    throw new AppError('VALIDATION_FAILED', `公司码必须是 1~9999 的整数，收到 ${companyCode}`);
+  }
+  const ymd = `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1, 2)}${pad(date.getUTCDate(), 2)}`;
+  return `PB-${pad(companyCode, 4)}-${ymd}-${pad(Number(row.last_value), 4)}`;
 }
