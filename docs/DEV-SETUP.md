@@ -91,6 +91,21 @@ pwsh -NoProfile -File tests\run.ps1   # 本地全量门禁（CI 同款，退出�
 改了 `packages/contracts` 的注册表（端点、入参、错误码）**必须**跑一次 `pnpm openapi` 并一起提交，
 否则 CI 的 `spec-drift` 会红。
 
+### 真 PostgreSQL 集成检查（L3）
+
+本地单测全部跑在 pglite（进程内内存库），**并发 / 行锁 / RLS / 生成列**这类语义只有真 PG 才验证得了。
+两条脚本在没有数据库时会打印 `SKIP` 并算作通过；CI 的 `integration (ubuntu-latest, PostgreSQL 18)`
+带着 `QINGDAN_TEST_DB` 真跑，所以「本地 SKIP」不等于没验：
+
+```powershell
+# 任选其一：本机真 PG，或 docker 起一个
+$env:QINGDAN_TEST_DB = 'postgres://postgres:postgres@127.0.0.1:5432/qingdan_test'
+pwsh -NoProfile -File tests\db-concurrency.test.ps1   # 并发取号不重号 / 批次行锁 / RLS / available_qty 非负
+pwsh -NoProfile -File tests\e2e-business-flow.test.ps1 # 登录 → E 单 → 扣库存 → C 草案 → 确认结算
+```
+
+注意脚本会先 `pnpm -C packages/contracts build`：干净 clone 里契约包只有 `src/`，不构建会报 `MODULE_NOT_FOUND`。
+
 ## 六、常见故障
 
 | 现象 | 原因与处理 |
