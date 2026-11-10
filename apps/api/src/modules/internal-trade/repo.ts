@@ -5,6 +5,7 @@ import {
   type InternalTradeOrder,
   type InternalTradeOrderCreateInput,
   type InternalTradeOrderLine,
+  type InternalTradeOrderLineInput,
   type InternalTradeOrderStatus,
   type InternalTradeOrderUpdateInput,
 } from '@qingdan/contracts';
@@ -408,7 +409,7 @@ async function assertHandlerInTenant(
 /** 只允许引用发出公司的批次，且每行的批次商品必须与该行商品一致（D22）。 */
 async function assertBatchesBelongToFromCompany(
   ctx: InternalTradeOrderRepoContext,
-  lines: readonly InternalTradeOrderLine[],
+  lines: readonly InternalTradeOrderLineInput[],
   fromCompanyId: string,
 ): Promise<void> {
   const batchIds = [...new Set(lines.flatMap((line) => line.batchIds))];
@@ -456,7 +457,7 @@ async function insertLines(
   ctx: InternalTradeOrderRepoContext,
   orderId: string,
   fromCompanyId: string,
-  lines: readonly InternalTradeOrderLine[],
+  lines: readonly InternalTradeOrderLineInput[],
 ): Promise<void> {
   for (const [index, line] of lines.entries()) {
     const lineId = uuidv7();
