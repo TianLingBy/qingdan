@@ -19,6 +19,7 @@ import { ProcessingOrdersPage } from '../pages/processing/ProcessingOrdersPage';
 import { PurchaseOrdersPage } from '../pages/purchase/PurchaseOrdersPage';
 import { ReversalsPage } from '../pages/reversals/ReversalsPage';
 import { SalesOrdersPage } from '../pages/sales/SalesOrdersPage';
+import { SettlementsPage } from '../pages/settlements/SettlementsPage';
 import { WorkbenchPage } from '../pages/workbench/WorkbenchPage';
 import type { ImplementedPageId } from './implemented';
 import { DEFAULT_ROUTE_PATH, ROUTE_TABLE, type RouteEntry } from './routes';
@@ -127,9 +128,10 @@ const IMPLEMENTED_PAGES: { [K in ImplementedPageId]: ComponentType } = {
   'sales-orders': SalesOrdersPage,
   'internal-trades': InternalTradeOrdersPage,
   reversals: ReversalsPage,
+  settlements: SettlementsPage,
 };
 
-// `IMPLEMENTED_PAGE_IDS` 是 as const 元组，键一定是上面这 10 个；此处只是把窄类型放宽回路由 id。
+// `IMPLEMENTED_PAGE_IDS` 是 as const 元组，键一定是上面这 11 个；此处只是把窄类型放宽回路由 id。
 const implementedPageMap: Partial<Record<RouteEntry['id'], ComponentType>> = IMPLEMENTED_PAGES;
 
 function PageForEntry({ entry }: { entry: RouteEntry }) {

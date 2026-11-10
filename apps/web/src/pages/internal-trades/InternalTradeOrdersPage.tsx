@@ -22,6 +22,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { allows, type ScopeAction } from '../../lib/access';
+import { useEmployeeLabel } from '../../lib/employee-directory';
+import {
+  describeWriteError,
+  isStaleVersionError,
+  recoverFromStaleVersion,
+  staleVersionRecoveredText,
+} from '../../lib/write-error';
 import {
   formatMoney,
   formatQty,
@@ -58,7 +65,7 @@ const EMPTY_LINE: InternalTradeLineDraft = { productId: '', batchIds: [], qty: '
 /* ------------------------------ 小工具 ------------------------------ */
 
 function errorText(error: unknown): string {
-  return error instanceof ApiError ? error.message : error instanceof Error ? error.message : '未知错误';
+  return describeWriteError(error);
 }
 
 function shortId(id: string): string {
@@ -424,6 +431,7 @@ function DetailPanel({
   onEdit,
   onCancel,
 }: DetailPanelProps) {
+  const employeeLabel = useEmployeeLabel();
   const lineTotal = sumDecimal(order.lines.map((line) => line.amount));
   const cancelReason = cancelDisabledReason(order.cancelable.reason);
 
@@ -436,7 +444,7 @@ function DetailPanel({
             <StatusBadge status={order.status} />
             <span>{tradeRouteText(order)}</span>
             <span className="text-slate-300">|</span>
-            <span>经手人 {shortId(order.handlerId)}</span>
+            <span>经手人 {employeeLabel(order.handlerId)}</span>
             <span className="text-slate-300">|</span>
             <span>开单 {formatDateTime(order.createdAt)}</span>
           </p>
@@ -549,6 +557,8 @@ export function InternalTradeOrdersPage() {
   const [lines, setLines] = useState<InternalTradeLineDraft[]>([{ ...EMPTY_LINE }]);
   const [clientErrors, setClientErrors] = useState<string[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** 版本冲突后已把最新 version 接上时的提示（与红色报错互斥）。 */
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const scope = me.data?.scope;
@@ -647,6 +657,18 @@ export function InternalTradeOrdersPage() {
       resetForm();
       setDetailId(order.id);
     },
+    /**
+     * 版本冲突（别人先改过）：把最新 version 接回表单，用户点一次「保存修改」就能过。
+     * 不自动重提——那等于拿旧内容覆盖别人的改动，得让用户先核对（D60）。
+     */
+    onError: async (error) => {
+      if (!editing) return;
+      const fresh = await recoverFromStaleVersion(error, editing.id, internalTradesApi.detail);
+      if (!fresh) return;
+      setEditing({ ...editing, version: fresh.version });
+      setStaleNotice(staleVersionRecoveredText(fresh.version));
+      await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
+    },
   });
 
   const cancelOrder = useMutation({
@@ -667,6 +689,7 @@ export function InternalTradeOrdersPage() {
     setLines([{ ...EMPTY_LINE }]);
     setClientErrors([]);
     save.reset();
+    setStaleNotice(null);
   }
 
   const beginCreate = () => {
@@ -860,7 +883,12 @@ export function InternalTradeOrdersPage() {
         />
       ) : null}
 
-      {save.error && serverIssues.length === 0 ? (
+      {staleNotice ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          {staleNotice}
+        </p>
+      ) : null}
+      {save.error && serverIssues.length === 0 && !isStaleVersionError(save.error) ? (
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorText(save.error)}</p>
       ) : null}
       {cancelOrder.error ? (

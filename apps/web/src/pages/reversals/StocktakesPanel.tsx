@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../api/client';
 import { formatQty } from '../../lib/decimal';
+import { useEmployeeLabel } from '../../lib/employee-directory';
 import {
   STOCKTAKE_STATUS_CLASS,
   approveBlockedText,
@@ -59,6 +60,7 @@ export function StocktakesPanel({
   companyId,
   onCompanyChange,
 }: StocktakesPanelProps) {
+  const employeeLabel = useEmployeeLabel();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<'' | StocktakeStatus>('');
   const [keyword, setKeyword] = useState('');
@@ -492,8 +494,8 @@ export function StocktakesPanel({
                 </Kv>
                 <Kv label="账面量">{formatQty(detail.data.bookQty)}</Kv>
                 <Kv label="实盘量">{formatQty(detail.data.actualQty)}</Kv>
-                <Kv label="发起人">{idLabel(detail.data.applicantId)}</Kv>
-                <Kv label="审批人">{idLabel(detail.data.approverId)}</Kv>
+                <Kv label="发起人">{employeeLabel(detail.data.applicantId)}</Kv>
+                <Kv label="审批人">{employeeLabel(detail.data.approverId)}</Kv>
                 <Kv label="备注">{detail.data.remark ?? '—'}</Kv>
               </dl>
 
