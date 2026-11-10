@@ -1,4 +1,7 @@
 import type {
+  Customer,
+  CustomerCreateInput,
+  CustomerUpdateInput,
   Product,
   ProductCreateInput,
   ProductUpdateInput,
@@ -82,6 +85,15 @@ export function createMasterdataApi(client: ApiClient = apiClient) {
     disableProcessor: (id: string, version: number) =>
       client.delete<Processor>(`/processors/${id}`, { headers: ifMatch(version) }),
 
+    listCustomers: (filters: MasterdataListFilters = {}) =>
+      client.get<PageResult<Customer>>('/customers', { query: listQuery(filters) }),
+    createCustomer: (input: CustomerCreateInput) =>
+      client.post<Customer>('/customers', input),
+    updateCustomer: (id: string, input: CustomerUpdateInput, version: number) =>
+      client.patch<Customer>(`/customers/${id}`, input, { headers: ifMatch(version) }),
+    disableCustomer: (id: string, version: number) =>
+      client.delete<Customer>(`/customers/${id}`, { headers: ifMatch(version) }),
+
     listProcessorQuotes: (processorId: string) =>
       client.get<PageResult<ProcessorQuote>>('/processor-quotes', {
         query: { processorId, limit: 50 },
@@ -97,7 +109,7 @@ export const masterdataApi = createMasterdataApi();
 export const masterdataQueryKeys = {
   me: ['auth', 'me'] as const,
   list: (
-    entity: 'products' | 'suppliers' | 'processors',
+    entity: 'products' | 'suppliers' | 'processors' | 'customers',
     filters: {
       keyword?: string;
       status?: '启用' | '停用';

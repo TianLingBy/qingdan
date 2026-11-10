@@ -8,6 +8,7 @@ import { EmployeesPage } from '../pages/employees/EmployeesPage';
 import { FlowPage } from '../pages/flow/FlowPage';
 import { InternalTradeOrdersPage } from '../pages/internal-trades/InternalTradeOrdersPage';
 import {
+  CustomersPage,
   ProcessorsPage,
   ProductsPage,
   SuppliersPage,
@@ -116,6 +117,7 @@ const IMPLEMENTED_PAGES: { [K in ImplementedPageId]: ComponentType } = {
   workbench: WorkbenchPage,
   flow: FlowPage,
   products: ProductsPage,
+  customers: CustomersPage,
   suppliers: SuppliersPage,
   processors: ProcessorsPage,
   'purchase-orders': PurchaseOrdersPage,
