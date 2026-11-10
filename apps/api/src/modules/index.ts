@@ -10,11 +10,14 @@ import { registerPlatformRoutes } from './platform/routes.js';
 import { billingEntitlementService } from './platform/services/entitlement.js';
 import { platformServices } from './platform/services/ports.js';
 import { registerProcessingRoutes } from './processing/routes.js';
+import { processingServices } from './processing/services/references.js';
 import { registerPurchaseRoutes } from './purchase/routes.js';
 import { registerSalesRoutes } from './sales/routes.js';
 import { salesServices } from './sales/services/receipts-port.js';
+import { salesReferenceServices } from './sales/services/references.js';
 import { registerSettlementRoutes } from './settlement/routes.js';
 import { settlementServices } from './settlement/services/drafts.js';
+import { settlementStatusServices } from './settlement/services/status.js';
 
 /**
  * 业务模块挂载登记（D62 / Issue #15）。
@@ -50,6 +53,10 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerServices(inventoryServices);
   registerServices(settlementServices);
   registerServices(salesServices);
+  // Issue #163 / D70：成本更正判定所需的下游引用聚合端口。
+  registerServices(processingServices);
+  registerServices(salesReferenceServices);
+  registerServices(settlementStatusServices);
 
   registerPlatformRoutes(app, { version: options.version, config: options.config });
   registerMasterdataRoutes(app);

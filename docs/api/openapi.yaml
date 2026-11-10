@@ -3260,6 +3260,214 @@ paths:
         reasonRequired: true
       x-mcp-tool: qingdan_stocktake_approve
       x-requires-if-match: true
+  /api/v1/inventory/batches/{batchId}/cost-adjustments:
+    post:
+      operationId: inventory.cost.adjustment.create
+      summary: 提交批次成本更正（服务端自动判 T1/T2/T3；只改成本不改数量，T1 直接生效、T2 待审批、T3 拒绝）
+      tags:
+        - inventory_qty
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryCostAdjustment"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: inventory_qty.update
+      x-module: inventory
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: false
+      x-mcp-tool: qingdan_inventory_cost_adjustment_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                afterUnitCost:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - afterUnitCost
+                - reason
+              additionalProperties: false
+    get:
+      operationId: inventory.cost.adjustment.history.read
+      summary: 批次成本更正历史（含档位/状态/差额/审批人；无看价权限时金额置空）
+      tags:
+        - inventory_qty
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InventoryCostAdjustment"
+                  nextCursor:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                      - type: "null"
+                required:
+                  - items
+                  - nextCursor
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: inventory_qty.read
+      x-module: inventory
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_inventory_cost_adjustment_history_read
+  /api/v1/inventory/cost-adjustments/{id}/approve:
+    post:
+      operationId: inventory.cost.adjustment.approve
+      summary: 审批通过 T2 成本更正（审批时复查下游引用；已结算则拒绝；AI 禁止审批且必须给原因）
+      tags:
+        - inventory_qty
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryCostAdjustment"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: inventory_qty.approve
+      x-module: inventory
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_inventory_cost_adjustment_approve
+      x-requires-if-match: true
+  /api/v1/inventory/cost-adjustments/{id}/reject:
+    post:
+      operationId: inventory.cost.adjustment.reject
+      summary: 驳回 T2 成本更正（必须写明原因；AI 禁止审批且必须给原因）
+      tags:
+        - inventory_qty
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InventoryCostAdjustment"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: inventory_qty.approve
+      x-module: inventory
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_inventory_cost_adjustment_reject
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+              required:
+                - reason
+              additionalProperties: false
   /api/v1/sales-orders:
     get:
       operationId: sales.order.list.read
@@ -7255,6 +7463,120 @@ components:
         - sourceDocId
         - handledBy
         - occurredAt
+      additionalProperties: false
+    InventoryCostAdjustment:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        batchId:
+          type: string
+        tier:
+          type: string
+          enum:
+            - T1
+            - T2
+            - T3
+        beforeUnitCost:
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        afterUnitCost:
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        deltaAmount:
+          anyOf:
+            - type: string
+              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        reason:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending_approval
+            - applied
+            - rejected
+        requestedBy:
+          type: string
+        approvedBy:
+          type:
+            - string
+            - "null"
+        referenceSnapshot:
+          type: object
+          properties:
+            referenced:
+              type: boolean
+            settled:
+              type: boolean
+            references:
+              type: array
+              items:
+                type: object
+                properties:
+                  module:
+                    type: string
+                  docType:
+                    type: string
+                  docId:
+                    type: string
+                  status:
+                    type: string
+                required:
+                  - module
+                  - docType
+                  - docId
+                  - status
+                additionalProperties: false
+          required:
+            - referenced
+            - settled
+            - references
+          additionalProperties: false
+        requestId:
+          type:
+            - string
+            - "null"
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        appliedAt:
+          anyOf:
+            - type: string
+              format: date-time
+              pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            - type: "null"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - batchId
+        - tier
+        - beforeUnitCost
+        - afterUnitCost
+        - deltaAmount
+        - reason
+        - status
+        - requestedBy
+        - approvedBy
+        - referenceSnapshot
+        - requestId
+        - version
+        - createdAt
+        - appliedAt
       additionalProperties: false
     Stocktake:
       type: object

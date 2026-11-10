@@ -9,6 +9,7 @@ export * from './positions.js';
 export * from './companies.js';
 export * from './inventory.js';
 export * from './stocktakes.js';
+export * from './cost-adjustments.js';
 export * from './sales-orders.js';
 export * from './sales-receipts.js';
 export * from './customer-returns.js';
