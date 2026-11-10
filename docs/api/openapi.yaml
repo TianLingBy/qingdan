@@ -6452,6 +6452,116 @@ paths:
                       pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
                     - type: "null"
               additionalProperties: false
+  /api/v1/reports/profit:
+    get:
+      operationId: profit_report.read
+      summary: "按期间汇总已结算 C 单毛利 + B 单全损耗，给出净毛利（D43 / #97；金额受 profit_report.view_price 管，无权限为 null，D78）"
+      tags:
+        - profit_report
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: periodStart
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        - name: periodEnd
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        - name: companyIds
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfitReport"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: profit_report.read
+      x-module: report
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_profit_report_read
+  /api/v1/reports/profit/losses:
+    get:
+      operationId: profit_report.loss.read
+      summary: 未归属损失下钻：期间内 B 单全损耗损失及归属状态（D43；金额受 profit_report.view_price 管，无权限为 null，D78）
+      tags:
+        - profit_report
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: periodStart
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        - name: periodEnd
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        - name: companyIds
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfitLossList"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: profit_report.read
+      x-module: report
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_profit_report_loss_read
 components:
   schemas:
     AuditLog:
@@ -9227,6 +9337,82 @@ components:
         - createdBy
         - createdAt
         - updatedAt
+      additionalProperties: false
+    ProfitReport:
+      type: object
+      properties:
+        periodStart:
+          type: string
+          format: date
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        periodEnd:
+          type: string
+          format: date
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        grossProfit:
+          anyOf:
+            - type: string
+              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        fullLossAmount:
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        netProfit:
+          anyOf:
+            - type: string
+              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        unattributedLoss:
+          type: "null"
+          const: null
+        unattributedLossAvailable:
+          type: boolean
+          const: false
+        settledOrderCount:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+      required:
+        - periodStart
+        - periodEnd
+        - grossProfit
+        - fullLossAmount
+        - netProfit
+        - unattributedLoss
+        - unattributedLossAvailable
+        - settledOrderCount
+      additionalProperties: false
+    ProfitLossItem:
+      type: object
+      properties:
+        processingOrderId:
+          type: string
+        processingOrderNo:
+          type: string
+        lossAmount:
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
+        attributed:
+          type: boolean
+      required:
+        - processingOrderId
+        - processingOrderNo
+        - lossAmount
+        - attributed
+      additionalProperties: false
+    ProfitLossList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProfitLossItem"
+      required:
+        - items
       additionalProperties: false
   securitySchemes:
     cookieAuth:

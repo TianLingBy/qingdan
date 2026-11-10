@@ -12,6 +12,7 @@ import { platformServices } from './platform/services/ports.js';
 import { registerProcessingRoutes } from './processing/routes.js';
 import { processingServices } from './processing/services/references.js';
 import { registerPurchaseRoutes } from './purchase/routes.js';
+import { registerReportRoutes } from './report/index.js';
 import { registerSalesRoutes } from './sales/routes.js';
 import { salesServices } from './sales/services/receipts-port.js';
 import { salesReferenceServices } from './sales/services/references.js';
@@ -35,6 +36,7 @@ export const MOUNTED_MODULE_KEYS = [
   'internal-trade',
   'settlement',
   'payment',
+  'report',
 ] as const;
 
 export interface RegisterModulesOptions {
@@ -67,4 +69,5 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerInternalTradeRoutes(app);
   registerSettlementRoutes(app);
   registerPaymentRoutes(app);
+  registerReportRoutes(app);
 }
