@@ -1,17 +1,7 @@
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router';
-import type { ComponentType } from 'react';
 import { AppLayout } from '../layouts/AppLayout';
-import { ApiIntegrationPage } from '../pages/api-integration/ApiIntegrationPage';
-import { AuditLogsPage } from '../pages/audit/AuditLogsPage';
-import { EmployeesPage } from '../pages/employees/EmployeesPage';
-import {
-  ProcessorsPage,
-  ProductsPage,
-  SuppliersPage,
-} from '../pages/masterdata/MasterdataPage';
-import { PermissionsPage } from '../pages/permissions/PermissionsPage';
-import { CompaniesPage } from '../pages/companies/CompaniesPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
+import { IMPLEMENTED_PAGES } from './implemented';
 import { DEFAULT_ROUTE_PATH, ROUTE_TABLE, type RouteEntry } from './routes';
 
 /**
@@ -40,17 +30,6 @@ const indexRoute = createRoute({
     throw redirect({ to: DEFAULT_ROUTE_PATH });
   },
 });
-
-const IMPLEMENTED_PAGES: Partial<Record<RouteEntry['id'], ComponentType>> = {
-  products: ProductsPage,
-  suppliers: SuppliersPage,
-  processors: ProcessorsPage,
-  employees: EmployeesPage,
-  permissions: PermissionsPage,
-  companies: CompaniesPage,
-  'audit-logs': AuditLogsPage,
-  'api-integration': ApiIntegrationPage,
-};
 
 function PageForEntry({ entry }: { entry: RouteEntry }) {
   const Page = IMPLEMENTED_PAGES[entry.id];
