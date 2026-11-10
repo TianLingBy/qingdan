@@ -12,7 +12,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  * 用 PGlite 真库 + 真迁移覆盖：
  * - T1 无下游引用 → 直接生效、批次锁定成本更新、**不写 inventory_flow**；
  * - T2 被销售单引用但未结算 → 落 pending_approval，审批 / 驳回走 If-Match；
- * - T3 已生成结算单 → 422 COST_ADJUSTMENT_LOCKED，不落库；
+ * - T3 已结算 → 409 STATE_CONFLICT（COST_ADJUSTMENT_LOCKED），不落库；
  * - 无 view_price 的读取金额置 null（不 403、不出 0）；
  * - 写操作审计落 audit_log。
  */
@@ -442,14 +442,29 @@ describe('库存成本更正 HTTP（PGlite + 0025）', () => {
     expect(await flowCount(T2_BATCH_ID)).toBe('0');
   });
 
-  it('T3：已进入结算直接拒绝，带 COST_ADJUSTMENT_LOCKED 与一键退货入口，不落库', async () => {
+  it('T3：结算单「待确认」按 T2 走审批；转「已结算」后 409 STATE_CONFLICT + 一键退货入口，不再落库', async () => {
+    // 「待确认」只是草稿，还没结算 —— 按口径算「有引用未结算」，走 T2 审批。
+    const pending = await createRequest(ownerCookie, 'req-cost-t3-pending', T3_BATCH_ID, {
+      afterUnitCost: '22',
+      reason: '结算前调价',
+    });
+    expect(pending.statusCode).toBe(201);
+    expect(pending.json()).toMatchObject({ tier: 'T2', status: 'pending_approval' });
+
+    await test.database.query(
+      `UPDATE settlement_order
+          SET status = '已结算', related_loss_amount_snapshot = 0
+        WHERE id = $1`,
+      [T3_SETTLEMENT_ID],
+    );
+
     const response = await createRequest(ownerCookie, 'req-cost-t3', T3_BATCH_ID, {
       afterUnitCost: '22',
       reason: '结算后调价',
     });
-    expect(response.statusCode).toBe(422);
+    expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({
-      code: 'VALIDATION_FAILED',
+      code: 'STATE_CONFLICT',
       details: {
         reason: 'COST_ADJUSTMENT_LOCKED',
         tier: 'T3',
@@ -462,14 +477,15 @@ describe('库存成本更正 HTTP（PGlite + 0025）', () => {
       },
     });
 
+    // 被拒的那次一行都不落；之前 T2 的那条仍在等审批。
     const rows = await test.database.query<{ count: string }>(
-      `SELECT count(*)::text AS count FROM inventory_cost_adjustment WHERE batch_id = $1`,
+      `SELECT count(*)::text AS count FROM inventory_cost_adjustment
+        WHERE batch_id = $1 AND status = 'pending_approval'`,
       [T3_BATCH_ID],
     );
-    expect(rows.rows[0]!.count).toBe('0');
+    expect(rows.rows[0]!.count).toBe('1');
     expect((await batchCost(T3_BATCH_ID)).cost).toBe('18.75');
   });
-
   it('权限：无 inventory_qty.update 不得提交；AI 不得提交', async () => {
     const forbidden = await createRequest(salesCookie, 'req-cost-sales-create', T1_BATCH_ID, {
       afterUnitCost: '23',

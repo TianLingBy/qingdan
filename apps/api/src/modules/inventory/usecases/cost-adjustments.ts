@@ -211,7 +211,7 @@ function maskAmounts(
 
 function lockedError(snapshot: CostAdjustmentReferenceSnapshot): AppError {
   return new AppError(
-    'VALIDATION_FAILED',
+    'STATE_CONFLICT',
     '该批次已进入结算，成本已锁定，不能更正；如需退货请走退货单据',
     {
       reason: 'COST_ADJUSTMENT_LOCKED',

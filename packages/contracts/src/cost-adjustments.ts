@@ -143,7 +143,7 @@ export const CostAdjustmentListQuerySchema = PageQuerySchema;
  * AI：全部禁止；审批/驳回还要求原因（D52①）。
  * 并发：审批 / 驳回强制 If-Match 强 ETag。
  *
- * T3 不落库：提交时若判定为已结算，直接返回 `VALIDATION_FAILED`（422），
+ * T3 不落库：提交时若判定为已结算，直接返回 `STATE_CONFLICT`（409），
  * `details.reason='COST_ADJUSTMENT_LOCKED'`，`details.returnEntry` 给一键退货入口。
  */
 export const COST_ADJUSTMENT_ROUTES: readonly RouteDef[] = [

@@ -331,7 +331,9 @@ export function downstreamReferencePort(): DownstreamReferencePort {
           companyId: query.companyId,
           sourceDocs,
         });
-        settled = settlements.length > 0;
+        // 只有「已结算」才锁成本；「待确认」仍算未结算（T2 走审批），
+        // 否则刚生成的结算草稿会把人挡在 T3 外面，连审批的机会都没有。
+        settled = settlements.some((fact) => fact.status === '已结算');
       }
       return { referenced: references.length > 0, settled, references };
     },
