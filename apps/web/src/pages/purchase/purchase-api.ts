@@ -80,6 +80,7 @@ export const purchaseQueryKeys = {
   suppliers: ['masterdata', 'suppliers', { limit: 200 }] as const,
 };
 
+
 // ============ decimal / 展示 / 取消口径 ============
 // 实现搬到了 `src/lib/decimal.ts`（B 加工单也要算钱，不复制第二份）；
 // 这里原样 re-export，采购单页与其测试的 import 路径保持不变。
