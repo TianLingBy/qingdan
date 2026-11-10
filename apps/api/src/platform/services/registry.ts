@@ -293,6 +293,34 @@ export interface ProcessingLossAggregateSource {
   aggregateFullLoss(tx: SqlClient, query: ProfitAggregateQuery): Promise<ProcessingLossAggregate>;
 }
 
+/** 产物目录（masterdata 实现）：打印取商品名用，禁止 sales 直读 product 表（D70）。 */
+export interface ProductDirectoryPort {
+  lookupProducts(
+    tx: SqlClient,
+    query: { tenantId: string; productIds: readonly string[] },
+  ): Promise<readonly ProductSummary[]>;
+}
+
+export interface ProductSummary {
+  readonly id: string;
+  readonly productNo: string | null;
+  readonly name: string;
+  readonly unit: string;
+}
+
+/** 批次目录（inventory 实现）：打印取批次号用（sales 不得直读 inventory_batch）。 */
+export interface BatchDirectoryPort {
+  lookupBatchNos(
+    tx: SqlClient,
+    query: { tenantId: string; batchIds: readonly string[] },
+  ): Promise<readonly BatchSummary[]>;
+}
+
+export interface BatchSummary {
+  readonly id: string;
+  readonly batchNo: string;
+}
+
 export interface ServiceRegistry {
   readonly stockFlow?: StockFlowPort;
   readonly settlementDraft?: SettlementDraftPort;
@@ -304,6 +332,8 @@ export interface ServiceRegistry {
   readonly settlementStatus?: SettlementStatusSource;
   readonly settlementProfitAggregate?: SettlementProfitAggregateSource;
   readonly processingLossAggregate?: ProcessingLossAggregateSource;
+  readonly productDirectory?: ProductDirectoryPort;
+  readonly batchDirectory?: BatchDirectoryPort;
 }
 
 let registry: ServiceRegistry = {};
@@ -343,6 +373,24 @@ export function employeeDirectoryPort(): EmployeeDirectoryPort {
     });
   }
   return registry.employeeDirectory;
+}
+
+export function productDirectoryPort(): ProductDirectoryPort {
+  if (!registry.productDirectory) {
+    throw new AppError('NOT_IMPLEMENTED', 'masterdata 未注册 ProductDirectoryPort（D70）', {
+      port: 'ProductDirectoryPort',
+    });
+  }
+  return registry.productDirectory;
+}
+
+export function batchDirectoryPort(): BatchDirectoryPort {
+  if (!registry.batchDirectory) {
+    throw new AppError('NOT_IMPLEMENTED', 'inventory 未注册 BatchDirectoryPort（D70）', {
+      port: 'BatchDirectoryPort',
+    });
+  }
+  return registry.batchDirectory;
 }
 
 export function salesReceiptPort(): SalesReceiptPort {

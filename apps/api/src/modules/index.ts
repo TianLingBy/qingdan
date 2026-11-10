@@ -5,6 +5,7 @@ import { registerInternalTradeRoutes } from './internal-trade/routes.js';
 import { registerInventoryRoutes } from './inventory/routes.js';
 import { inventoryServices } from './inventory/services/ports.js';
 import { registerMasterdataRoutes } from './masterdata/routes.js';
+import { masterdataServices } from './masterdata/services/ports.js';
 import { registerPaymentRoutes } from './payment/routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
 import { billingEntitlementService } from './platform/services/entitlement.js';
@@ -53,6 +54,7 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerServices(platformServices);
   registerServices(billingEntitlementService);
   registerServices(inventoryServices);
+  registerServices(masterdataServices);
   registerServices(settlementServices);
   registerServices(salesServices);
   // Issue #163 / D70：成本更正判定所需的下游引用聚合端口。

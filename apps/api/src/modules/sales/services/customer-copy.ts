@@ -3,9 +3,15 @@ import type { SalesOrderDetail } from '@qingdan/contracts';
 /**
  * 销售单客户联 HTML（prints.ts 契约）。
  *
- * 纯函数：只接收**已按看价权限脱敏**的详情实体，不发请求、不读库。
- * 金额为 null（无 `sales.view_price`）时渲染「—」，不得回落成 0（D27 / D79）。
+ * 纯函数：只接收**已按看价权限脱敏**的详情实体 + 已取好的展示文案，
+ * 不发请求、不读库。无 `sales.view_price` 时金额渲染「—」，不得回落成 0（D27 / D79）。
  */
+
+/** 打印展示文案：商品名 / 批次号由调用方经 D70 端口取好再传进来。 */
+export interface SalesOrderPrintLabels {
+  readonly productName: Readonly<Record<string, string>>;
+  readonly batchNo: Readonly<Record<string, string>>;
+}
 
 /** 无看价权限的占位符；不要改成 0 或空串。 */
 const NO_VALUE = '—';
@@ -24,17 +30,20 @@ function money(value: string | null): string {
 }
 
 /**
- * TODO: 商品名暂无跨模块查询端口，先渲染 productId 前 8 位。
- * 禁止在 sales 模块直读 product 表（D70）；端口落地后替换为商品名称。
+ * 商品名：优先用端口取回的名称；取不到（端口未接线 / 商品已删）时退回 productId 前 8 位，
+ * 保证打印永远有内容、且仍可追溯（禁止在 sales 模块直读 product 表，D70）。
  */
-function productLabel(productId: string): string {
-  return escapeHtml(productId.slice(0, 8));
+function productLabel(productId: string, labels: SalesOrderPrintLabels): string {
+  const name = labels.productName[productId];
+  return escapeHtml(name ?? productId.slice(0, 8));
 }
 
-/** 批次号同理暂无端口，展示 batchId 前 8 位，保留批次可追溯性。 */
-function batchLabel(batchIds: readonly string[]): string {
+/** 批次号同理：优先 batch_no，取不到退回 batchId 前 8 位，保留批次可追溯性。 */
+function batchLabel(batchIds: readonly string[], labels: SalesOrderPrintLabels): string {
   if (batchIds.length === 0) return NO_VALUE;
-  return batchIds.map((batchId) => escapeHtml(batchId.slice(0, 8))).join('<br>');
+  return batchIds
+    .map((batchId) => escapeHtml(labels.batchNo[batchId] ?? batchId.slice(0, 8)))
+    .join('<br>');
 }
 
 /** 日期取 ISO 的日期段；客户联不展示秒级时间。 */
@@ -81,13 +90,14 @@ function renderFees(detail: SalesOrderDetail): string {
 export function renderSalesOrderCustomerCopy(
   detail: SalesOrderDetail,
   companyName: string,
+  labels: SalesOrderPrintLabels,
 ): string {
   const lineRows = detail.lines
     .map(
       (line) => `
         <tr>
-          <td>${productLabel(line.productId)}</td>
-          <td class="batch">${batchLabel(line.batchIds)}</td>
+          <td>${productLabel(line.productId, labels)}</td>
+          <td class="batch">${batchLabel(line.batchIds, labels)}</td>
           <td class="num">${escapeHtml(line.qty)}</td>
           <td class="num">${money(line.unitPrice)}</td>
           <td class="num">${money(line.amount)}</td>

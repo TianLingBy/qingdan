@@ -181,6 +181,9 @@ describe('E 单打印（客户联）', () => {
     expect(doc.content).toContain(FEE_AMOUNT);
     expect(doc.content).toContain(TOTAL_AMOUNT);
     expect(doc.content).toContain('客户联');
+    // 商品名 / 批次号经 D70 端口取回，不再渲染 uuid 前 8 位。
+    expect(doc.content).toContain('打印测试商品');
+    expect(doc.content).toContain('E-PRINT-A');
   });
 
   it('无 view_price：200 + 金额渲染「—」，正文不含真实金额', async () => {
