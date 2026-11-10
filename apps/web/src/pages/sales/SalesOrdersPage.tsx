@@ -27,7 +27,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { allows, type ScopeAction } from '../../lib/access';
+import { useCompanyLabel } from '../../lib/company-directory';
 import { useEmployeeLabel } from '../../lib/employee-directory';
+import {
+  describeWriteError,
+  isStaleVersionError,
+  recoverFromStaleVersion,
+  staleVersionRecoveredText,
+} from '../../lib/write-error';
 import {
   MASKED_AMOUNT,
   cancelDisabledReason,
@@ -75,8 +82,7 @@ const EMPTY_FEE: SalesFeeDraft = {
 };
 
 function errorText(error: unknown): string {
-  if (error instanceof ApiError) return `${error.message}（${error.code}）`;
-  return error instanceof Error ? error.message : '操作失败，请稍后重试';
+  return describeWriteError(error);
 }
 
 function shortId(id: string): string {
@@ -170,6 +176,7 @@ function OrderForm({
   onSubmit,
   onCancel,
 }: OrderFormProps) {
+  const companyLabel = useCompanyLabel();
   const lineTotal = sumDecimal(lines.map((line) => lineAmountOf(line)));
   const feeTotal = sumDecimal(fees.map((fee) => feeAmountOf(fee)));
   const total = orderTotalOf(lines, fees);
@@ -206,8 +213,8 @@ function OrderForm({
           >
             {companyIds.length === 0 && <option value="">当前账号没有可用公司</option>}
             {companyIds.map((id) => (
-              <option key={id} value={id}>
-                {id}
+              <option key={id} value={id} title={id}>
+                {companyLabel(id)}
               </option>
             ))}
           </select>
@@ -996,6 +1003,7 @@ function DetailPanel({
 // ============================ 页面 ============================
 
 export function SalesOrdersPage() {
+  const companyLabel = useCompanyLabel();
   const queryClient = useQueryClient();
   const me = useQuery({ queryKey: authKeys.me, queryFn: authApi.me });
   const meData = me.data;
@@ -1019,6 +1027,8 @@ export function SalesOrdersPage() {
   const [clientErrors, setClientErrors] = useState<string[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** 版本冲突后已把最新 version 接上时的提示（与红色报错互斥）。 */
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const printUrlRef = useRef<string | null>(null);
 
@@ -1118,6 +1128,7 @@ export function SalesOrdersPage() {
     setFees([]);
     setClientErrors([]);
     save.reset();
+    setStaleNotice(null);
   };
 
   const save = useMutation({
@@ -1165,6 +1176,18 @@ export function SalesOrdersPage() {
       await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
       resetForm();
       setDetailId(order.id);
+    },
+    /**
+     * 版本冲突（别人先改过）：把最新 version 接回表单，用户点一次「保存修改」就能过。
+     * 不自动重提——那等于拿旧内容覆盖别人的改动，得让用户先核对（D60）。
+     */
+    onError: async (error) => {
+      if (!editing) return;
+      const fresh = await recoverFromStaleVersion(error, editing.id, salesApi.detail);
+      if (!fresh) return;
+      setEditing({ ...editing, version: fresh.version });
+      setStaleNotice(staleVersionRecoveredText(fresh.version));
+      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
     },
   });
 
@@ -1357,8 +1380,8 @@ export function SalesOrdersPage() {
           >
             <option value="">全部公司</option>
             {companyIds.map((id) => (
-              <option key={id} value={id}>
-                {id}
+              <option key={id} value={id} title={id}>
+                {companyLabel(id)}
               </option>
             ))}
           </select>
@@ -1445,7 +1468,12 @@ export function SalesOrdersPage() {
         />
       )}
 
-      {save.error && serverIssues.length === 0 && (
+      {staleNotice && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          {staleNotice}
+        </p>
+      )}
+      {save.error && serverIssues.length === 0 && !isStaleVersionError(save.error) && (
         <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
           <p>{errorText(save.error)}</p>
           {priceFloorIssue && (

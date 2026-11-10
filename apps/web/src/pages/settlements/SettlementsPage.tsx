@@ -21,10 +21,10 @@ import type {
 } from '@qingdan/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { ApiError } from '../../api/client';
 import { allows, type ScopeAction } from '../../lib/access';
 import { MASKED_AMOUNT, formatMoney } from '../../lib/decimal';
 import { useEmployeeLabel } from '../../lib/employee-directory';
+import { describeWriteError, recoverFromStaleVersion } from '../../lib/write-error';
 import { authApi, authKeys } from '../auth/auth-api';
 import {
   SETTLEMENT_SOURCE_LABEL,
@@ -47,7 +47,7 @@ const PAGE_DESCRIPTION =
   '结算凭证：毛利 = 总售价 − 总成本（D5），净毛利再扣本单相关损失（D33）；提成在确认结算时按归属人比例快照（D36）。';
 
 function errorText(error: unknown): string {
-  return error instanceof ApiError ? error.message : error instanceof Error ? error.message : '未知错误';
+  return describeWriteError(error);
 }
 
 function formatDateTime(value: string): string {
@@ -241,6 +241,8 @@ export function SettlementsPage() {
   const [pageIndex, setPageIndex] = useState(0);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** 版本冲突后已刷新到最新状态时的提示（与红色报错互斥）。 */
+  const [staleNotice, setStaleNotice] = useState<string | null>(null);
 
   const scope = me.data?.scope;
   const can = (action: ScopeAction) => allows(scope, 'settlement', action);
@@ -294,8 +296,25 @@ export function SettlementsPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['settlements'] });
       setActionError(null);
+      setStaleNotice(null);
     },
-    onError: (error) => setActionError(errorText(error)),
+    /**
+     * 版本冲突（极小概率：刚取的详情到点确认之间被人抢先）→ 刷新到最新状态再让用户判断。
+     * 确认结算是一次性动作，刷新后 `confirmable` 会由服务端重新给出（D19），不自己猜。
+     */
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, settlementsApi.detail);
+      if (!fresh) {
+        setActionError(errorText(error));
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['settlements'] });
+      setStaleNotice(
+        fresh.status === '已结算'
+          ? `这张结算单已被别人先结算了（v${fresh.version}）：一期一单只结算一次（D19），不能重复确认。`
+          : `这张结算单刚被别人改过，已刷新到最新状态（v${fresh.version}）；请核对后重新确认。`,
+      );
+    },
   });
 
   /**
@@ -304,6 +323,7 @@ export function SettlementsPage() {
    */
   const askConfirm = async (orderId: string) => {
     setActionError(null);
+    setStaleNotice(null);
     try {
       const fresh = await settlementsApi.detail(orderId);
       setDetailId(orderId);
@@ -419,6 +439,11 @@ export function SettlementsPage() {
       {confirm.error ? (
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
           确认结算失败：{errorText(confirm.error)}
+        </p>
+      ) : null}
+      {staleNotice ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          {staleNotice}
         </p>
       ) : null}
       {actionError ? (
