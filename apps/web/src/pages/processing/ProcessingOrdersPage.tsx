@@ -30,10 +30,12 @@ import {
   describeWriteError,
   isStaleVersionError,
   recoverFromStaleVersion,
+  staleActionRetryText,
   staleVersionRecoveredText,
 } from '../../lib/write-error';
 import {
   MASKED_AMOUNT,
+  cancelDisabledReason,
   formatMoney,
   formatQty,
   isPositiveDecimal,
@@ -952,6 +954,21 @@ export function ProcessingOrdersPage() {
     mutationFn: (order: ProcessingOrderDetail) =>
       processingApi.cancel(order.id, order.version),
     onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ['processing-orders'] });
+    },
+    /**
+     * 取消撞版本冲突（别人刚改过 / 刚取消了这张单）：同步最新版本并说明，
+     * 不自动重提——取消不可逆，让用户看清当前状态再点（D60）。
+     */
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, processingApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '取消失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(staleActionRetryText(fresh.version, '取消'));
       await queryClient.invalidateQueries({ queryKey: ['processing-orders'] });
     },
   });
@@ -1010,7 +1027,15 @@ export function ProcessingOrdersPage() {
   };
 
   const askCancel = (order: ProcessingOrderDetail) => {
-    if (!order.cancelable.allowed) return;
+    /**
+     * 列表行按钮只看「进行中」，服务端还可能因「已完成 / 已被别人取消 / 有下游单据」拒绝。
+     * 以前直接 return，用户点了没反应；现在把原因摆到页面上。
+     */
+    if (!order.cancelable.allowed) {
+      setActionError(cancelDisabledReason(order.cancelable.reason) ?? '当前状态不能取消这张单');
+      return;
+    }
+    setActionError(null);
     const message = order.outputBatchId
       ? `确认取消加工单 ${order.orderNo} 吗？已生成产出批次，取消会释放材料占用。`
       : `确认取消加工单 ${order.orderNo} 吗？取消后不可恢复，错账请走冲正。`;
@@ -1193,9 +1218,6 @@ export function ProcessingOrdersPage() {
       )}
       {save.error && serverIssues.length === 0 && !isStaleVersionError(save.error) && (
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorText(save.error)}</p>
-      )}
-      {cancelOrder.error && (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorText(cancelOrder.error)}</p>
       )}
       {actionError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>}
       {notice && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{notice}</p>}

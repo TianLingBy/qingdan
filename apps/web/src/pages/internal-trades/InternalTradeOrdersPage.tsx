@@ -27,6 +27,7 @@ import {
   describeWriteError,
   isStaleVersionError,
   recoverFromStaleVersion,
+  staleActionRetryText,
   staleVersionRecoveredText,
 } from '../../lib/write-error';
 import {
@@ -675,9 +676,23 @@ export function InternalTradeOrdersPage() {
     mutationFn: (order: InternalTradeOrderDetail) =>
       internalTradesApi.cancel(order.id, order.version),
     onSuccess: async () => {
+      setActionError(null);
       await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
     },
-    onError: (error) => setActionError(errorText(error)),
+    /**
+     * 取消撞版本冲突（别人刚改过 / 刚取消了这张单）：同步最新版本并说明，
+     * 不自动重提——取消不可逆，让用户看清当前状态再点（D60）。
+     */
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, internalTradesApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '取消失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(staleActionRetryText(fresh.version, '取消'));
+      await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
+    },
   });
 
   function resetForm() {
@@ -740,7 +755,15 @@ export function InternalTradeOrdersPage() {
   };
 
   const askCancel = (order: InternalTradeOrderDetail) => {
-    if (!order.cancelable.allowed) return;
+    /**
+     * 列表行按钮只按「进行中」判断，服务端还可能因为「已完成 / 已被别人取消 / 有下游单据」拒绝。
+     * 以前这里直接 return，用户点了没反应——必须把原因说出来。
+     */
+    if (!order.cancelable.allowed) {
+      setActionError(cancelDisabledReason(order.cancelable.reason) ?? '当前状态不能取消这张单');
+      return;
+    }
+    setActionError(null);
     if (
       globalThis.confirm?.(
         `确认取消内部交易单 ${order.orderNo} 吗？取消后不可恢复，错账请另开一张（D47）。`,
@@ -890,11 +913,6 @@ export function InternalTradeOrdersPage() {
       ) : null}
       {save.error && serverIssues.length === 0 && !isStaleVersionError(save.error) ? (
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorText(save.error)}</p>
-      ) : null}
-      {cancelOrder.error ? (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-          取消失败：{errorText(cancelOrder.error)}
-        </p>
       ) : null}
       {actionError ? (
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>
