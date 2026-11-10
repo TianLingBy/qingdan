@@ -35,11 +35,15 @@ const FLOW_ID = '01900000-0000-7000-8000-000000005131';
 const FULL_SCOPE: ScopeMatrix = [
   {
     domain: 'internal_trade',
-    actions: ['read', 'create', 'update', 'delete'],
+    actions: ['read', 'create', 'update', 'delete', 'view_price'],
   },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [
   { domain: 'internal_trade', actions: ['read'] },
+];
+/** 有读权限、无看价权限（D79 脱敏测试用）。 */
+const NO_PRICE_SCOPE: ScopeMatrix = [
+  { domain: 'internal_trade', actions: ['read', 'create', 'update'] },
 ];
 
 const LINE = {
@@ -635,5 +639,48 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
       [created.id],
     );
     expect(audit.rows[0]?.count).toBe('1');
+  });
+
+  it('D79：无 internal_trade.view_price → 金额为 null（不 403、不出 0），数量照常可见', async () => {
+    const hidden: Partial<Principal> = { scope: NO_PRICE_SCOPE };
+    const created = await createOne({ internalPrice: '88.8' }, hidden);
+
+    // 创建响应即脱敏：金额 null、字段仍在，数量不受影响。
+    expect(created.internalPrice).toBeNull();
+    expect(created.lines[0]).toMatchObject({ qty: '2', unitPrice: null, amount: null });
+
+    const detail = (await getInternalTradeOrder(
+      readCtx(hidden, { params: { id: created.id } }),
+    )) as InternalTradeOrderDetail;
+    expect(detail.internalPrice).toBeNull();
+    expect(detail.lines[0]?.unitPrice).toBeNull();
+    expect(detail.lines[0]?.amount).toBeNull();
+    expect(detail.inTransitQty).toBe('0'); // 数量不是价格，不脱敏
+
+    const page = await listInternalTradeOrders(readCtx(hidden));
+    const row = page.items.find((item) => item.id === created.id);
+    expect(row?.internalPrice).toBeNull();
+    expect(row?.lines[0]?.unitPrice).toBeNull();
+
+    // 同一张单，老板（含 view_price）仍能看到真实金额。
+    const ownerDetail = (await getInternalTradeOrder(
+      readCtx({}, { params: { id: created.id } }),
+    )) as InternalTradeOrderDetail;
+    expect(ownerDetail.internalPrice).toBe('88.8');
+    expect(ownerDetail.lines[0]?.unitPrice).toBe('15');
+  });
+
+  it('D79：有 update 但无 view_price → 修改响应同样脱敏', async () => {
+    const hidden: Partial<Principal> = { scope: NO_PRICE_SCOPE };
+    const created = await createOne({}, hidden);
+    const { ctx, state } = writeCtx(hidden, {
+      params: { id: created.id },
+      headers: { 'if-match': `"${created.version}"` },
+      body: { internalPrice: '99.9' },
+    });
+    const updated = await updateInternalTradeOrder(ctx);
+    expect(state.statusCode).toBe(200);
+    expect(updated.internalPrice).toBeNull();
+    expect(updated.version).toBe(created.version + 1);
   });
 });

@@ -432,7 +432,11 @@ function DetailPanel({
   onCancel,
 }: DetailPanelProps) {
   const employeeLabel = useEmployeeLabel();
-  const lineTotal = sumDecimal(order.lines.map((line) => line.amount));
+  // 金额按 view_price 脱敏时是 null：整单合计只能一起显示「—」，不能把 null 当 0 累加。
+  const lineAmounts = order.lines.map((line) => line.amount);
+  const lineTotal = lineAmounts.some((value) => value === null)
+    ? null
+    : sumDecimal(lineAmounts as readonly string[]);
   const cancelReason = cancelDisabledReason(order.cancelable.reason);
 
   return (
@@ -708,14 +712,14 @@ export function InternalTradeOrdersPage() {
     setEditing(order);
     setFormFrom(order.fromCompanyId);
     setFormTo(order.toCompanyId);
-    setInternalPrice(order.internalPrice);
+    setInternalPrice(order.internalPrice ?? '');
     setLines(
       order.lines.length > 0
         ? order.lines.map((line) => ({
             productId: line.productId,
             batchIds: [...line.batchIds],
             qty: line.qty,
-            unitPrice: line.unitPrice,
+            unitPrice: line.unitPrice ?? '',
           }))
         : [{ ...EMPTY_LINE }],
     );

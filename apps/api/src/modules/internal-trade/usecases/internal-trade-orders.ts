@@ -26,6 +26,7 @@ import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import * as repo from '../repo.js';
+import { maskInternalTradeAmounts, maskInternalTradeDetailAmounts } from '../services/masking.js';
 
 /**
  * 内部交易单 N 用例（D15 / D16 / D21 / D22 / D51 / D52 / D54 / D68）。
@@ -238,7 +239,7 @@ function auditEventOf(
   };
 }
 
-/** 内部交易单列表（普通读，不记审计）。 */
+/** 内部交易单列表（普通读，不记审计）；金额按 `internal_trade.view_price` 脱敏（D27 / D79）。 */
 export async function listInternalTradeOrders(
   ctx: InternalTradeOrderContext,
 ): Promise<{ items: InternalTradeOrder[]; nextCursor: string | null }> {
@@ -246,13 +247,18 @@ export async function listInternalTradeOrders(
   const database = requireDatabase(ctx, 'internal_trade.order.list.read');
   requireScope(principal, 'read');
   const query = parseListQuery(ctx.request);
+  const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
 
-  return withTenant(database, principal.tenantId, (tx) =>
+  const page = await withTenant(database, principal.tenantId, (tx) =>
     repo.listInternalTradeOrders(repoContext(tx, principal), query),
   );
+  return {
+    items: page.items.map((order) => maskInternalTradeAmounts(order, canViewPrice)),
+    nextCursor: page.nextCursor,
+  };
 }
 
-/** 内部交易单详情（普通读，不记审计）；内嵌四态取消判定。 */
+/** 内部交易单详情（普通读，不记审计）；内嵌四态取消判定，金额同样脱敏。 */
 export async function getInternalTradeOrder(
   ctx: InternalTradeOrderContext,
 ): Promise<InternalTradeOrderDetail> {
@@ -260,6 +266,7 @@ export async function getInternalTradeOrder(
   const database = requireDatabase(ctx, 'internal_trade.order.detail.read');
   requireScope(principal, 'read');
   const id = parseOrderId(ctx.request);
+  const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
 
   const detail = await withTenant(database, principal.tenantId, async (tx) => {
     const context = repoContext(tx, principal);
@@ -279,10 +286,10 @@ export async function getInternalTradeOrder(
     };
   });
   if (!detail) throw new AppError('NOT_FOUND', '内部交易单不存在');
-  return detail;
+  return maskInternalTradeDetailAmounts(detail, canViewPrice);
 }
 
-/** 开内部交易单：201 + 同事务取 N 号 / 审计（D16 / D51）。 */
+/** 开内部交易单：201 + 同事务取 N 号 / 审计（D16 / D51）；响应按看价脱敏（D79）。 */
 export async function createInternalTradeOrder(
   ctx: InternalTradeOrderWriteContext,
 ): Promise<InternalTradeOrder> {
@@ -290,6 +297,7 @@ export async function createInternalTradeOrder(
   const database = requireDatabase(ctx, 'internal_trade.order.create');
   requireScope(principal, 'create');
   assertHumanCredential(principal, '开内部交易单');
+  const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
 
   const input = parseCreateInput(ctx.request.body);
   const id = uuidv7();
@@ -331,16 +339,17 @@ export async function createInternalTradeOrder(
   });
 
   ctx.reply.status(201);
-  return order;
+  return maskInternalTradeAmounts(order, canViewPrice);
 }
 
-/** 修改内部交易单：If-Match 强 ETag；仅「进行中」可改；成功后回新 ETag。 */
+/** 修改内部交易单：If-Match 强 ETag；仅「进行中」可改；成功后回新 ETag；响应按看价脱敏（D79）。 */
 export async function updateInternalTradeOrder(
   ctx: InternalTradeOrderWriteContext,
 ): Promise<InternalTradeOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'internal_trade.order.update');
   requireScope(principal, 'update');
+  const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
 
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -375,7 +384,7 @@ export async function updateInternalTradeOrder(
   });
 
   ctx.reply.header('ETag', etagOf(order.version));
-  return order;
+  return maskInternalTradeAmounts(order, canViewPrice);
 }
 
 /**
@@ -390,6 +399,7 @@ export async function cancelInternalTradeOrder(
   const database = requireDatabase(ctx, 'internal_trade.order.cancel');
   requireScope(principal, 'delete');
   assertHumanCredential(principal, '取消内部交易单');
+  const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
 
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -438,5 +448,5 @@ export async function cancelInternalTradeOrder(
   });
 
   ctx.reply.header('ETag', etagOf(order.version));
-  return order;
+  return maskInternalTradeAmounts(order, canViewPrice);
 }
