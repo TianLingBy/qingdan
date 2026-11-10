@@ -13,7 +13,8 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  *   重复出现 → 422；presetKey 只接受服务端预设值或 null（D60②）；AI 默认禁止（D54⑥）；
  * - update：presetKey 不可改（入参 strict 收不进来）；If-Match 强制（缺 428 / 不匹配 409）；
  * - delete = 停用（软删除，回实体 + 新 ETag）；被员工占用的岗位不允许删（先查
- *   `employee_company_position` 引用）；删除审计的 changeSummary 带被删岗位快照（Issue #121）；
+ *   `employee_company_position` 引用）→ 409 `STATE_CONFLICT` + `reason=POSITION_IN_USE`；
+ *   删除审计的 changeSummary 带被删岗位快照（Issue #121）；
  * - 已停用再删幂等成功（与 employee.disable / token.revoke 同口径）；
  * - 写操作 100% 审计（D51）。
  */
@@ -349,9 +350,9 @@ describe('platform 岗位（权限模板）端点（PGlite + seed 演示租户�
         'x-request-id': 'req-position-delete-inuse',
       },
     });
-    expect(response.statusCode).toBe(422);
+    expect(response.statusCode).toBe(409);
     const body = response.json() as { code: string; details?: { reason?: string } };
-    expect(body.code).toBe('VALIDATION_FAILED');
+    expect(body.code).toBe('STATE_CONFLICT');
     expect(body.details?.reason).toBe('POSITION_IN_USE');
 
     // 拒绝后岗位仍是启用（软删除未发生）。
