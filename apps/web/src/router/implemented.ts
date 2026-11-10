@@ -18,6 +18,10 @@ export const IMPLEMENTED_PAGE_IDS = [
   'customers',
   'suppliers',
   'processors',
+  // 库存（#143）
+  'inventory',
+  'inventory-flows',
+  'stocktakes',
   'purchase-orders',
   'processing-orders',
   'sales-orders',

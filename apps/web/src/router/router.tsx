@@ -6,6 +6,9 @@ import { AuditLogsPage } from '../pages/audit/AuditLogsPage';
 import { LoginPage } from '../pages/auth/LoginPage';
 import { EmployeesPage } from '../pages/employees/EmployeesPage';
 import { FlowPage } from '../pages/flow/FlowPage';
+import { InventoryFlowsPage } from '../pages/inventory/InventoryFlowsPage';
+import { InventoryPage } from '../pages/inventory/InventoryPage';
+import { StocktakesPage } from '../pages/inventory/StocktakesPage';
 import { InternalTradeOrdersPage } from '../pages/internal-trades/InternalTradeOrdersPage';
 import {
   CustomersPage,
@@ -121,6 +124,9 @@ const IMPLEMENTED_PAGES: { [K in ImplementedPageId]: ComponentType } = {
   suppliers: SuppliersPage,
   processors: ProcessorsPage,
   'purchase-orders': PurchaseOrdersPage,
+  inventory: InventoryPage,
+  'inventory-flows': InventoryFlowsPage,
+  stocktakes: StocktakesPage,
   employees: EmployeesPage,
   permissions: PermissionsPage,
   companies: CompaniesPage,
@@ -135,7 +141,6 @@ const IMPLEMENTED_PAGES: { [K in ImplementedPageId]: ComponentType } = {
 
 // `IMPLEMENTED_PAGE_IDS` 是 as const 元组，键一定是上面这 11 个；此处只是把窄类型放宽回路由 id。
 const implementedPageMap: Partial<Record<RouteEntry['id'], ComponentType>> = IMPLEMENTED_PAGES;
-
 function PageForEntry({ entry }: { entry: RouteEntry }) {
   const Page = implementedPageMap[entry.id];
   return Page ? <Page /> : <PlaceholderPage entry={entry} />;
