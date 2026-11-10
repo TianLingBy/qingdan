@@ -13,6 +13,7 @@ import {
 import { PermissionsPage } from '../pages/permissions/PermissionsPage';
 import { CompaniesPage } from '../pages/companies/CompaniesPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
+import { ProcessingOrdersPage } from '../pages/processing/ProcessingOrdersPage';
 import { PurchaseOrdersPage } from '../pages/purchase/PurchaseOrdersPage';
 import { DEFAULT_ROUTE_PATH, ROUTE_TABLE, type RouteEntry } from './routes';
 import { readSession } from './session-guard';
@@ -110,6 +111,7 @@ const IMPLEMENTED_PAGES: Partial<Record<RouteEntry['id'], ComponentType>> = {
   companies: CompaniesPage,
   'audit-logs': AuditLogsPage,
   'api-integration': ApiIntegrationPage,
+  'processing-orders': ProcessingOrdersPage,
 };
 
 function PageForEntry({ entry }: { entry: RouteEntry }) {
