@@ -78,6 +78,44 @@ export interface AppConfig {
 }
 
 /**
+ * 本机地址白名单：`PUBLIC_BASE_URL` 指向这些主机时不可能对公网提供同源 Cookie 写操作。
+ * `NODE_ENV=production` 下出现即拒绝启动（2026-11-10 负责人拍板）。
+ */
+// 注意：WHATWG URL 的 hostname 对 IPv6 保留方括号（`new URL('http://[::1]').hostname === '[::1]'`），
+// 所以这里同时列出带括号与不带括号两种写法。
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0']);
+
+/**
+ * 校验 `PUBLIC_BASE_URL`（D59⑧：Cookie 同源校验只认这个基址）。
+ *
+ * - 非空时必须能解析成绝对 http(s) URL，否则配置写错会让所有写操作 403；
+ * - production 下不允许指向本机地址——上线漏配的典型表现是「本地开发正常、部署后写操作全 403」，
+ *   与其让运维在运行时排查，不如启动即失败。
+ */
+function assertPublicBaseUrl(publicBaseUrl: string, nodeEnv: Env['NODE_ENV']): void {
+  if (publicBaseUrl === '') return;
+  let parsed: URL;
+  try {
+    parsed = new URL(publicBaseUrl);
+  } catch {
+    throw new ConfigError(
+      `PUBLIC_BASE_URL 不是合法 URL：${publicBaseUrl}（需形如 https://qingdan.example.com，不带结尾斜杠）`,
+    );
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new ConfigError(
+      `PUBLIC_BASE_URL 只支持 http / https 协议，收到：${publicBaseUrl}`,
+    );
+  }
+  if (nodeEnv === 'production' && LOOPBACK_HOSTNAMES.has(parsed.hostname)) {
+    throw new ConfigError(
+      `PUBLIC_BASE_URL 在生产环境不能指向本机地址（收到 ${publicBaseUrl}）：` +
+        '浏览器 Origin 与它不一致时所有写操作都会 403，请填实际上线域名或服务器 IP。',
+    );
+  }
+}
+
+/**
  * 读取并校验配置；校验失败时抛 `ConfigError`（main 里捕获后 `process.exit(1)`）。
  */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -89,6 +127,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new ConfigError(`环境变量校验失败：\n${issues}`);
   }
   const value = parsed.data;
+  const publicBaseUrl = (value.PUBLIC_BASE_URL ?? '').replace(/\/+$/, '');
+  assertPublicBaseUrl(publicBaseUrl, value.NODE_ENV);
   return Object.freeze({
     nodeEnv: value.NODE_ENV,
     port: value.PORT,
@@ -98,7 +138,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     loginDevCode: value.LOGIN_DEV_CODE,
     sessionTtlDays: value.SESSION_TTL_DAYS,
     appTimezone: value.APP_TIMEZONE,
-    publicBaseUrl: value.PUBLIC_BASE_URL ?? '',
+    publicBaseUrl,
     trustProxy: Array.isArray(value.TRUST_PROXY)
       ? Object.freeze([...value.TRUST_PROXY])
       : value.TRUST_PROXY,

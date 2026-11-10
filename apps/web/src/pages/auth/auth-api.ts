@@ -1,3 +1,4 @@
+import type { ScopeMatrix } from '@qingdan/contracts';
 import type { ApiClient } from '../../api/client';
 import { ApiError, apiClient } from '../../api/client';
 
@@ -14,10 +15,7 @@ export interface MeResponse {
   readonly displayName: string;
   readonly companyIds: string[];
   /** 功能域 × 动作；前端只做显隐，判定一律以后端为准（D4/D15/D27）。 */
-  readonly scope: readonly {
-    readonly domain: string;
-    readonly actions: readonly string[];
-  }[];
+  readonly scope: ScopeMatrix;
 }
 
 export interface LoginInput {

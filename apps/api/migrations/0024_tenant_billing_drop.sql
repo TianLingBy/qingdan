@@ -1,5 +1,11 @@
--- 0021_tenant_billing_drop.sql
+-- 0024_tenant_billing_drop.sql
 -- 删除 tenant 表上的历史计费字段：计费口径统一到 company 级（见 0020_platform_billing.sql）。
+--
+-- 编号说明：本文件原为 0021_tenant_billing_drop.sql，与 0021_company_position_version.sql 重号；
+--   2026-11-10 负责人裁定改为 0024（温汇敏在 #156 复核提出），补齐「一文件一号」。
+--   迁移 runner 按文件名升序 + `schema_migrations` 账本执行（见 src/platform/db/migrate.ts）：
+--   改名后**已跑过旧文件名的库会把它当新文件再跑一次**，所以下面的语句必须幂等
+--   （`DROP COLUMN IF EXISTS`），再跑一次不会报错，也不会改数据。
 --
 -- 依据：
 --   * 负责人 2026-11-08 拍板（#131 评论「按 A 删掉」）：一期只做公司级订阅，
