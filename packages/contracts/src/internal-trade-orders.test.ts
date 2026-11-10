@@ -12,6 +12,7 @@ import {
   InternalTradeOrderCancelableSchema,
   InternalTradeOrderCreateInputSchema,
   InternalTradeOrderDetailSchema,
+  InternalTradeOrderLineInputSchema,
   InternalTradeOrderLineSchema,
   InternalTradeOrderListQuerySchema,
   InternalTradeOrderSchema,
@@ -232,12 +233,33 @@ describe('内部交易单契约（internal-trade）', () => {
         valid,
       ).toBe(true);
     }
-    for (const invalid of [10.5, '-1', '1.2345678', 'abc', null]) {
+    for (const invalid of [10.5, '-1', '1.2345678', 'abc']) {
       expect(
         InternalTradeOrderSchema.safeParse({ ...ORDER, internalPrice: invalid }).success,
         String(invalid),
       ).toBe(false);
+      expect(
+        InternalTradeOrderCreateInputSchema.safeParse({ ...CREATE_INPUT, internalPrice: invalid })
+          .success,
+        String(invalid),
+      ).toBe(false);
     }
+    // D79：实体视图允许 null（无 internal_trade.view_price 时脱敏），开单入参仍必填。
+    expect(InternalTradeOrderSchema.safeParse({ ...ORDER, internalPrice: null }).success).toBe(
+      true,
+    );
+    expect(
+      InternalTradeOrderCreateInputSchema.safeParse({ ...CREATE_INPUT, internalPrice: null }).success,
+    ).toBe(false);
+    // 明细同理：实体视图金额可为 null，写入 schema 不接受 null、也不接受漏填。
+    expect(
+      InternalTradeOrderLineSchema.safeParse({ ...LINE, unitPrice: null, amount: null }).success,
+    ).toBe(true);
+    expect(
+      InternalTradeOrderLineInputSchema.safeParse({ ...LINE, unitPrice: null }).success,
+    ).toBe(false);
+    const { unitPrice: _noUnitPrice, ...lineWithoutPrice } = LINE;
+    expect(InternalTradeOrderLineInputSchema.safeParse(lineWithoutPrice).success).toBe(false);
     // 内部价必填，不从成本价 / 加成自动推导。
     const { internalPrice: _omitted, ...withoutPrice } = CREATE_INPUT;
     expect(InternalTradeOrderCreateInputSchema.safeParse(withoutPrice).success).toBe(false);

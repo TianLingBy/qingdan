@@ -1,7 +1,7 @@
 import { AppError } from '@qingdan/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
-import { documentScopeKey, takeDocumentNo, takeEmployeeNo } from './service.js';
+import { batchScopeKey, documentScopeKey, takeBatchNo, takeDocumentNo, takeEmployeeNo } from './service.js';
 
 const TENANT = '01900000-0000-7000-8000-0000000000f1';
 const COMPANY = '01900000-0000-7000-8000-0000000000f2';
@@ -97,5 +97,76 @@ describe('取号服务（D16 / D48）', () => {
     const b = documentScopeKey('A', NOV, '01900000-0000-7000-8000-0000000000aa');
     expect(a).not.toBe(b);
     expect(a).toContain('document:');
+  });
+});
+
+describe('批次取号 takeBatchNo（#136/#162，D16 变体）', () => {
+  let test: TestDatabase;
+
+  beforeAll(async () => {
+    test = await createTestDatabase();
+    await test.database.transaction(async (tx) => {
+      await tx.query(`INSERT INTO tenant (id, name, status) VALUES ($1, '批次租户', '启用')`, [TENANT]);
+      await tx.query(
+        `INSERT INTO company (id, tenant_id, name, code) VALUES ($1, $2, '批次公司', '0001')`,
+        [COMPANY, TENANT],
+      );
+      await tx.query(
+        `INSERT INTO company (id, tenant_id, name, code) VALUES ($1, $2, '批次公司42', '0042')`,
+        [COMPANY_42, TENANT],
+      );
+    });
+  });
+
+  afterAll(async () => {
+    await test.database.close();
+  });
+
+  it('格式：PB-公司码(4)-日期(8)-流水(4)，同月递增', async () => {
+    const first = await test.database.transaction((tx) => takeBatchNo(tx, COMPANY, NOV));
+    expect(first).toBe('PB-0001-20261104-0001');
+
+    const second = await test.database.transaction((tx) => takeBatchNo(tx, COMPANY, NOV));
+    expect(second).toBe('PB-0001-20261104-0002');
+  });
+
+  it('流水按月重置（换键，不清表）', async () => {
+    const december = await test.database.transaction((tx) => takeBatchNo(tx, COMPANY, DEC));
+    expect(december).toBe('PB-0001-20261201-0001');
+  });
+
+  it('公司码四位补零：不同公司各自独立流水', async () => {
+    const no = await test.database.transaction((tx) => takeBatchNo(tx, COMPANY_42, NOV));
+    expect(no).toBe('PB-0042-20261104-0001');
+  });
+
+  it('批次计数键与单据键互不共享', () => {
+    const batch = batchScopeKey(NOV, COMPANY);
+    expect(batch).toBe(`batch:${COMPANY}:202611`);
+    expect(batch).not.toBe(documentScopeKey('A', NOV, COMPANY));
+  });
+
+  it('月流水用满 9999 → 显式失败（禁止回绕）', async () => {
+    const scopeKey = batchScopeKey(NOV, COMPANY);
+    await test.database.query(
+      `INSERT INTO number_sequence (tenant_id, scope_key, last_value) VALUES ($1, $2, 9999)
+       ON CONFLICT (tenant_id, scope_key) DO UPDATE SET last_value = 9999`,
+      [TENANT, scopeKey],
+    );
+
+    await expect(
+      test.database.transaction((tx) => takeBatchNo(tx, COMPANY, NOV)),
+    ).rejects.toBeInstanceOf(AppError);
+    await expect(
+      test.database.transaction((tx) => takeBatchNo(tx, COMPANY, NOV)),
+    ).rejects.toThrow(/9999/);
+  });
+
+  it('公司不存在 → NOT_FOUND', async () => {
+    await expect(
+      test.database.transaction((tx) =>
+        takeBatchNo(tx, '01900000-0000-7000-8000-00000000dead', NOV),
+      ),
+    ).rejects.toThrow(/公司不存在/);
   });
 });

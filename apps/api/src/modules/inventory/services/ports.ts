@@ -1,3 +1,4 @@
+import { AppError } from '@qingdan/contracts';
 import type { ServiceRegistry } from '../../../platform/services/registry.js';
 import { applyStockAdjustment } from './stock-flow.js';
 
@@ -19,5 +20,12 @@ export const inventoryServices: Pick<ServiceRegistry, 'stockFlow'> = {
         sourceDocId: command.sourceDocId,
         handledBy: command.handledBy,
       }),
+    // #162 只上端口签名、不写实现（规格红线）；#137 接线时把本占位替换为
+    // 对 createBatch 真实现（stock-flow.ts 的新函数）的调用。届时删除此占位。
+    createBatch: async () => {
+      throw new AppError('NOT_IMPLEMENTED', '批次入库端口接线归 #137（#162 仅上签名）', {
+        port: 'StockFlowPort.createBatch',
+      });
+    },
   },
 };

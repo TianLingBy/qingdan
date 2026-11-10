@@ -5519,7 +5519,35 @@ paths:
                   minItems: 1
                   type: array
                   items:
-                    $ref: "#/components/schemas/InternalTradeOrderLine"
+                    type: object
+                    properties:
+                      productId:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      batchIds:
+                        minItems: 1
+                        type: array
+                        items:
+                          type: string
+                          format: uuid
+                          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      qty:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      unitPrice:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      amount:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                    required:
+                      - productId
+                      - batchIds
+                      - qty
+                      - unitPrice
+                      - amount
+                    additionalProperties: false
                 internalPrice:
                   type: string
                   pattern: ^\d{1,12}(\.\d{1,6})?$
@@ -5619,7 +5647,35 @@ paths:
                   minItems: 1
                   type: array
                   items:
-                    $ref: "#/components/schemas/InternalTradeOrderLine"
+                    type: object
+                    properties:
+                      productId:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      batchIds:
+                        minItems: 1
+                        type: array
+                        items:
+                          type: string
+                          format: uuid
+                          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      qty:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      unitPrice:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                      amount:
+                        type: string
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
+                    required:
+                      - productId
+                      - batchIds
+                      - qty
+                      - unitPrice
+                      - amount
+                    additionalProperties: false
                 internalPrice:
                   type: string
                   pattern: ^\d{1,12}(\.\d{1,6})?$
@@ -8757,8 +8813,10 @@ components:
           items:
             $ref: "#/components/schemas/InternalTradeOrderLine"
         internalPrice:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         inTransitQty:
           type: string
           pattern: ^\d{1,12}(\.\d{1,6})?$
@@ -8809,11 +8867,15 @@ components:
           type: string
           pattern: ^\d{1,12}(\.\d{1,6})?$
         unitPrice:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         amount:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
       required:
         - productId
         - batchIds
@@ -8852,8 +8914,10 @@ components:
           items:
             $ref: "#/components/schemas/InternalTradeOrderLine"
         internalPrice:
-          type: string
-          pattern: ^\d{1,12}(\.\d{1,6})?$
+          anyOf:
+            - type: string
+              pattern: ^\d{1,12}(\.\d{1,6})?$
+            - type: "null"
         inTransitQty:
           type: string
           pattern: ^\d{1,12}(\.\d{1,6})?$
