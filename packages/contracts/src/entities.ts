@@ -9,6 +9,7 @@ import { ProcessorQuoteSchema, ProcessorSchema } from './processors.js';
 import { PositionSchema } from './positions.js';
 import { CompanySchema } from './companies.js';
 import { InventoryBatchDetailSchema, InventoryBatchSchema, InventoryFlowSchema } from './inventory.js';
+import { InventoryCostAdjustmentSchema } from './cost-adjustments.js';
 import { StocktakeDetailSchema, StocktakeSchema } from './stocktakes.js';
 import {
   SalesOrderDetailSchema,
@@ -97,6 +98,9 @@ z.globalRegistry.add(InventoryBatchDetailSchema, { id: 'InventoryBatchDetail' })
 
 /** 库存流水（只追加，D2① / D67④）：实体定义在 `inventory.ts`。 */
 z.globalRegistry.add(InventoryFlowSchema, { id: 'InventoryFlow' });
+
+/** 库存成本更正（只改成本不改数量，Issue #163 / D70）：实体定义在 `cost-adjustments.ts`。 */
+z.globalRegistry.add(InventoryCostAdjustmentSchema, { id: 'InventoryCostAdjustment' });
 
 /** 盘点调整单 I（契约第一批 §4；D16 / D47 / D54）：实体定义在 `stocktakes.ts`。 */
 z.globalRegistry.add(StocktakeSchema, { id: 'Stocktake' });
@@ -214,6 +218,7 @@ export const ENTITIES = [
   { name: 'InventoryBatch', schema: InventoryBatchSchema },
   { name: 'InventoryBatchDetail', schema: InventoryBatchDetailSchema },
   { name: 'InventoryFlow', schema: InventoryFlowSchema },
+  { name: 'InventoryCostAdjustment', schema: InventoryCostAdjustmentSchema },
   { name: 'Stocktake', schema: StocktakeSchema },
   { name: 'StocktakeDetail', schema: StocktakeDetailSchema },
   { name: 'SalesOrder', schema: SalesOrderSchema },

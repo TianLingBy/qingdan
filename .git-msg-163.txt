@@ -1,0 +1,8 @@
+feat(inventory): 批次成本更正 T1/T2/T3 自动判档（#163）
+
+- 新表 inventory_cost_adjustment（0025）：只改成本、不写 inventory_flow；T1/T2/T3 服务端自动判档。
+- 下游引用走各模块自建只读端口（processing/sales/settlement），report 不直读别人表（D70）。
+- settlement「待确认」按 T2 走审批，只有「已结算」才 409 STATE_CONFLICT 锁死并给一键退货入口。
+- 契约与 OpenAPI：4 个端点（create/history/approve/reject），金额按 view_price 脱敏。
+- Blocked by: 无
+- Blocks: #137、#164

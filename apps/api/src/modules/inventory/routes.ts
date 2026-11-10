@@ -2,6 +2,12 @@ import { AppError, ROUTES, etagOf, routesOfModule, type RouteDef } from '@qingda
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
 import { getBatch, listBatches } from './usecases/batches.js';
+import {
+  approveCostAdjustment,
+  createCostAdjustment,
+  listCostAdjustments,
+  rejectCostAdjustment,
+} from './usecases/cost-adjustments.js';
 import { listFlows } from './usecases/flows.js';
 import {
   approveStocktake,
@@ -83,6 +89,40 @@ export function registerInventoryRoutes(app: FastifyInstance): void {
       });
       reply.header('ETag', etagOf(detail.version));
       return detail;
+    },
+    'inventory.cost.adjustment.create': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const adjustment = await createCostAdjustment({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(adjustment.version));
+      return adjustment;
+    },
+    'inventory.cost.adjustment.history.read': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listCostAdjustments({ database: instance.database, request });
+    },
+    'inventory.cost.adjustment.approve': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const adjustment = await approveCostAdjustment({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(adjustment.version));
+      return adjustment;
+    },
+    'inventory.cost.adjustment.reject': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const adjustment = await rejectCostAdjustment({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(adjustment.version));
+      return adjustment;
     },
   };
 

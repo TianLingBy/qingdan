@@ -183,12 +183,81 @@ export interface SalesReceiptPort {
   ): Promise<SalesReceiptFromPaymentResult>;
 }
 
+/**
+ * 成本更正的下游引用聚合端口（Issue #163 / D70）。
+ *
+ * inventory 不得直读 processing / sales / settlement 的表：各模块只注册**只读**来源，
+ * 由 platform 的 `downstreamReferencePort()` 聚合，inventory 只调端口。
+ */
+export interface DownstreamReferenceQuery {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly batchId: string;
+}
+
+/** 一条下游引用事实：哪个模块、哪种单据、哪个 id、判定时状态。 */
+export interface DownstreamReferenceFact {
+  readonly module: string;
+  readonly docType: string;
+  readonly docId: string;
+  readonly status: string;
+}
+
+/** 各模块自建的单据引用来源（processing / sales 各实现一份，只读 SELECT）。 */
+export interface DownstreamReferenceSource {
+  readonly module: string;
+  findBatchReferences(
+    tx: SqlClient,
+    query: DownstreamReferenceQuery,
+  ): Promise<ReadonlyArray<Omit<DownstreamReferenceFact, 'module'>>>;
+}
+
+/** 结算状态查询：按来源单（E / N）判断是否已进入结算。 */
+export interface SettlementStatusQuery {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly sourceDocs: ReadonlyArray<{ readonly docType: string; readonly docId: string }>;
+}
+
+export interface SettlementStatusFact {
+  readonly docType: string;
+  readonly docId: string;
+  /** `settlement_order.status`：待确认 / 已结算。 */
+  readonly status: string;
+}
+
+/** settlement 自建的结算状态来源（只读 SELECT）。 */
+export interface SettlementStatusSource {
+  findSettlements(
+    tx: SqlClient,
+    query: SettlementStatusQuery,
+  ): Promise<ReadonlyArray<SettlementStatusFact>>;
+}
+
+/**
+ * 判定结果：
+ * - `referenced` = 是否存在下游引用（任一条单据，未取消）；
+ * - `settled` = 是否存在对应的结算单（进入结算即锁定成本）。
+ */
+export interface DownstreamReferenceResult {
+  readonly referenced: boolean;
+  readonly settled: boolean;
+  readonly references: ReadonlyArray<DownstreamReferenceFact>;
+}
+
+export interface DownstreamReferencePort {
+  inspectBatch(tx: SqlClient, query: DownstreamReferenceQuery): Promise<DownstreamReferenceResult>;
+}
+
 export interface ServiceRegistry {
   readonly stockFlow?: StockFlowPort;
   readonly settlementDraft?: SettlementDraftPort;
   readonly employeeDirectory?: EmployeeDirectoryPort;
   readonly salesReceipt?: SalesReceiptPort;
   readonly billingEntitlement?: BillingEntitlementPort;
+  readonly processingReferences?: DownstreamReferenceSource;
+  readonly salesReferences?: DownstreamReferenceSource;
+  readonly settlementStatus?: SettlementStatusSource;
 }
 
 let registry: ServiceRegistry = {};
@@ -246,4 +315,55 @@ export function billingEntitlementPort(): BillingEntitlementPort {
     });
   }
   return registry.billingEntitlement;
+}
+
+/**
+ * 下游引用聚合端口（Issue #163 / D70）。
+ *
+ * 各来源实现只读 SELECT，不接受 scope 判定；调用方保证已 `withTenant`。
+ * 缺少任一必要来源时抛 NOT_IMPLEMENTED，**绝不**把「查不到」降级成「无引用」——
+ * 那会让已结算批次被误判成 T1 直接改成本。
+ */
+export function downstreamReferencePort(): DownstreamReferencePort {
+  const sources = [registry.processingReferences, registry.salesReferences].filter(
+    (source): source is DownstreamReferenceSource => source !== undefined,
+  );
+  if (sources.length === 0) {
+    throw new AppError('NOT_IMPLEMENTED', '下游模块未注册 DownstreamReferenceSource（D70）', {
+      port: 'DownstreamReferencePort',
+    });
+  }
+  return {
+    async inspectBatch(tx, query) {
+      const collected = await Promise.all(
+        sources.map(async (source) => {
+          const facts = await source.findBatchReferences(tx, query);
+          return facts.map((fact) => ({ ...fact, module: source.module }));
+        }),
+      );
+      const references = collected.flat();
+      const sourceDocs = references
+        .filter((fact) => fact.docType === 'E' || fact.docType === 'N')
+        .map((fact) => ({ docType: fact.docType, docId: fact.docId }));
+      let settled = false;
+      if (sourceDocs.length > 0) {
+        if (!registry.settlementStatus) {
+          throw new AppError(
+            'NOT_IMPLEMENTED',
+            'settlement 未注册 SettlementStatusSource（D70）',
+            { port: 'SettlementStatusSource' },
+          );
+        }
+        const settlements = await registry.settlementStatus.findSettlements(tx, {
+          tenantId: query.tenantId,
+          companyId: query.companyId,
+          sourceDocs,
+        });
+        // 只有「已结算」才锁成本；「待确认」仍算未结算（T2 走审批），
+        // 否则刚生成的结算草稿会把人挡在 T3 外面，连审批的机会都没有。
+        settled = settlements.some((fact) => fact.status === '已结算');
+      }
+      return { referenced: references.length > 0, settled, references };
+    },
+  };
 }
