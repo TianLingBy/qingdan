@@ -13,6 +13,12 @@ export const ERROR_CODES = {
   NOT_FOUND: { status: 404, cliExit: 4, message: '资源不存在' },
   VALIDATION_FAILED: { status: 422, cliExit: 4, message: '参数校验失败' },
   VERSION_CONFLICT: { status: 409, cliExit: 5, message: '版本冲突，请重新读取后重试' },
+  /**
+   * 业务状态冲突（409）：资源存在、版本也对，但**当前状态**不允许该操作。
+   * 与 `VERSION_CONFLICT`（别人先改过）区分开：这类冲突靠「刷新重试」解决不了，
+   * 必须先改变占用关系（例如把员工改绑到别的岗位）。2026-11-10 负责人拍板新增。
+   */
+  STATE_CONFLICT: { status: 409, cliExit: 5, message: '当前状态不允许该操作' },
   IDEMPOTENCY_CONFLICT: { status: 409, cliExit: 5, message: '同一 Idempotency-Key 携带了不同的请求体' },
   PRECONDITION_REQUIRED: { status: 428, cliExit: 4, message: '缺少 If-Match 前置条件' },
   RATE_LIMITED: { status: 429, cliExit: 1, message: '请求过于频繁' },

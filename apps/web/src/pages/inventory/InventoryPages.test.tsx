@@ -7,7 +7,9 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
-import { IMPLEMENTED_PAGES } from '../../router/implemented';
+import { isImplementedPage } from '../../router/implemented';
+import { authKeys } from '../auth/auth-api';
+import { reversalsQueryKeys } from '../reversals/reversals-api';
 import { InventoryFlowsPage } from './InventoryFlowsPage';
 import { InventoryPage } from './InventoryPage';
 import { inventoryQueryKeys } from './inventory-api';
@@ -91,16 +93,16 @@ const ME = {
 
 describe('库存页面路由登记', () => {
   it('数量、流水、盘点三页均覆盖占位页', () => {
-    expect(IMPLEMENTED_PAGES.inventory).toBe(InventoryPage);
-    expect(IMPLEMENTED_PAGES['inventory-flows']).toBe(InventoryFlowsPage);
-    expect(IMPLEMENTED_PAGES.stocktakes).toBe(StocktakesPage);
+    expect(isImplementedPage('inventory')).toBe(true);
+    expect(isImplementedPage('inventory-flows')).toBe(true);
+    expect(isImplementedPage('stocktakes')).toBe(true);
   });
 });
 
 describe('库存数量页（#143）', () => {
   it('渲染真实批次数量，无看价权限时显示占位而不显示金额', () => {
     const html = render(<InventoryPage />, (client) => {
-      client.setQueryData(inventoryQueryKeys.me, ME);
+      client.setQueryData(authKeys.me, ME);
       client.setQueryData(
         inventoryQueryKeys.batches({
           companyId: undefined,
@@ -120,7 +122,7 @@ describe('库存数量页（#143）', () => {
 
   it('空批次列表有明确空态', () => {
     const html = render(<InventoryPage />, (client) => {
-      client.setQueryData(inventoryQueryKeys.me, ME);
+      client.setQueryData(authKeys.me, ME);
       client.setQueryData(
         inventoryQueryKeys.batches({
           companyId: undefined,
@@ -137,7 +139,7 @@ describe('库存数量页（#143）', () => {
 describe('库存流水页（#143）', () => {
   it('展示正负变动与来源单据追溯信息', () => {
     const html = render(<InventoryFlowsPage />, (client) => {
-      client.setQueryData(inventoryQueryKeys.me, ME);
+      client.setQueryData(authKeys.me, ME);
       client.setQueryData(
         inventoryQueryKeys.flows({
           companyId: undefined,
@@ -159,16 +161,16 @@ describe('库存流水页（#143）', () => {
 });
 
 describe('盘点页（#143）', () => {
-  it('渲染待审批记录，并给有权限的账号提供审批入口', () => {
+  it('复用盘点面板并渲染待审批记录', () => {
     const html = render(<StocktakesPage />, (client) => {
-      client.setQueryData(inventoryQueryKeys.me, ME);
-      client.setQueryData(inventoryQueryKeys.batches({ limit: 200 }), {
+      client.setQueryData(authKeys.me, ME);
+      client.setQueryData(reversalsQueryKeys.batches(COMPANY_ID), {
         items: [BATCH],
         nextCursor: null,
       });
       client.setQueryData(
-        inventoryQueryKeys.stocktakes({
-          companyId: undefined,
+        reversalsQueryKeys.stocktakes({
+          companyId: COMPANY_ID,
           status: undefined,
           keyword: undefined,
           cursor: null,
@@ -180,7 +182,7 @@ describe('盘点页（#143）', () => {
     expect(html).toContain('盘点');
     expect(html).toContain(STOCKTAKE.stocktakeNo);
     expect(html).toContain('待审批');
-    expect(html).toContain('审批');
-    expect(html).toContain('盘盈与盘亏分开授权');
+    expect(html).toContain('查看');
+    expect(html).toContain('唯一能直接改批次数量');
   });
 });

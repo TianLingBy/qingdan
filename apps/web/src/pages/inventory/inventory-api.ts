@@ -48,7 +48,6 @@ function queryOf(filters: Record<string, QueryValue>): Record<string, QueryValue
 }
 
 export const inventoryQueryKeys = {
-  me: ['inventory', 'me'] as const,
   batches: (filters: InventoryBatchFilters) => ['inventory', 'batches', filters] as const,
   batch: (id: string | null) => ['inventory', 'batch', id] as const,
   flows: (filters: InventoryFlowFilters) => ['inventory', 'flows', filters] as const,
@@ -149,16 +148,3 @@ export const inventoryApi = {
     });
   },
 };
-
-/** 按 numeric(18,6) 做定点比较，避免前端用 Number 比较 decimal 字符串。 */
-export function compareDecimalStrings(left: string, right: string): number {
-  const scale = (value: string): bigint => {
-    const [integer = '0', fraction = ''] = value.split('.');
-    const sign = integer.startsWith('-') ? -1n : 1n;
-    const digits = integer.replace(/^-/, '') + fraction.padEnd(6, '0').slice(0, 6);
-    return sign * BigInt(digits || '0');
-  };
-  const a = scale(left);
-  const b = scale(right);
-  return a === b ? 0 : a < b ? -1 : 1;
-}

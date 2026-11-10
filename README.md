@@ -42,9 +42,12 @@ docs/                  OpenAPI 说明书、ADR、spike 与模块模板；`docs/m
 
 ## 本地运行
 
+> 完整环境说明与新成员上手步骤见 [`docs/DEV-SETUP.md`](docs/DEV-SETUP.md)；下面是速查。
+
 ```powershell
 # 后端（默认 http://127.0.0.1:3000/api/v1）
 $env:DATABASE_URL = 'postgres://postgres:postgres@127.0.0.1:5432/qingdan_dev'
+$env:PUBLIC_BASE_URL = 'http://localhost:5173'   # 必设：否则 Web 端写操作全部 403（见 DEV-SETUP §4）
 pnpm -C apps/api migrate
 pnpm -C apps/api seed
 pnpm -C apps/api dev

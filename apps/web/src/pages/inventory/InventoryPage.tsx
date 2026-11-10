@@ -1,13 +1,13 @@
 import type { InventoryBatch } from '@qingdan/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { fetchMe } from '../../api/platform';
+import { allows } from '../../lib/access';
+import { formatQty } from '../../lib/decimal';
+import { authApi, authKeys } from '../auth/auth-api';
 import { inventoryApi, inventoryQueryKeys } from './inventory-api';
 import {
-  allows,
   errorText,
   formatDateTime,
-  formatQuantity,
   PageShell,
   Pagination,
   shortId,
@@ -29,10 +29,10 @@ export function InventoryPage() {
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
 
   const me = useQuery({
-    queryKey: inventoryQueryKeys.me,
-    queryFn: fetchMe,
+    queryKey: authKeys.me,
+    queryFn: authApi.me,
   });
-  const canViewPrice = allows(me.data, 'inventory_qty', 'view_price');
+  const canViewPrice = allows(me.data?.scope, 'inventory_qty', 'view_price');
   const filters = {
     companyId: companyId || undefined,
     keyword: keyword.trim() || undefined,
@@ -133,14 +133,14 @@ export function InventoryPage() {
                   <td className="px-4 py-3 font-mono text-xs text-slate-500">
                     {shortId(batch.productId)}
                   </td>
-                  <td className="px-4 py-3 text-right">{formatQuantity(batch.inboundQty)}</td>
-                  <td className="px-4 py-3 text-right">{formatQuantity(batch.referencedQty)}</td>
-                  <td className="px-4 py-3 text-right">{formatQuantity(batch.inTransitQty)}</td>
+                  <td className="px-4 py-3 text-right">{formatQty(batch.inboundQty)}</td>
+                  <td className="px-4 py-3 text-right">{formatQty(batch.referencedQty)}</td>
+                  <td className="px-4 py-3 text-right">{formatQty(batch.inTransitQty)}</td>
                   <td className="px-4 py-3 text-right">
-                    {formatQuantity(batch.pendingExecutionQty)}
+                    {formatQty(batch.pendingExecutionQty)}
                   </td>
                   <td className="px-4 py-3 text-right font-medium text-emerald-700">
-                    {formatQuantity(batch.availableQty)}
+                    {formatQty(batch.availableQty)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {amountText(

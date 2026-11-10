@@ -1,10 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiClient } from '../../api/client';
-import {
-  compareDecimalStrings,
-  inventoryApi,
-  type InventoryBatchFilters,
-} from './inventory-api';
+import { compareDecimal } from '../../lib/decimal';
+import { inventoryApi, type InventoryBatchFilters } from './inventory-api';
 
 function clientWith(payload: unknown) {
   const calls: { input: string; init?: RequestInit }[] = [];
@@ -79,8 +76,8 @@ describe('库存页面 API 封装', () => {
   });
 
   it('decimal 比较不使用浮点数', () => {
-    expect(compareDecimalStrings('123456789012.123456', '123456789012.123455')).toBe(1);
-    expect(compareDecimalStrings('1.000000', '1')).toBe(0);
-    expect(compareDecimalStrings('0.1', '0.2')).toBe(-1);
+    expect(compareDecimal('123456789012.123456', '123456789012.123455')).toBe(1);
+    expect(compareDecimal('1.000000', '1')).toBe(0);
+    expect(compareDecimal('0.1', '0.2')).toBe(-1);
   });
 });

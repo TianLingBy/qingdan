@@ -1,9 +1,9 @@
-import type { Processor, Product, Supplier } from '@qingdan/contracts';
+import type { Customer, Processor, Product, Supplier } from '@qingdan/contracts';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
-import { ProcessorsPage, ProductsPage, SuppliersPage } from './MasterdataPage';
+import { CustomersPage, ProcessorsPage, ProductsPage, SuppliersPage } from './MasterdataPage';
 import { masterdataQueryKeys } from './masterdata-api';
 
 const PRODUCT: Product = {
@@ -146,5 +146,53 @@ describe('商品资料页', () => {
     expect(processorHtml).toContain('加工厂档案');
     expect(processorHtml).toContain('测试加工厂');
     expect(processorHtml).toContain('报价');
+  });
+
+  it('客户档案页渲染联系人、电话与账期，且不出现任何金额列', () => {
+    const customer: Customer = {
+      id: 'c1',
+      tenantId: 't1',
+      companyId: PRODUCT.companyId,
+      customerNo: 'C-9',
+      name: '测试客户',
+      contactName: '赵老板',
+      contactPhone: '13900000000',
+      creditTermDays: 30,
+      status: '启用',
+      version: 1,
+      createdAt: PRODUCT.createdAt,
+      updatedAt: PRODUCT.updatedAt,
+    };
+
+    const client = createQueryClient();
+    client.setQueryData(masterdataQueryKeys.me, {
+      employeeId: 'e1',
+      tenantId: 't1',
+      displayName: '测试员工',
+      companyIds: [PRODUCT.companyId],
+      scope: [{ domain: 'customer', actions: ['read'] }],
+    });
+    client.setQueryData(
+      masterdataQueryKeys.list('customers', {
+        keyword: undefined,
+        status: undefined,
+        cursor: null,
+      }),
+      { items: [customer], nextCursor: null },
+    );
+
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <CustomersPage />
+      </QueryClientProvider>,
+    );
+
+    expect(html).toContain('客户档案');
+    expect(html).toContain('测试客户');
+    expect(html).toContain('赵老板');
+    expect(html).toContain('账期 30 天');
+    expect(html).toContain('新增客户');
+    // 客户没有金额口径（D49 注释），页面不得出现售价列
+    expect(html).not.toContain('默认售价');
   });
 });

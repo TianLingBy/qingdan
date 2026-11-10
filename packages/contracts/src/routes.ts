@@ -14,6 +14,7 @@ import { POSITION_ROUTES } from './positions.js';
 import { COMPANY_ROUTES } from './companies.js';
 import { INVENTORY_ROUTES } from './inventory.js';
 import { STOCKTAKE_ROUTES } from './stocktakes.js';
+import { COST_ADJUSTMENT_ROUTES } from './cost-adjustments.js';
 import { SALES_ORDER_ROUTES } from './sales-orders.js';
 import { SALES_RECEIPT_ROUTES } from './sales-receipts.js';
 import { CUSTOMER_RETURN_ROUTES } from './customer-returns.js';
@@ -26,6 +27,7 @@ import { COMMISSION_RATE_ROUTES } from './commission-rates.js';
 import { PRINT_ROUTES } from './prints.js';
 import { PAYMENT_ROUTES } from './payments.js';
 import { BILLING_ROUTES } from './billings.js';
+import { PROFIT_REPORT_ROUTES } from './profit-report.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -228,6 +230,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...INVENTORY_ROUTES,
   // —— inventory 模块：盘点调整 I 4 条（list/create/detail/approve，契约第一批 §4 / D47）——
   ...STOCKTAKE_ROUTES,
+  // —— inventory 模块：成本更正 4 条（提交/历史/审批/驳回，Issue #163 / D70）——
+  ...COST_ADJUSTMENT_ROUTES,
   // —— sales 模块：E 销售单首批 5 条（list/create/detail/update/cancel，契约第一批 §3.3）——
   ...SALES_ORDER_ROUTES,
   // —— sales 模块：收款记录 2 条（list/create，契约第一批 §6 / D24/D34/D40）——
@@ -252,6 +256,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...PAYMENT_ROUTES,
   // —— billing：平台订阅 2 条（读 / 运营调整，一期仅契约）——
   ...BILLING_ROUTES,
+  // —— report 模块：利润报表 2 条（D43 / #97，Issue #164）——
+  ...PROFIT_REPORT_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;

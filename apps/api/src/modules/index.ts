@@ -5,16 +5,21 @@ import { registerInternalTradeRoutes } from './internal-trade/routes.js';
 import { registerInventoryRoutes } from './inventory/routes.js';
 import { inventoryServices } from './inventory/services/ports.js';
 import { registerMasterdataRoutes } from './masterdata/routes.js';
+import { masterdataServices } from './masterdata/services/ports.js';
 import { registerPaymentRoutes } from './payment/routes.js';
 import { registerPlatformRoutes } from './platform/routes.js';
 import { billingEntitlementService } from './platform/services/entitlement.js';
 import { platformServices } from './platform/services/ports.js';
 import { registerProcessingRoutes } from './processing/routes.js';
+import { processingServices } from './processing/services/references.js';
 import { registerPurchaseRoutes } from './purchase/routes.js';
+import { registerReportRoutes } from './report/index.js';
 import { registerSalesRoutes } from './sales/routes.js';
 import { salesServices } from './sales/services/receipts-port.js';
+import { salesReferenceServices } from './sales/services/references.js';
 import { registerSettlementRoutes } from './settlement/routes.js';
 import { settlementServices } from './settlement/services/drafts.js';
+import { settlementStatusServices } from './settlement/services/status.js';
 
 /**
  * 业务模块挂载登记（D62 / Issue #15）。
@@ -32,6 +37,7 @@ export const MOUNTED_MODULE_KEYS = [
   'internal-trade',
   'settlement',
   'payment',
+  'report',
 ] as const;
 
 export interface RegisterModulesOptions {
@@ -48,8 +54,13 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerServices(platformServices);
   registerServices(billingEntitlementService);
   registerServices(inventoryServices);
+  registerServices(masterdataServices);
   registerServices(settlementServices);
   registerServices(salesServices);
+  // Issue #163 / D70：成本更正判定所需的下游引用聚合端口。
+  registerServices(processingServices);
+  registerServices(salesReferenceServices);
+  registerServices(settlementStatusServices);
 
   registerPlatformRoutes(app, { version: options.version, config: options.config });
   registerMasterdataRoutes(app);
@@ -60,4 +71,5 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerInternalTradeRoutes(app);
   registerSettlementRoutes(app);
   registerPaymentRoutes(app);
+  registerReportRoutes(app);
 }

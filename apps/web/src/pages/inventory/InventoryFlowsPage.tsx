@@ -1,7 +1,7 @@
 import type { InventoryFlow } from '@qingdan/contracts';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { fetchMe } from '../../api/platform';
+import { authApi, authKeys } from '../auth/auth-api';
 import { inventoryApi, inventoryQueryKeys } from './inventory-api';
 import {
   errorText,
@@ -25,8 +25,8 @@ export function InventoryFlowsPage() {
   const [traceError, setTraceError] = useState<string | null>(null);
 
   const me = useQuery({
-    queryKey: inventoryQueryKeys.me,
-    queryFn: fetchMe,
+    queryKey: authKeys.me,
+    queryFn: authApi.me,
   });
   const filters = {
     companyId: companyId || undefined,

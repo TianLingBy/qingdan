@@ -1,14 +1,5 @@
 import type { ReactNode } from 'react';
 import { ApiError } from '../../api/client';
-import type { MeResult } from '../../api/platform';
-
-export function allows(
-  me: MeResult | undefined,
-  domain: string,
-  action: string,
-): boolean {
-  return me?.scope.some((entry) => entry.domain === domain && entry.actions.includes(action)) ?? false;
-}
 
 export function errorText(error: unknown, fallback = '操作失败'): string {
   if (error instanceof ApiError) {
@@ -17,10 +8,6 @@ export function errorText(error: unknown, fallback = '操作失败'): string {
     return `${fallback}：${error.message}（${error.code}）`;
   }
   return error instanceof Error ? `${fallback}：${error.message}` : fallback;
-}
-
-export function formatQuantity(value: string): string {
-  return value;
 }
 
 export function formatDateTime(value: string): string {
