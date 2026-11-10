@@ -6535,6 +6535,7 @@ components:
             - NOT_FOUND
             - VALIDATION_FAILED
             - VERSION_CONFLICT
+            - STATE_CONFLICT
             - IDEMPOTENCY_CONFLICT
             - PRECONDITION_REQUIRED
             - RATE_LIMITED
