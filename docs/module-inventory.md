@@ -34,7 +34,7 @@
 
 ## 当前状态
 
-进行中：`createBatch` 服务与测试已完成并推送 PR #157，等待平台端口接口后接线；成本更正等待主线补齐数据结构与引用端口。
+进行中：`createBatch` 服务与测试已完成并推送 PR #157，最新 head 已同步主干 `8416a33` 且 7 项 CI 全绿；等待平台端口接口后接线。成本更正等待主线补齐数据结构与引用端口。
 
 ## 已完成
 
@@ -43,6 +43,7 @@
 - 2026-11-08：定向测试 5 项、inventory 测试 23 项、完整 API 测试 366 项均通过；API 类型检查与 ESLint 通过。
 - 2026-11-09：#150 已按方案 A 合并到主干，`processing_order.output_product_id` 与 contracts/repo 已就绪。
 - 2026-11-09：#137 分支 `e88bf21` 已推送；随后同步最新 `main` 并以 merge commit `814eb72` 更新 PR #157，远端 head 一致且可合并。合并后 `pnpm -r build`、`pnpm -r test`（API 57 个文件 / 381 项）与 `pwsh -NoProfile -File tests\run.ps1`（`ALL PASSED (7 files)`）全部通过；PR 的 7 项 CI 全部通过。
+- 2026-11-10：同步主干 `8416a33` 到 PR #157，新 head `bb25d6e`；`pnpm -r build`、`pnpm -r typecheck`、`pnpm -r test`（API 57 个文件 / 381 项，Web 8 个文件 / 52 项）与 `tests\run.ps1` 全部通过，7 项 CI 全绿。最新主干 `StockFlowPort` 仍只有 `applyAdjustment`，#162 未解除。
 
 ## 进行中
 
