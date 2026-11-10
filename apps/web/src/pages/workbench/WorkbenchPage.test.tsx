@@ -2,6 +2,7 @@ import type { ScopeMatrix } from '@qingdan/contracts';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { workbenchEntries } from '../../lib/access';
+import { isImplementedPage } from '../../router/implemented';
 import { ROUTE_TABLE } from '../../router/routes';
 import {
   ActiveDocsPanel,
@@ -115,20 +116,19 @@ describe('工作台版式', () => {
 
 describe('入口卡片', () => {
   it('按传入列表渲染，未实现的页面打「待实现」，已实现的没有', () => {
+    // 从真源推导「已实现 / 未实现」各一个，避免每落地一页就要回来改这个用例。
+    const done = ROUTE_TABLE.find((route) => isImplementedPage(route.id) && route.id !== 'workbench');
+    const pending = ROUTE_TABLE.find((route) => !isImplementedPage(route.id));
+    expect(done).toBeDefined();
+    expect(pending).toBeDefined();
+
     const html = renderToStaticMarkup(
-      <EntryCards
-        entries={ROUTE_TABLE.filter(
-          (route) => route.id === 'purchase-orders' || route.id === 'internal-trades',
-        )}
-        onOpen={() => {}}
-      />,
+      <EntryCards entries={[done!, pending!]} onOpen={() => {}} />,
     );
 
-    expect(html).toContain('采购单 A');
-    expect(html).toContain('内部交易单 N');
-    expect(html).toContain('href="/purchase-orders"');
-    expect(html).toContain('href="/internal-trades"');
-    // 只有内部交易单未实现，所以「待实现」出现一次
+    expect(html).toContain(`href="${done!.path}"`);
+    expect(html).toContain(`href="${pending!.path}"`);
+    // 只有未实现的那一个打标
     expect(html.match(/待实现/g)).toHaveLength(1);
   });
 
