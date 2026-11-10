@@ -15,6 +15,7 @@ export const IMPLEMENTED_PAGE_IDS = [
   'workbench',
   'flow',
   'products',
+  'customers',
   'suppliers',
   'processors',
   'purchase-orders',

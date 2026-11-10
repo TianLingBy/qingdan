@@ -1,4 +1,5 @@
 import type {
+  Customer,
   Processor,
   ProcessorQuote,
   Product,
@@ -17,8 +18,8 @@ import {
   type MasterdataListFilters,
 } from './masterdata-api';
 
-export type MasterdataKind = 'products' | 'suppliers' | 'processors';
-type MasterdataItem = Product | Supplier | Processor;
+export type MasterdataKind = 'products' | 'suppliers' | 'processors' | 'customers';
+type MasterdataItem = Product | Supplier | Processor | Customer;
 
 interface FormState {
   companyId: string;
@@ -32,6 +33,7 @@ interface FormState {
   contactName: string;
   contactPhone: string;
   suppliedMaterials: string;
+  creditTermDays: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -46,6 +48,7 @@ const EMPTY_FORM: FormState = {
   contactName: '',
   contactPhone: '',
   suppliedMaterials: '',
+  creditTermDays: '',
 };
 
 const PAGE_COPY: Record<
@@ -67,12 +70,18 @@ const PAGE_COPY: Record<
     singular: '加工厂',
     description: '维护加工厂联系人，并查询历史加工报价。',
   },
+  customers: {
+    title: '客户档案',
+    singular: '客户',
+    description: '维护客户名称、联系人和账期（不记任何金额，售价与折扣不在这里）。',
+  },
 };
 
 function readNumber(item: MasterdataItem, kind: MasterdataKind): string | null {
   if (kind === 'products' && 'productNo' in item) return item.productNo;
   if (kind === 'suppliers' && 'supplierNo' in item) return item.supplierNo;
   if (kind === 'processors' && 'processorNo' in item) return item.processorNo;
+  if (kind === 'customers' && 'customerNo' in item) return item.customerNo;
   return null;
 }
 
@@ -86,6 +95,10 @@ function readExtra(item: MasterdataItem, kind: MasterdataKind): string {
   }
   if (kind === 'suppliers' && 'suppliedMaterials' in item) {
     return [item.contactPhone, item.suppliedMaterials.join('、')].filter(Boolean).join(' · ');
+  }
+  if (kind === 'customers' && 'creditTermDays' in item) {
+    const term = item.creditTermDays === null ? null : `账期 ${item.creditTermDays} 天`;
+    return [item.contactName, item.contactPhone, term].filter(Boolean).join(' · ');
   }
   return readContactName(item) ?? '—';
 }
@@ -108,7 +121,13 @@ function formFromItem(item: MasterdataItem, kind: MasterdataKind): FormState {
     status: item.status,
     contactName: readContactName(item) ?? '',
     contactPhone:
-      kind === 'suppliers' && 'contactPhone' in item ? (item.contactPhone ?? '') : '',
+      (kind === 'suppliers' || kind === 'customers') && 'contactPhone' in item
+        ? (item.contactPhone ?? '')
+        : '',
+    creditTermDays:
+      kind === 'customers' && 'creditTermDays' in item && item.creditTermDays !== null
+        ? String(item.creditTermDays)
+        : '',
     suppliedMaterials:
       kind === 'suppliers' && 'suppliedMaterials' in item
         ? item.suppliedMaterials.join('、')
@@ -241,7 +260,7 @@ function EntityForm({
           </>
         )}
 
-        {(kind === 'suppliers' || kind === 'processors') && (
+        {(kind === 'suppliers' || kind === 'processors' || kind === 'customers') && (
           <label className="text-sm">
             <span className="text-slate-600">联系人</span>
             <input
@@ -250,6 +269,28 @@ function EntityForm({
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </label>
+        )}
+        {kind === 'customers' && (
+          <>
+            <label className="text-sm">
+              <span className="text-slate-600">联系电话</span>
+              <input
+                value={form.contactPhone}
+                onChange={(event) => onChange('contactPhone', event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </label>
+            <label className="text-sm">
+              <span className="text-slate-600">账期（天，可空）</span>
+              <input
+                inputMode="numeric"
+                value={form.creditTermDays}
+                onChange={(event) => onChange('creditTermDays', event.target.value)}
+                placeholder="如 30；留空表示未设置"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              />
+            </label>
+          </>
         )}
         {kind === 'suppliers' && (
           <>
@@ -450,6 +491,7 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
     queryFn: async () => {
       if (kind === 'products') return masterdataApi.listProducts(filters);
       if (kind === 'suppliers') return masterdataApi.listSuppliers(filters);
+      if (kind === 'customers') return masterdataApi.listCustomers(filters);
       return masterdataApi.listProcessors(filters);
     },
   });
@@ -502,6 +544,25 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
           : masterdataApi.createSupplier({ companyId: form.companyId, ...common });
       }
 
+      if (kind === 'customers') {
+        const termText = form.creditTermDays.trim();
+        const creditTermDays = termText.length === 0 ? null : Number(termText);
+        if (creditTermDays !== null && (!Number.isInteger(creditTermDays) || creditTermDays < 0)) {
+          throw new Error('账期必须是大于等于 0 的整数天');
+        }
+        const common = {
+          name: form.name.trim(),
+          status: form.status,
+          customerNo: optionalText(form.number) ?? null,
+          contactName: optionalText(form.contactName) ?? null,
+          contactPhone: optionalText(form.contactPhone) ?? null,
+          creditTermDays,
+        };
+        return editing
+          ? masterdataApi.updateCustomer(editing.id, common, editing.version)
+          : masterdataApi.createCustomer({ companyId: form.companyId, ...common });
+      }
+
       const common = {
         name: form.name.trim(),
         status: form.status,
@@ -524,6 +585,7 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
     mutationFn: (item: MasterdataItem) => {
       if (kind === 'products') return masterdataApi.disableProduct(item.id, item.version);
       if (kind === 'suppliers') return masterdataApi.disableSupplier(item.id, item.version);
+      if (kind === 'customers') return masterdataApi.disableCustomer(item.id, item.version);
       return masterdataApi.disableProcessor(item.id, item.version);
     },
     onSuccess: async () => {
@@ -739,4 +801,8 @@ export function SuppliersPage() {
 
 export function ProcessorsPage() {
   return <MasterdataPage kind="processors" />;
+}
+
+export function CustomersPage() {
+  return <MasterdataPage kind="customers" />;
 }
