@@ -6,6 +6,7 @@ import {
   createTestDatabase,
   type TestDatabase,
 } from '../../../testing/pglite.js';
+import { inventoryServices } from './ports.js';
 import { createBatch, type CreateBatchCommand } from './stock-flow.js';
 
 const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000000099';
@@ -20,6 +21,7 @@ const BASE_COMMAND: CreateBatchCommand = {
   qty: '12.5',
   lockedUnitCost: '8.25',
   custodianId: DEMO_IDS.ownerEmployeeId,
+  handledBy: DEMO_IDS.warehouseEmployeeId,
   sourceDocType: 'A',
   sourceDocId: SOURCE_DOC_ID,
 };
@@ -143,7 +145,7 @@ describe('inventory createBatch（#136 / #137）', () => {
         delta: '12.5',
         source_doc_type: 'A',
         source_doc_id: SOURCE_DOC_ID,
-        handled_by: DEMO_IDS.ownerEmployeeId,
+        handled_by: DEMO_IDS.warehouseEmployeeId,
       },
     ]);
   });
@@ -171,6 +173,18 @@ describe('inventory createBatch（#136 / #137）', () => {
       expect.stringMatching(/^PB-0001-\d{8}-0002$/),
       expect.stringMatching(/^PB-0001-\d{8}-0003$/),
     ]);
+  });
+
+  it('StockFlowPort.createBatch 已接线到真实库存服务', async () => {
+    const receipt = await withTenant(test.database, DEMO_IDS.tenantId, (tx) =>
+      inventoryServices.stockFlow!.createBatch(tx, BASE_COMMAND),
+    );
+
+    expect(receipt.batchNo).toMatch(/^PB-0001-\d{8}-\d{4}$/);
+    expect(receipt).toMatchObject({
+      availableQty: '12.5',
+      custodianId: DEMO_IDS.ownerEmployeeId,
+    });
   });
 
   it('商品必须属于同一租户与公司', async () => {

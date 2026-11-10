@@ -1,7 +1,13 @@
 import { AppError } from '@qingdan/contracts';
 import { v7 as uuidv7 } from 'uuid';
 import type { SqlClient } from '../../../platform/db/client.js';
-import { DOCUMENT_SEQUENCE_MAX } from '../../../platform/numbering/service.js';
+import { takeBatchNo } from '../../../platform/numbering/service.js';
+import type {
+  CreateBatchCommand,
+  CreateBatchReceipt,
+} from '../../../platform/services/registry.js';
+
+export type { CreateBatchCommand, CreateBatchReceipt };
 
 /**
  * 库存写入服务（D38 / D41 / D47 / D67）。
@@ -39,34 +45,6 @@ export interface StockAdjustmentResult {
   readonly custodianId: string;
 }
 
-/**
- * 新建入库批次命令（#136 / #137）。
- *
- * 形状与负责人批准的 `StockFlowPort.createBatch` 一致。端口接口由主线登记；
- * inventory 先在服务层落实现，待 platform 端口补齐后由 `services/ports.ts` 接线。
- */
-export interface CreateBatchCommand {
-  readonly tenantId: string;
-  readonly companyId: string;
-  readonly productId: string;
-  /** 入库数量（A 单按行数量 / B 单产出可售量）。 */
-  readonly qty: string;
-  /** 锁定单价：入库即锁，不随采购价变动（D5）。 */
-  readonly lockedUnitCost: string;
-  /** 保管人；B 单调用方按 handler_id 解析后传入。 */
-  readonly custodianId: string;
-  /** 来源单据类型与 ID，写流水溯源用。 */
-  readonly sourceDocType: 'A' | 'B';
-  readonly sourceDocId: string;
-}
-
-export interface CreateBatchReceipt {
-  readonly batchId: string;
-  readonly batchNo: string;
-  readonly availableQty: string;
-  readonly custodianId: string;
-}
-
 interface GuardRow {
   nonzero: boolean;
   inbound_ok: boolean;
@@ -84,11 +62,6 @@ interface NewBatchRow {
   custodian_id: string;
 }
 
-interface BatchSequenceRow {
-  last_value: number;
-  company_code: string;
-}
-
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NON_NEGATIVE_DECIMAL_RE = /^\d{1,12}(\.\d{1,6})?$/;
@@ -99,65 +72,6 @@ function assertUuid(value: string, field: string): void {
       field,
     });
   }
-}
-
-function monthKey(date: Date): string {
-  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
-/**
- * 产出批次号：`PB-<公司码4>-<日期8>-<流水4>`（#136 / D16）。
- *
- * 与单据取号一样按「公司 + 年月」原子递增；前缀 `PB` 不在 `DocumentType`
- * 单字母集合内，因此这里复用同一 `number_sequence` 机制，而不改 platform 取号器。
- */
-async function takeBatchNo(
-  tx: SqlClient,
-  tenantId: string,
-  companyId: string,
-  date: Date,
-): Promise<string> {
-  const scopeKey = `inventory_batch:${companyId}:${monthKey(date)}`;
-  const result = await tx.query<BatchSequenceRow>(
-    `WITH company_row AS (
-       SELECT code AS company_code
-         FROM company
-        WHERE id = $1::uuid
-          AND tenant_id = $2
-     ), upserted AS (
-       INSERT INTO number_sequence (tenant_id, scope_key, last_value)
-       SELECT $2, $3, 1 FROM company_row
-       ON CONFLICT (tenant_id, scope_key) DO UPDATE
-         SET last_value = number_sequence.last_value + 1,
-             updated_at = now()
-         WHERE number_sequence.last_value < $4
-       RETURNING last_value
-     )
-     SELECT u.last_value, c.company_code
-       FROM upserted u
-       CROSS JOIN company_row c`,
-    [companyId, tenantId, scopeKey, DOCUMENT_SEQUENCE_MAX],
-  );
-  const row = result.rows[0];
-  if (!row) {
-    const company = await tx.query(
-      `SELECT 1 FROM company WHERE id = $1::uuid AND tenant_id = $2`,
-      [companyId, tenantId],
-    );
-    if (company.rows.length === 0) {
-      throw new AppError('NOT_FOUND', '公司不存在', { companyId });
-    }
-    throw new AppError(
-      'VALIDATION_FAILED',
-      `产出入库批次在 ${monthKey(date)} 的月流水已用满 ${DOCUMENT_SEQUENCE_MAX}，需扩容后再建批次`,
-      { scopeKey },
-    );
-  }
-
-  const ymd = `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}${String(
-    date.getUTCDate(),
-  ).padStart(2, '0')}`;
-  return `PB-${row.company_code}-${ymd}-${String(row.last_value).padStart(4, '0')}`;
 }
 
 /**
@@ -176,6 +90,7 @@ export async function createBatch(
   assertUuid(command.companyId, 'companyId');
   assertUuid(command.productId, 'productId');
   assertUuid(command.custodianId, 'custodianId');
+  assertUuid(command.handledBy, 'handledBy');
   assertUuid(command.sourceDocId, 'sourceDocId');
   if (!NON_NEGATIVE_DECIMAL_RE.test(command.qty)) {
     throw new AppError('VALIDATION_FAILED', 'qty 必须是非负 decimal 字符串', {
@@ -240,12 +155,7 @@ export async function createBatch(
   }
 
   const batchId = uuidv7();
-  const batchNo = await takeBatchNo(
-    tx,
-    command.tenantId,
-    command.companyId,
-    new Date(),
-  );
+  const batchNo = await takeBatchNo(tx, command.companyId, new Date());
   const inserted = await tx.query<NewBatchRow>(
     `INSERT INTO inventory_batch
        (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost,
@@ -281,7 +191,7 @@ export async function createBatch(
       command.qty,
       command.sourceDocType,
       command.sourceDocId,
-      command.custodianId,
+      command.handledBy,
     ],
   );
 

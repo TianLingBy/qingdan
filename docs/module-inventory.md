@@ -21,9 +21,8 @@
 
 ## 开放项
 
-- `StockFlowPort.createBatch` 已由 #136 拍板命令与返回结构，#147 未把接口写入 `apps/api/src/platform/services/registry.ts`，由主线补齐；负责人待办：[#162](https://github.com/TianLingBy/qingdan/issues/162)。
-- #100 成本更正 T1/T2/T3 尚缺“成本更正金额”持久化结构；`inventory_flow` 只有数量 `delta`，不能承载成本差额；负责人待办：[#163](https://github.com/TianLingBy/qingdan/issues/163)。
-- #100 判定下游引用需读 processing / sales / settlement 数据；按 D70 必须由主线提供只读引用端口或经批准的报表视图。
+- `StockFlowPort.createBatch` 与 `takeBatchNo` 已随 #162 合入主干；inventory 端口已接真实创建批次服务。
+- #100、#97 所需的成本更正与利润报表结构/聚合端口已随 #163、#164 合入主干。
 
 ## 验收标准
 
@@ -34,7 +33,7 @@
 
 ## 当前状态
 
-进行中：`createBatch` 服务与测试已完成并推送 PR #157，最新 head 已同步主干 `8416a33` 且 7 项 CI 全绿；等待平台端口接口后接线。成本更正等待主线补齐数据结构与引用端口。
+进行中：`createBatch` 服务、平台取号器和 `StockFlowPort` 接线均已完成，PR #157 等待最终门禁与评审；库存前端三页在 PR #182。成本更正与利润报表已具备主线结构，后续按任务推进。
 
 ## 已完成
 
@@ -44,17 +43,18 @@
 - 2026-11-09：#150 已按方案 A 合并到主干，`processing_order.output_product_id` 与 contracts/repo 已就绪。
 - 2026-11-09：#137 分支 `e88bf21` 已推送；随后同步最新 `main` 并以 merge commit `814eb72` 更新 PR #157，远端 head 一致且可合并。合并后 `pnpm -r build`、`pnpm -r test`（API 57 个文件 / 381 项）与 `pwsh -NoProfile -File tests\run.ps1`（`ALL PASSED (7 files)`）全部通过；PR 的 7 项 CI 全部通过。
 - 2026-11-10：同步主干 `8416a33` 到 PR #157，新 head `bb25d6e`；`pnpm -r build`、`pnpm -r typecheck`、`pnpm -r test`（API 57 个文件 / 381 项，Web 8 个文件 / 52 项）与 `tests\run.ps1` 全部通过，7 项 CI 全绿。最新主干 `StockFlowPort` 仍只有 `applyAdjustment`，#162 未解除。
+- 2026-11-10：#162 合入主干，`createBatch` 改用 platform `takeBatchNo`，并按端口命令补齐 `handledBy`；`inventory/services/ports.ts` 已删除 NOT_IMPLEMENTED 占位并接真实服务，定向测试与 API typecheck 通过。
+- 2026-11-10：库存前端数量、流水、盘点三页已实现并创建 PR #182，复用主线权限、decimal 与盘点面板。
 
 ## 进行中
 
-- #137：等待负责人处理 #162，把 `CreateBatchCommand` / `CreateBatchReceipt` 与 `createBatch` 方法补进平台 `StockFlowPort`，随后在 `apps/api/src/modules/inventory/services/ports.ts` 接线。
-- #100：等待负责人处理 #163，确定成本更正金额的落库位置、T1/T2/T3 端点契约，以及判定下游引用所用的 D70 只读端口。
+- #137：端口接线已完成，等待全量门禁、PR #157 CI 与评审。
+- #182：库存前端三页等待 CI 与评审；利润报表页仍不包含。
 
 ## 下一步
 
-- 平台接口合并后完成端口映射，重跑 #137 的三条验收命令并开 PR。
-- #137 合并后接 #138；#150 已关闭，B 单可直接使用单头 `outputProductId`，不再等待商品字段拍板。
-- #100 契约和端口到主干后，实现 `assertCostFixable`、三档服务分支、审计与测试。
+- #137 合并后接 #138；#150 已关闭，B 单可直接使用单头 `outputProductId`。
+- 复核 #177 后继续推进 #100，复核 #178 后继续利润报表与前端。
 
 ## 已知问题 / 坑
 

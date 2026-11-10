@@ -1,12 +1,14 @@
-import { AppError } from '@qingdan/contracts';
 import type { ServiceRegistry } from '../../../platform/services/registry.js';
-import { applyStockAdjustment } from './stock-flow.js';
+import {
+  applyStockAdjustment,
+  createBatch as createStockBatch,
+} from './stock-flow.js';
 
 /**
  * inventory 对外端口实现（D70）。
  *
- * `applyStockAdjustment` 是全仓唯一允许改批次数量的函数；端口只是把它以稳定的
- * interface 暴露给其它模块，**不新增第二条库存写入路径**。
+ * 批次创建与数量调整都收口在本模块服务函数；端口只做稳定 interface 映射，
+ * **不新增第二条库存写入路径**。
  */
 export const inventoryServices: Pick<ServiceRegistry, 'stockFlow' | 'batchDirectory'> = {
   stockFlow: {
@@ -20,13 +22,18 @@ export const inventoryServices: Pick<ServiceRegistry, 'stockFlow' | 'batchDirect
         sourceDocId: command.sourceDocId,
         handledBy: command.handledBy,
       }),
-    // #162 只上端口签名、不写实现（规格红线）；#137 接线时把本占位替换为
-    // 对 createBatch 真实现（stock-flow.ts 的新函数）的调用。届时删除此占位。
-    createBatch: async () => {
-      throw new AppError('NOT_IMPLEMENTED', '批次入库端口接线归 #137（#162 仅上签名）', {
-        port: 'StockFlowPort.createBatch',
-      });
-    },
+    createBatch: async (tx, command) =>
+      createStockBatch(tx, {
+        tenantId: command.tenantId,
+        companyId: command.companyId,
+        productId: command.productId,
+        qty: command.qty,
+        lockedUnitCost: command.lockedUnitCost,
+        custodianId: command.custodianId,
+        sourceDocType: command.sourceDocType,
+        sourceDocId: command.sourceDocId,
+        handledBy: command.handledBy,
+      }),
   },
   // 打印用只读查询：sales 客户联要显示批次号，但不得直读 inventory_batch。
   batchDirectory: {
