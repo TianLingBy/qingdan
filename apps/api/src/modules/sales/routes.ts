@@ -121,13 +121,13 @@ export function registerSalesRoutes(app: FastifyInstance): void {
     'sales.order.print': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);
       // 复用详情取数 + view_price 脱敏；无权限时金额为 null，由渲染层显示「—」。
-      const { detail, companyName } = await getSalesOrderForPrint({
+      const { detail, companyName, labels } = await getSalesOrderForPrint({
         database: instance.database,
         request,
       });
       return {
         contentType: 'text/html',
-        content: renderSalesOrderCustomerCopy(detail, companyName),
+        content: renderSalesOrderCustomerCopy(detail, companyName, labels),
         filename: `销售单-${detail.orderNo}.html`,
       };
     },
