@@ -117,16 +117,18 @@ describe('入口卡片', () => {
   it('按传入列表渲染，未实现的页面打「待实现」，已实现的没有', () => {
     const html = renderToStaticMarkup(
       <EntryCards
-        entries={ROUTE_TABLE.filter((route) => route.id === 'purchase-orders' || route.id === 'flow')}
+        entries={ROUTE_TABLE.filter(
+          (route) => route.id === 'purchase-orders' || route.id === 'internal-trades',
+        )}
         onOpen={() => {}}
       />,
     );
 
     expect(html).toContain('采购单 A');
-    expect(html).toContain('业务全流程图');
+    expect(html).toContain('内部交易单 N');
     expect(html).toContain('href="/purchase-orders"');
-    expect(html).toContain('href="/flow"');
-    // 只有 flow 未实现，所以「待实现」出现一次
+    expect(html).toContain('href="/internal-trades"');
+    // 只有内部交易单未实现，所以「待实现」出现一次
     expect(html.match(/待实现/g)).toHaveLength(1);
   });
 

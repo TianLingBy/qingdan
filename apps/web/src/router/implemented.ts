@@ -13,6 +13,7 @@ import type { RouteEntry } from './routes';
  */
 export const IMPLEMENTED_PAGE_IDS = [
   'workbench',
+  'flow',
   'products',
   'suppliers',
   'processors',
