@@ -249,6 +249,50 @@ export interface DownstreamReferencePort {
   inspectBatch(tx: SqlClient, query: DownstreamReferenceQuery): Promise<DownstreamReferenceResult>;
 }
 
+/**
+ * 期间聚合查询（D70 / D43）：利润报表不直读 settlement / processing 的表，
+ * 只按「租户 + 公司集合 + 期间」向两个只读来源取聚合结果。
+ */
+export interface ProfitAggregateQuery {
+  readonly tenantId: string;
+  readonly companyIds: readonly string[];
+  /** `YYYY-MM-DD`，含当日。 */
+  readonly periodStart: string;
+  readonly periodEnd: string;
+}
+
+/** 已结算 C 单的期间毛利聚合（金额为 decimal 字符串，D54）。 */
+export interface SettlementProfitAggregate {
+  readonly grossProfit: string;
+  readonly netProfit: string;
+  /** 参与汇总的已结算 C 单数。 */
+  readonly settledOrderCount: number;
+}
+
+/** settlement 自建的只读聚合来源（只读 SELECT，不重复做 scope 判定）。 */
+export interface SettlementProfitAggregateSource {
+  aggregateSettledProfit(
+    tx: SqlClient,
+    query: ProfitAggregateQuery,
+  ): Promise<SettlementProfitAggregate>;
+}
+
+/** B 单全损耗期间聚合（金额为 decimal 字符串，D54）。 */
+export interface ProcessingLossAggregate {
+  readonly lossAmount: string;
+  readonly orders: ReadonlyArray<{
+    readonly processingOrderId: string;
+    readonly processingOrderNo: string;
+    readonly lossAmount: string;
+    readonly attributed: boolean;
+  }>;
+}
+
+/** processing 自建的只读聚合来源（只读 SELECT，不重复做 scope 判定）。 */
+export interface ProcessingLossAggregateSource {
+  aggregateFullLoss(tx: SqlClient, query: ProfitAggregateQuery): Promise<ProcessingLossAggregate>;
+}
+
 export interface ServiceRegistry {
   readonly stockFlow?: StockFlowPort;
   readonly settlementDraft?: SettlementDraftPort;
@@ -258,6 +302,8 @@ export interface ServiceRegistry {
   readonly processingReferences?: DownstreamReferenceSource;
   readonly salesReferences?: DownstreamReferenceSource;
   readonly settlementStatus?: SettlementStatusSource;
+  readonly settlementProfitAggregate?: SettlementProfitAggregateSource;
+  readonly processingLossAggregate?: ProcessingLossAggregateSource;
 }
 
 let registry: ServiceRegistry = {};
@@ -366,4 +412,33 @@ export function downstreamReferencePort(): DownstreamReferencePort {
       return { referenced: references.length > 0, settled, references };
     },
   };
+}
+
+/**
+ * 期间毛利聚合端口（D43 / D70 / Issue #164）。
+ *
+ * 缺来源时抛 NOT_IMPLEMENTED，**绝不**把「查不到」降级成 0——那会把「未接线」
+ * 显示成「当期毛利为 0」。调用方保证已 `withTenant`。
+ */
+export function settlementProfitAggregatePort(): SettlementProfitAggregateSource {
+  if (!registry.settlementProfitAggregate) {
+    throw new AppError(
+      'NOT_IMPLEMENTED',
+      'settlement 未注册 SettlementProfitAggregateSource（D70 / D43）',
+      { port: 'SettlementProfitAggregateSource' },
+    );
+  }
+  return registry.settlementProfitAggregate;
+}
+
+/** 期间全损耗聚合端口（D43 / D70 / Issue #164）；同样不以 0 兜底。 */
+export function processingLossAggregatePort(): ProcessingLossAggregateSource {
+  if (!registry.processingLossAggregate) {
+    throw new AppError(
+      'NOT_IMPLEMENTED',
+      'processing 未注册 ProcessingLossAggregateSource（D70 / D43）',
+      { port: 'ProcessingLossAggregateSource' },
+    );
+  }
+  return registry.processingLossAggregate;
 }

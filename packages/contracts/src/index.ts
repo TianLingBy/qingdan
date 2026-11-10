@@ -19,6 +19,7 @@ export * from './processing-orders.js';
 export * from './internal-trade-orders.js';
 export * from './settlement-orders.js';
 export * from './commission-rates.js';
+export * from './profit-report.js';
 export * from './prints.js';
 export * from './payments.js';
 export * from './billings.js';
