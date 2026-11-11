@@ -1,4 +1,4 @@
-import js from '@eslint/js';
+﻿import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 /**
@@ -21,7 +21,8 @@ const crossModuleBan = [
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/*.d.ts', 'prototype.html'],
+    // design/ 是静态设计稿（浏览器脚本，不进构建），与 prototype.html 同性质：不参与 lint。
+    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/*.d.ts', 'prototype.html', 'design/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
