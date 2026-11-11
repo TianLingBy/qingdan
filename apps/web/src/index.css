@@ -1,4 +1,6 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
+/* v0.8 设计令牌：颜色 / 圆角 / 字号 / 动效，见 docs/ui/design-tokens.md */
+@import "./styles/tokens.css";
 
 /*
  * 浏览器基线见 docs/decisions.md D56：
