@@ -144,7 +144,7 @@ async function main(): Promise<void> {
         });
       } catch (error) {
         blocked = sqlStateOf(error) === '57014'; // query_canceled = statement_timeout
-        if (!blocked) throw new Error(`期望被锁挡住（57014），实际错误：${String(error)}`);
+        if (!blocked) throw new Error(`期望被锁挡住（57014），实际错误：${String(error)}`, { cause: error });
       }
       releaseHolder();
       await holder;

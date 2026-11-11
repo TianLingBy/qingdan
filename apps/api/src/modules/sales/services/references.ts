@@ -1,7 +1,6 @@
 import type { SqlClient } from '../../../platform/db/client.js';
 import type {
   DownstreamReferenceQuery,
-  DownstreamReferenceSource,
   ServiceRegistry,
 } from '../../../platform/services/registry.js';
 

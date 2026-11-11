@@ -34,11 +34,6 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - **不做 N 单完成自动生成 C 单草稿**（D29，与 E 单同规则）：等结算模块落地后再加。
  */
 
-/** decimal 字符串（D54 `numeric(18,6)`：最多 12 位整数 + 6 位小数，可负）。 */
-const DecimalString = z
-  .string()
-  .regex(/^-?\d{1,12}(\.\d{1,6})?$/, '必须是 decimal 字符串（最多 6 位小数，D54）');
-
 /** 非负 decimal 字符串：数量 / 单价 / 金额 / 内部价 / 在途量（D54 `numeric(18,6)`）。 */
 const NonNegativeDecimal = z
   .string()

@@ -9,9 +9,13 @@ import type {
  * 已结算 C 单毛利期间聚合（D43 / #97 / Issue #185）。
  *
  * 口径（`packages/contracts/src/profit-report.ts`）：
- * - 期间按 **结算确认时间**落在 `[periodStart, periodEnd]` 的**本地日期**内；
- *   确认结算在同一条原子 UPDATE 里推进 `settlement_order.updated_at`（repo.ts confirm），
- *   草稿生成后的编辑不会改动 `updated_at`，所以它等价于「结算完成时间」；
+ * - 期间按 **结算确认时间** `settlement_order.settled_at`（0026）落在
+ *   `[periodStart 本地零点, periodEnd 次日本地零点)` 半开区间内统计；
+ *   不再用 `updated_at` 推断——0016 的触发器会在任何 UPDATE 时刷新它，
+ *   那样一张单据被别的逻辑改写一次就会换期间；
+ * - 半开区间写成 `settled_at >= start_local AND settled_at < (end + 1 day)_local`，
+ *   列名在比较左侧保持裸露，部分索引
+ *   `settlement_order_tenant_company_settled_at_idx` 才能命中范围扫描；
  * - 只统计 `status = '已结算'` 的 C 单；
  * - 直接汇总 C 单落库的 `gross_profit` / `net_profit`：毛利按 D5 在确认时已由 SQL 算好，
  *   净毛利 = 毛利 − 本单相关损失（D33），报表层只做期间累加，不重复计算；
@@ -39,7 +43,8 @@ export async function aggregateSettledProfit(
       WHERE tenant_id = $1
         AND company_id = ANY($2::uuid[])
         AND status = '已结算'
-        AND (updated_at AT TIME ZONE $5)::date BETWEEN $3::date AND $4::date`,
+        AND settled_at >= ($3::date)::timestamp AT TIME ZONE $5
+        AND settled_at <  (($4::date + 1)::timestamp) AT TIME ZONE $5`,
     [query.tenantId, query.companyIds, query.periodStart, query.periodEnd, appTimezone()],
   );
 
