@@ -76,8 +76,8 @@ const CREATE_INPUT = {
 } as const;
 
 describe('内部交易单契约（internal-trade）', () => {
-  it('5 条端点全部登记并汇总进 ROUTES，且归属 internal-trade', () => {
-    expect(INTERNAL_TRADE_ORDER_ROUTES).toHaveLength(5);
+  it('6 条端点全部登记并汇总进 ROUTES，且归属 internal-trade', () => {
+    expect(INTERNAL_TRADE_ORDER_ROUTES).toHaveLength(6);
     for (const route of INTERNAL_TRADE_ORDER_ROUTES) expect(route.module).toBe('internal-trade');
 
     const internalTradeIds = routesOfModule(ROUTES, 'internal-trade').map((r) => r.operationId);
@@ -97,6 +97,7 @@ describe('内部交易单契约（internal-trade）', () => {
         'GET /api/v1/internal-trade-orders/{id} internal_trade.order.detail.read',
         'PATCH /api/v1/internal-trade-orders/{id} internal_trade.order.update',
         'POST /api/v1/internal-trade-orders/{id}/cancel internal_trade.order.cancel',
+        'POST /api/v1/internal-trade-orders/{id}/receive internal_trade.order.receive',
       ].sort(),
     );
 
@@ -125,6 +126,7 @@ describe('内部交易单契约（internal-trade）', () => {
       'internal_trade.order.create',
       'internal_trade.order.update',
       'internal_trade.order.cancel',
+      'internal_trade.order.receive',
     ]) {
       expect(byId.get(id)?.audit, id).toEqual({ kind: 'write', required: true });
     }
@@ -147,6 +149,7 @@ describe('内部交易单契约（internal-trade）', () => {
 
     expect(byId.get('internal_trade.order.update')?.requiresIfMatch).toBe(true);
     expect(byId.get('internal_trade.order.cancel')?.requiresIfMatch).toBe(true);
+    expect(byId.get('internal_trade.order.receive')?.requiresIfMatch).toBe(true);
     expect(byId.get('internal_trade.order.create')?.requiresIfMatch).toBe(false);
     expect(byId.get('internal_trade.order.create')?.response?.status).toBe(201);
     expect(byId.get('internal_trade.order.list.read')?.response?.status).toBe(200);
@@ -372,11 +375,10 @@ describe('内部交易单契约（internal-trade）', () => {
       InternalTradeOrderCancelableSchema.safeParse({ allowed: false, reason: 'unknown' }).success,
     ).toBe(false);
 
-    // 本批没有「发货 / 在途」「到货确认 / 转司」「自动生成 C 单」等端点。
+    // 当前仍没有「发货 / 在途」和「自动生成 C 单」端点；到货确认已登记，等待实现侧接线。
     const ids = INTERNAL_TRADE_ORDER_ROUTES.map((r) => r.operationId);
-    expect(ids.some((id) => /ship|transit|receive|arrive|complete|settle|price-rule/.test(id))).toBe(
-      false,
-    );
+    expect(ids).toContain('internal_trade.order.receive');
+    expect(ids.some((id) => /ship|transit|complete|settle|price-rule/.test(id))).toBe(false);
   });
 
   it('实体已登记（ENTITIES / globalRegistry / components.schemas 三处一致）', () => {

@@ -41,9 +41,7 @@ function readRepoFile(relative: string): string {
  * 「有意还没接线」的端口在这里显式登记原因；一旦有人把它接上，下面的双向断言会要求
  * 把这一行删掉，避免白名单变成永久豁免。
  */
-const INTENTIONALLY_UNWIRED: Readonly<Record<string, string>> = {
-  processingLossAggregatePort: 'processing 侧「期间全损耗聚合」尚未实现（#164 下半段），调用方也还没有',
-};
+const INTENTIONALLY_UNWIRED: Readonly<Record<string, string>> = {};
 
 describe('规则机械检查', () => {
   const app = buildApp({ config: testConfig(), database: null });

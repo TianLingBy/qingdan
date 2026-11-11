@@ -1,0 +1,539 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" class="no-js">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 工作台</title>
+<script>try{var m=location.search.match(/[?&]theme=(moss|mist|bronze|paper)/);var t=m?m[1]:localStorage.getItem("qd-theme");if(t&&t!=="moss")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="tokens.css">
+<style>
+/* ============================================================
+   轻单 v0.8 · 工作台
+   v0.5 改动（对应《UI 改进建议》）：
+   - KPI 数字统一到同一字号（不再用 26px 迁就金额），金额改用等宽字体 + 强调色
+   - 待处理区接入四态：空态 / 骨架屏 / 错误态（?state=empty|loading|error）
+   - 眉标统一 .eyebrow、面包屑统一 .crumb
+   - 修正「净毛利 · 报失下钻」错字
+   ============================================================ */
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--sans);font-size:13.5px;line-height:1.65;
+  color:var(--text-1);background:var(--bg-0);
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;min-height:100vh;
+  display:flex;
+}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+.mono{font-family:var(--mono)}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--accent-light);outline-offset:3px;border-radius:4px}
+::selection{background:rgba(var(--accent-rgb), .32);color:var(--text-1)}
+
+/* ============================================================ 主内容区 */
+.main{flex:1;min-width:0;position:relative;z-index:1}
+
+/* 顶部快照条 */
+.topbar{
+  position:sticky;top:0;z-index:10;
+  background:var(--topbar-bg);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line-1);
+  padding:0 36px;height:52px;
+  display:flex;align-items:center;gap:20px;
+}
+.topbar .snapshot{
+  margin-left:auto;display:flex;align-items:center;gap:16px;
+  font-size:12px;color:var(--text-3);
+}
+.topbar .snapshot b{color:var(--text-1);font-weight:600;font-family:var(--mono);
+  font-variant-numeric:tabular-nums}
+.topbar .snapshot .sep{width:1px;height:14px;background:var(--line-2)}
+
+.search-btn{
+  display:flex;align-items:center;gap:7px;
+  height:30px;padding:0 11px;border-radius:var(--r-pill);
+  border:1px solid var(--line-2);background:var(--surf-1);
+  color:var(--text-3);font-size:12px;min-width:160px;
+  transition:border-color var(--d-1),background var(--d-1);cursor:pointer;
+}
+.search-btn:hover{border-color:var(--line-3);background:var(--surf-2)}
+.search-btn kbd{
+  margin-left:auto;font-family:var(--mono);font-size:10px;
+  padding:1px 5px;border-radius:4px;background:var(--surf-3);color:var(--text-3);
+}
+
+/* 内容 wrap */
+.wrap{padding:28px 36px 56px;max-width:1100px}
+
+/* ============================================================ KPI 四格 */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.card{
+  position:relative;
+  background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r-card);
+  box-shadow:var(--sh-1),var(--sh-inset);
+  transition:transform var(--d-3) var(--ease-out),box-shadow var(--d-3) var(--ease-out),
+             border-color var(--d-3),background var(--d-3);
+}
+.card:hover{transform:translateY(-2px);box-shadow:var(--sh-2);border-color:var(--line-3)}
+.card::before{
+  content:"";position:absolute;left:16px;right:16px;top:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(var(--text-rgb), .12),transparent);
+  pointer-events:none;
+}
+
+.kpi{padding:20px 20px 16px}
+.kpi-label{
+  font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--accent-light);display:flex;align-items:center;gap:6px;margin-bottom:12px;
+}
+.kpi-label i{width:4px;height:4px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 0 3px rgba(var(--accent-rgb), .18)}
+/* v0.5：四格统一 32px；金额用等宽 + 强调色，靠颜色而非尺寸区分 */
+.kpi-value{
+  font-size:32px;line-height:1.05;font-weight:600;letter-spacing:-.035em;
+  color:var(--text-1);font-variant-numeric:tabular-nums;
+}
+.kpi-value.money{font-family:var(--mono);letter-spacing:-.04em;color:var(--accent-light)}
+.kpi-value small{font-size:13px;font-weight:500;color:var(--text-3);letter-spacing:0;margin-left:2px}
+.kpi-foot{
+  margin-top:8px;font-size:11.5px;color:var(--text-3);
+  display:flex;align-items:center;gap:6px;
+}
+.kpi-foot .up{color:var(--success);font-weight:600}
+.kpi-foot .down{color:var(--danger-on-surface);font-weight:600}
+.kpi-foot .neutral{color:var(--accent-light);font-weight:600}
+.spark{margin-top:14px;height:24px;width:100%;display:block;opacity:.85}
+
+/* ============================================================ 两栏 */
+.grid2{display:grid;grid-template-columns:1.5fr 1fr;gap:14px}
+
+.panel{padding:24px 22px 18px}
+.panel-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.panel-head h2{font-size:15px;font-weight:620;letter-spacing:-.012em;color:var(--text-1)}
+.panel-head .more{margin-left:auto;font-size:12px;color:var(--accent-light);font-weight:500;
+  transition:color var(--d-1)}
+.panel-head .more:hover{color:var(--text-1)}
+.panel-desc{font-size:11.5px;color:var(--text-3);margin-bottom:14px}
+
+/* 待处理行 */
+.rows{border-top:1px solid var(--line-1)}
+.row{
+  position:relative;display:grid;grid-template-columns:68px 1fr auto;
+  gap:14px;align-items:center;
+  padding:13px 10px 13px 12px;border-bottom:1px solid var(--line-1);
+  transition:background var(--d-2) var(--ease-out),padding-left var(--d-3) var(--ease-out);
+  cursor:pointer;
+}
+.row::before{
+  content:"";position:absolute;left:0;top:14%;height:72%;width:2px;
+  border-radius:0 2px 2px 0;background:var(--accent);
+  transform:scaleY(0);transform-origin:center;
+  transition:transform var(--d-3) var(--ease-out);
+}
+.row:hover{background:var(--surf-1);padding-left:16px}
+.row:hover::before{transform:scaleY(1)}
+.tag{
+  font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.04em;
+  color:var(--accent-light);background:rgba(var(--accent-rgb), .12);
+  padding:3px 7px;border-radius:var(--r-tag);justify-self:start;
+  border:1px solid rgba(var(--accent-rgb), .18);
+}
+.row-title{font-size:13px;font-weight:500;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-1)}
+.row-meta{font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* 主流程时间线 */
+.flow{position:relative;padding-left:4px;margin-top:2px}
+.flow::before{
+  content:"";position:absolute;left:9px;top:8px;bottom:14px;width:1px;
+  background:linear-gradient(to bottom,var(--g45),var(--line-1));
+}
+.step{position:relative;display:flex;gap:14px;padding:10px 0}
+.step .dot{
+  position:relative;z-index:1;flex:none;width:10px;height:10px;border-radius:50%;
+  background:var(--bg-0);border:1px solid var(--line-3);margin-top:4px;
+  transition:background var(--d-3),border-color var(--d-3),box-shadow var(--d-3);
+}
+.step.done .dot{background:var(--accent-deep);border-color:var(--accent)}
+.step.now .dot{
+  background:var(--accent-light);border-color:var(--accent-light);
+  box-shadow:0 0 0 4px rgba(var(--accent-rgb), .22);
+}
+.step-name{font-size:13px;font-weight:500;color:var(--text-1)}
+.step.now .step-name{font-weight:620;color:var(--text-1)}
+.step-desc{font-size:11px;color:var(--text-3);margin-top:2px}
+.step-state{
+  margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--text-3);
+  letter-spacing:.06em;white-space:nowrap;padding-top:3px;
+}
+.step.now .step-state{color:var(--accent-light)}
+
+/* ============================================================ 快捷入口 */
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:14px}
+.q{padding:18px 16px;display:flex;align-items:center;gap:12px;cursor:pointer}
+.q .ic{
+  width:36px;height:36px;border-radius:10px;flex:none;
+  display:grid;place-items:center;
+  background:var(--surf-2);border:1px solid var(--line-2);
+  transition:background var(--d-2),border-color var(--d-2),transform var(--d-2) var(--ease-spring);
+}
+.q:hover .ic{background:rgba(var(--accent-rgb), .14);border-color:var(--accent);transform:translateY(-1px)}
+.q .ic svg{stroke:var(--accent-light);fill:none;stroke-width:1.5}
+.q-name{font-size:13px;font-weight:550;color:var(--text-1)}
+.q-desc{font-size:11px;color:var(--text-3);margin-top:1px}
+
+/* 按钮 */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  height:40px;padding:0 20px;border-radius:var(--r-control);
+  font-size:13px;font-weight:550;letter-spacing:.01em;
+  transition:transform 70ms,box-shadow var(--d-2),background var(--d-2),border-color var(--d-2);
+}
+.btn:active{transform:scale(.985)}
+.btn-primary{
+  background:var(--accent-deep);color:var(--bg-0);
+  box-shadow:0 8px 24px -10px rgba(var(--accent-rgb), .5),inset 0 1px 0 rgba(255,255,255,.18);
+}
+.btn-primary:hover{background:var(--accent);box-shadow:0 12px 30px -10px rgba(var(--accent-rgb), .65)}
+.btn-ghost{
+  background:var(--surf-1);color:var(--text-1);
+  border:1px solid var(--line-2);box-shadow:var(--sh-inset);
+}
+.btn-ghost:hover{border-color:var(--line-3);background:var(--surf-2)}
+
+/* 页头操作行 */
+.page-head{
+  display:flex;align-items:center;gap:14px;margin-bottom:22px;
+  padding-bottom:18px;border-bottom:1px solid var(--line-1);
+}
+.page-head h1{
+  font-size:22px;font-weight:620;letter-spacing:-.022em;color:var(--text-1);
+}
+.page-head .date{
+  margin-left:auto;font-size:12px;color:var(--text-3);
+  font-family:var(--mono);letter-spacing:.06em;
+}
+
+/* 足部 */
+.foot{
+  padding:20px 36px 28px;border-top:1px solid var(--line-1);
+  display:flex;align-items:center;gap:14px;
+  font-size:11px;color:var(--text-3);font-family:var(--mono);letter-spacing:.08em;
+}
+
+/* 响应式 */
+@media(max-width:1024px){
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .grid2{grid-template-columns:1fr}
+  .quick{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:768px){
+  .sidebar{display:none}
+  .wrap{padding:20px}
+  .topbar{padding:0 20px}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .quick{grid-template-columns:1fr 1fr}
+}
+.greet{font-size:12.5px;color:var(--text-3);margin:8px 0 2px;line-height:1.75}
+.greet b{color:var(--text-2);font-weight:550}
+</style>
+<link rel="stylesheet" href="components.css">
+<script src="motion.js"></script>
+</head>
+<body data-aura>
+<div class="qd-veil"></div>
+<div class="qd-field" aria-hidden="true"></div>
+
+<!-- ======== SIDEBAR ======== -->
+<aside class="sidebar">
+  <div class="sb-brand">
+    <div class="sb-mark">轻</div>
+    <div class="sb-name">轻单<small>Qingdan</small></div>
+  </div>
+
+  <nav class="sb-nav">
+    <a href="工作台.html" class="sb-link on">
+      <svg width="15" height="15" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+      工作台
+    </a>
+    <a href="单据.html" class="sb-link">
+      <svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 2h8v12H4z"/><path d="M6 6h4M6 9h4M6 12h2"/></svg>
+      单据
+      <span class="badge">3</span>
+    </a>
+    <a href="库存.html" class="sb-link">
+      <svg width="15" height="15" viewBox="0 0 16 16"><path d="M2 5l6-3 6 3v6l-6 3-6-3z"/><path d="M8 2v12M2 5l6 3 6-3"/></svg>
+      库存
+    </a>
+    <a href="报表.html" class="sb-link">
+      <svg width="15" height="15" viewBox="0 0 16 16"><path d="M2 12l4-5 3 3 5-7"/></svg>
+      报表
+    </a>
+  </nav>
+
+  <div class="sb-foot">
+    <div class="sb-avatar">何</div>
+    <div class="sb-user">
+      <b>何XX</b>
+      <small>演示公司</small>
+    </div>
+  </div>
+</aside>
+
+<!-- ======== 主内容区 ======== -->
+<div class="main">
+  <!-- 快照顶条 -->
+  <header class="topbar">
+    <nav class="crumb">
+      <a href="工作台.html">轻单</a>
+      <span class="sep">/</span>
+      <span class="cur">工作台</span>
+      <span class="sep">·</span>
+      <span>演示公司</span>
+    </nav>
+    <div class="snapshot">
+      <span>今日单据 <b>24</b></span>
+      <div class="sep"></div>
+      <span>待处理 <b>3</b></span>
+      <div class="sep"></div>
+      <span>本月成本 <b>¥1,286,400</b></span>
+      <div class="sep"></div>
+      <div class="search-btn" role="button" tabindex="0">
+        <svg width="12" height="12" viewBox="0 0 16 16" stroke="currentColor" fill="none" stroke-width="1.6">
+          <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+        </svg>
+        搜索单据 / 供应商
+        <kbd>Ctrl K</kbd>
+      </div>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- 页头操作行 -->
+    <div class="page-head" data-reveal="fade">
+      <h1>工作台</h1>
+      <span class="eyebrow">workbench</span>
+      <span class="date num">2026.11.11 周三</span>
+      <button class="btn btn-primary">
+        <svg width="13" height="13" viewBox="0 0 16 16" stroke="currentColor" fill="none" stroke-width="1.6"><path d="M8 3v10M3 8h10"/></svg>
+        新建采购单 A
+      </button>
+      <button class="btn btn-ghost">查看今日流转</button>
+    </div>
+
+    <p class="greet" id="greet" data-reveal="fade"></p>
+
+    <!-- KPI 四格 -->
+    <div class="kpis">
+      <article class="card kpi" data-reveal="scale">
+        <div class="kpi-label"><i></i>今日单据</div>
+        <div class="kpi-value num">24</div>
+        <div class="kpi-foot">较昨日 <span class="up">+6</span></div>
+        <svg class="spark" viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true">
+          <path data-draw d="M0 20 L15 17 L30 19 L45 12 L60 14 L75 9 L90 11 L105 6 L120 8"
+                fill="none" stroke="rgba(var(--accent-rgb), .5)" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+      </article>
+
+      <article class="card kpi" data-reveal="scale">
+        <div class="kpi-label"><i></i>待我处理</div>
+        <div class="kpi-value num">3</div>
+        <div class="kpi-foot">最早一单等 <span class="down">2 天</span></div>
+        <svg class="spark" viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true">
+          <path data-draw d="M0 12 L15 14 L30 10 L45 16 L60 12 L75 17 L90 13 L105 18 L120 15"
+                fill="none" stroke="rgba(var(--accent-rgb), .5)" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+      </article>
+
+      <article class="card kpi" data-reveal="scale">
+        <div class="kpi-label"><i></i>在途</div>
+        <div class="kpi-value num">7<small>单</small></div>
+        <div class="kpi-foot">含委外加工 <span class="neutral">2 单</span></div>
+        <svg class="spark" viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true">
+          <path data-draw d="M0 18 L15 15 L30 16 L45 13 L60 15 L75 12 L90 14 L105 11 L120 12"
+                fill="none" stroke="rgba(var(--accent-rgb), .5)" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+      </article>
+
+      <article class="card kpi" data-reveal="scale">
+        <div class="kpi-label"><i></i>本月成本</div>
+        <div class="kpi-value money num">¥1,286,400<small>.00</small></div>
+        <div class="kpi-foot">口径：入库成本归集</div>
+        <svg class="spark" viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true">
+          <path data-draw d="M0 21 L15 18 L30 19 L45 15 L60 13 L75 14 L90 9 L105 10 L120 5"
+                fill="none" stroke="rgba(var(--accent-rgb), .5)" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+      </article>
+    </div>
+
+    <!-- 两栏 -->
+    <div class="grid2">
+      <article class="card panel" data-reveal>
+        <div class="panel-head">
+          <h2>待我处理</h2>
+          <span class="eyebrow">4 items</span>
+          <a class="more" href="单据.html">全部单据 →</a>
+        </div>
+        <p class="panel-desc">这些单据停在你的环节，处理完才会进入下一步。</p>
+
+        <!-- 数据区四态 -->
+        <div class="rows" data-state="filled">
+          <div class="st-block st-filled">
+            <div class="row">
+              <span class="tag">A-024</span>
+              <span class="row-title">红富士苹果 · 10kg/箱 × 320 箱</span>
+              <span class="row-meta">归档果业 · 今天 09:12</span>
+            </div>
+            <div class="row">
+              <span class="tag">B-011</span>
+              <span class="row-title">委托加工 · 苹果分拣包装</span>
+              <span class="row-meta">北仓加工厂 · 昨天 17:40</span>
+            </div>
+            <div class="row">
+              <span class="tag">C-006</span>
+              <span class="row-title">结算确认 · 华东区 11 月上半月</span>
+              <span class="row-meta">待确认 · 11-08 10:02</span>
+            </div>
+            <div class="row">
+              <span class="tag">I-002</span>
+              <span class="row-title">盘点差异审批 · 冷库 A 区</span>
+              <span class="row-meta">待审批 · 11-07 15:26</span>
+            </div>
+          </div>
+
+          <div class="st-block st-empty">
+            <div class="st-box">
+              <div class="st-ico">
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+                  <path d="M3 8.5l3 3 7-7"/>
+                </svg>
+              </div>
+              <div class="st-title">今天没有待你处理的单据</div>
+              <div class="st-desc">所有单据都已流转到下一步。等有新单进来，这里会第一时间出现。</div>
+              <div class="st-actions">
+                <a class="st-btn" href="单据.html">看全部单据</a>
+                <a class="st-btn primary" href="#">新建采购单</a>
+              </div>
+            </div>
+          </div>
+
+          <div class="st-block st-loading">
+            <div style="padding:14px 4px">
+              <div class="sk sk-line w60" style="height:12px"></div>
+              <div class="sk sk-line w80" style="height:12px"></div>
+              <div class="sk sk-line w40" style="height:12px"></div>
+              <div class="sk sk-line w80" style="height:12px"></div>
+              <div class="sk sk-line w60" style="height:12px"></div>
+            </div>
+          </div>
+
+          <div class="st-block st-error">
+            <div class="st-box st-error">
+              <div class="st-ico">
+                <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+                  <path d="M8 3v6M8 12v.5"/><circle cx="8" cy="8" r="6"/>
+                </svg>
+              </div>
+              <div class="st-title">待处理列表加载失败</div>
+              <div class="st-desc">没有拿到这一屏数据。点重试，或先去「单据」页看完整列表。</div>
+              <div class="st-actions">
+                <button class="st-btn primary">重试</button>
+                <a class="st-btn" href="单据.html">去单据页</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="card panel" data-reveal>
+        <div class="panel-head">
+          <h2>主流程</h2>
+          <span class="eyebrow">flow</span>
+        </div>
+        <p class="panel-desc">采购入库 → 委托加工 → 销售出库 → 结算。</p>
+        <div class="flow">
+          <div class="step done">
+            <span class="dot"></span>
+            <div>
+              <div class="step-name">采购单 A</div>
+              <div class="step-desc">入库生成批次并锁价</div>
+            </div>
+            <span class="step-state">已完成 12</span>
+          </div>
+          <div class="step done">
+            <span class="dot"></span>
+            <div>
+              <div class="step-name">加工单 B</div>
+              <div class="step-desc">扣材料批次，产出成品批次</div>
+            </div>
+            <span class="step-state">已完成 4</span>
+          </div>
+          <div class="step now">
+            <span class="dot"></span>
+            <div>
+              <div class="step-name">销售单 E</div>
+              <div class="step-desc">扣库存，完成即生成结算草稿</div>
+            </div>
+            <span class="step-state">进行中 3</span>
+          </div>
+          <div class="step">
+            <span class="dot"></span>
+            <div>
+              <div class="step-name">结算单 C</div>
+              <div class="step-desc">财务确认后生效，一期一单一次</div>
+            </div>
+            <span class="step-state">待生成 1</span>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <!-- 快捷入口 -->
+    <div class="quick">
+      <article class="card q" data-reveal="scale">
+        <span class="ic">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 2h10v12l-5-2.5L3 14z"/></svg>
+        </span>
+        <div><div class="q-name">新建采购单</div><div class="q-desc">A 单 · 入库锁价</div></div>
+      </article>
+      <article class="card q" data-reveal="scale">
+        <span class="ic">
+          <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 2"/></svg>
+        </span>
+        <div><div class="q-name">委托加工</div><div class="q-desc">B 单 · 材料与成品</div></div>
+      </article>
+      <article class="card q" data-reveal="scale">
+        <span class="ic">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 12l4-5 3 3 5-7"/></svg>
+        </span>
+        <div><div class="q-name">库存流水</div><div class="q-desc">批次 · 在途 · 可用</div></div>
+      </article>
+      <article class="card q" data-reveal="scale">
+        <span class="ic">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M3 13V3h7l3 3v7z"/><path d="M5 8h6M5 11h4"/></svg>
+        </span>
+        <div><div class="q-name">利润报表</div><div class="q-desc">净毛利 · 损失下钻</div></div>
+      </article>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>演示企业 · 演示公司</span>
+    <span style="color:var(--line-2)">·</span>
+    <span>Qingdan v0.8</span>
+    <span style="margin-left:auto">数据仅供演示</span>
+  </div>
+</div>
+
+<script>
+/* v0.8：一句随时间段变化的话。不是装饰——是告诉人「现在该干什么」。 */
+(function(){
+  var el=document.getElementById('greet'); if(!el) return;
+  var h=new Date().getHours();
+  var hi = h<6 ? '还在加班' : h<11 ? '早上好' : h<14 ? '中午好' : h<18 ? '下午好' : '晚上好';
+  var tail = h<9 ? '今天的单还没开始堆。' : h<18 ? '下午是仓库最忙的时候，入库单会集中在这里。' : '今天的单基本收尾了，剩下的明天一早处理也不迟。';
+  el.innerHTML = hi + '，何永上 —— 还有 <b>3 单</b>等你过手（最早一单是 11-10 的采购单 A-0024）。' + tail;
+})();
+</script>
+</body>
+</html>

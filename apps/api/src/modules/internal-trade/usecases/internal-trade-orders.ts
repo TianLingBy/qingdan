@@ -1,6 +1,7 @@
 import {
   AppError,
   InternalTradeOrderCreateInputSchema,
+  InternalTradeOrderReceiveInputSchema,
   InternalTradeOrderListQuerySchema,
   InternalTradeOrderUpdateInputSchema,
   allowsScope,
@@ -25,6 +26,8 @@ import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
+import { stockBatchInspectionPort, stockBatchTransferPort } from '../../../platform/services/registry.js';
+import { settlementDraftPort } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 import { maskInternalTradeAmounts, maskInternalTradeDetailAmounts } from '../services/masking.js';
 
@@ -44,6 +47,34 @@ const OBJECT_TYPE = 'internal_trade_order';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function addDecimals(values: readonly string[]): string {
+  const total = values.reduce((sum, value) => {
+    const [whole, fraction = ''] = value.split('.');
+    return sum + BigInt(whole ?? '0') * 1_000_000n + BigInt(fraction.padEnd(6, '0'));
+  }, 0n);
+  const whole = total / 1_000_000n;
+  const fraction = (total % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
+  return fraction ? whole.toString() + '.' + fraction : whole.toString();
+}
+
+function multiplyDecimals(left: string, right: string): string {
+  const [li, lf = ''] = left.split('.');
+  const [ri, rf = ''] = right.split('.');
+  const scale = lf.length + rf.length;
+  const raw = BigInt(`${li}${lf}`) * BigInt(`${ri}${rf}`);
+  if (scale === 0) return raw.toString();
+  const text = raw.toString().padStart(scale + 1, '0');
+  return `${text.slice(0, -scale)}.${text.slice(-scale)}`.replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function divideByInteger(value: string, divisor: number): string {
+  const [whole, fraction = ''] = value.split('.');
+  const scale = fraction.length;
+  const raw = BigInt(`${whole}${fraction}`) / BigInt(divisor);
+  const text = raw.toString().padStart(scale + 1, '0');
+  return scale === 0 ? text : `${text.slice(0, -scale)}.${text.slice(-scale)}`.replace(/0+$/, '').replace(/\.$/, '');
+}
 
 type MutableAuditEvent = { -readonly [K in keyof AuditEvent]: AuditEvent[K] };
 
@@ -180,6 +211,15 @@ function parseUpdateInput(body: unknown): InternalTradeOrderUpdateInput {
     });
   }
   return parsed.data;
+}
+
+function parseReceiveInput(body: unknown): void {
+  const parsed = InternalTradeOrderReceiveInputSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new AppError('VALIDATION_FAILED', '请求体不合法', {
+      issues: issuesOf(parsed.error),
+    });
+  }
 }
 
 /** 强 ETag `"<version>"`；缺失 → 428，格式非法 → 409。 */
@@ -445,6 +485,102 @@ export async function cancelInternalTradeOrder(
       version: cancelled.version,
     };
     return cancelled;
+  });
+
+  ctx.reply.header('ETag', etagOf(order.version));
+  return maskInternalTradeAmounts(order, canViewPrice);
+}
+
+/** 到货确认：在同一事务内转移关联批次并把 N 单置为已完成（D22 / D31）。 */
+export async function receiveInternalTradeOrder(
+  ctx: InternalTradeOrderWriteContext,
+): Promise<InternalTradeOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'internal_trade.order.receive');
+  requireScope(principal, 'update');
+  assertHumanCredential(principal, '确认内部交易到货');
+  const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
+  parseReceiveInput(ctx.request.body);
+
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const state = await withTenant(database, principal.tenantId, (tx) =>
+    repo.loadInternalTradeOrderState(repoContext(tx, principal), id),
+  );
+  if (!state) throw new AppError('NOT_FOUND', '内部交易单不存在');
+  if (state.version !== expectedVersion) {
+    throw new AppError('VERSION_CONFLICT', '内部交易单版本与 If-Match 不一致，请重新读取后重试', {
+      expected: expectedVersion,
+      current: state.version,
+    });
+  }
+  if (state.status !== '在途') {
+    throw new AppError('VALIDATION_FAILED', '只有在途状态的内部交易单可以确认到货');
+  }
+  if (!principal.companyIds.includes(state.toCompanyId)) {
+    throw new AppError('FORBIDDEN', '调用者对接收公司无权限', { companyId: state.toCompanyId });
+  }
+
+  const audit = auditEventOf(
+    ctx.request,
+    principal,
+    'internal_trade.order.receive',
+    id,
+    { beforeStatus: state.status, afterStatus: '已完成' },
+  );
+  const order = await withAudit(database, audit, async (tx) => {
+    const source = await repo.getInternalTradeOrder(repoContext(tx, principal), id);
+    if (!source) throw new AppError('NOT_FOUND', '内部交易单不存在');
+    const batchIds = await repo.listBatchIdsForOrder(repoContext(tx, principal), id);
+    const inspected = await stockBatchInspectionPort().inspectBatches(tx, {
+      tenantId: principal.tenantId,
+      companyId: state.fromCompanyId,
+      batchIds,
+    });
+    const costByBatch = new Map(inspected.map((batch) => [batch.batchId, batch.lockedUnitCost]));
+    const quantities = source.lines.flatMap((line) =>
+      line.batchIds.map((batchId) => ({ batchId, qty: divideByInteger(line.qty, line.batchIds.length) })),
+    );
+    const totalCostAmount = quantities.reduce((sum, item) => {
+      const unitCost = costByBatch.get(item.batchId);
+      if (!unitCost) throw new AppError('NOT_FOUND', '内部交易引用的批次成本不存在');
+      return addDecimals([sum, multiplyDecimals(item.qty, unitCost)]);
+    }, '0');
+    await stockBatchTransferPort().transferBatches(tx, {
+      tenantId: principal.tenantId,
+      fromCompanyId: state.fromCompanyId,
+      toCompanyId: state.toCompanyId,
+      transfers: batchIds.map((batchId) => ({ batchId })),
+    });
+    const draft = await settlementDraftPort().createDraft(tx, {
+      tenantId: principal.tenantId,
+      companyId: state.toCompanyId,
+      sourceDocType: 'N',
+      sourceDocId: id,
+      totalSaleAmount: addDecimals(source.lines.map((line) => line.amount ?? '0')),
+      totalCostAmount,
+      relatedLossAmount: '0',
+      commissionRateSnapshot: '0',
+      commissionAmount: '0',
+      commissionOwnerId: source.handlerId,
+      createdBy: principal.employeeId,
+      requestId: requestIdFor(ctx.request),
+    });
+    const received = await repo.receiveInternalTradeOrder(
+      repoContext(tx, principal),
+      id,
+      expectedVersion,
+    );
+    if (!received) throw new AppError('NOT_FOUND', '内部交易单不存在');
+    audit.companyId = received.fromCompanyId;
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: received.status,
+      version: received.version,
+      transferredBatchCount: batchIds.length,
+      settlementOrderId: draft.id,
+    };
+    return received;
   });
 
   ctx.reply.header('ETag', etagOf(order.version));

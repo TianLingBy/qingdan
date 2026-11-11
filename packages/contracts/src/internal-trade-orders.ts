@@ -197,8 +197,14 @@ export const InternalTradeOrderUpdateInputSchema = z
   .refine((value) => Object.keys(value).length > 0, { message: '至少修改一个字段' });
 export type InternalTradeOrderUpdateInput = z.infer<typeof InternalTradeOrderUpdateInputSchema>;
 
+/** 到货确认是危险写操作，要求显式确认，避免误触发批次转司（D22 / D31 / #196）。 */
+export const InternalTradeOrderReceiveInputSchema = z.object({
+  confirm: z.literal(true),
+});
+export type InternalTradeOrderReceiveInput = z.infer<typeof InternalTradeOrderReceiveInputSchema>;
+
 /**
- * internal-trade 模块 N 内部交易单端点（5 条，第二批第一批切）。
+ * internal-trade 模块 N 内部交易单端点（6 条，含到货确认）。
  *
  * operationId 以 `internal_trade` 开头（与功能域同名，registry 校验要求）；
  * 权限 scope 仍按功能域推导为 `internal_trade.read/create/update/delete`（D44）。
@@ -270,6 +276,20 @@ export const INTERNAL_TRADE_ORDER_ROUTES: readonly RouteDef[] = [
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
+    response: { status: 200, schema: InternalTradeOrderSchema },
+  }),
+  defineRoute({
+    module: 'internal-trade',
+    operationId: 'internal_trade.order.receive',
+    method: 'POST',
+    path: '/api/v1/internal-trade-orders/{id}/receive',
+    domain: 'internal_trade',
+    action: 'update',
+    summary: '确认 N 单到货并将占用批次转入接收公司（D22 / D31 / D68③）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    request: { body: InternalTradeOrderReceiveInputSchema },
     response: { status: 200, schema: InternalTradeOrderSchema },
   }),
 ];

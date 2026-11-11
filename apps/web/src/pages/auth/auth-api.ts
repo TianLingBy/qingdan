@@ -31,6 +31,8 @@ export interface LoginResult {
 
 export function createAuthApi(client: ApiClient = apiClient) {
   return {
+    /** 发登录验证码：非生产固定码直通，不发短信；生产走腾讯云。 */
+    sendCode: (phone: string) => client.post<{ sent: true }>('/auth/code', { phone }),
     login: (input: LoginInput) => client.post<LoginResult>('/auth/login', input),
     me: () => client.get<MeResponse>('/auth/me'),
     /** 幂等：重复登出也成功（服务端 204）。 */
@@ -128,6 +130,10 @@ export function describeLoginError(error: unknown): LoginErrorView {
 
   if (error.code === 'UNAUTHENTICATED' || error.status === 401) {
     return { message: '手机号或验证码不正确，请重新输入', field: null, requestId };
+  }
+
+  if (error.code === 'RATE_LIMITED' || error.status === 429) {
+    return { message: '验证码发送太频繁，请稍后再试', field: null, requestId };
   }
 
   if (error.code === 'VALIDATION_FAILED' || error.status === 422) {

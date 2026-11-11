@@ -122,10 +122,63 @@ paths:
         policy: allow
         reasonRequired: false
       x-mcp-tool: qingdan_platform_openapi_read
+  /api/v1/auth/code:
+    post:
+      operationId: platform.code.send
+      summary: 发送登录验证码（同号 60 秒一条、每天最多 10 条）
+      tags:
+        - employee
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent:
+                    type: boolean
+                    const: true
+                required:
+                  - sent
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: employee.read
+      x-module: platform
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: false
+      x-mcp-tool: qingdan_platform_code_send
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  minLength: 6
+                  maxLength: 32
+              required:
+                - phone
+              additionalProperties: false
   /api/v1/auth/login:
     post:
       operationId: platform.auth.login
-      summary: 手机号 + 验证码登录（一期不发码，账号由后台/初始化脚本创建）
+      summary: 手机号 + 验证码登录（验证码由 /auth/code 下发，非生产固定码直通）
       tags:
         - employee
       security:
@@ -5718,6 +5771,57 @@ paths:
         reasonRequired: true
       x-mcp-tool: qingdan_internal_trade_order_cancel
       x-requires-if-match: true
+  /api/v1/internal-trade-orders/{id}/receive:
+    post:
+      operationId: internal_trade.order.receive
+      summary: 确认 N 单到货并将占用批次转入接收公司（D22 / D31 / D68③）
+      tags:
+        - internal_trade
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InternalTradeOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: internal_trade.update
+      x-module: internal-trade
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_internal_trade_order_receive
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                confirm:
+                  type: boolean
+                  const: true
+              required:
+                - confirm
+              additionalProperties: false
   /api/v1/settlement-orders:
     get:
       operationId: settlement.order.list.read

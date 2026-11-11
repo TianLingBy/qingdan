@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppConfig } from '../platform/config.js';
+import type { SmsSender } from '../platform/sms/tencent.js';
 import { registerServices, resetServices } from '../platform/services/registry.js';
 import { registerInternalTradeRoutes } from './internal-trade/routes.js';
 import { registerInventoryRoutes } from './inventory/routes.js';
@@ -12,6 +13,7 @@ import { billingEntitlementService } from './platform/services/entitlement.js';
 import { platformServices } from './platform/services/ports.js';
 import { registerProcessingRoutes } from './processing/routes.js';
 import { processingServices } from './processing/services/references.js';
+import { processingLossAggregateService } from './processing/services/loss-aggregate.js';
 import { registerPurchaseRoutes } from './purchase/routes.js';
 import { registerReportRoutes } from './report/index.js';
 import { registerSalesRoutes } from './sales/routes.js';
@@ -46,6 +48,8 @@ export interface RegisterModulesOptions {
   readonly version: string;
   /** 应用配置（登录验证码 / 会话 TTL / 环境）。 */
   readonly config: AppConfig;
+  /** 短信发送器（登录验证码）；测试可注入假实现。 */
+  readonly smsSender: SmsSender;
 }
 
 /** 依次注册已接线模块；顺序与 `MOUNTED_MODULE_KEYS` 一致。 */
@@ -59,13 +63,18 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerServices(settlementServices);
   // Issue #185 / D43：利润报表所需的「已结算 C 单毛利」聚合端口。
   registerServices({ settlementProfitAggregate: settlementProfitAggregateService });
+  registerServices({ processingLossAggregate: processingLossAggregateService });
   registerServices(salesServices);
   // Issue #163 / D70：成本更正判定所需的下游引用聚合端口。
   registerServices(processingServices);
   registerServices(salesReferenceServices);
   registerServices(settlementStatusServices);
 
-  registerPlatformRoutes(app, { version: options.version, config: options.config });
+  registerPlatformRoutes(app, {
+    version: options.version,
+    config: options.config,
+    smsSender: options.smsSender,
+  });
   registerMasterdataRoutes(app);
   registerInventoryRoutes(app);
   registerSalesRoutes(app);
