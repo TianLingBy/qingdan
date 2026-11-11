@@ -8,6 +8,11 @@ import { registerAuditContext } from './platform/http/audit-context.js';
 import { registerErrorHandling } from './platform/http/errors.js';
 import { registerSecurityHeaders } from './platform/http/headers.js';
 import { registerRequestId } from './platform/http/request-id.js';
+import {
+  createTencentSmsSender,
+  unconfiguredSmsSender,
+  type SmsSender,
+} from './platform/sms/tencent.js';
 
 /**
  * 组装 Fastify 实例（不监听端口，便于 `app.inject` 测试）。
@@ -33,6 +38,8 @@ export interface BuildAppOptions {
   readonly logger?: FastifyServerOptions['logger'];
   /** 测试注入固定 request id。 */
   readonly requestIdFactory?: () => string;
+  /** 测试注入假短信发送器；不传则按 config.sms 建腾讯云实现（未配置时为明确报错的占位）。 */
+  readonly smsSender?: SmsSender;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -68,7 +75,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerAuthPlugin(app, { config });
   registerSecurityHeaders(app);
   registerErrorHandling(app);
-  registerModules(app, { version: options.version ?? APP_VERSION, config });
+  const smsSender: SmsSender =
+    options.smsSender ??
+    (config.sms ? createTencentSmsSender(config.sms) : unconfiguredSmsSender);
+  registerModules(app, {
+    version: options.version ?? APP_VERSION,
+    config,
+    smsSender,
+  });
 
   return app;
 }

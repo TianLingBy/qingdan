@@ -14,6 +14,7 @@ import type { AppConfig } from '../../platform/config.js';
 import type { Database } from '../../platform/db/client.js';
 import { requestIdFor } from '../../platform/http/request-id.js';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
+import { SmsNotConfiguredError, type SmsSender } from '../../platform/sms/tencent.js';
 import { createApiToken, listApiTokens, revokeApiToken } from './usecases/api-tokens.js';
 import { listAuditLogs } from './usecases/audit-logs.js';
 import {
@@ -30,6 +31,7 @@ import {
 import { login } from './usecases/login.js';
 import { logout } from './usecases/logout.js';
 import { me } from './usecases/me.js';
+import { sendLoginCode } from './usecases/send-code.js';
 import {
   createPosition,
   disablePosition,
@@ -57,6 +59,8 @@ export interface PlatformRoutesOptions {
   readonly version: string;
   /** 应用配置（登录验证码 / 会话 TTL / 环境）。 */
   readonly config: AppConfig;
+  /** 短信发送器；测试可注入假实现，未配置时用会抛错的占位实现。 */
+  readonly smsSender: SmsSender;
 }
 
 let cachedDocument: OpenApiDocument | undefined;
@@ -82,6 +86,7 @@ function requireDatabase(instance: FastifyInstance, route: RouteDef): Database {
 
 const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'platform.auth.login': 'session',
+  'platform.code.send': 'login_code',
   'platform.auth.logout': 'session',
   'platform.audit.read': 'audit_log',
   'platform.token.create': 'api_token',
@@ -130,6 +135,21 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
     // 拒绝会绕过失败审计。
     'platform.auth.login': ({ app: instance, request, reply }) =>
       login({ database: instance.database, config: options.config, request, reply }),
+    'platform.code.send': ({ app: instance, request }) =>
+      sendLoginCode({
+        database: instance.database,
+        config: options.config,
+        smsSender: options.smsSender,
+        request,
+      }).catch((error: unknown) => {
+        // 生产环境短信未配置：明确 501，别让用户以为是验证码错。
+        if (error instanceof SmsNotConfiguredError) {
+          throw new AppError('NOT_IMPLEMENTED', error.message, {
+            operationId: 'platform.code.send',
+          });
+        }
+        throw error;
+      }),
     'platform.auth.logout': ({ app: instance, request, reply }) =>
       logout({ database: instance.database, config: options.config, request, reply }),
     'platform.auth.me': ({ app: instance, request }) => me({ database: instance.database, request }),
