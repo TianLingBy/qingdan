@@ -1,5 +1,6 @@
 import {
   AppError,
+  ProcessingOrderCompleteBodySchema,
   ProcessingOrderCreateInputSchema,
   ProcessingOrderListQuerySchema,
   ProcessingOrderUpdateInputSchema,
@@ -15,6 +16,7 @@ import {
   type ProcessingOrderDetail,
   type ProcessingOrderStatus,
   type ProcessingOrderUpdateInput,
+  type ProcessingOrderCompleteResult,
 } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { v7 as uuidv7 } from 'uuid';
@@ -24,6 +26,10 @@ import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
+import {
+  stockBatchInspectionPort,
+  stockFlowPort,
+} from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 
 /**
@@ -89,11 +95,28 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create' | 'update' | 'delete',
+  action: 'read' | 'create' | 'update' | 'delete' | 'approve',
 ): void {
   if (!allowsScope(principal.scope, 'processing', action)) {
     throw new AppError('FORBIDDEN', `缺少 processing.${action} 权限`);
   }
+}
+
+function parseCompleteInput(body: unknown) {
+  const parsed = ProcessingOrderCompleteBodySchema.safeParse(body);
+  if (!parsed.success) throw new AppError('VALIDATION_FAILED', '请求体不合法', { issues: issuesOf(parsed.error) });
+  return parsed.data;
+}
+
+const SCALE = 1_000_000n;
+function micros(value: string): bigint {
+  const [whole, fraction = ''] = value.split('.');
+  return BigInt(whole ?? '0') * SCALE + BigInt(fraction.padEnd(6, '0'));
+}
+function decimal(value: bigint): string {
+  const whole = value / SCALE;
+  const fraction = (value % SCALE).toString().padStart(6, '0').replace(/0+$/, '');
+  return fraction ? whole.toString() + '.' + fraction : whole.toString();
 }
 
 function assertCompanyVisible(principal: Principal, companyId: string): void {
@@ -455,4 +478,101 @@ export async function cancelProcessingOrder(
 
   ctx.reply.header('ETag', etagOf(order.version));
   return order;
+}
+
+export async function completeProcessingOrder(
+  ctx: ProcessingOrderWriteContext,
+): Promise<ProcessingOrderCompleteResult> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'processing.order.complete');
+  requireScope(principal, 'approve');
+  assertHumanCredential(principal, '完成加工单');
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const input = parseCompleteInput(ctx.request.body);
+  const audit = auditEventOf(ctx.request, principal, 'processing.order.complete', id, {
+    beforeStatus: '进行中',
+    afterStatus: '已完成',
+  });
+
+  const result = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const state = await repo.loadProcessingOrderState(context, id);
+    if (!state) throw new AppError('NOT_FOUND', '加工单不存在');
+    if (state.version !== expectedVersion) throw new AppError('VERSION_CONFLICT', '加工单版本与 If-Match 不一致', { expected: expectedVersion, current: state.version });
+    if (state.status !== '进行中') throw new AppError('VALIDATION_FAILED', '只有进行中的加工单可以完成');
+    const order = await repo.getProcessingOrder(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '加工单不存在');
+    const loss = micros(input.lossQty);
+    const inputQty = micros(order.inputQty);
+    if (loss > inputQty) throw new AppError('VALIDATION_FAILED', '损耗量不能大于投入量');
+    const sellable = inputQty - loss;
+    if (sellable === 0n && input.confirmFullLoss !== true) throw new AppError('VALIDATION_FAILED', '全损耗必须二次确认 confirmFullLoss=true');
+
+    const batches = await stockBatchInspectionPort().inspectBatches(tx, {
+      tenantId: principal.tenantId,
+      companyId: order.companyId,
+      batchIds: order.materialBatchIds.map((row) => row.batchId),
+    });
+    const costs = new Map(batches.map((row) => [row.batchId, row.lockedUnitCost]));
+    let materialCost = 0n;
+    for (const material of order.materialBatchIds) {
+      const cost = costs.get(material.batchId);
+      if (!cost) throw new AppError('NOT_FOUND', '材料批次不存在');
+      materialCost += micros(material.qty) * micros(cost) / SCALE;
+      await stockFlowPort().applyAdjustment(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        batchId: material.batchId,
+        delta: decimal(-micros(material.qty)),
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+      });
+    }
+    const fees = order.fees.reduce((sum, fee) => sum + micros(fee.amount), 0n);
+    const totalCost = materialCost + fees;
+    const lossAmount = sellable === 0n ? totalCost : totalCost * loss / inputQty;
+    let outputBatchId: string | null = null;
+    let outputBatch: ProcessingOrderCompleteResult['outputBatch'] = null;
+    if (sellable > 0n) {
+      if (!order.outputProductId) {
+        throw new AppError('VALIDATION_FAILED', '加工单缺少成品商品，无法生成产出批次');
+      }
+      const unitCost = decimal(totalCost * SCALE / sellable);
+      const created = await stockFlowPort().createBatch(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        productId: order.outputProductId,
+        qty: decimal(sellable),
+        lockedUnitCost: unitCost,
+        custodianId: input.custodianId ?? order.handlerId,
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+      });
+      outputBatchId = created.batchId;
+      outputBatch = { id: created.batchId, batchNo: created.batchNo, qty: decimal(sellable), lockedUnitCost: unitCost };
+    }
+    const completed = await repo.completeProcessingOrder(context, id, expectedVersion, {
+      lossQty: input.lossQty,
+      sellableQty: decimal(sellable),
+      outputBatchId,
+      materialCostAmount: decimal(materialCost),
+      lossAmount: decimal(lossAmount),
+    });
+    if (!completed) throw new AppError('NOT_FOUND', '加工单不存在');
+    audit.companyId = completed.companyId;
+    audit.changeSummary = { beforeStatus: '进行中', afterStatus: '已完成', outputBatchId };
+    return {
+      id,
+      status: '已完成',
+      lossQty: input.lossQty,
+      sellableQty: decimal(sellable),
+      outputBatch,
+      lossRecord: { lossQty: input.lossQty, description: sellable === 0n ? '全损耗' : '加工验收损耗' },
+    } satisfies ProcessingOrderCompleteResult;
+  });
+  ctx.reply.header('ETag', etagOf(expectedVersion + 1));
+  return result;
 }

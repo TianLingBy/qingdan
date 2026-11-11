@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
 import {
   cancelProcessingOrder,
+  completeProcessingOrder,
   createProcessingOrder,
   getProcessingOrder,
   getProcessingOrderForPrint,
@@ -32,6 +33,7 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'processing.order.create': 'processing_order',
   'processing.order.update': 'processing_order',
   'processing.order.cancel': 'processing_order',
+  'processing.order.complete': 'processing_order',
 };
 
 /** 无数据库时保持骨架语义：501 + operationId。 */
@@ -87,6 +89,14 @@ export function registerProcessingRoutes(app: FastifyInstance): void {
     'processing.order.cancel': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await cancelProcessingOrder({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+    'processing.order.complete': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await completeProcessingOrder({
         database: instance.database,
         request,
         reply,

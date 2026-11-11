@@ -378,6 +378,51 @@ export async function hasDirectDownstream(
   return result.rows[0]?.exists === true;
 }
 
+export async function completeProcessingOrder(
+  ctx: ProcessingOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+  input: {
+    readonly lossQty: string;
+    readonly sellableQty: string;
+    readonly outputBatchId: string | null;
+    readonly materialCostAmount: string;
+    readonly lossAmount: string;
+  },
+): Promise<ProcessingOrder | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE processing_order
+        SET status = '已完成',
+            loss_qty = $1::amount,
+            sellable_qty = $2::amount,
+            output_batch_id = $3::uuid,
+            material_cost_amount = $4::amount,
+            loss_amount = $5::amount,
+            version = version + 1
+      WHERE id = $6::uuid
+        AND tenant_id = $7
+        AND company_id = ANY($8::uuid[])
+        AND version = $9
+        AND status = '进行中'
+      RETURNING id`,
+    [
+      input.lossQty,
+      input.sellableQty,
+      input.outputBatchId,
+      input.materialCostAmount,
+      input.lossAmount,
+      id,
+      ctx.tenantId,
+      [...ctx.companyIds],
+      expectedVersion,
+    ],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '加工单已被并发修改或不是进行中状态');
+  }
+  return getProcessingOrder(ctx, id);
+}
+
 /** 加工厂必须存在，但必须与单头同公司（D15）。 */
 async function assertProcessorInCompany(
   ctx: ProcessingOrderRepoContext,

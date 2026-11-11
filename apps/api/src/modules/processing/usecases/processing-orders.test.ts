@@ -11,11 +11,14 @@ import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
 import { createTestDatabase, type TestDatabase } from '../../../testing/pglite.js';
 import {
   cancelProcessingOrder,
+  completeProcessingOrder,
   createProcessingOrder,
   getProcessingOrder,
   listProcessingOrders,
   updateProcessingOrder,
 } from './processing-orders.js';
+import { registerServices } from '../../../platform/services/registry.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 
 /**
  * 加工单 B 用例 / 数据访问（D15 / D16 / D21 / D39 / D51 / D52 / D54）。
@@ -34,7 +37,7 @@ const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000001103';
 const FLOW_ID = '01900000-0000-7000-8000-000000001131';
 
 const FULL_SCOPE: ScopeMatrix = [
-  { domain: 'processing', actions: ['read', 'create', 'update', 'delete'] },
+  { domain: 'processing', actions: ['read', 'create', 'update', 'delete', 'approve'] },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'processing', actions: ['read'] }];
 
@@ -171,6 +174,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
   }
 
   beforeAll(async () => {
+    registerServices({ ...inventoryServices });
     test = await createTestDatabase();
     await seed(test.database);
     await test.database.query(
@@ -231,6 +235,36 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
 
   afterAll(async () => {
     await test.database.close();
+  });
+
+  it('完成：全损耗需要确认，写入快照并生成 C 草稿', async () => {
+    const created = await createOne();
+    const { ctx, state } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"1"' },
+      body: { lossQty: '100', confirmFullLoss: true },
+    });
+    const completed = await completeProcessingOrder(ctx);
+
+    expect(completed).toMatchObject({
+      id: created.id,
+      status: '已完成',
+      lossQty: '100',
+      sellableQty: '0',
+      outputBatch: null,
+      lossRecord: { lossQty: '100' },
+    });
+    expect(state.headers.ETag).toBe('"2"');
+    const snapshot = await test.database.query<{ material_cost_amount: string; loss_amount: string }>(
+      `SELECT trim_scale(material_cost_amount) AS material_cost_amount,
+              trim_scale(loss_amount) AS loss_amount
+         FROM processing_order WHERE id = $1`,
+      [created.id],
+    );
+    expect(snapshot.rows[0]).toEqual({
+      material_cost_amount: '1000',
+      loss_amount: '1100',
+    });
   });
 
   it('开单：B 单号、材料批次、费用、损耗 / 可售量、审计均落库', async () => {
