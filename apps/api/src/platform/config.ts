@@ -45,8 +45,22 @@ export const EnvSchema = z.object({
   HOST: z.string().trim().min(1).default('0.0.0.0'),
   DATABASE_URL: optionalString,
   LOG_LEVEL: z.enum(LOG_LEVELS).default('info'),
-  /** 一期不发短信（D54④）：非生产环境用固定验证码；production 未接服务商时端点返回 501。 */
+  /** 非生产环境的固定验证码（本地 / 测试免发短信）；production 只认短信下发的真实码。 */
   LOGIN_DEV_CODE: z.string().trim().min(1).default('000000'),
+  /**
+   * 验证码哈希 pepper（D59③）：只存 sha256(phone:code:pepper)，不存明文。
+   * 默认值仅供本地/测试；上线前应通过环境变量覆盖（与短信密钥一起交接）。
+   */
+  LOGIN_CODE_PEPPER: z.string().trim().min(1).default('qingdan-login-code-pepper-dev'),
+  /** 验证码有效期（分钟）。用户侧文案「5 分钟内有效」与短信模板需一致。 */
+  LOGIN_CODE_TTL_MINUTES: z.coerce.number().int().min(1).max(30).default(5),
+  /** 腾讯云短信（D59③）：五项齐全才启用；缺项按「未配置」处理，不静默降级。 */
+  TENCENT_SMS_SECRET_ID: optionalString,
+  TENCENT_SMS_SECRET_KEY: optionalString,
+  TENCENT_SMS_SDK_APP_ID: optionalString,
+  TENCENT_SMS_SIGN_NAME: optionalString,
+  TENCENT_SMS_TEMPLATE_ID: optionalString,
+  TENCENT_SMS_REGION: z.string().trim().min(1).default('ap-guangzhou'),
   /** 会话闲置滑动续期窗口（D59⑦）。 */
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(365).default(7),
   /** 业务日 / 取号月键 / 工号日期统一按该时区（D59④）。 */
@@ -59,6 +73,47 @@ export const EnvSchema = z.object({
 
 export type Env = z.infer<typeof EnvSchema>;
 
+/** 腾讯云短信（SMS）配置；五项身份参数齐全才算「已配置」。 */
+export interface SmsConfig {
+  readonly secretId: string;
+  readonly secretKey: string;
+  readonly sdkAppId: string;
+  readonly signName: string;
+  readonly templateId: string;
+  readonly region: string;
+}
+
+/**
+ * 只有「全配 or 全不配」两种合法状态：只配一半时启动即失败，
+ * 避免上线后第一次发码才发现少了一个变量。
+ */
+function buildSmsConfig(value: Env): SmsConfig | null {
+  const entries = [
+    ['TENCENT_SMS_SECRET_ID', value.TENCENT_SMS_SECRET_ID],
+    ['TENCENT_SMS_SECRET_KEY', value.TENCENT_SMS_SECRET_KEY],
+    ['TENCENT_SMS_SDK_APP_ID', value.TENCENT_SMS_SDK_APP_ID],
+    ['TENCENT_SMS_SIGN_NAME', value.TENCENT_SMS_SIGN_NAME],
+    ['TENCENT_SMS_TEMPLATE_ID', value.TENCENT_SMS_TEMPLATE_ID],
+  ] as const;
+  const provided = entries.filter(([, item]) => item !== undefined);
+  if (provided.length === 0) return null;
+  if (provided.length !== entries.length) {
+    const missing = entries.filter(([, item]) => item === undefined).map(([name]) => name);
+    throw new ConfigError(
+      `腾讯云短信配置不完整：缺少 ${missing.join('、')}。` +
+        '五项必须同时提供（或全部留空，生产环境将明确报「短信服务未配置」）。',
+    );
+  }
+  return Object.freeze({
+    secretId: value.TENCENT_SMS_SECRET_ID!,
+    secretKey: value.TENCENT_SMS_SECRET_KEY!,
+    sdkAppId: value.TENCENT_SMS_SDK_APP_ID!,
+    signName: value.TENCENT_SMS_SIGN_NAME!,
+    templateId: value.TENCENT_SMS_TEMPLATE_ID!,
+    region: value.TENCENT_SMS_REGION,
+  });
+}
+
 export interface AppConfig {
   readonly nodeEnv: Env['NODE_ENV'];
   readonly port: number;
@@ -66,6 +121,12 @@ export interface AppConfig {
   readonly databaseUrl: string | undefined;
   readonly logLevel: Env['LOG_LEVEL'];
   readonly loginDevCode: string;
+  /** 验证码哈希 pepper；生产必须显式配置（默认值只用于本地/测试）。 */
+  readonly loginCodePepper: string;
+  /** 验证码有效期（分钟）。 */
+  readonly loginCodeTtlMinutes: number;
+  /** 腾讯云短信配置；null = 未配置（非生产不发短信，生产明确报错）。 */
+  readonly sms: SmsConfig | null;
   readonly sessionTtlDays: number;
   readonly appTimezone: string;
   /** 空串 = 未配置，按请求 Host 推断同源。 */
@@ -136,6 +197,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseUrl: value.DATABASE_URL,
     logLevel: value.LOG_LEVEL,
     loginDevCode: value.LOGIN_DEV_CODE,
+    loginCodePepper: value.LOGIN_CODE_PEPPER,
+    loginCodeTtlMinutes: value.LOGIN_CODE_TTL_MINUTES,
+    sms: buildSmsConfig(value),
     sessionTtlDays: value.SESSION_TTL_DAYS,
     appTimezone: value.APP_TIMEZONE,
     publicBaseUrl,
@@ -161,6 +225,9 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     databaseUrl: undefined,
     logLevel: 'silent',
     loginDevCode: '000000',
+    loginCodePepper: 'test-pepper',
+    loginCodeTtlMinutes: 5,
+    sms: null,
     sessionTtlDays: 7,
     appTimezone: 'Asia/Shanghai',
     publicBaseUrl: '',

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppConfig } from '../platform/config.js';
+import type { SmsSender } from '../platform/sms/tencent.js';
 import { registerServices, resetServices } from '../platform/services/registry.js';
 import { registerInternalTradeRoutes } from './internal-trade/routes.js';
 import { registerInventoryRoutes } from './inventory/routes.js';
@@ -47,6 +48,8 @@ export interface RegisterModulesOptions {
   readonly version: string;
   /** 应用配置（登录验证码 / 会话 TTL / 环境）。 */
   readonly config: AppConfig;
+  /** 短信发送器（登录验证码）；测试可注入假实现。 */
+  readonly smsSender: SmsSender;
 }
 
 /** 依次注册已接线模块；顺序与 `MOUNTED_MODULE_KEYS` 一致。 */
@@ -67,7 +70,11 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerServices(salesReferenceServices);
   registerServices(settlementStatusServices);
 
-  registerPlatformRoutes(app, { version: options.version, config: options.config });
+  registerPlatformRoutes(app, {
+    version: options.version,
+    config: options.config,
+    smsSender: options.smsSender,
+  });
   registerMasterdataRoutes(app);
   registerInventoryRoutes(app);
   registerSalesRoutes(app);

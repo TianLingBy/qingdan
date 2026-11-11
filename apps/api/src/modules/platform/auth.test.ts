@@ -9,7 +9,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
 
 /**
  * M1-B 登录闭环（D54④ / D59③⑦）：
- *   - login：成功下发会话 Cookie；错误验证码 / 未知手机号统一 401；production → 501；
+ *   - login：成功下发会话 Cookie；错误验证码 / 未知手机号统一 401；production 不认固定码；
  *   - logout：撤销当前会话并清 Cookie，幂等；
  *   - me：返回身份、公司集合与实时权限；
  *   - 审计：成功 / 失败 / 登出各一条，未知手机号失败日志在 qingdan_app 下也能落库。
@@ -124,7 +124,7 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
     });
   });
 
-  it('production 未接短信服务商 → 501 NOT_IMPLEMENTED（不静默放行固定验证码）', async () => {
+  it('production 不认固定验证码 → 401（固定码只在非生产直通）', async () => {
     const prodApp = buildApp({
       config: testConfig({ nodeEnv: 'production' }),
       database: test.database,
@@ -135,8 +135,8 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
         url: '/api/v1/auth/login',
         payload: { phone: OWNER_PHONE, code: '000000' },
       });
-      expect(response.statusCode).toBe(501);
-      expect(response.json()).toMatchObject({ code: 'NOT_IMPLEMENTED' });
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toMatchObject({ code: 'UNAUTHENTICATED' });
       expect(response.headers['set-cookie']).toBeUndefined();
     } finally {
       await prodApp.close();

@@ -48,6 +48,13 @@ const LoginOutput = z.object({
   tenantId: z.string(),
   displayName: z.string(),
 });
+/** 发登录验证码：只需手机号；是否真的发短信由服务端环境与配置决定。 */
+const SendCodeInput = z.object({
+  phone: z.string().min(6).max(32),
+});
+const SendCodeOutput = z.object({
+  sent: z.literal(true),
+});
 const MeOutput = z.object({
   employeeId: z.string(),
   tenantId: z.string(),
@@ -110,12 +117,24 @@ export const ROUTES: readonly RouteDef[] = [
     publicAccess: true,
   }),
   defineRoute({
+    operationId: 'platform.code.send',
+    method: 'POST',
+    path: '/api/v1/auth/code',
+    domain: 'employee',
+    action: 'read',
+    summary: '发送登录验证码（同号 60 秒一条、每天最多 10 条）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid' },
+    request: { body: SendCodeInput },
+    response: { status: 200, schema: SendCodeOutput },
+  }),
+  defineRoute({
     operationId: 'platform.auth.login',
     method: 'POST',
     path: '/api/v1/auth/login',
     domain: 'employee',
     action: 'read',
-    summary: '手机号 + 验证码登录（一期不发码，账号由后台/初始化脚本创建）',
+    summary: '手机号 + 验证码登录（验证码由 /auth/code 下发，非生产固定码直通）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid' },
     request: { body: LoginInput },
