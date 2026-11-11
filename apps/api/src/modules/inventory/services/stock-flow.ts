@@ -11,6 +11,103 @@ import type {
 export type { CreateBatchCommand, CreateBatchReceipt };
 export type { StockBatchConsumptionSnapshot };
 
+export interface StockBatchTransfer {
+  readonly batchId: string;
+  readonly qty: string;
+}
+
+export interface StockBatchTransferInput {
+  readonly tenantId: string;
+  readonly fromCompanyId: string;
+  readonly toCompanyId: string;
+  readonly transfers: readonly StockBatchTransfer[];
+}
+
+const NON_NEGATIVE_TRANSFER_QTY_RE = /^\d{1,12}(\.\d{1,6})?$/;
+
+export async function transferBatches(
+  tx: SqlClient,
+  input: StockBatchTransferInput,
+): Promise<void> {
+  if (input.fromCompanyId === input.toCompanyId) {
+    throw new AppError('VALIDATION_FAILED', '转司的发出公司与接收公司不能相同');
+  }
+  if (input.transfers.length === 0) {
+    throw new AppError('VALIDATION_FAILED', '至少需要一条批次转司明细');
+  }
+  for (const transfer of input.transfers) {
+    if (!NON_NEGATIVE_TRANSFER_QTY_RE.test(transfer.qty) || transfer.qty === '0') {
+      throw new AppError('VALIDATION_FAILED', '转司数量必须是正 decimal 字符串', {
+        batchId: transfer.batchId,
+        qty: transfer.qty,
+      });
+    }
+  }
+
+  const company = await tx.query(
+    `SELECT 1
+       FROM company
+      WHERE tenant_id = $1
+        AND id = $2::uuid`,
+    [input.tenantId, input.toCompanyId],
+  );
+  if (company.rows.length === 0) {
+    throw new AppError('NOT_FOUND', '接收公司不存在', { companyId: input.toCompanyId });
+  }
+
+  const locked = await tx.query<{
+    id: string;
+    in_transit_qty: string | number;
+  }>(
+    `SELECT id::text AS id, trim_scale(in_transit_qty) AS in_transit_qty
+       FROM inventory_batch
+      WHERE tenant_id = $1
+        AND company_id = $2::uuid
+        AND id = ANY($3::uuid[])
+      FOR UPDATE`,
+    [input.tenantId, input.fromCompanyId, input.transfers.map((transfer) => transfer.batchId)],
+  );
+  if (locked.rows.length !== input.transfers.length) {
+    throw new AppError('NOT_FOUND', '存在不存在或不属于发出公司的库存批次', {
+      companyId: input.fromCompanyId,
+    });
+  }
+
+  const availableById = new Map(locked.rows.map((row) => [row.id, row.in_transit_qty]));
+  for (const transfer of input.transfers) {
+    const available = availableById.get(transfer.batchId);
+    const guard = await tx.query<{ enough: boolean }>(
+      `SELECT $1::amount <= $2::amount AS enough`,
+      [transfer.qty, available],
+    );
+    if (!guard.rows[0]?.enough) {
+      throw new AppError('VERSION_CONFLICT', '库存批次在途量不足，拒绝转司', {
+        batchId: transfer.batchId,
+        requestedQty: transfer.qty,
+        inTransitQty: String(available),
+      });
+    }
+  }
+
+  for (const transfer of input.transfers) {
+    await tx.query(
+      `UPDATE inventory_batch
+          SET in_transit_qty = in_transit_qty - $1::amount,
+              company_id = $2::uuid
+        WHERE id = $3::uuid
+          AND tenant_id = $4
+          AND company_id = $5::uuid`,
+      [
+        transfer.qty,
+        input.toCompanyId,
+        transfer.batchId,
+        input.tenantId,
+        input.fromCompanyId,
+      ],
+    );
+  }
+}
+
 export interface StockBatchInspectionQuery {
   readonly tenantId: string;
   readonly companyId: string;

@@ -340,6 +340,24 @@ export interface StockBatchConsumptionSnapshot {
   readonly lockedUnitCost: string;
 }
 
+export interface StockBatchTransfer {
+  readonly batchId: string;
+  readonly qty: string;
+}
+
+/** N 单到货确认使用的库存批次转司端口（D22 / D31 / #196）。 */
+export interface StockBatchTransferPort {
+  transferBatches(
+    tx: SqlClient,
+    command: {
+      readonly tenantId: string;
+      readonly fromCompanyId: string;
+      readonly toCompanyId: string;
+      readonly transfers: readonly StockBatchTransfer[];
+    },
+  ): Promise<void>;
+}
+
 export interface ServiceRegistry {
   readonly stockFlow?: StockFlowPort;
   readonly settlementDraft?: SettlementDraftPort;
@@ -354,6 +372,7 @@ export interface ServiceRegistry {
   readonly productDirectory?: ProductDirectoryPort;
   readonly batchDirectory?: BatchDirectoryPort;
   readonly stockBatchInspection?: StockBatchInspectionPort;
+  readonly stockBatchTransfer?: StockBatchTransferPort;
 }
 
 let registry: ServiceRegistry = {};

@@ -3,6 +3,7 @@ import {
   applyStockAdjustment,
   createBatch as createStockBatch,
   inspectBatches,
+  transferBatches,
 } from './stock-flow.js';
 
 /**
@@ -13,7 +14,7 @@ import {
  */
 export const inventoryServices: Pick<
   ServiceRegistry,
-  'stockFlow' | 'batchDirectory' | 'stockBatchInspection'
+  'stockFlow' | 'batchDirectory' | 'stockBatchInspection' | 'stockBatchTransfer'
 > = {
   stockFlow: {
     applyAdjustment: async (tx, command) =>
@@ -55,5 +56,8 @@ export const inventoryServices: Pick<
   },
   stockBatchInspection: {
     inspectBatches,
+  },
+  stockBatchTransfer: {
+    transferBatches,
   },
 };

@@ -7,7 +7,12 @@ import {
   type TestDatabase,
 } from '../../../testing/pglite.js';
 import { inventoryServices } from './ports.js';
-import { createBatch, inspectBatches, type CreateBatchCommand } from './stock-flow.js';
+import {
+  createBatch,
+  inspectBatches,
+  transferBatches,
+  type CreateBatchCommand,
+} from './stock-flow.js';
 
 const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000000099';
 const PRODUCT_ID = '01900000-0000-7000-8000-000000000101';
@@ -262,5 +267,70 @@ describe('inventory createBatch（#136 / #137）', () => {
         batchIds: [created.batchId],
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('transfers in-transit quantities and batch ownership atomically', async () => {
+    const created = await withTenant(test.database, DEMO_IDS.tenantId, (tx) =>
+      createBatch(tx, BASE_COMMAND),
+    );
+    await test.database.query(
+      `UPDATE inventory_batch SET in_transit_qty = 5
+        WHERE id = $1::uuid AND company_id = $2::uuid`,
+      [created.batchId, DEMO_IDS.companyId],
+    );
+
+    await withTenant(test.database, DEMO_IDS.tenantId, (tx) =>
+      transferBatches(tx, {
+        tenantId: DEMO_IDS.tenantId,
+        fromCompanyId: DEMO_IDS.companyId,
+        toCompanyId: OTHER_COMPANY_ID,
+        transfers: [{ batchId: created.batchId, qty: '5' }],
+      }),
+    );
+
+    const result = await test.database.query<{
+      company_id: string;
+      in_transit_qty: string;
+    }>(
+      `SELECT company_id, trim_scale(in_transit_qty) AS in_transit_qty
+         FROM inventory_batch WHERE id = $1::uuid`,
+      [created.batchId],
+    );
+    expect(result.rows[0]).toEqual({
+      company_id: OTHER_COMPANY_ID,
+      in_transit_qty: '0',
+    });
+  });
+
+  it('rejects insufficient in-transit quantity without changing ownership', async () => {
+    const created = await withTenant(test.database, DEMO_IDS.tenantId, (tx) =>
+      createBatch(tx, BASE_COMMAND),
+    );
+    await test.database.query(
+      `UPDATE inventory_batch SET in_transit_qty = 2
+        WHERE id = $1::uuid AND company_id = $2::uuid`,
+      [created.batchId, DEMO_IDS.companyId],
+    );
+
+    await expect(
+      withTenant(test.database, DEMO_IDS.tenantId, (tx) =>
+        transferBatches(tx, {
+          tenantId: DEMO_IDS.tenantId,
+          fromCompanyId: DEMO_IDS.companyId,
+          toCompanyId: OTHER_COMPANY_ID,
+          transfers: [{ batchId: created.batchId, qty: '3' }],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
+
+    const result = await test.database.query<{ company_id: string; in_transit_qty: string }>(
+      `SELECT company_id, trim_scale(in_transit_qty) AS in_transit_qty
+         FROM inventory_batch WHERE id = $1::uuid`,
+      [created.batchId],
+    );
+    expect(result.rows[0]).toEqual({
+      company_id: DEMO_IDS.companyId,
+      in_transit_qty: '2',
+    });
   });
 });
