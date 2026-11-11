@@ -88,7 +88,9 @@ docker compose up -d api
 - [ ] `NODE_ENV=production`、`TRUST_PROXY=true`（在 Caddy 后面，用于取真实客户端 IP 与协议）。
 - [ ] `POSTGRES_PASSWORD` / `DATABASE_URL` 里的密码一致且已换掉模板值；`.env` 未入库。
 - [ ] 迁移已跑：`docker compose --profile tools run --rm migrate`（不随应用自启，升级时手动执行）。
-- [ ] 健康检查通过：`curl -fsS http://127.0.0.1:3000/api/v1/health` 返回 200。
+- [ ] 健康检查通过：`curl -fsS http://127.0.0.1/api/v1/health` 返回 200。
+  （`api` 服务只 `expose: 3000`，宿主机没有映射 3000；对外只用 Caddy 的 80/443。
+  容器内自查用 `docker compose exec api node -e "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>console.log(r.status))"`。）
 - [ ] 浏览器实测一次**写操作**（新增商品/客户）：返回 200/201 而不是 403。
 
 ## 六、常见故障
