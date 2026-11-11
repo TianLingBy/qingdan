@@ -29,13 +29,6 @@ interface CompanyBody {
   updatedAt: string;
 }
 
-interface AuditRow {
-  action: string;
-  object_type: string;
-  object_id: string | null;
-  result: string;
-}
-
 async function login(app: FastifyInstance, phone: string, requestId: string): Promise<string> {
   const response = await app.inject({
     method: 'POST',

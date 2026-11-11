@@ -453,7 +453,7 @@ describe('库存成本更正 HTTP（PGlite + 0025）', () => {
 
     await test.database.query(
       `UPDATE settlement_order
-          SET status = '已结算', related_loss_amount_snapshot = 0
+          SET status = '已结算', settled_at = now(), related_loss_amount_snapshot = 0
         WHERE id = $1`,
       [T3_SETTLEMENT_ID],
     );

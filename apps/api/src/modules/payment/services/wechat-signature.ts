@@ -132,7 +132,7 @@ export function verifyWechatCallback({
   }
 
   const message = `${timestamp}\n${nonce}\n${rawBody}\n`;
-  let verified = false;
+  let verified: boolean;
   try {
     verified = cryptoVerify(
       'RSA-SHA256',
