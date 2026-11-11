@@ -15,8 +15,6 @@ import { PermissionOverridePanel } from './PermissionOverridePanel';
  * 隐私口径：手机号只展示脱敏值；数据可见范围由服务端判定（D15，前端隐藏不算数）。
  */
 
-type PanelState = { open: boolean; employeeId: string | null };
-
 export function EmployeesPage() {
   const employeesQuery = useQuery({
     queryKey: ['employees'],

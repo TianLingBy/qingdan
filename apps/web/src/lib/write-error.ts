@@ -69,3 +69,13 @@ export async function recoverFromStaleVersion<Detail extends { readonly version:
 export function staleVersionRecoveredText(version: number): string {
   return `这张单已被别人改过，已同步到最新版本 v${version}；你填的内容还在，请核对后再次保存。`;
 }
+
+/**
+ * 破坏性操作（取消 / 完成）撞版本冲突后的提示。
+ *
+ * 与「保存」不同：这里没有用户填的内容要保留，而是**单据状态可能已经变了**
+ * （别人先取消了、先完成了），所以不自动重提，让用户先看清最新状态再决定（D60）。
+ */
+export function staleActionRetryText(version: number, action: string): string {
+  return `这张单刚被别人改过，已同步到最新版本 v${version}。请核对单据当前状态，再点一次「${action}」。`;
+}
