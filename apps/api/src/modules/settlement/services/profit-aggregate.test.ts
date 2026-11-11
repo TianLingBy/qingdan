@@ -7,7 +7,8 @@ import { aggregateSettledProfit } from './profit-aggregate.js';
  * 已结算 C 单毛利期间聚合端口（D43 / #97 / Issue #185）。
  *
  * 覆盖：期间内已结算单的毛利/净利累加、待确认与期间外不计、跨公司隔离、空集返回 '0'、
- * 期间按本地日期（Asia/Shanghai）切分。
+ * 期间按本地日期（Asia/Shanghai）的半开区间 `[start 00:00, end+1 00:00)` 切分、
+ * 结算时间只认 `settled_at`（改 `updated_at` 不影响期间归属）。
  */
 
 const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000008001';
@@ -22,7 +23,10 @@ interface InsertInput {
   readonly saleAmount: number;
   readonly costAmount: number;
   readonly relatedLoss?: number;
-  readonly updatedAt: string;
+  /** 结算确认时间：期间归属只认它（0026）。 */
+  readonly settledAt: string;
+  /** 反证用：故意设成期间外，证明 updated_at 不再参与期间判定。 */
+  readonly updatedAt?: string;
   readonly sourceDocType?: 'E' | 'N';
 }
 
@@ -36,10 +40,10 @@ async function insertSettlement(input: InsertInput): Promise<void> {
        (id, tenant_id, company_id, order_no, source_doc_type, source_doc_id,
         status, total_sale_amount, total_cost_amount, gross_profit, gross_margin_rate,
         related_loss_amount, related_loss_amount_snapshot, net_profit,
-        commission_rate_snapshot, commission_amount, updated_at)
+        commission_rate_snapshot, commission_amount, settled_at, updated_at)
      VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6::uuid, $7,
              $8::numeric, $9::numeric, $10::numeric, '0', $11::numeric,
-             $12::numeric, $13::numeric, '0', '0', $14::timestamptz)`,
+             $12::numeric, $13::numeric, '0', '0', $14::timestamptz, $15::timestamptz)`,
     [
       input.id,
       DEMO_IDS.tenantId,
@@ -54,7 +58,8 @@ async function insertSettlement(input: InsertInput): Promise<void> {
       loss,
       settled ? loss : null,
       gross - loss,
-      input.updatedAt,
+      settled ? input.settledAt : null,
+      input.updatedAt ?? input.settledAt,
     ],
   );
 }
@@ -76,19 +81,22 @@ beforeAll(async () => {
     [OTHER_COMPANY_ID, DEMO_IDS.tenantId],
   );
   // 2026-03-10 10:00（上海）= 02:00Z：期间内、已结算，毛利 300 − 相关损失 50 = 净利 250。
+  // updated_at 故意放在 7 月：证明期间判定只看 settled_at，不再被触发器刷新的 updated_at 带走。
   await insertSettlement({
     id: '01900000-0000-7000-8000-000000005101',
     saleAmount: 1000,
     costAmount: 700,
     relatedLoss: 50,
-    updatedAt: '2026-03-10T02:00:00Z',
+    settledAt: '2026-03-10T02:00:00Z',
+    updatedAt: '2026-07-20T02:00:00Z',
   });
   // 2026-03-31 23:30（上海）= 15:30Z：期间最后一天，仍计入；负毛利。
   await insertSettlement({
     id: '01900000-0000-7000-8000-000000005102',
     saleAmount: 1000,
     costAmount: 1050,
-    updatedAt: '2026-03-31T15:30:00Z',
+    settledAt: '2026-03-31T15:30:00Z',
+    updatedAt: '2026-07-21T02:00:00Z',
   });
   // 待确认：不计入。
   await insertSettlement({
@@ -96,14 +104,14 @@ beforeAll(async () => {
     status: '待确认',
     saleAmount: 999,
     costAmount: 0,
-    updatedAt: '2026-03-15T02:00:00Z',
+    settledAt: '2026-03-15T02:00:00Z',
   });
   // 期间外（4 月）：不计入 3 月。
   await insertSettlement({
     id: '01900000-0000-7000-8000-000000005104',
     saleAmount: 777,
     costAmount: 0,
-    updatedAt: '2026-04-01T02:00:00Z',
+    settledAt: '2026-04-01T02:00:00Z',
   });
   // 其他公司：不计入。
   await insertSettlement({
@@ -111,7 +119,7 @@ beforeAll(async () => {
     companyId: OTHER_COMPANY_ID,
     saleAmount: 555,
     costAmount: 0,
-    updatedAt: '2026-03-12T02:00:00Z',
+    settledAt: '2026-03-12T02:00:00Z',
   });
 });
 
@@ -147,7 +155,7 @@ describe('aggregateSettledProfit', () => {
       id: '01900000-0000-7000-8000-000000005106',
       saleAmount: 10,
       costAmount: 0,
-      updatedAt: '2026-03-31T16:30:00Z',
+      settledAt: '2026-03-31T16:30:00Z',
     });
     try {
       const march = await aggregateSettledProfit(test.database, QUERY);
@@ -166,6 +174,43 @@ describe('aggregateSettledProfit', () => {
     }
   });
 
+  it('边界是半开区间：本地零点整计入、末日 23:59:59 计入、次日零点整不计入', async () => {
+    const ids = [
+      '01900000-0000-7000-8000-000000005107', // 02-28 23:59:59 本地：区间外
+      '01900000-0000-7000-8000-000000005108', // 03-01 00:00:00 本地：区间起点，计入
+      '01900000-0000-7000-8000-000000005109', // 04-01 00:00:00 本地：右开端点，不计入
+    ] as const;
+    await insertSettlement({
+      id: ids[0],
+      saleAmount: 1,
+      costAmount: 0,
+      settledAt: '2026-02-28T15:59:59Z',
+    });
+    await insertSettlement({
+      id: ids[1],
+      saleAmount: 2,
+      costAmount: 0,
+      settledAt: '2026-02-28T16:00:00Z',
+    });
+    await insertSettlement({
+      id: ids[2],
+      saleAmount: 4,
+      costAmount: 0,
+      settledAt: '2026-03-31T16:00:00Z',
+    });
+    try {
+      const march = await aggregateSettledProfit(test.database, QUERY);
+      // 原有 2 张（毛利 250）+ 只是起点那张（毛利 2）。
+      expect(march.settledOrderCount).toBe(3);
+      expect(march.grossProfit).toBe('252');
+      expect(march.netProfit).toBe('202');
+    } finally {
+      await test.database.query(`DELETE FROM settlement_order WHERE id = ANY($1::uuid[])`, [
+        [...ids],
+      ]);
+    }
+  });
+
   it('期间内无单返回 0 而不是报错', async () => {
     const result = await aggregateSettledProfit(test.database, {
       ...QUERY,
@@ -178,5 +223,53 @@ describe('aggregateSettledProfit', () => {
   it('空公司集合返回 0', async () => {
     const result = await aggregateSettledProfit(test.database, { ...QUERY, companyIds: [] });
     expect(result).toEqual({ grossProfit: '0', netProfit: '0', settledOrderCount: 0 });
+  });
+
+  it('迁移前后口径一致：历史单 settled_at = 当时的 updated_at 时，两种算法合计相同', async () => {
+    // 模拟迁移前就存在的历史单：确认那一刻 updated_at 就是 now()，回填把同一个时刻写进 settled_at。
+    // 所以对这类数据，旧口径（updated_at）与新口径（settled_at）必须给出同样的合计。
+    await insertSettlement({
+      id: '01900000-0000-7000-8000-000000008601',
+      saleAmount: 400,
+      costAmount: 250,
+      settledAt: '2026-06-15T02:00:00Z',
+      updatedAt: '2026-06-15T02:00:00Z',
+    });
+    await insertSettlement({
+      id: '01900000-0000-7000-8000-000000008602',
+      saleAmount: 200,
+      costAmount: 120,
+      relatedLoss: 10,
+      settledAt: '2026-06-20T10:30:00Z',
+      updatedAt: '2026-06-20T10:30:00Z',
+    });
+
+    const query = { ...QUERY, periodStart: '2026-06-01', periodEnd: '2026-06-30' };
+    const current = await aggregateSettledProfit(test.database, query);
+
+    // 旧口径原样 SQL（迁移前 profit-aggregate 用的写法）：按 updated_at 的本地日期落期间。
+    const legacy = await test.database.query<{ gross: string; net: string; count: string }>(
+      `SELECT COALESCE(sum(gross_profit), 0)::numeric::text AS gross,
+              COALESCE(sum(net_profit), 0)::numeric::text AS net,
+              count(*)::text AS count
+         FROM settlement_order
+        WHERE tenant_id = $1::uuid
+          AND company_id = ANY($2::uuid[])
+          AND status = '已结算'
+          AND (updated_at AT TIME ZONE 'Asia/Shanghai')::date BETWEEN $3::date AND $4::date`,
+      [
+        query.tenantId,
+        query.companyIds,
+        query.periodStart,
+        query.periodEnd,
+      ],
+    );
+
+    expect(current.grossProfit).toBe('230');
+    expect(current.netProfit).toBe('220');
+    expect(current.settledOrderCount).toBe(2);
+    expect(Number(current.grossProfit)).toBe(Number(legacy.rows[0]?.gross));
+    expect(Number(current.netProfit)).toBe(Number(legacy.rows[0]?.net));
+    expect(String(current.settledOrderCount)).toBe(legacy.rows[0]?.count);
   });
 });

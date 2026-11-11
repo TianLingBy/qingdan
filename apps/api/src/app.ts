@@ -3,6 +3,7 @@ import { registerModules } from './modules/index.js';
 import { registerAuthPlugin } from './platform/auth/plugin.js';
 import { loadConfig, type AppConfig } from './platform/config.js';
 import type { Database } from './platform/db/client.js';
+import { assertSchemaReady } from './platform/db/schema-guard.js';
 import { registerAuditContext } from './platform/http/audit-context.js';
 import { registerErrorHandling } from './platform/http/errors.js';
 import { registerSecurityHeaders } from './platform/http/headers.js';
@@ -51,7 +52,16 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     trustProxy,
   });
 
-  app.decorate('database', options.database ?? null);
+  const database = options.database ?? null;
+  app.decorate('database', database);
+
+  // 有库才检查：骨架阶段允许无 DATABASE_URL 起服务。
+  // 启动期就卡住「库落后于代码」，别让用户在业务路径上撞 500。
+  if (database) {
+    app.addHook('onReady', async () => {
+      await assertSchemaReady(database);
+    });
+  }
 
   registerRequestId(app, options.requestIdFactory ? { factory: options.requestIdFactory } : {});
   registerAuditContext(app);

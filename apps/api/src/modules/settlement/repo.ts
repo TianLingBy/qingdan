@@ -428,6 +428,8 @@ export async function deleteCommissionRate(
  * related_loss_amount_snapshot 与 net_profit 在同一原子 UPDATE 内落库，
  * 后续来源损耗变化不再影响本单（D69）；提成比例与金额同一条 SQL 落快照（D77 ③）：
  * `commissionAmount = round(max(gross_profit, 0) × rate, 6)`，负毛利记 0（D5④）。
+ * `settled_at` 也在这里一次性写入（0026）：触发器会让 updated_at 随任何更新变化，
+ * 期间报表只认 settled_at，不再拿 updated_at 推断结算时间。
  * 版本或状态已被并发修改时返回 null。
  */
 export async function confirmSettlementOrder(
@@ -439,6 +441,7 @@ export async function confirmSettlementOrder(
   const result = await ctx.tx.query<{ id: string }>(
     `UPDATE settlement_order
         SET status = '已结算',
+            settled_at = now(),
             related_loss_amount_snapshot = related_loss_amount,
             net_profit = gross_profit - related_loss_amount,
             commission_rate_snapshot = $5::numeric,

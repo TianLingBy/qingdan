@@ -30,6 +30,11 @@ export default tseslint.config(
     rules: { 'no-restricted-imports': crossModuleBan },
   },
   {
+    // tools/ 下是独立 Node 脚本（不参与 tsconfig），需要显式声明所用全局。
+    files: ['tools/**/*.mjs', 'tools/**/*.js'],
+    languageOptions: { globals: { console: 'readonly', process: 'readonly' } },
+  },
+  {
     rules: {
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       'no-console': 'off',

@@ -88,6 +88,11 @@ docker compose up -d api
 - [ ] `NODE_ENV=production`、`TRUST_PROXY=true`（在 Caddy 后面，用于取真实客户端 IP 与协议）。
 - [ ] `POSTGRES_PASSWORD` / `DATABASE_URL` 里的密码一致且已换掉模板值；`.env` 未入库。
 - [ ] 迁移已跑：`docker compose --profile tools run --rm migrate`（不随应用自启，升级时手动执行）。
+  - **迁移必须先于新代码**：API 启动时会核对 `schema_migrations`（`apps/api/src/platform/db/schema-guard.ts`），
+    缺 0026 会直接拒绝启动并打印缺失项，不会带旧库跑新代码。
+  - 本次发布含 0026（结算确认时间）与 0027（采购单 D15 触发器）：执行顺序、备份、锁表风险、回填策略、
+    回滚方案和自检 SQL 见 [docs/runbook-0026-settled-at.md](runbook-0026-settled-at.md)；
+    发布记录里必须写明这两条迁移是「已执行」还是「待发布执行」。
 - [ ] 健康检查通过：`curl -fsS http://127.0.0.1/api/v1/health` 返回 200。
   （`api` 服务只 `expose: 3000`，宿主机没有映射 3000；对外只用 Caddy 的 80/443。
   容器内自查用 `docker compose exec api node -e "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>console.log(r.status))"`。）

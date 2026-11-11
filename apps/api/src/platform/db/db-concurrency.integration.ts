@@ -8,11 +8,12 @@ import { takeDocumentNo } from '../numbering/service.js';
  * 只在真实 PostgreSQL 上跑：`QINGDAN_TEST_DB`（或 `DATABASE_URL`）指向一个**可清空**的测试库，
  * 脚本自己迁移、造数，不依赖 PGlite。CI 的 `integration (ubuntu-latest, PostgreSQL 18)` job 会调用它。
  *
- * 覆盖四件事（都是 PGlite 测不出或测不准的）：
+ * 覆盖五件事（都是 PGlite 测不出或测不准的）：
  *   1. 并发取号不重号（单行原子自增在真并发下成立）；
  *   2. 批次行锁（`FOR UPDATE` 真的把第二个写者挡住，而不是「看起来像」）；
  *   3. RLS 跨租户不可见（`SET ROLE qingdan_app` + `app.tenant_id`，未设置时 fail-closed）；
- *   4. 生成列（`remaining_qty` / `available_qty` 由库计算，应用层写它们必须被拒绝）。
+ *   4. 生成列（`remaining_qty` / `available_qty` 由库计算，应用层写它们必须被拒绝）；
+ *   5. D15 触发器（0027）：跨公司商品的采购单明细在真 PG 上也被拒，同公司仍可写。
  *
  * 任何一条断言失败都以非 0 退出，并打印 `FAIL <用例>：<细节>`。
  */
@@ -63,7 +64,9 @@ async function main(): Promise<void> {
     const tenantA = randomUUID();
     const tenantB = randomUUID();
     const companyA = randomUUID();
+    const companyB = randomUUID();
     const productA = randomUUID();
+    const productB = randomUUID();
     const employeeA = randomUUID();
 
     await database.transaction(async (tx) => {
@@ -72,8 +75,9 @@ async function main(): Promise<void> {
         [tenantA, tenantB],
       );
       await tx.query(
-        `INSERT INTO company (id, tenant_id, name, code, level, status) VALUES ($1, $2, 'L3 公司 A', '9001', 1, '启用')`,
-        [companyA, tenantA],
+        `INSERT INTO company (id, tenant_id, name, code, level, status)
+         VALUES ($1, $2, 'L3 公司 A', '9001', 1, '启用'), ($3, $2, 'L3 公司 B', '9002', 1, '启用')`,
+        [companyA, tenantA, companyB],
       );
       await tx.query(
         `INSERT INTO employee (id, tenant_id, employee_no, phone, name, status, is_owner)
@@ -81,8 +85,10 @@ async function main(): Promise<void> {
         [employeeA, tenantA],
       );
       await tx.query(
-        `INSERT INTO product (id, tenant_id, company_id, name, specification, unit, status) VALUES ($1, $2, $3, 'L3 商品', '标准', '个', '启用')`,
-        [productA, tenantA, companyA],
+        `INSERT INTO product (id, tenant_id, company_id, name, specification, unit, status)
+         VALUES ($1, $2, $3, 'L3 商品', '标准', '个', '启用'),
+                ($4, $2, $5, 'L3 他司商品', '标准', '个', '启用')`,
+        [productA, tenantA, companyA, productB, companyB],
       );
     });
 
@@ -144,7 +150,7 @@ async function main(): Promise<void> {
         });
       } catch (error) {
         blocked = sqlStateOf(error) === '57014'; // query_canceled = statement_timeout
-        if (!blocked) throw new Error(`期望被锁挡住（57014），实际错误：${String(error)}`);
+        if (!blocked) throw new Error(`期望被锁挡住（57014），实际错误：${String(error)}`, { cause: error });
       }
       releaseHolder();
       await holder;
@@ -221,6 +227,46 @@ async function main(): Promise<void> {
       }
       assert(rejected, '应用层直接写 available_qty 竟然成功了：生成列保护失效');
     });
+
+    // --- 5. D15 触发器：跨公司商品在真 PG 上也被挡（0027） -------------------
+    await check('D15：采购单明细跨公司商品被数据库层拒绝（真 PG 触发器）', async () => {
+      const supplierId = randomUUID();
+      const orderId = randomUUID();
+      await database.query(
+        `INSERT INTO supplier (id, tenant_id, company_id, supplier_no, name, supplied_materials, status)
+         VALUES ($1, $2, $3, NULL, 'L3 供应商', '{}', '启用')`,
+        [supplierId, tenantA, companyA],
+      );
+      await database.query(
+        `INSERT INTO purchase_order (id, tenant_id, company_id, order_no, supplier_id, handler_id)
+         VALUES ($1, $2, $3, 'L3-A-0001', $4, $5)`,
+        [orderId, tenantA, companyA, supplierId, employeeA],
+      );
+
+      let crossCompanyState: string | undefined;
+      try {
+        await database.query(
+          `INSERT INTO purchase_order_line
+             (id, tenant_id, company_id, order_id, line_no, product_id, qty, unit_price, amount)
+           VALUES ($1, $2, $3, $4, 1, $5, 1, 1, 1)`,
+          [randomUUID(), tenantA, companyA, orderId, productB],
+        );
+      } catch (error) {
+        crossCompanyState = sqlStateOf(error);
+      }
+      assert(
+        crossCompanyState === '23514',
+        `跨公司商品没被触发器挡住（SQLSTATE=${String(crossCompanyState)}）`,
+      );
+
+      // 同公司商品仍可写：防线不能误伤正常开单。
+      await database.query(
+        `INSERT INTO purchase_order_line
+           (id, tenant_id, company_id, order_id, line_no, product_id, qty, unit_price, amount)
+         VALUES ($1, $2, $3, $4, 2, $5, 1, 1, 1)`,
+        [randomUUID(), tenantA, companyA, orderId, productA],
+      );
+    });
   } finally {
     await pool.end().catch(() => undefined);
     await database.close().catch(() => undefined);
@@ -231,7 +277,7 @@ async function main(): Promise<void> {
     console.log('FAIL db-concurrency：存在未通过的断言（见上）。');
     process.exit(1);
   }
-  console.log('OK db-concurrency：真 PostgreSQL 四项检查全部通过。');
+  console.log('OK db-concurrency：真 PostgreSQL 五项检查全部通过。');
 }
 
 main().catch((error: unknown) => {

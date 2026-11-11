@@ -3,7 +3,6 @@ import { allowsScope, type ScopeMatrix } from '@qingdan/contracts';
 import { v7 as uuidv7 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
-import { testConfig } from '../config.js';
 import { DEMO_IDS, seed } from '../db/seed.js';
 import { resolvePrincipal } from './principal.js';
 import {
