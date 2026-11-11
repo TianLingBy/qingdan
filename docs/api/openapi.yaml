@@ -4258,6 +4258,44 @@ paths:
         policy: allow
         reasonRequired: false
       x-mcp-tool: qingdan_customer_return_detail_read
+  /api/v1/purchase-orders/{id}/complete:
+    post:
+      operationId: purchase.order.complete
+      summary: 完成采购单并入库
+      tags:
+        - purchase
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: purchase.approve
+      x-module: purchase
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_purchase_order_complete
+      x-requires-if-match: true
   /api/v1/purchase-orders:
     get:
       operationId: purchase.order.list.read

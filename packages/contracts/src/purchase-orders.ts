@@ -219,6 +219,13 @@ export type PurchaseOrderUpdateInput = z.infer<typeof PurchaseOrderUpdateInputSc
  */
 export const PURCHASE_ORDER_ROUTES: readonly RouteDef[] = [
   defineRoute({
+    module: 'purchase', operationId: 'purchase.order.complete', method: 'POST',
+    path: '/api/v1/purchase-orders/{id}/complete', domain: 'purchase', action: 'approve',
+    summary: '完成采购单并入库', audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true }, requiresIfMatch: true,
+    request: {}, response: { status: 200, schema: PurchaseOrderSchema },
+  }),
+  defineRoute({
     module: 'purchase',
     operationId: 'purchase.order.list.read',
     method: 'GET',

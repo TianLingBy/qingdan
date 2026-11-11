@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
 import {
   cancelPurchaseOrder,
+  completePurchaseOrder,
   createPurchaseOrder,
   getPurchaseOrder,
   listPurchaseOrders,
@@ -32,6 +33,7 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'purchase.order.create': 'purchase_order',
   'purchase.order.update': 'purchase_order',
   'purchase.order.cancel': 'purchase_order',
+  'purchase.order.complete': 'purchase_order',
   'supplier_return.create': 'supplier_return',
 };
 
@@ -71,6 +73,10 @@ export function registerPurchaseRoutes(app: FastifyInstance): void {
     'purchase.order.cancel': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await cancelPurchaseOrder({ database: instance.database, request, reply });
+    },
+    'purchase.order.complete': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await completePurchaseOrder({ database: instance.database, request, reply });
     },
     'supplier_return.list.read': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);

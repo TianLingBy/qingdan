@@ -24,6 +24,7 @@ import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
+import { stockFlowPort } from '../../../platform/services/registry.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import * as repo from '../repo.js';
 import { maskPurchaseOrderAmounts } from '../services/masking.js';
@@ -423,4 +424,38 @@ export async function cancelPurchaseOrder(
     order,
     allowsScope(principal.scope, 'purchase', 'view_price'),
   );
+}
+
+export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Promise<PurchaseOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'purchase.order.complete');
+  requireScope(principal, 'update');
+  assertHumanCredential(principal, '完成采购单');
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const audit = auditEventOf(ctx.request, principal, 'purchase.order.complete', id, {});
+  return withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const state = await repo.loadPurchaseOrderState(context, id);
+    if (!state) throw new AppError('NOT_FOUND', '采购单不存在');
+    if (state.version !== expectedVersion) throw new AppError('VERSION_CONFLICT', '采购单版本与 If-Match 不一致');
+    if (state.status !== '进行中') throw new AppError('VALIDATION_FAILED', '只有进行中的采购单可以完成');
+    const order = await repo.getPurchaseOrder(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '采购单不存在');
+    for (const line of order.lines) {
+      if (line.unitPrice === null) throw new AppError('VALIDATION_FAILED', '完成采购单需要看价权限');
+      const batch = await stockFlowPort().createBatch(tx, {
+        tenantId: principal.tenantId, companyId: order.companyId, productId: line.productId,
+        qty: line.qty, lockedUnitCost: line.unitPrice, custodianId: order.handlerId,
+        sourceDocType: 'A', sourceDocId: id, handledBy: principal.employeeId,
+      });
+      void batch;
+    }
+    const completed = await repo.completePurchaseOrder(context, id, expectedVersion);
+    if (!completed) throw new AppError('NOT_FOUND', '采购单不存在');
+    audit.companyId = completed.companyId;
+    audit.changeSummary = { beforeStatus: state.status, afterStatus: completed.status, version: completed.version };
+    ctx.reply.header('ETag', etagOf(completed.version));
+    return maskPurchaseOrderAmounts(completed, allowsScope(principal.scope, 'purchase', 'view_price'));
+  });
 }
