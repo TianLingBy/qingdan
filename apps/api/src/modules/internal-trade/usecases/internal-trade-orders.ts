@@ -1,6 +1,7 @@
 import {
   AppError,
   InternalTradeOrderCreateInputSchema,
+  InternalTradeOrderReceiveInputSchema,
   InternalTradeOrderListQuerySchema,
   InternalTradeOrderUpdateInputSchema,
   allowsScope,
@@ -25,6 +26,7 @@ import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
+import { stockBatchTransferPort } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 import { maskInternalTradeAmounts, maskInternalTradeDetailAmounts } from '../services/masking.js';
 
@@ -180,6 +182,15 @@ function parseUpdateInput(body: unknown): InternalTradeOrderUpdateInput {
     });
   }
   return parsed.data;
+}
+
+function parseReceiveInput(body: unknown): void {
+  const parsed = InternalTradeOrderReceiveInputSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new AppError('VALIDATION_FAILED', '请求体不合法', {
+      issues: issuesOf(parsed.error),
+    });
+  }
 }
 
 /** 强 ETag `"<version>"`；缺失 → 428，格式非法 → 409。 */
@@ -445,6 +456,71 @@ export async function cancelInternalTradeOrder(
       version: cancelled.version,
     };
     return cancelled;
+  });
+
+  ctx.reply.header('ETag', etagOf(order.version));
+  return maskInternalTradeAmounts(order, canViewPrice);
+}
+
+/** 到货确认：在同一事务内转移关联批次并把 N 单置为已完成（D22 / D31）。 */
+export async function receiveInternalTradeOrder(
+  ctx: InternalTradeOrderWriteContext,
+): Promise<InternalTradeOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'internal_trade.order.receive');
+  requireScope(principal, 'update');
+  assertHumanCredential(principal, '确认内部交易到货');
+  const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
+  parseReceiveInput(ctx.request.body);
+
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const state = await withTenant(database, principal.tenantId, (tx) =>
+    repo.loadInternalTradeOrderState(repoContext(tx, principal), id),
+  );
+  if (!state) throw new AppError('NOT_FOUND', '内部交易单不存在');
+  if (state.version !== expectedVersion) {
+    throw new AppError('VERSION_CONFLICT', '内部交易单版本与 If-Match 不一致，请重新读取后重试', {
+      expected: expectedVersion,
+      current: state.version,
+    });
+  }
+  if (state.status !== '在途') {
+    throw new AppError('VALIDATION_FAILED', '只有在途状态的内部交易单可以确认到货');
+  }
+  if (!principal.companyIds.includes(state.toCompanyId)) {
+    throw new AppError('FORBIDDEN', '调用者对接收公司无权限', { companyId: state.toCompanyId });
+  }
+
+  const audit = auditEventOf(
+    ctx.request,
+    principal,
+    'internal_trade.order.receive',
+    id,
+    { beforeStatus: state.status, afterStatus: '已完成' },
+  );
+  const order = await withAudit(database, audit, async (tx) => {
+    const batchIds = await repo.listBatchIdsForOrder(repoContext(tx, principal), id);
+    await stockBatchTransferPort().transferBatches(tx, {
+      tenantId: principal.tenantId,
+      fromCompanyId: state.fromCompanyId,
+      toCompanyId: state.toCompanyId,
+      transfers: batchIds.map((batchId) => ({ batchId })),
+    });
+    const received = await repo.receiveInternalTradeOrder(
+      repoContext(tx, principal),
+      id,
+      expectedVersion,
+    );
+    if (!received) throw new AppError('NOT_FOUND', '内部交易单不存在');
+    audit.companyId = received.fromCompanyId;
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: received.status,
+      version: received.version,
+      transferredBatchCount: batchIds.length,
+    };
+    return received;
   });
 
   ctx.reply.header('ETag', etagOf(order.version));

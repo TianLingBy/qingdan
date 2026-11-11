@@ -337,6 +337,27 @@ export async function loadInternalTradeOrderState(
   };
 }
 
+export async function listBatchIdsForOrder(
+  ctx: InternalTradeOrderRepoContext,
+  orderId: string,
+): Promise<readonly string[]> {
+  const result = await ctx.tx.query<{ batch_id: string }>(
+    `SELECT DISTINCT b.batch_id::text AS batch_id
+       FROM internal_trade_order_line_batch b
+       JOIN internal_trade_order_line l
+         ON l.id = b.order_line_id
+        AND l.tenant_id = b.tenant_id
+       JOIN internal_trade_order o
+         ON o.id = l.order_id
+        AND o.tenant_id = l.tenant_id
+      WHERE b.tenant_id = $1
+        AND l.order_id = $2::uuid
+        AND b.company_id = o.from_company_id`,
+    [ctx.tenantId, orderId],
+  );
+  return result.rows.map((row) => row.batch_id);
+}
+
 /**
  * 直接下游判定（D21）：以 N 单为来源的库存流水存在，即视为下游已发生。
  * 发货 / 在途占用与到货转司端点不在本批范围，但历史 / 并发写入的流水仍须阻止取消。
@@ -673,5 +694,38 @@ export async function cancelInternalTradeOrder(
     );
   }
 
+  return getInternalTradeOrder(ctx, id);
+}
+
+export async function receiveInternalTradeOrder(
+  ctx: InternalTradeOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<InternalTradeOrder | null> {
+  const current = await loadInternalTradeOrderState(ctx, id);
+  if (!current) return null;
+  if (current.version !== expectedVersion) {
+    throw new AppError(
+      'VERSION_CONFLICT',
+      '内部交易单版本与 If-Match 不一致，请重新读取后重试',
+      { expected: expectedVersion, current: current.version },
+    );
+  }
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE internal_trade_order
+        SET status = '已完成',
+            in_transit_qty = 0,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND to_company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '在途'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '只有在途状态的内部交易单可以确认到货');
+  }
   return getInternalTradeOrder(ctx, id);
 }

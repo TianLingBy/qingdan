@@ -13,7 +13,7 @@ export type { StockBatchConsumptionSnapshot };
 
 export interface StockBatchTransfer {
   readonly batchId: string;
-  readonly qty: string;
+  readonly qty?: string;
 }
 
 export interface StockBatchTransferInput {
@@ -36,7 +36,7 @@ export async function transferBatches(
     throw new AppError('VALIDATION_FAILED', '至少需要一条批次转司明细');
   }
   for (const transfer of input.transfers) {
-    if (!NON_NEGATIVE_TRANSFER_QTY_RE.test(transfer.qty) || transfer.qty === '0') {
+    if (transfer.qty !== undefined && (!NON_NEGATIVE_TRANSFER_QTY_RE.test(transfer.qty) || transfer.qty === '0')) {
       throw new AppError('VALIDATION_FAILED', '转司数量必须是正 decimal 字符串', {
         batchId: transfer.batchId,
         qty: transfer.qty,
@@ -74,7 +74,11 @@ export async function transferBatches(
   }
 
   const availableById = new Map(locked.rows.map((row) => [row.id, row.in_transit_qty]));
-  for (const transfer of input.transfers) {
+  const resolvedTransfers = input.transfers.map((transfer) => ({
+    batchId: transfer.batchId,
+    qty: transfer.qty ?? String(availableById.get(transfer.batchId)),
+  }));
+  for (const transfer of resolvedTransfers) {
     const available = availableById.get(transfer.batchId);
     const guard = await tx.query<{ enough: boolean }>(
       `SELECT $1::amount <= $2::amount AS enough`,
@@ -89,7 +93,7 @@ export async function transferBatches(
     }
   }
 
-  for (const transfer of input.transfers) {
+  for (const transfer of resolvedTransfers) {
     await tx.query(
       `UPDATE inventory_batch
           SET in_transit_qty = in_transit_qty - $1::amount,

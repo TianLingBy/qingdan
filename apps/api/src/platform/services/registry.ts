@@ -342,7 +342,8 @@ export interface StockBatchConsumptionSnapshot {
 
 export interface StockBatchTransfer {
   readonly batchId: string;
-  readonly qty: string;
+  /** Omit to transfer the batch's full current in-transit quantity. */
+  readonly qty?: string;
 }
 
 /** N 单到货确认使用的库存批次转司端口（D22 / D31 / #196）。 */
@@ -403,6 +404,15 @@ export function stockBatchInspectionPort(): StockBatchInspectionPort {
     });
   }
   return registry.stockBatchInspection;
+}
+
+export function stockBatchTransferPort(): StockBatchTransferPort {
+  if (!registry.stockBatchTransfer) {
+    throw new AppError('NOT_IMPLEMENTED', 'inventory 未注册 StockBatchTransferPort（D70 / #196）', {
+      port: 'StockBatchTransferPort',
+    });
+  }
+  return registry.stockBatchTransfer;
 }
 
 export function settlementDraftPort(): SettlementDraftPort {

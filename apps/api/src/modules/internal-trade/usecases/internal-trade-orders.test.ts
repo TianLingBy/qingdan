@@ -7,6 +7,8 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Principal } from '../../../platform/auth/principal.js';
+import { registerServices } from '../../../platform/services/registry.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
 import {
   createTestDatabase,
@@ -17,6 +19,7 @@ import {
   createInternalTradeOrder,
   getInternalTradeOrder,
   listInternalTradeOrders,
+  receiveInternalTradeOrder,
   updateInternalTradeOrder,
 } from './internal-trade-orders.js';
 
@@ -178,6 +181,9 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
   }
 
   beforeAll(async () => {
+    registerServices({
+      stockBatchTransfer: inventoryServices.stockBatchTransfer,
+    });
     test = await createTestDatabase();
     await seed(test.database);
     await test.database.query(
@@ -302,6 +308,46 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
     expect(audit.rows).toEqual([
       { action: 'internal_trade.order.create', result: 'success' },
     ]);
+  });
+
+  it('到货确认：仅在途单可确认，并原子转移关联批次', async () => {
+    const created = await createOne();
+    await test.database.query(
+      `UPDATE internal_trade_order SET status = '在途', in_transit_qty = 4 WHERE id = $1`,
+      [created.id],
+    );
+    await test.database.query(
+      `UPDATE inventory_batch
+          SET in_transit_qty = 2
+        WHERE id IN ($1::uuid, $2::uuid)`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+
+    const { ctx, state } = writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"1"' },
+    });
+    const received = await receiveInternalTradeOrder(ctx);
+
+    expect(received.status).toBe('已完成');
+    expect(received.inTransitQty).toBe('0');
+    expect(state.headers.ETag).toBe('"2"');
+    const batches = await test.database.query<{ company_id: string; in_transit_qty: string }>(
+      `SELECT company_id, trim_scale(in_transit_qty) AS in_transit_qty
+         FROM inventory_batch
+        WHERE id IN ($1::uuid, $2::uuid)
+        ORDER BY id`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+    expect(batches.rows).toEqual([
+      { company_id: TO_COMPANY_ID, in_transit_qty: '0' },
+      { company_id: TO_COMPANY_ID, in_transit_qty: '0' },
+    ]);
+    await test.database.query(
+      `UPDATE inventory_batch SET company_id = $1::uuid WHERE id IN ($2::uuid, $3::uuid)`,
+      [DEMO_IDS.companyId, BATCH_A_ID, BATCH_B_ID],
+    );
   });
 
   it('D15 / D22 / D52：跨公司批次、不可见接收公司、同公司、AI 开单均拒绝', async () => {
