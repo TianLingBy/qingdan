@@ -27,6 +27,7 @@ import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import { stockBatchTransferPort } from '../../../platform/services/registry.js';
+import { settlementDraftPort } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 import { maskInternalTradeAmounts, maskInternalTradeDetailAmounts } from '../services/masking.js';
 
@@ -46,6 +47,16 @@ const OBJECT_TYPE = 'internal_trade_order';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function addDecimals(values: readonly string[]): string {
+  const total = values.reduce((sum, value) => {
+    const [whole, fraction = ''] = value.split('.');
+    return sum + BigInt(whole ?? '0') * 1_000_000n + BigInt(fraction.padEnd(6, '0'));
+  }, 0n);
+  const whole = total / 1_000_000n;
+  const fraction = (total % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
+  return fraction ? whole.toString() + '.' + fraction : whole.toString();
+}
 
 type MutableAuditEvent = { -readonly [K in keyof AuditEvent]: AuditEvent[K] };
 
@@ -500,12 +511,28 @@ export async function receiveInternalTradeOrder(
     { beforeStatus: state.status, afterStatus: '已完成' },
   );
   const order = await withAudit(database, audit, async (tx) => {
+    const source = await repo.getInternalTradeOrder(repoContext(tx, principal), id);
+    if (!source) throw new AppError('NOT_FOUND', '内部交易单不存在');
     const batchIds = await repo.listBatchIdsForOrder(repoContext(tx, principal), id);
     await stockBatchTransferPort().transferBatches(tx, {
       tenantId: principal.tenantId,
       fromCompanyId: state.fromCompanyId,
       toCompanyId: state.toCompanyId,
       transfers: batchIds.map((batchId) => ({ batchId })),
+    });
+    const draft = await settlementDraftPort().createDraft(tx, {
+      tenantId: principal.tenantId,
+      companyId: state.toCompanyId,
+      sourceDocType: 'N',
+      sourceDocId: id,
+      totalSaleAmount: addDecimals(source.lines.map((line) => line.amount ?? '0')),
+      totalCostAmount: '0',
+      relatedLossAmount: '0',
+      commissionRateSnapshot: '0',
+      commissionAmount: '0',
+      commissionOwnerId: source.handlerId,
+      createdBy: principal.employeeId,
+      requestId: requestIdFor(ctx.request),
     });
     const received = await repo.receiveInternalTradeOrder(
       repoContext(tx, principal),
@@ -519,6 +546,7 @@ export async function receiveInternalTradeOrder(
       afterStatus: received.status,
       version: received.version,
       transferredBatchCount: batchIds.length,
+      settlementOrderId: draft.id,
     };
     return received;
   });
