@@ -17,3 +17,7 @@
 6. **契约一改就重生成**：动过 `packages/contracts` 必须 `pnpm openapi` 并提交 `docs/api/openapi.yaml`；CI 的 spec-drift 会对比。
 7. **前端路由保持 `lazyRouteComponent` 懒加载**：首包只放登录/工作台等高频页面，页面区用 `Suspense` 包住。开发模式里 React 19 的 `use()` 断言（`did not call use() when it finished`）是上游 `@tanstack/react-router` 已知现象、生产包不存在，**不作为业务缺陷**处理。
 
+
+8. **业务校验要有数据库兜底**：能跨入口写入的关键归属校验（如 D15）不能只放在某一条业务路径里；用触发器/约束在库里再挡一次（0027），并把 SQLSTATE 映射成 422（`apps/api/src/platform/http/errors.ts` 的 `isD15Violation`）。新增同类防线时照 `purchase-line-db-guard.test.ts` 写原始 SQL 用例。
+9. **新迁移必须配回归测试 + 运行手册**：迁移要能重复执行、单文件一个事务、失败整体回滚；涉及新列/回填/触发器的，同步更新 `docs/runbook-<编号>-*.md`，并在 PR 里写明该迁移是「已执行」还是「待发布执行」。代码依赖新列的，必须在 `apps/api/src/platform/db/schema-guard.ts` 登记，让旧库启动即失败。
+10. **上面这些规则有机械检查**：`apps/api/src/modules/architecture-guards.test.ts` 会盯端口注册、operationId 与 OpenAPI 同步、D15 双路径、迁移测试引用；改规则时改测试，不要删测试。

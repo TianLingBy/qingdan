@@ -224,4 +224,52 @@ describe('aggregateSettledProfit', () => {
     const result = await aggregateSettledProfit(test.database, { ...QUERY, companyIds: [] });
     expect(result).toEqual({ grossProfit: '0', netProfit: '0', settledOrderCount: 0 });
   });
+
+  it('迁移前后口径一致：历史单 settled_at = 当时的 updated_at 时，两种算法合计相同', async () => {
+    // 模拟迁移前就存在的历史单：确认那一刻 updated_at 就是 now()，回填把同一个时刻写进 settled_at。
+    // 所以对这类数据，旧口径（updated_at）与新口径（settled_at）必须给出同样的合计。
+    await insertSettlement({
+      id: '01900000-0000-7000-8000-000000008601',
+      saleAmount: 400,
+      costAmount: 250,
+      settledAt: '2026-06-15T02:00:00Z',
+      updatedAt: '2026-06-15T02:00:00Z',
+    });
+    await insertSettlement({
+      id: '01900000-0000-7000-8000-000000008602',
+      saleAmount: 200,
+      costAmount: 120,
+      relatedLoss: 10,
+      settledAt: '2026-06-20T10:30:00Z',
+      updatedAt: '2026-06-20T10:30:00Z',
+    });
+
+    const query = { ...QUERY, periodStart: '2026-06-01', periodEnd: '2026-06-30' };
+    const current = await aggregateSettledProfit(test.database, query);
+
+    // 旧口径原样 SQL（迁移前 profit-aggregate 用的写法）：按 updated_at 的本地日期落期间。
+    const legacy = await test.database.query<{ gross: string; net: string; count: string }>(
+      `SELECT COALESCE(sum(gross_profit), 0)::numeric::text AS gross,
+              COALESCE(sum(net_profit), 0)::numeric::text AS net,
+              count(*)::text AS count
+         FROM settlement_order
+        WHERE tenant_id = $1::uuid
+          AND company_id = ANY($2::uuid[])
+          AND status = '已结算'
+          AND (updated_at AT TIME ZONE 'Asia/Shanghai')::date BETWEEN $3::date AND $4::date`,
+      [
+        query.tenantId,
+        query.companyIds,
+        query.periodStart,
+        query.periodEnd,
+      ],
+    );
+
+    expect(current.grossProfit).toBe('230');
+    expect(current.netProfit).toBe('220');
+    expect(current.settledOrderCount).toBe(2);
+    expect(Number(current.grossProfit)).toBe(Number(legacy.rows[0]?.gross));
+    expect(Number(current.netProfit)).toBe(Number(legacy.rows[0]?.net));
+    expect(String(current.settledOrderCount)).toBe(legacy.rows[0]?.count);
+  });
 });
