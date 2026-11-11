@@ -1,11 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { DEFAULT_ROUTE_PATH } from '../../router/routes';
 import {
   authApi,
   authKeys,
   describeLoginError,
+  PHONE_PATTERN,
   validateLoginForm,
   type LoginErrorView,
   type LoginField,
@@ -81,23 +82,58 @@ export function LoginBrandShell({ children }: { children: ReactNode }) {
 export interface LoginFormProps {
   /** 提交登录；抛错时由表单翻译成人话。成功 resolve 视为登录成功。 */
   readonly onLogin: (input: LoginInput) => Promise<void>;
+  /** 发送验证码；不传则不渲染「获取验证码」按钮（SSR / 旧用法保持兼容）。 */
+  readonly onSendCode?: (phone: string) => Promise<void>;
   /** 登录成功、提示已显示之后的回调（由外层负责跳转）。 */
   readonly onSucceeded?: () => void;
 }
 
-export function LoginForm({ onLogin, onSucceeded }: LoginFormProps) {
+export function LoginForm({ onLogin, onSendCode, onSucceeded }: LoginFormProps) {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [fieldErrors, setFieldErrors] = useState<LoginFieldErrors>({});
   const [formError, setFormError] = useState<LoginErrorView | null>(null);
   const [pending, setPending] = useState(false);
   const [succeeded, setSucceeded] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const [sendNotice, setSendNotice] = useState<string | null>(null);
 
   const busy = pending || succeeded;
+
+  // 倒计时每秒减一；到 0 自动停。
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = window.setTimeout(() => setCooldown((current) => current - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
 
   const clearFieldError = (field: LoginField) => {
     setFieldErrors((current) => ({ ...current, [field]: undefined }));
     setFormError(null);
+  };
+
+  const handleSendCode = async () => {
+    if (!onSendCode || sendingCode || cooldown > 0 || busy) return;
+    const value = phone.trim();
+    if (!PHONE_PATTERN.test(value)) {
+      setFieldErrors((current) => ({ ...current, phone: '手机号需为 11 位数字' }));
+      return;
+    }
+    setSendingCode(true);
+    setFormError(null);
+    setSendNotice(null);
+    try {
+      await onSendCode(value);
+      setSendNotice('验证码已发送，请查看短信');
+      setCooldown(60);
+    } catch (error) {
+      setFormError(describeLoginError(error));
+      // 失败也给一个短冷却，避免连点把频控额度耗尽。
+      setCooldown(10);
+    } finally {
+      setSendingCode(false);
+    }
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -161,27 +197,44 @@ export function LoginForm({ onLogin, onSucceeded }: LoginFormProps) {
           <label htmlFor="code" className="block text-sm font-medium text-neutral-700">
             验证码
           </label>
-          <input
-            id="code"
-            name="code"
-            type="text"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={6}
-            placeholder="请输入验证码"
-            value={code}
-            disabled={busy}
-            aria-invalid={Boolean(fieldErrors.code)}
-            aria-describedby={fieldErrors.code ? 'code-error' : undefined}
-            onChange={(event) => {
-              setCode(event.target.value);
-              clearFieldError('code');
-            }}
-            className={fieldClass(Boolean(fieldErrors.code))}
-          />
+          <div className="flex gap-2">
+            <input
+              id="code"
+              name="code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="请输入验证码"
+              value={code}
+              disabled={busy}
+              aria-invalid={Boolean(fieldErrors.code)}
+              aria-describedby={fieldErrors.code ? 'code-error' : undefined}
+              onChange={(event) => {
+                setCode(event.target.value);
+                clearFieldError('code');
+              }}
+              className={fieldClass(Boolean(fieldErrors.code))}
+            />
+            {onSendCode && (
+              <button
+                type="button"
+                onClick={() => void handleSendCode()}
+                disabled={busy || sendingCode || cooldown > 0}
+                className="mt-1.5 h-11 shrink-0 rounded-lg border border-neutral-300 px-3 text-sm text-neutral-700 transition hover:border-neutral-900 hover:text-neutral-900 disabled:opacity-50 disabled:hover:border-neutral-300"
+              >
+                {cooldown > 0 ? `${cooldown}s 后重发` : sendingCode ? '发送中…' : '获取验证码'}
+              </button>
+            )}
+          </div>
           {fieldErrors.code && (
             <p id="code-error" className="mt-1.5 text-xs text-red-600">
               {fieldErrors.code}
+            </p>
+          )}
+          {sendNotice && (
+            <p className="mt-1.5 text-xs text-emerald-600" role="status">
+              {sendNotice}
             </p>
           )}
         </div>
@@ -227,6 +280,10 @@ export function LoginPage() {
     queryClient.setQueryData(authKeys.me, me);
   };
 
+  const handleSendCode = async (phone: string) => {
+    await authApi.sendCode(phone);
+  };
+
   const handleSucceeded = () => {
     // 留一拍让「登录成功」被看见，再进工作台。
     window.setTimeout(() => {
@@ -236,7 +293,11 @@ export function LoginPage() {
 
   return (
     <LoginBrandShell>
-      <LoginForm onLogin={handleLogin} onSucceeded={handleSucceeded} />
+      <LoginForm
+        onLogin={handleLogin}
+        onSendCode={handleSendCode}
+        onSucceeded={handleSucceeded}
+      />
     </LoginBrandShell>
   );
 }
