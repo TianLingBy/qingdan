@@ -698,6 +698,19 @@ export async function cancelPurchaseOrder(
   return getPurchaseOrder(ctx, id);
 }
 
+export async function completePurchaseOrder(
+  ctx: PurchaseOrderRepoContext, id: string, expectedVersion: number,
+): Promise<PurchaseOrder | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE purchase_order SET status = '已完成', version = version + 1
+      WHERE id = $1::uuid AND tenant_id = $2 AND company_id = ANY($3::uuid[])
+        AND version = $4 AND status = '进行中' RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) throw new AppError('VERSION_CONFLICT', '采购单已被并发修改或不是进行中状态');
+  return getPurchaseOrder(ctx, id);
+}
+
 interface SupplierReturnHeaderRow {
   id: string;
   tenant_id: string;
