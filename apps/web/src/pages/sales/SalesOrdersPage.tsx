@@ -33,6 +33,7 @@ import {
   describeWriteError,
   isStaleVersionError,
   recoverFromStaleVersion,
+  staleActionRetryText,
   staleVersionRecoveredText,
 } from '../../lib/write-error';
 import {
@@ -40,7 +41,7 @@ import {
   cancelDisabledReason,
   formatMoney,
   formatQty,
-  isPositiveDecimal,
+  isPositiveNonZeroDecimal,
   sumDecimal,
 } from '../../lib/decimal';
 import { authApi, authKeys } from '../auth/auth-api';
@@ -614,12 +615,16 @@ function ReceiptBlock({
       setRemark('');
       setLocalError(null);
     },
-    onError: (error) => onError(`追加收款失败：${errorText(error)}`),
+    onError: (error) => onError(describeWriteError(error, '追加收款失败，请稍后重试')),
   });
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!isPositiveDecimal(amount.trim()) || Number(amount) === 0) {
+    /**
+     * D54：金额是 decimal 字符串，校验不能过 Number——`Number('0.0000001') !== 0` 会放行，
+     * 但入库按 numeric(18,6) 会截成 0。`isPositiveNonZeroDecimal` 走 BigInt 定点，安全。
+     */
+    if (!isPositiveNonZeroDecimal(amount.trim())) {
       setLocalError('金额必须是大于 0 的数字（退款也填正数，系统按负数行追加）');
       return;
     }
@@ -1199,15 +1204,38 @@ export function SalesOrdersPage() {
         `销售单 ${order.orderNo} 已完成：已扣减批次可用量并生成结算单 C 草稿（D72）。`,
       );
     },
-    onError: (error) => setActionError(errorText(error)),
+    /**
+     * 完成撞版本冲突（别人刚改过 / 刚取消了这张单）：同步最新版本并说明当前状态。
+     * **不自动重提**——完成会扣库存、生成 C 草稿，不可逆，必须让用户看清再点（D60）。
+     */
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, salesApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '完成失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(staleActionRetryText(fresh.version, '完成'));
+      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+    },
   });
 
   const cancelOrder = useMutation({
     mutationFn: (order: SalesOrderDetail) => salesApi.cancel(order.id, order.version),
     onSuccess: async () => {
+      setActionError(null);
       await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
     },
-    onError: (error) => setActionError(errorText(error)),
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, salesApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '取消失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(staleActionRetryText(fresh.version, '取消'));
+      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+    },
   });
 
   const print = useMutation({
@@ -1295,14 +1323,27 @@ export function SalesOrdersPage() {
   };
 
   const askComplete = (order: SalesOrderDetail) => {
-    if (order.status !== '进行中') return;
+    /** 列表行按钮只按「进行中」判断，但列表可能是旧的（别人刚取消/完成了）。别静默失败。 */
+    if (order.status !== '进行中') {
+      setActionError(`这张单当前是「${order.status}」，不能再完成；请刷新列表查看最新状态。`);
+      return;
+    }
+    setActionError(null);
     const message = `确认完成销售单 ${order.orderNo} 吗？\n\n完成后会：\n· 按行内批次均分扣减库存可用量（D72）\n· 同事务生成结算单 C 草稿，财务确认后才算结算（D19）\n\n完成后不可取消，错账请走冲正。`;
     if (globalThis.confirm?.(message) === false) return;
     completeOrder.mutate(order);
   };
 
   const askCancel = (order: SalesOrderDetail) => {
-    if (!order.cancelable.allowed) return;
+    /**
+     * 列表行按钮只按「进行中」判断，服务端还可能因为「已完成 / 已被别人取消 / 有下游结算单」
+     * 拒绝取消。以前这里直接 return，用户点了取消毫无反应——必须把原因说出来。
+     */
+    if (!order.cancelable.allowed) {
+      setActionError(cancelDisabledReason(order.cancelable.reason) ?? '当前状态不能取消这张单');
+      return;
+    }
+    setActionError(null);
     if (
       globalThis.confirm?.(`确认取消销售单 ${order.orderNo} 吗？取消后不可恢复，错账请走冲正。`) ===
       false
@@ -1489,9 +1530,6 @@ export function SalesOrdersPage() {
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
           完成失败：{errorText(completeOrder.error)}
         </p>
-      )}
-      {cancelOrder.error && (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorText(cancelOrder.error)}</p>
       )}
       {actionError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>}
       {notice && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{notice}</p>}
