@@ -1,0 +1,189 @@
+/* ============================================================
+   轻单 · 设计令牌（Tailwind v4）
+   ------------------------------------------------------------
+   来源：design/v0.8 的设计稿（静态原型）里那套配色与尺度。
+   本文件是它在应用里的唯一落点：页面与组件只引用这里派生的
+   工具类（bg-surface-1 / text-ink-2 / rounded-card / ease-enter …），
+   不再写死色值。
+
+   用法（两段式，Tailwind v4 不支持在 @theme 里放 var() 的运行时切换）：
+     1) :root 定义运行时语义变量 --qd-*，[data-theme] 覆盖它 → 换肤
+     2) @theme inline 再把 --qd-* 接进 Tailwind 主题 → 生成工具类
+
+   换配色：只改 :root 或对应 [data-theme] 块，组件零改动。
+   可访问性：ink-3 ≈ 6:1（AA），ink-decor 仅给眉标/分隔线等装饰。
+   ============================================================ */
+
+/* ---------------------------------------------------------- 1 · 运行时语义变量（默认：moss 墨黑 / 米白 / 苔绿） */
+:root {
+  /* 表面：0 视口 → 4 悬浮层，亮度差 8~12%，卡片才浮得起来 */
+  --qd-bg-0: #0A0E0C;
+  --qd-bg-1: #101613;
+  --qd-bg-2: #1A211C;
+  --qd-bg-3: #252E28;
+  --qd-bg-4: #323C35;
+
+  /* 文字：三级 + 装饰 */
+  --qd-text-1: rgba(233, 231, 224, .96);
+  --qd-text-2: rgba(233, 231, 224, .76);
+  --qd-text-3: rgba(233, 231, 224, .62);
+  --qd-text-decor: rgba(233, 231, 224, .42);
+  --qd-text-rgb: 233, 231, 224;
+
+  /* 强调色：每屏只留一个实心主操作用它 */
+  --qd-accent: #93AE9C;
+  --qd-accent-light: #B6D0BE;
+  --qd-accent-deep: #728E7B;
+  --qd-accent-2: #7F8F86;
+  --qd-accent-rgb: 147, 174, 156;
+  --qd-on-accent: #0A0E0C;
+
+  /* 语义状态 */
+  --qd-ok: #9CCBAE;
+  --qd-danger: #C0533A;
+  --qd-danger-on-surface: #E08168;
+
+  /* 描边与分隔：1px 细线是这套界面的唯一装饰 */
+  --qd-line-1: rgba(233, 231, 224, .12);
+  --qd-line-2: rgba(233, 231, 224, .18);
+  --qd-line-3: rgba(233, 231, 224, .28);
+
+  /* 阴影与焦点 */
+  --qd-shadow-1: 0 10px 28px -12px rgba(0, 0, 0, .68);
+  --qd-shadow-2: 0 22px 52px -16px rgba(0, 0, 0, .82);
+  --qd-focus: #B6D0BE;
+}
+
+/* ---------------------------------------------------------- 2 · 三套备选配色 */
+[data-theme="mist"] {
+  --qd-bg-0: #0A0D11; --qd-bg-1: #10141A; --qd-bg-2: #1A2029;
+  --qd-bg-3: #262E38; --qd-bg-4: #333D49;
+  --qd-text-1: rgba(230, 232, 234, .96); --qd-text-2: rgba(230, 232, 234, .76);
+  --qd-text-3: rgba(230, 232, 234, .62); --qd-text-decor: rgba(230, 232, 234, .42);
+  --qd-text-rgb: 230, 232, 234;
+  --qd-accent: #8FA9BE; --qd-accent-light: #AEC6D9; --qd-accent-deep: #7190A9;
+  --qd-accent-2: #6E8296; --qd-accent-rgb: 143, 169, 190; --qd-on-accent: #0A0D11;
+  --qd-ok: #8FC0A6; --qd-danger-on-surface: #E07255;
+  --qd-line-1: rgba(230, 232, 234, .12); --qd-line-2: rgba(230, 232, 234, .18);
+  --qd-line-3: rgba(230, 232, 234, .28);
+  --qd-focus: #AEC6D9;
+}
+
+[data-theme="bronze"] {
+  --qd-bg-0: #0D0B09; --qd-bg-1: #141210; --qd-bg-2: #201C17;
+  --qd-bg-3: #2C2720; --qd-bg-4: #3A342B;
+  --qd-text-1: rgba(239, 234, 225, .96); --qd-text-2: rgba(239, 234, 225, .76);
+  --qd-text-3: rgba(239, 234, 225, .62); --qd-text-decor: rgba(239, 234, 225, .42);
+  --qd-text-rgb: 239, 234, 225;
+  --qd-accent: #C4A57B; --qd-accent-light: #DCC3A1; --qd-accent-deep: #A2835C;
+  --qd-accent-2: #9A8B78; --qd-accent-rgb: 196, 165, 123; --qd-on-accent: #0D0B09;
+  --qd-ok: #9BBFA3; --qd-danger-on-surface: #E08168;
+  --qd-line-1: rgba(239, 234, 225, .12); --qd-line-2: rgba(239, 234, 225, .18);
+  --qd-line-3: rgba(239, 234, 225, .28);
+  --qd-focus: #DCC3A1;
+}
+
+/* 浅色内页：文字反色，线也反色 */
+[data-theme="paper"] {
+  --qd-bg-0: #F5F3EE; --qd-bg-1: #FAF9F6; --qd-bg-2: #FFFFFF;
+  --qd-bg-3: #EFEBE3; --qd-bg-4: #E4DFD5;
+  --qd-text-1: rgba(30, 29, 26, .96); --qd-text-2: rgba(30, 29, 26, .76);
+  --qd-text-3: rgba(30, 29, 26, .64); --qd-text-decor: rgba(30, 29, 26, .44);
+  --qd-text-rgb: 30, 29, 26;
+  --qd-accent: #3E5B50; --qd-accent-light: #4A6B5E; --qd-accent-deep: #2F473E;
+  --qd-accent-2: #6B7C88; --qd-accent-rgb: 62, 91, 80; --qd-on-accent: #FFFFFF;
+  --qd-ok: #3F7A5E; --qd-danger: #A32D2D; --qd-danger-on-surface: #B4483A;
+  --qd-line-1: rgba(30, 29, 26, .12); --qd-line-2: rgba(30, 29, 26, .18);
+  --qd-line-3: rgba(30, 29, 26, .28);
+  --qd-focus: #4A6B5E;
+}
+
+/* ---------------------------------------------------------- 3 · 接进 Tailwind 主题 */
+@theme inline {
+  /* 表面与文字 */
+  --color-surface-0: var(--qd-bg-0);
+  --color-surface-1: var(--qd-bg-1);
+  --color-surface-2: var(--qd-bg-2);
+  --color-surface-3: var(--qd-bg-3);
+  --color-surface-4: var(--qd-bg-4);
+
+  --color-ink-1: var(--qd-text-1);
+  --color-ink-2: var(--qd-text-2);
+  --color-ink-3: var(--qd-text-3);
+  --color-ink-decor: var(--qd-text-decor);
+
+  /* 强调与状态 */
+  --color-accent: var(--qd-accent);
+  --color-accent-light: var(--qd-accent-light);
+  --color-accent-deep: var(--qd-accent-deep);
+  --color-accent-2: var(--qd-accent-2);
+  --color-on-accent: var(--qd-on-accent);
+  --color-ok: var(--qd-ok);
+  --color-danger: var(--qd-danger);
+  --color-danger-on-surface: var(--qd-danger-on-surface);
+
+  /* 描边 */
+  --color-line-1: var(--qd-line-1);
+  --color-line-2: var(--qd-line-2);
+  --color-line-3: var(--qd-line-3);
+
+  /* 圆角：控件 7 / 卡片 12 / 面板 14 / 标签 5 / 胶囊 999 */
+  --radius-control: 7px;
+  --radius-card: 12px;
+  --radius-panel: 14px;
+  --radius-tag: 5px;
+  --radius-pill: 999px;
+
+  /* 字号：信息性文字下限 12px，装饰性眉标 11px */
+  --text-min: 12px;
+  --text-body: 14px;
+  --text-label: 12px;
+  --text-title: 22px;
+  --text-display: 30px;
+
+  /* 阴影 */
+  --shadow-card: var(--qd-shadow-1);
+  --shadow-pop: var(--qd-shadow-2);
+
+  /* 动效：交互 <=160ms，入场 240ms，数据 420ms */
+  --ease-enter: cubic-bezier(.16, 1, .3, 1);
+  --ease-exit: cubic-bezier(.7, 0, .2, 1);
+  --ease-loop: cubic-bezier(.65, 0, .35, 1);
+
+  /* 字体 */
+  --font-sans: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, Consolas, "SF Mono", "Liberation Mono", monospace;
+}
+
+/* ---------------------------------------------------------- 4 · 时长与间距：不是 Tailwind 命名空间，直接当 CSS 变量用 */
+:root {
+  --d-1: 110ms;  /* hover / 按压 */
+  --d-2: 160ms;  /* 常规反馈 */
+  --d-3: 200ms;  /* 抽屉 / 吸底栏 */
+  --d-4: 240ms;  /* 入场 */
+  --d-data: 420ms; /* 图表生长 */
+
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+
+  /* 骨架：侧栏 208 / 顶栏 52 */
+  --sb: 208px;
+  --topbar-h: 52px;
+
+  /* 焦点环：全站统一，别再用浏览器默认蓝框 */
+  --focus-ring: 2px solid var(--qd-focus);
+}
+
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* 尊重系统「减少动态效果」 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    transition-duration: .001ms !important;
+  }
+}
