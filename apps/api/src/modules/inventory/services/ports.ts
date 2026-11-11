@@ -2,6 +2,7 @@ import type { ServiceRegistry } from '../../../platform/services/registry.js';
 import {
   applyStockAdjustment,
   createBatch as createStockBatch,
+  inspectBatches,
 } from './stock-flow.js';
 
 /**
@@ -10,7 +11,10 @@ import {
  * 批次创建与数量调整都收口在本模块服务函数；端口只做稳定 interface 映射，
  * **不新增第二条库存写入路径**。
  */
-export const inventoryServices: Pick<ServiceRegistry, 'stockFlow' | 'batchDirectory'> = {
+export const inventoryServices: Pick<
+  ServiceRegistry,
+  'stockFlow' | 'batchDirectory' | 'stockBatchInspection'
+> = {
   stockFlow: {
     applyAdjustment: async (tx, command) =>
       applyStockAdjustment(tx, {
@@ -48,5 +52,8 @@ export const inventoryServices: Pick<ServiceRegistry, 'stockFlow' | 'batchDirect
       );
       return result.rows.map((row) => ({ id: row.id, batchNo: row.batch_no }));
     },
+  },
+  stockBatchInspection: {
+    inspectBatches,
   },
 };

@@ -321,6 +321,25 @@ export interface BatchSummary {
   readonly batchNo: string;
 }
 
+/** B 单完成使用的库存批次成本/可用量只读端口（D70 / #194）。 */
+export interface StockBatchInspectionPort {
+  inspectBatches(
+    tx: SqlClient,
+    query: {
+      readonly tenantId: string;
+      readonly companyId: string;
+      readonly batchIds: readonly string[];
+    },
+  ): Promise<readonly StockBatchConsumptionSnapshot[]>;
+}
+
+export interface StockBatchConsumptionSnapshot {
+  readonly batchId: string;
+  readonly batchNo: string;
+  readonly availableQty: string;
+  readonly lockedUnitCost: string;
+}
+
 export interface ServiceRegistry {
   readonly stockFlow?: StockFlowPort;
   readonly settlementDraft?: SettlementDraftPort;
@@ -334,6 +353,7 @@ export interface ServiceRegistry {
   readonly processingLossAggregate?: ProcessingLossAggregateSource;
   readonly productDirectory?: ProductDirectoryPort;
   readonly batchDirectory?: BatchDirectoryPort;
+  readonly stockBatchInspection?: StockBatchInspectionPort;
 }
 
 let registry: ServiceRegistry = {};
@@ -355,6 +375,15 @@ export function stockFlowPort(): StockFlowPort {
     });
   }
   return registry.stockFlow;
+}
+
+export function stockBatchInspectionPort(): StockBatchInspectionPort {
+  if (!registry.stockBatchInspection) {
+    throw new AppError('NOT_IMPLEMENTED', 'inventory 未注册 StockBatchInspectionPort（D70 / #194）', {
+      port: 'StockBatchInspectionPort',
+    });
+  }
+  return registry.stockBatchInspection;
 }
 
 export function settlementDraftPort(): SettlementDraftPort {

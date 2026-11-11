@@ -5,9 +5,62 @@ import { takeBatchNo } from '../../../platform/numbering/service.js';
 import type {
   CreateBatchCommand,
   CreateBatchReceipt,
+  StockBatchConsumptionSnapshot,
 } from '../../../platform/services/registry.js';
 
 export type { CreateBatchCommand, CreateBatchReceipt };
+export type { StockBatchConsumptionSnapshot };
+
+export interface StockBatchInspectionQuery {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly batchIds: readonly string[];
+}
+
+export async function inspectBatches(
+  tx: SqlClient,
+  query: StockBatchInspectionQuery,
+): Promise<readonly StockBatchConsumptionSnapshot[]> {
+  if (query.batchIds.length === 0) return [];
+
+  const result = await tx.query<{
+    id: string;
+    batch_no: string;
+    available_qty: string | number;
+    locked_unit_cost: string | number;
+  }>(
+    `SELECT id::text AS id,
+            batch_no,
+            trim_scale(available_qty) AS available_qty,
+            trim_scale(locked_unit_cost) AS locked_unit_cost
+       FROM inventory_batch
+      WHERE tenant_id = $1
+        AND company_id = $2::uuid
+        AND id = ANY($3::uuid[])`,
+    [query.tenantId, query.companyId, query.batchIds],
+  );
+
+  if (result.rows.length !== query.batchIds.length) {
+    throw new AppError('NOT_FOUND', '存在不存在或不属于该公司的库存批次', {
+      batchIds: query.batchIds,
+      companyId: query.companyId,
+    });
+  }
+
+  const rowsById = new Map(result.rows.map((row) => [row.id, row]));
+  return query.batchIds.map((batchId) => {
+    const row = rowsById.get(batchId);
+    if (!row) {
+      throw new AppError('NOT_FOUND', '库存批次不存在或不属于该公司', { batchId });
+    }
+    return {
+      batchId: row.id,
+      batchNo: row.batch_no,
+      availableQty: String(row.available_qty),
+      lockedUnitCost: String(row.locked_unit_cost),
+    };
+  });
+}
 
 /**
  * 库存写入服务（D38 / D41 / D47 / D67）。

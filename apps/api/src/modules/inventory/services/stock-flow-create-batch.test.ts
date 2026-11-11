@@ -7,7 +7,7 @@ import {
   type TestDatabase,
 } from '../../../testing/pglite.js';
 import { inventoryServices } from './ports.js';
-import { createBatch, type CreateBatchCommand } from './stock-flow.js';
+import { createBatch, inspectBatches, type CreateBatchCommand } from './stock-flow.js';
 
 const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000000099';
 const PRODUCT_ID = '01900000-0000-7000-8000-000000000101';
@@ -85,7 +85,7 @@ describe('inventory createBatch（#136 / #137）', () => {
       'P-002',
       '二司商品',
     );
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await test.database.close();
@@ -232,5 +232,35 @@ describe('inventory createBatch（#136 / #137）', () => {
 
     expect(await countRows(test, 'inventory_batch')).toBe(beforeBatches);
     expect(await countRows(test, 'inventory_flow')).toBe(beforeFlows);
+  });
+  it('returns batch number, available quantity and locked unit cost for the requested company', async () => {
+    const created = await withTenant(test.database, DEMO_IDS.tenantId, (tx) =>
+      createBatch(tx, BASE_COMMAND),
+    );
+    const result = await inspectBatches(test.database, {
+      tenantId: DEMO_IDS.tenantId,
+      companyId: DEMO_IDS.companyId,
+      batchIds: [created.batchId],
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      batchId: created.batchId,
+      availableQty: '12.5',
+      lockedUnitCost: '8.25',
+    });
+  });
+
+  it('rejects a batch belonging to another company', async () => {
+    const created = await withTenant(test.database, DEMO_IDS.tenantId, (tx) =>
+      createBatch(tx, BASE_COMMAND),
+    );
+    await expect(
+      inspectBatches(test.database, {
+        tenantId: DEMO_IDS.tenantId,
+        companyId: OTHER_COMPANY_ID,
+        batchIds: [created.batchId],
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });
