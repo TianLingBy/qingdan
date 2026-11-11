@@ -430,7 +430,7 @@ async function assertSupplierInCompany(
 
 /**
  * 商品明细必须属于采购单所在公司（D15）：跨公司引用等同不存在，直接拒绝。
- * 去重后一次查询，避免逐行往返。
+ * 去重后一次查询，避免逐行往返；开单与改单共用同一条校验，两条写入路径不得只补一条。
  */
 async function assertProductsInCompany(
   ctx: PurchaseOrderRepoContext,
@@ -555,6 +555,11 @@ export async function insertPurchaseOrder(
 ): Promise<PurchaseOrder> {
   await assertSupplierInCompany(ctx, input.supplierId, input.companyId);
   await assertHandlerInTenant(ctx, input.handlerId);
+  await assertProductsInCompany(
+    ctx,
+    input.lines.map((line) => line.productId),
+    input.companyId,
+  );
 
   await ctx.tx.query(
     `INSERT INTO purchase_order
@@ -602,6 +607,14 @@ export async function updatePurchaseOrder(
   }
   if (input.handlerId !== undefined) {
     await assertHandlerInTenant(ctx, input.handlerId);
+  }
+  if (input.lines !== undefined) {
+    // D15：改单换明细同样不得引用他公司商品；校验放在任何写入之前，失败不留半张单。
+    await assertProductsInCompany(
+      ctx,
+      input.lines.map((line) => line.productId),
+      current.companyId,
+    );
   }
 
   const updated = await ctx.tx.query<{ id: string }>(

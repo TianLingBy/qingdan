@@ -156,10 +156,11 @@ describe('settlement C 结算单用例（PGlite + seed 演示租户）', () => {
           status, total_sale_amount, total_cost_amount, gross_profit,
           gross_margin_rate, related_loss_amount,
           related_loss_amount_snapshot, net_profit,
-          commission_rate_snapshot, commission_amount, version)
+          commission_rate_snapshot, commission_amount, version, settled_at)
        VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6::uuid, $7,
                '100', '70', '30', '0.3', $8::amount, $9::amount, $10::amount,
-               '0.05', '1.5', $11)`,
+               '0.05', '1.5', $11,
+               CASE WHEN $7 = '已结算' THEN now() ELSE NULL END)`,
       [
         input.id,
         DEMO_IDS.tenantId,

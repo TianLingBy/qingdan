@@ -6,7 +6,6 @@ import {
   type CursorPayload,
   type InventoryCostAdjustment,
 } from '@qingdan/contracts';
-import type { SqlClient } from '../../platform/db/client.js';
 import type { InventoryRepoContext } from './repo.js';
 
 /**

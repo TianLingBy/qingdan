@@ -28,7 +28,10 @@ const SUPPLIER_ID = '01900000-0000-7000-8000-000000000301';
 const SUPPLIER_2_ID = '01900000-0000-7000-8000-000000000302';
 const PRODUCT_ID = '01900000-0000-7000-8000-000000000311';
 const PRODUCT_2_ID = '01900000-0000-7000-8000-000000000312';
+const PRODUCT_OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000000313';
 const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000000303';
+const OTHER_TENANT_ID = '01900000-0000-7000-8000-0000000003f1';
+const PRODUCT_OTHER_TENANT_ID = '01900000-0000-7000-8000-0000000003f2';
 const BATCH_ID = '01900000-0000-7000-8000-000000000321';
 const FLOW_ID = '01900000-0000-7000-8000-000000000322';
 
@@ -198,6 +201,24 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
         [id, DEMO_IDS.tenantId, DEMO_IDS.companyId, name],
       );
     }
+    // D15 回归用：挂在第二公司的商品，本单公司引用它必须被拒。
+    await test.database.query(
+      `INSERT INTO product
+         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
+       VALUES ($1, $2, $3, NULL, '二司商品', '{}', '件', '启用')
+       ON CONFLICT (id) DO NOTHING`,
+      [PRODUCT_OTHER_COMPANY_ID, DEMO_IDS.tenantId, OTHER_COMPANY_ID],
+    );
+    // 跨租户隔离回归：别租户的商品即使 id 被猜到，也必须按「不存在」处理。
+    await test.database.query(`INSERT INTO tenant (id, name) VALUES ($1, '第二租户')`, [
+      OTHER_TENANT_ID,
+    ]);
+    await test.database.query(
+      `INSERT INTO product
+         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
+       VALUES ($1, $2, $3, NULL, '别租户商品', '{}', '件', '启用')`,
+      [PRODUCT_OTHER_TENANT_ID, OTHER_TENANT_ID, OTHER_COMPANY_ID],
+    );
   });
 
   afterAll(async () => {
@@ -424,6 +445,114 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
       [created.id],
     );
     expect(audit.rows[0]?.count).toBe('1');
+  });
+
+  it('D15：开单 / 改单引用他公司商品 → 422，且不落库、不动原单', async () => {
+    // 开单：明细里的商品属于第二公司 → 拒绝，且采购单条数不变（没留半张单）。
+    const before = await test.database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM purchase_order`,
+    );
+    await expectAppError(
+      createPurchaseOrder(
+        writeCtx({}, {
+          body: {
+            companyId: DEMO_IDS.companyId,
+            supplierId: SUPPLIER_ID,
+            handlerId: DEMO_IDS.ownerEmployeeId,
+            lines: [
+              { productId: PRODUCT_OTHER_COMPANY_ID, qty: '1', unitPrice: '1', amount: '1' },
+            ],
+          },
+        }).ctx,
+      ),
+      'VALIDATION_FAILED',
+    );
+    const after = await test.database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM purchase_order`,
+    );
+    expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
+
+    // 改单：把明细换成他公司商品 → 拒绝，版本与明细都保持原样。
+    const created = await createOne();
+    await expectAppError(
+      updatePurchaseOrder(
+        writeCtx({}, {
+          params: { id: created.id },
+          headers: { 'if-match': '"1"' },
+          body: {
+            lines: [
+              { productId: PRODUCT_OTHER_COMPANY_ID, qty: '1', unitPrice: '1', amount: '1' },
+            ],
+          },
+        }).ctx,
+      ),
+      'VALIDATION_FAILED',
+    );
+    const unchanged = (await getPurchaseOrder(
+      readCtx({}, { params: { id: created.id } }),
+    )) as PurchaseOrderDetail;
+    expect(unchanged.version).toBe(1);
+    expect(unchanged.lines).toHaveLength(1);
+    expect(unchanged.lines[0]?.productId).toBe(PRODUCT_ID);
+  });
+
+  it('D15：跨租户商品 / 空明细都在业务层被拒，且租户隔离按「不存在」处理', async () => {
+    // 跨租户：他租户商品 id 可见性为零 → 422，且不落库。
+    const before = await test.database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM purchase_order`,
+    );
+    await expectAppError(
+      createPurchaseOrder(
+        writeCtx({}, {
+          body: {
+            companyId: DEMO_IDS.companyId,
+            supplierId: SUPPLIER_ID,
+            handlerId: DEMO_IDS.ownerEmployeeId,
+            lines: [
+              { productId: PRODUCT_OTHER_TENANT_ID, qty: '1', unitPrice: '1', amount: '1' },
+            ],
+          },
+        }).ctx,
+      ),
+      'VALIDATION_FAILED',
+    );
+    const after = await test.database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM purchase_order`,
+    );
+    expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
+
+    // 空明细：契约层 min(1) 直接拒，连 SQL 都不跑。
+    await expectAppError(
+      createPurchaseOrder(
+        writeCtx({}, {
+          body: {
+            companyId: DEMO_IDS.companyId,
+            supplierId: SUPPLIER_ID,
+            handlerId: DEMO_IDS.ownerEmployeeId,
+            lines: [],
+          },
+        }).ctx,
+      ),
+      'VALIDATION_FAILED',
+    );
+
+    // 改单同样不许把明细清空。
+    const created = await createOne();
+    await expectAppError(
+      updatePurchaseOrder(
+        writeCtx({}, {
+          params: { id: created.id },
+          headers: { 'if-match': '"1"' },
+          body: { lines: [] },
+        }).ctx,
+      ),
+      'VALIDATION_FAILED',
+    );
+    const unchanged = (await getPurchaseOrder(
+      readCtx({}, { params: { id: created.id } }),
+    )) as PurchaseOrderDetail;
+    expect(unchanged.version).toBe(1);
+    expect(unchanged.lines).toHaveLength(1);
   });
 
   it('取消：D21 有下游 → 409；已完成 / 已取消 → 422；AI 禁止；成功置已取消并记审计', async () => {
