@@ -280,10 +280,12 @@ export interface SettlementProfitAggregateSource {
 /** B 单全损耗期间聚合（金额为 decimal 字符串，D54）。 */
 export interface ProcessingLossAggregate {
   readonly lossAmount: string;
+  readonly partialLossAmount: string;
   readonly orders: ReadonlyArray<{
     readonly processingOrderId: string;
     readonly processingOrderNo: string;
     readonly lossAmount: string;
+    readonly lossType: 'full' | 'partial';
     readonly attributed: boolean;
   }>;
 }
@@ -321,6 +323,44 @@ export interface BatchSummary {
   readonly batchNo: string;
 }
 
+/** B 单完成使用的库存批次成本/可用量只读端口（D70 / #194）。 */
+export interface StockBatchInspectionPort {
+  inspectBatches(
+    tx: SqlClient,
+    query: {
+      readonly tenantId: string;
+      readonly companyId: string;
+      readonly batchIds: readonly string[];
+    },
+  ): Promise<readonly StockBatchConsumptionSnapshot[]>;
+}
+
+export interface StockBatchConsumptionSnapshot {
+  readonly batchId: string;
+  readonly batchNo: string;
+  readonly availableQty: string;
+  readonly lockedUnitCost: string;
+}
+
+export interface StockBatchTransfer {
+  readonly batchId: string;
+  /** Omit to transfer the batch's full current in-transit quantity. */
+  readonly qty?: string;
+}
+
+/** N 单到货确认使用的库存批次转司端口（D22 / D31 / #196）。 */
+export interface StockBatchTransferPort {
+  transferBatches(
+    tx: SqlClient,
+    command: {
+      readonly tenantId: string;
+      readonly fromCompanyId: string;
+      readonly toCompanyId: string;
+      readonly transfers: readonly StockBatchTransfer[];
+    },
+  ): Promise<void>;
+}
+
 export interface ServiceRegistry {
   readonly stockFlow?: StockFlowPort;
   readonly settlementDraft?: SettlementDraftPort;
@@ -334,6 +374,8 @@ export interface ServiceRegistry {
   readonly processingLossAggregate?: ProcessingLossAggregateSource;
   readonly productDirectory?: ProductDirectoryPort;
   readonly batchDirectory?: BatchDirectoryPort;
+  readonly stockBatchInspection?: StockBatchInspectionPort;
+  readonly stockBatchTransfer?: StockBatchTransferPort;
 }
 
 let registry: ServiceRegistry = {};
@@ -355,6 +397,24 @@ export function stockFlowPort(): StockFlowPort {
     });
   }
   return registry.stockFlow;
+}
+
+export function stockBatchInspectionPort(): StockBatchInspectionPort {
+  if (!registry.stockBatchInspection) {
+    throw new AppError('NOT_IMPLEMENTED', 'inventory 未注册 StockBatchInspectionPort（D70 / #194）', {
+      port: 'StockBatchInspectionPort',
+    });
+  }
+  return registry.stockBatchInspection;
+}
+
+export function stockBatchTransferPort(): StockBatchTransferPort {
+  if (!registry.stockBatchTransfer) {
+    throw new AppError('NOT_IMPLEMENTED', 'inventory 未注册 StockBatchTransferPort（D70 / #196）', {
+      port: 'StockBatchTransferPort',
+    });
+  }
+  return registry.stockBatchTransfer;
 }
 
 export function settlementDraftPort(): SettlementDraftPort {

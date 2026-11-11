@@ -5,3 +5,6 @@ packages:
 # pnpm 10+ 默认禁止依赖执行安装脚本；esbuild 需要 postinstall 才能就位（pnpm 11 用 allowBuilds）。
 allowBuilds:
   esbuild: true
+
+overrides:
+  minimatch: '>=11.0.1'
