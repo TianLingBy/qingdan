@@ -277,7 +277,7 @@ async function main(): Promise<void> {
     console.log('FAIL db-concurrency：存在未通过的断言（见上）。');
     process.exit(1);
   }
-  console.log('OK db-concurrency：真 PostgreSQL 四项检查全部通过。');
+  console.log('OK db-concurrency：真 PostgreSQL 五项检查全部通过。');
 }
 
 main().catch((error: unknown) => {
