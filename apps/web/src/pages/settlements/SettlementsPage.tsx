@@ -305,7 +305,7 @@ export function SettlementsPage() {
     onError: async (error, order) => {
       const fresh = await recoverFromStaleVersion(error, order.id, settlementsApi.detail);
       if (!fresh) {
-        setActionError(errorText(error));
+        setActionError(describeWriteError(error, '确认结算失败，请稍后重试'));
         return;
       }
       await queryClient.invalidateQueries({ queryKey: ['settlements'] });
@@ -327,7 +327,17 @@ export function SettlementsPage() {
     try {
       const fresh = await settlementsApi.detail(orderId);
       setDetailId(orderId);
-      if (!fresh.confirmable.allowed) return;
+      /**
+       * 列表可能是旧快照（别人刚结算完），服务端 `confirmable` 会拒绝。
+       * 以前这里静默 return，用户点了「确认结算」毫无反应；把原因摆出来。
+       */
+      if (!fresh.confirmable.allowed) {
+        setActionError(
+          confirmBlockedText(fresh.confirmable.reason) ?? '当前状态不可确认结算',
+        );
+        return;
+      }
+      setActionError(null);
       if (
         globalThis.confirm?.(
           `确认结算 ${fresh.orderNo} 吗？\n\n确认后：\n· 状态变为「已结算」，一期一单只结算一次（D19）\n· 提成按当前比例快照落定（D36）\n· 不可冲正、不可取消，错账走 R 退货（D2③）`,
@@ -337,7 +347,7 @@ export function SettlementsPage() {
       }
       confirm.mutate(fresh);
     } catch (error) {
-      setActionError(errorText(error));
+      setActionError(describeWriteError(error, '读取结算单失败，请稍后重试'));
     }
   };
 
@@ -436,11 +446,6 @@ export function SettlementsPage() {
         />
       </div>
 
-      {confirm.error ? (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-          确认结算失败：{errorText(confirm.error)}
-        </p>
-      ) : null}
       {staleNotice ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           {staleNotice}

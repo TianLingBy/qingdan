@@ -4,6 +4,7 @@ import {
   describeWriteError,
   isStaleVersionError,
   recoverFromStaleVersion,
+  staleActionRetryText,
   staleVersionRecoveredText,
 } from './write-error';
 
@@ -96,5 +97,19 @@ describe('staleVersionRecoveredText', () => {
     expect(staleVersionRecoveredText(8)).toBe(
       '这张单已被别人改过，已同步到最新版本 v8；你填的内容还在，请核对后再次保存。',
     );
+  });
+});
+
+describe('staleActionRetryText', () => {
+  it('取消 / 完成用不同动词，且不说「内容还在」（没有表单内容要保留）', () => {
+    const cancel = staleActionRetryText(12, '取消');
+    expect(cancel).toContain('v12');
+    expect(cancel).toContain('「取消」');
+    expect(cancel).not.toContain('你填的内容还在');
+    expect(staleActionRetryText(3, '完成')).toContain('「完成」');
+  });
+
+  it('明确「核对当前状态」——状态可能已被别人改掉（如已取消），不能盲目重提', () => {
+    expect(staleActionRetryText(5, '取消')).toContain('核对单据当前状态');
   });
 });

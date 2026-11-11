@@ -19,6 +19,7 @@ import { salesServices } from './sales/services/receipts-port.js';
 import { salesReferenceServices } from './sales/services/references.js';
 import { registerSettlementRoutes } from './settlement/routes.js';
 import { settlementServices } from './settlement/services/drafts.js';
+import { settlementProfitAggregateService } from './settlement/services/profit-aggregate.js';
 import { settlementStatusServices } from './settlement/services/status.js';
 
 /**
@@ -56,6 +57,8 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerServices(inventoryServices);
   registerServices(masterdataServices);
   registerServices(settlementServices);
+  // Issue #185 / D43：利润报表所需的「已结算 C 单毛利」聚合端口。
+  registerServices({ settlementProfitAggregate: settlementProfitAggregateService });
   registerServices(salesServices);
   // Issue #163 / D70：成本更正判定所需的下游引用聚合端口。
   registerServices(processingServices);

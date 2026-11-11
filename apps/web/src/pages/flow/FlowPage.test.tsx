@@ -134,6 +134,6 @@ describe('落地情况表', () => {
     expect(html).toContain('一期一单一次结算');
     // 页面状态
     expect(html).toContain('已上线');
-    expect(html).toContain('占位页');
+    expect(html).not.toContain('占位页');
   });
 });
