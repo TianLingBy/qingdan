@@ -560,6 +560,7 @@ export async function completeProcessingOrder(
       outputBatchId,
       materialCostAmount: decimal(materialCost),
       lossAmount: decimal(lossAmount),
+      partialLossAmount: decimal(sellable === 0n ? 0n : lossAmount),
     });
     if (!completed) throw new AppError('NOT_FOUND', '加工单不存在');
     audit.companyId = completed.companyId;

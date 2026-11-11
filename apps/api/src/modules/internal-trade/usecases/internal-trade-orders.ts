@@ -26,7 +26,7 @@ import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
-import { stockBatchTransferPort } from '../../../platform/services/registry.js';
+import { stockBatchInspectionPort, stockBatchTransferPort } from '../../../platform/services/registry.js';
 import { settlementDraftPort } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 import { maskInternalTradeAmounts, maskInternalTradeDetailAmounts } from '../services/masking.js';
@@ -56,6 +56,24 @@ function addDecimals(values: readonly string[]): string {
   const whole = total / 1_000_000n;
   const fraction = (total % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
   return fraction ? whole.toString() + '.' + fraction : whole.toString();
+}
+
+function multiplyDecimals(left: string, right: string): string {
+  const [li, lf = ''] = left.split('.');
+  const [ri, rf = ''] = right.split('.');
+  const scale = lf.length + rf.length;
+  const raw = BigInt(`${li}${lf}`) * BigInt(`${ri}${rf}`);
+  if (scale === 0) return raw.toString();
+  const text = raw.toString().padStart(scale + 1, '0');
+  return `${text.slice(0, -scale)}.${text.slice(-scale)}`.replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function divideByInteger(value: string, divisor: number): string {
+  const [whole, fraction = ''] = value.split('.');
+  const scale = fraction.length;
+  const raw = BigInt(`${whole}${fraction}`) / BigInt(divisor);
+  const text = raw.toString().padStart(scale + 1, '0');
+  return scale === 0 ? text : `${text.slice(0, -scale)}.${text.slice(-scale)}`.replace(/0+$/, '').replace(/\.$/, '');
 }
 
 type MutableAuditEvent = { -readonly [K in keyof AuditEvent]: AuditEvent[K] };
@@ -514,6 +532,20 @@ export async function receiveInternalTradeOrder(
     const source = await repo.getInternalTradeOrder(repoContext(tx, principal), id);
     if (!source) throw new AppError('NOT_FOUND', '内部交易单不存在');
     const batchIds = await repo.listBatchIdsForOrder(repoContext(tx, principal), id);
+    const inspected = await stockBatchInspectionPort().inspectBatches(tx, {
+      tenantId: principal.tenantId,
+      companyId: state.fromCompanyId,
+      batchIds,
+    });
+    const costByBatch = new Map(inspected.map((batch) => [batch.batchId, batch.lockedUnitCost]));
+    const quantities = source.lines.flatMap((line) =>
+      line.batchIds.map((batchId) => ({ batchId, qty: divideByInteger(line.qty, line.batchIds.length) })),
+    );
+    const totalCostAmount = quantities.reduce((sum, item) => {
+      const unitCost = costByBatch.get(item.batchId);
+      if (!unitCost) throw new AppError('NOT_FOUND', '内部交易引用的批次成本不存在');
+      return addDecimals([sum, multiplyDecimals(item.qty, unitCost)]);
+    }, '0');
     await stockBatchTransferPort().transferBatches(tx, {
       tenantId: principal.tenantId,
       fromCompanyId: state.fromCompanyId,
@@ -526,7 +558,7 @@ export async function receiveInternalTradeOrder(
       sourceDocType: 'N',
       sourceDocId: id,
       totalSaleAmount: addDecimals(source.lines.map((line) => line.amount ?? '0')),
-      totalCostAmount: '0',
+      totalCostAmount,
       relatedLossAmount: '0',
       commissionRateSnapshot: '0',
       commissionAmount: '0',

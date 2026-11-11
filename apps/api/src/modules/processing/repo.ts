@@ -388,6 +388,7 @@ export async function completeProcessingOrder(
     readonly outputBatchId: string | null;
     readonly materialCostAmount: string;
     readonly lossAmount: string;
+    readonly partialLossAmount: string;
   },
 ): Promise<ProcessingOrder | null> {
   const result = await ctx.tx.query<{ id: string }>(
@@ -398,11 +399,12 @@ export async function completeProcessingOrder(
             output_batch_id = $3::uuid,
             material_cost_amount = $4::amount,
             loss_amount = $5::amount,
+            partial_loss_amount = $6::amount,
             version = version + 1
-      WHERE id = $6::uuid
-        AND tenant_id = $7
-        AND company_id = ANY($8::uuid[])
-        AND version = $9
+      WHERE id = $7::uuid
+        AND tenant_id = $8
+        AND company_id = ANY($9::uuid[])
+        AND version = $10
         AND status = '进行中'
       RETURNING id`,
     [
@@ -411,6 +413,7 @@ export async function completeProcessingOrder(
       input.outputBatchId,
       input.materialCostAmount,
       input.lossAmount,
+      input.partialLossAmount,
       id,
       ctx.tenantId,
       [...ctx.companyIds],

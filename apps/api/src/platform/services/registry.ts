@@ -280,10 +280,12 @@ export interface SettlementProfitAggregateSource {
 /** B 单全损耗期间聚合（金额为 decimal 字符串，D54）。 */
 export interface ProcessingLossAggregate {
   readonly lossAmount: string;
+  readonly partialLossAmount: string;
   readonly orders: ReadonlyArray<{
     readonly processingOrderId: string;
     readonly processingOrderNo: string;
     readonly lossAmount: string;
+    readonly lossType: 'full' | 'partial';
     readonly attributed: boolean;
   }>;
 }

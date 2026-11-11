@@ -183,6 +183,7 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
 
   beforeAll(async () => {
     registerServices({
+      stockBatchInspection: inventoryServices.stockBatchInspection,
       stockBatchTransfer: inventoryServices.stockBatchTransfer,
       ...settlementServices,
     });
@@ -346,12 +347,13 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
       { company_id: TO_COMPANY_ID, in_transit_qty: '0' },
       { company_id: TO_COMPANY_ID, in_transit_qty: '0' },
     ]);
-    const draft = await test.database.query<{ source_doc_type: string; total_sale_amount: string }>(
-      `SELECT source_doc_type, trim_scale(total_sale_amount) AS total_sale_amount
+    const draft = await test.database.query<{ source_doc_type: string; total_sale_amount: string; total_cost_amount: string }>(
+      `SELECT source_doc_type, trim_scale(total_sale_amount) AS total_sale_amount,
+              trim_scale(total_cost_amount) AS total_cost_amount
          FROM settlement_order WHERE source_doc_id = $1`,
       [created.id],
     );
-    expect(draft.rows[0]).toEqual({ source_doc_type: 'N', total_sale_amount: '30' });
+    expect(draft.rows[0]).toEqual({ source_doc_type: 'N', total_sale_amount: '30', total_cost_amount: '30' });
     await test.database.query(
       `UPDATE inventory_batch SET company_id = $1::uuid WHERE id IN ($2::uuid, $3::uuid)`,
       [DEMO_IDS.companyId, BATCH_A_ID, BATCH_B_ID],
