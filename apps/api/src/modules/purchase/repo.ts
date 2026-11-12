@@ -921,6 +921,17 @@ export async function getSupplierReturn(
   };
 }
 
+export async function completeSupplierReturn(ctx: PurchaseOrderRepoContext, id: string, expectedVersion: number): Promise<SupplierReturn | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE supplier_return SET status = '已完成', version = version + 1
+      WHERE id = $1::uuid AND tenant_id = $2 AND company_id = ANY($3::uuid[])
+        AND version = $4 AND status = '进行中' RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) throw new AppError('VERSION_CONFLICT', '供应商退货单已被并发修改或不是进行中状态');
+  return getSupplierReturn(ctx, id);
+}
+
 async function assertOriginalPurchaseOrder(
   ctx: PurchaseOrderRepoContext,
   originalPurchaseOrderId: string,
