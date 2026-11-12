@@ -55,8 +55,8 @@ const CREATE_INPUT = {
 const byId = new Map(SUPPLIER_RETURN_ROUTES.map((route) => [route.operationId, route]));
 
 describe('供应商退货契约（supplier_return）', () => {
-  it('3 条端点全部登记并汇总进 ROUTES，且归属 purchase', () => {
-    expect(SUPPLIER_RETURN_ROUTES).toHaveLength(3);
+  it('4 条端点全部登记并汇总进 ROUTES，且归属 purchase', () => {
+    expect(SUPPLIER_RETURN_ROUTES).toHaveLength(4);
     for (const route of SUPPLIER_RETURN_ROUTES) expect(route.module).toBe('purchase');
 
     const purchaseIds = routesOfModule(ROUTES, 'purchase').map((r) => r.operationId);
@@ -71,12 +71,14 @@ describe('供应商退货契约（supplier_return）', () => {
         'GET /api/v1/supplier-returns supplier_return.list.read',
         'POST /api/v1/supplier-returns supplier_return.create',
         'GET /api/v1/supplier-returns/{id} supplier_return.detail.read',
+        'POST /api/v1/supplier-returns/{id}/complete supplier_return.complete',
       ].sort(),
     );
 
     expect(byId.get('supplier_return.list.read')?.scope).toBe('supplier_return.read');
     expect(byId.get('supplier_return.detail.read')?.scope).toBe('supplier_return.read');
     expect(byId.get('supplier_return.create')?.scope).toBe('supplier_return.create');
+    expect(byId.get('supplier_return.complete')?.scope).toBe('supplier_return.create');
   });
 
   it('普通读不记审计；登记退货 audit=write（D51 / D54 ②）', () => {
