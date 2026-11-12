@@ -11,6 +11,7 @@ import {
 } from './usecases/purchase-orders.js';
 import {
   createSupplierReturn,
+  completeSupplierReturn,
   getSupplierReturn,
   listSupplierReturns,
 } from './usecases/supplier-returns.js';
@@ -35,6 +36,7 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'purchase.order.cancel': 'purchase_order',
   'purchase.order.complete': 'purchase_order',
   'supplier_return.create': 'supplier_return',
+  'supplier_return.complete': 'supplier_return',
 };
 
 /**
@@ -98,6 +100,8 @@ export function registerPurchaseRoutes(app: FastifyInstance): void {
       reply.header('ETag', etagOf(supplierReturn.version));
       return supplierReturn;
     },
+    'supplier_return.complete': async ({ app: instance, request, reply }) =>
+      completeSupplierReturn({ database: instance.database, request, reply }),
   };
 
   mountRoutes(app, {

@@ -17,6 +17,7 @@ import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
+import { stockFlowPort } from '../../../platform/services/registry.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import * as repo from '../repo.js';
 
@@ -249,4 +250,46 @@ export async function createSupplierReturn(
 
   ctx.reply.status(201);
   return created;
+}
+
+export async function completeSupplierReturn(ctx: SupplierReturnWriteContext): Promise<SupplierReturn> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'supplier_return.complete');
+  requireScope(principal, 'create');
+  assertHumanCreation(principal, ctx.request.auditReason);
+  const id = parseSupplierReturnId(ctx.request);
+  const raw = headerValue(ctx.request, 'if-match');
+  const expectedVersion = Number(raw?.replaceAll('"', ''));
+  if (!Number.isInteger(expectedVersion)) throw new AppError('VALIDATION_FAILED', '缺少合法 If-Match');
+  const audit = auditEventOf(ctx.request, principal, id, { beforeStatus: '进行中', afterStatus: '已完成' });
+  return withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const order = await repo.getSupplierReturn(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '供应商退货单不存在');
+    if (order.version !== expectedVersion) throw new AppError('VERSION_CONFLICT', '供应商退货单版本与 If-Match 不一致');
+    if (order.status !== '进行中') throw new AppError('VALIDATION_FAILED', '只有进行中的供应商退货单可以完成');
+    for (const line of order.lines) {
+      const count = BigInt(line.batchIds.length);
+      const [whole, fraction = ''] = line.qty.split('.');
+      const rawQty = BigInt(whole ?? '0') * 1_000_000n + BigInt(fraction.padEnd(6, '0'));
+      const base = rawQty / count;
+      const remainder = rawQty - base * count;
+      for (const [index, batchId] of line.batchIds.entries()) {
+        const share = index === line.batchIds.length - 1 ? base + remainder : base;
+        if (share === 0n) continue;
+        const text = share.toString().padStart(7, '0');
+        const qty = `${text.slice(0, -6)}.${text.slice(-6)}`.replace(/0+$/, '').replace(/\.$/, '');
+        await stockFlowPort().applyAdjustment(tx, {
+          tenantId: principal.tenantId, companyId: order.companyId, batchId,
+          delta: `-${qty}`, sourceDocType: 'S', sourceDocId: id, handledBy: principal.employeeId,
+        });
+      }
+    }
+    const completed = await repo.completeSupplierReturn(context, id, expectedVersion);
+    if (!completed) throw new AppError('NOT_FOUND', '供应商退货单不存在');
+    audit.companyId = completed.companyId;
+    audit.changeSummary = { beforeStatus: order.status, afterStatus: completed.status, version: completed.version };
+    ctx.reply.header('ETag', `"${completed.version}"`);
+    return completed;
+  });
 }
