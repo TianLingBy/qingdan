@@ -1,4 +1,8 @@
-import type { ProcessingOrder, ProcessingOrderDetail } from '@qingdan/contracts';
+import type {
+  ProcessingOrder,
+  ProcessingOrderCompleteResult,
+  ProcessingOrderDetail,
+} from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../app.js';
@@ -331,6 +335,45 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
         )`,
     );
     expect(reads.rows[0]?.count).toBe('0');
+  });
+
+  it('完成后重新 GET 详情：回读真实产出批次与损失记录', async () => {
+    const created = await createOne(nextRequestId('detail-complete'));
+    const completed = await app.inject({
+      method: 'POST',
+      url: `/api/v1/processing-orders/${created.id}/complete`,
+      headers: writeHeaders(ownerCookie, 'req-processing-complete-detail', {
+        'if-match': '"1"',
+      }),
+      payload: { lossQty: '4' },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.headers.etag).toBe('"2"');
+    const result = completed.json() as ProcessingOrderCompleteResult;
+    expect(result.outputBatch?.qty).toBe('96');
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/processing-orders/${created.id}`,
+      headers: readHeaders(ownerCookie, 'req-processing-complete-detail-read'),
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.headers.etag).toBe('"2"');
+    expect(detail.json()).toMatchObject({
+      outputBatchId: result.outputBatch?.id,
+      lossRecord: {
+        lossQty: '4',
+        amount: '34',
+      },
+      cancelable: { allowed: false, reason: 'already_completed' },
+    });
+
+    const outside = await app.inject({
+      method: 'GET',
+      url: `/api/v1/processing-orders/${created.id}`,
+      headers: readHeaders(outsideCookie, 'req-processing-complete-detail-outside'),
+    });
+    expect(outside.statusCode).toBe(404);
   });
 
   it('materialBatchIds 空 / 负数费用 → 422；跨公司加工厂 / 批次 → 422；详情 / 列表隔离', async () => {
