@@ -79,3 +79,14 @@ export function staleVersionRecoveredText(version: number): string {
 export function staleActionRetryText(version: number, action: string): string {
   return `这张单刚被别人改过，已同步到最新版本 v${version}。请核对单据当前状态，再点一次「${action}」。`;
 }
+
+/**
+ * 版本冲突、但**没能读回最新单据**（网络中断 / 权限被撤）时的兜底。
+ *
+ * 这条分支原本是死的：`recoverFromStaleVersion` 返回 null 后页面 `return` 了，
+ * 而红条的渲染条件带 `!isStaleVersionError`，amber 提示又没设——用户看到的就是「点了没反应」。
+ * stale 类错误不能既不给红条也不给琥珀条，必须有一句话说清。
+ */
+export function staleUnrecoveredText(): string {
+  return '这张单刚被别人改过，但没能读取到最新版本（可能是网络或权限问题）；请刷新页面后重新操作。';
+}
