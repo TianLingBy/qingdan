@@ -26,6 +26,7 @@ import { MASKED_AMOUNT, formatMoney } from '../../lib/decimal';
 import { useEmployeeLabel } from '../../lib/employee-directory';
 import { describeWriteError, recoverFromStaleVersion } from '../../lib/write-error';
 import { authApi, authKeys } from '../auth/auth-api';
+import { CommissionRatesPanel } from './CommissionRatesPanel';
 import {
   SETTLEMENT_SOURCE_LABEL,
   SETTLEMENT_STATES,
@@ -243,10 +244,18 @@ export function SettlementsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   /** 版本冲突后已刷新到最新状态时的提示（与红色报错互斥）。 */
   const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  /** 提成比例配置面板是否展开（入口按 commission.read 显隐，见下）。 */
+  const [commissionOpen, setCommissionOpen] = useState(false);
 
   const scope = me.data?.scope;
   const can = (action: ScopeAction) => allows(scope, 'settlement', action);
   const canViewPrice = can('view_price');
+  /**
+   * 提成域是独立的 scope（`commission.read/create/delete`，契约 `commission-rates.ts`）：
+   * 只持 `settlement.read` 的财务能看结算单，但**看不到**这个入口——
+   * 门禁仍以服务端为准，这里只决定显不显示（D4/D27）。
+   */
+  const canCommission = (action: ScopeAction) => allows(scope, 'commission', action);
 
   useEffect(() => {
     setCursors([null]);
@@ -382,10 +391,29 @@ export function SettlementsPage() {
 
   return (
     <section className="mx-auto max-w-7xl space-y-5">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">结算单 C</h1>
-        <p className="mt-1 max-w-3xl text-sm text-slate-500">{PAGE_DESCRIPTION}</p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">结算单 C</h1>
+          <p className="mt-1 max-w-3xl text-sm text-slate-500">{PAGE_DESCRIPTION}</p>
+        </div>
+        {canCommission('read') ? (
+          <button
+            type="button"
+            onClick={() => setCommissionOpen((open) => !open)}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
+          >
+            {commissionOpen ? '收起提成比例配置' : '提成比例配置'}
+          </button>
+        ) : null}
       </header>
+
+      {commissionOpen && canCommission('read') ? (
+        <CommissionRatesPanel
+          companyIds={me.data?.companyIds ?? []}
+          canCreate={canCommission('create')}
+          canDelete={canCommission('delete')}
+        />
+      ) : null}
 
       <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
         结算单<b>没有「新建」按钮</b>：草稿由 E 销售单 / N 内部交易单「已完成」时自动生成（D19 / D29）。
