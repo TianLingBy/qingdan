@@ -99,7 +99,32 @@ ALL PASSED (7 files)
 - `ops/backup.ps1`、`ops/restore.ps1` 依赖 Windows 侧 `docker` 命令，本机没有安装，备份/恢复用同语义的 bash 等价脚本验证（结果见 `docs/deploy.md` 第七节）。
 - 手机或其它设备访问需自行加 hosts 与信任 Caddy 根证书（`E:\qingdan-server\caddy-root.crt`）。
 
-## 七、复跑方式
+## 七、每日自动备份（本机已启用）
+
+`docs/deploy.md` 把「每天自动备份」留给宿主机计划任务；本机的做法是在 WSL 内用 systemd timer（Linux 侧直接有 `docker compose exec`，比从 Windows 穿一层 WSL 稳定）：
+
+- `/usr/local/bin/qingdan-backup.sh`：`pg_dump -Fc` 落到 `E:\qingdan-server\app\ops\backups\qingdan-<时间戳>.dump`，自动保留最近 14 份。
+- `qingdan-backup.timer`：每天 **03:30（Asia/Shanghai）** 触发，`Persistent=true`（错过会补跑），已 `enable`。
+- 实测首次运行：
+
+```text
+Nov 13 00:06:39 qingdan-backup.sh[38884]: 2026-11-13 00:06:39 backup ok: qingdan-20261113-000638.dump 264641 bytes
+NEXT                         LEFT     LAST PASSED UNIT                 ACTIVATES
+Fri 2026-11-13 03:30:00 CST  3h 23min -    -      qingdan-backup.timer qingdan-backup.service
+```
+
+- 用这份自动备份做恢复演练（建临时库、还原、比对行数，最后删临时库），结果：
+
+```text
+dump=ops/backups/qingdan-20261113-000638.dump size_bytes=264641
+pg_restore_exit=0
+tenant 1/1  employee 4/4  product 1/1  purchase_order 1/1
+sales_order 0/0  inventory_batch 0/0  payment_transaction 0/0  全部 PASS
+public_tables source=47 restore=47 | schema_migrations source=30 restore=30
+[restore] PASS
+```
+
+## 八、复跑方式
 
 ```powershell
 # 重建测试库（非幂等测试的前提）
