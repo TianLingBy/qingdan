@@ -119,7 +119,7 @@ describe('操作日志页（#144）', () => {
 });
 
 describe('API 与集成页（#144）', () => {
-  it('渲染 Token 行与 OpenAPI 入口、一次性密钥口径', () => {
+  it('渲染 Token 行与接口契约真源、一次性密钥口径', () => {
     const html = render(<ApiIntegrationPage />, (client) => {
       client.setQueryData(['admin', 'api-tokens'], {
         items: [
@@ -151,7 +151,8 @@ describe('API 与集成页（#144）', () => {
     });
     expect(html).toContain('API 与集成');
     expect(html).toContain('AI 助手');
-    expect(html).toContain('OpenAPI 文档');
+    expect(html).toContain('接口契约真源');
+    expect(html).toContain('/api/v1/openapi.json');
     expect(html).toContain('只存');
   });
 });
