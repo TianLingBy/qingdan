@@ -1,3 +1,5 @@
+import { registerServices, resetServices } from '../../../platform/services/registry.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 import {
   AppError,
   type ScopeMatrix,
@@ -9,6 +11,7 @@ import type { Principal } from '../../../platform/auth/principal.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
 import { createTestDatabase, type TestDatabase } from '../../../testing/pglite.js';
 import {
+  completeSupplierReturn,
   createSupplierReturn,
   getSupplierReturn,
   listSupplierReturns,
@@ -179,6 +182,7 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
   beforeAll(async () => {
     test = await createTestDatabase();
     await seed(test.database);
+    registerServices(inventoryServices);
 
     await test.database.query(
       `INSERT INTO company (id, tenant_id, name, code, level, status)
@@ -257,6 +261,7 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
   });
 
   afterAll(async () => {
+    resetServices();
     await test.database.close();
   });
 
@@ -421,4 +426,71 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
     );
     expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
   });
+  async function finish(id: string, version = 1) {
+    const request = makeRequest({ principal: principal(), params: { id } });
+    request.headers['if-match'] = `"${version}"`;
+    return completeSupplierReturn({
+      database: test.database, request,
+      reply: { header() { return this; } } as unknown as FastifyReply,
+    });
+  }
+
+  async function stock() {
+    return (await test.database.query(
+      `SELECT id, inbound_qty::text, locked_unit_cost::text FROM inventory_batch ORDER BY id`,
+    )).rows;
+  }
+
+  it('完成：库存与流水同事务、成本不变、完成审计、拒绝重复完成', async () => {
+    const order = await createOne();
+    const before = await stock();
+    const completed = await finish(order.id);
+    expect(completed).toMatchObject({ status: '已完成', version: 2 });
+    const after = await stock();
+    const oldBatch = before.find(row => row.id === BATCH_ID)!;
+    const newBatch = after.find(row => row.id === BATCH_ID)!;
+    expect(Number(newBatch.inbound_qty) - Number(oldBatch.inbound_qty)).toBe(-2);
+    expect(newBatch.locked_unit_cost).toBe(oldBatch.locked_unit_cost);
+    const flows = await test.database.query(
+      `SELECT delta::text, source_doc_type FROM inventory_flow WHERE source_doc_id = $1`, [order.id],
+    );
+    expect(flows.rows).toHaveLength(2);
+    expect(flows.rows.map(row => Number(row.delta))).toContain(-2);
+    expect(flows.rows.every(row => row.source_doc_type === 'S')).toBe(true);
+    await expectAppError(finish(order.id), 'VERSION_CONFLICT');
+    await expectAppError(finish(order.id, 2), 'VALIDATION_FAILED');
+    expect(await stock()).toEqual(after);
+    const audit = await test.database.query(
+      `SELECT action FROM audit_log WHERE object_id = $1 AND action = 'supplier_return.complete'`, [order.id],
+    );
+    expect(audit.rows).toHaveLength(1);
+  });
+
+  it('第二行库存不足：第一行扣减、流水及单据状态全部回滚', async () => {
+    const order = await createOne({ lines: [CREATE_BODY.lines[0], { ...CREATE_BODY.lines[1], qty: '9999' }] });
+    const before = await stock();
+    await expectAppError(finish(order.id), 'VERSION_CONFLICT');
+    expect(await stock()).toEqual(before);
+    expect(await getSupplierReturn(readCtx({}, { params: { id: order.id } }))).toMatchObject({ status: '进行中', version: 1 });
+    expect((await test.database.query(`SELECT id FROM inventory_flow WHERE source_doc_id = $1`, [order.id])).rows).toEqual([]);
+  });
+
+  it.each([
+    [undefined, 'PRECONDITION_REQUIRED'],
+    ['', 'PRECONDITION_REQUIRED'],
+    ['1', 'VERSION_CONFLICT'],
+    ['"1""', 'VERSION_CONFLICT'],
+    ['W/"1"', 'VERSION_CONFLICT'],
+  ])('拒绝非法 If-Match %s 且无库存副作用', async (header, code) => {
+    const order = await createOne();
+    const before = await stock();
+    const request = makeRequest({ principal: principal(), params: { id: order.id } });
+    request.headers['if-match'] = header;
+    await expectAppError(completeSupplierReturn({
+      database: test.database, request,
+      reply: { header() { return this; } } as unknown as FastifyReply,
+    }), code);
+    expect(await stock()).toEqual(before);
+  });
+
 });

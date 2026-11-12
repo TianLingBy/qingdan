@@ -157,6 +157,7 @@ function auditEventOf(
   principal: Principal,
   objectId: string,
   changeSummary: Record<string, unknown>,
+  action: 'supplier_return.create' | 'supplier_return.complete' = 'supplier_return.create',
 ): MutableAuditEvent {
   return {
     tenantId: principal.tenantId,
@@ -165,7 +166,7 @@ function auditEventOf(
     actorId: principal.actorId,
     credentialId: principal.credentialId,
     source: request.auditSource,
-    action: 'supplier_return.create',
+    action,
     objectType: OBJECT_TYPE,
     objectId,
     changeSummary,
@@ -175,6 +176,27 @@ function auditEventOf(
     userAgent: headerValue(request, 'user-agent') ?? null,
     reason: request.auditReason,
   };
+}
+
+/** 强 ETag `"<version>"`；缺失 → 428，格式非法或超出安全整数 → 409。 */
+function parseIfMatchVersion(request: FastifyRequest): number {
+  const raw = headerValue(request, 'if-match');
+  if (raw === undefined || raw.trim() === '') {
+    throw new AppError(
+      'PRECONDITION_REQUIRED',
+      '该操作必须携带 If-Match（强 ETag "<version>"）',
+    );
+  }
+  const match = /^"([0-9]+)"$/.exec(raw.trim());
+  const version = match ? Number(match[1]) : Number.NaN;
+  if (!match || !Number.isSafeInteger(version)) {
+    throw new AppError(
+      'VERSION_CONFLICT',
+      'If-Match 格式不合法，应为强 ETag "<version>"',
+      { ifMatch: raw },
+    );
+  }
+  return version;
 }
 
 /** 供应商退货列表（普通读，不记审计）。 */
@@ -258,10 +280,8 @@ export async function completeSupplierReturn(ctx: SupplierReturnWriteContext): P
   requireScope(principal, 'create');
   assertHumanCreation(principal, ctx.request.auditReason);
   const id = parseSupplierReturnId(ctx.request);
-  const raw = headerValue(ctx.request, 'if-match');
-  const expectedVersion = Number(raw?.replaceAll('"', ''));
-  if (!Number.isInteger(expectedVersion)) throw new AppError('VALIDATION_FAILED', '缺少合法 If-Match');
-  const audit = auditEventOf(ctx.request, principal, id, { beforeStatus: '进行中', afterStatus: '已完成' });
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const audit = auditEventOf(ctx.request, principal, id, { beforeStatus: '进行中', afterStatus: '已完成' }, 'supplier_return.complete');
   return withAudit(database, audit, async (tx) => {
     const context = repoContext(tx, principal);
     const order = await repo.getSupplierReturn(context, id);
