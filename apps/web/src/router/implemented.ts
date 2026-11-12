@@ -22,6 +22,7 @@ export const IMPLEMENTED_PAGE_IDS = [
   'inventory',
   'inventory-flows',
   'stocktakes',
+  'profit-report',
   'purchase-orders',
   'processing-orders',
   'sales-orders',
