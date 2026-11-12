@@ -265,6 +265,16 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       material_cost_amount: '1000',
       loss_amount: '1100',
     });
+
+    const detail = await getProcessingOrder(
+      readCtx({}, { params: { id: created.id } }),
+    );
+    expect(detail.outputBatchId).toBeNull();
+    expect(detail.lossRecord).toEqual({
+      lossQty: '100',
+      amount: '1100',
+      recordedAt: detail.updatedAt,
+    });
   });
 
   it('完成：扣减材料批次、生成产出批次与流水、完成审计（#99 B 链路）', async () => {
@@ -325,6 +335,32 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       [created.id],
     );
     expect(audit.rows).toHaveLength(1);
+
+    const detail = await getProcessingOrder(
+      readCtx({}, { params: { id: created.id } }),
+    );
+    expect(detail.outputBatchId).toBe(completed.outputBatch?.id);
+    expect(detail.lossRecord).toEqual({
+      lossQty: '4',
+      amount: '44',
+      recordedAt: detail.updatedAt,
+    });
+  });
+
+  it('完成：无损耗时不生成损失记录，产出批次仍可回读', async () => {
+    const created = await createOne();
+    const { ctx } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"1"' },
+      body: { lossQty: '0' },
+    });
+    const completed = await completeProcessingOrder(ctx);
+
+    const detail = await getProcessingOrder(
+      readCtx({}, { params: { id: created.id } }),
+    );
+    expect(detail.outputBatchId).toBe(completed.outputBatch?.id);
+    expect(detail.lossRecord).toBeNull();
   });
 
   it('材料可用量不足：整单拒绝，材料未扣且不生成流水 / 产出批次（#99 B 回滚）', async () => {
@@ -648,6 +684,8 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       readCtx({}, { params: { id: created.id } }),
     );
     expect(unchanged.fees).toEqual(created.fees);
+    expect(unchanged.outputBatchId).toBeNull();
+    expect(unchanged.lossRecord).toBeNull();
 
     const { ctx, state } = writeCtx({}, {
       params: { id: created.id },
