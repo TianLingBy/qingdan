@@ -58,7 +58,24 @@ ALL PASSED (7 files)
 4. 完成即生成 C 结算单草稿：金额 75 / 成本 75。
 5. 确认结算：待确认 → 已结算，并落审计。
 
-`SKIP A 单完成入库：该端点属于 #99（未接）`。输出 `OK e2e-business-flow`，退出码 0。
+脚本本身不覆盖 A 链（`tests/e2e-business-flow.test.ps1` 第 7 行注释写明），A 单完成入库另外手工补测，见下一节。输出 `OK e2e-business-flow`，退出码 0。
+
+## 三之二、A 单「完成入库」补测（2026-11-13 00:22）
+
+补测前以为这个端点没接（`#99` 当时写的占位判断），实际 `#99`/`#207` 合并后已经有了。真机实测：
+
+```text
+POST /api/v1/purchase-orders/01a1d079-…/complete   带会话 cookie + Origin + If-Match: "1"
+→ 200 {"orderNo":"A-0001-20261112-0001","status":"已完成","version":2, …}
+
+select * from inventory_batch;
+PB-0001-20261112-0001 | in=10.000000 remaining=10.000000 available=10.000000 cost=8.600000
+select * from inventory_flow;
+delta=10.000000 | source_doc_type=A | source_doc_id=01a1d079-…
+audit_log: purchase.order.complete|success
+```
+
+所以 A 单「完成 → 生成批次 → 记入库流水」这条链路是通的；缺的是**自动化 e2e 没覆盖 A 链**（脚本只造数提供库存），不是端点缺失。
 
 ## 四、浏览器逐页（真实 Chromium，已登录）
 
@@ -72,7 +89,7 @@ ALL PASSED (7 files)
 ```
 
 - 已登录访问 `/login` 自动跳 `/workbench`（符合预期）。
-- **唯一占位页**是 `/profit-report`（正文「待实现…页面骨架已就位」）；`/processing-orders` 文案注明「本批不含完成/验收」；其余页面均有真实数据或正常空态。
+- **唯一占位页**是 `/profit-report`（正文「待实现…页面骨架已就位」，已开 `#221`）；`/processing-orders` 文案写「本批不含完成/验收、会回 501」——该说明已过期，端点实际已实现，缺前端入口，已开 `#222`。
 - 有数据的页面：员工 4 人、岗位 8 个（7 预设 + 1 自定义）、公司 `0001 演示公司`、操作日志含 `platform.token.read` 等记录。
 
 ## 五、浏览器写路径（逐条实测）
@@ -92,7 +109,7 @@ ALL PASSED (7 files)
 
 ## 六、本次未覆盖 / 仍是缺口
 
-- A 单「完成入库」端点未接（`#99`），端到端流程到 E → C 为止。
+- A 单「完成入库」端点已实测可用（见第三之二节），但**自动化 e2e 仍未覆盖 A 链**（当前只到 E → C）。
 - 支付回调只有框架（`#125`），真实拉起支付等域名备案与商户号（`#101`）。
 - 短信验证码未启用（`TENCENT_SMS_*` 留空，登录用 `login_code` 一次性码，见 `docs/deploy.md` 第七节）。
 - 浏览器验收只有 1 租户 / 1 公司 / 4 员工；多公司切换、跨公司数据隔离的 UI 表现未验。
