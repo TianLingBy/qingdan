@@ -81,8 +81,8 @@ const CREATE_INPUT = {
 } as const;
 
 describe('采购单契约（purchase）', () => {
-  it('5 条端点全部登记并汇总进 ROUTES，且归属 purchase', () => {
-    expect(PURCHASE_ORDER_ROUTES).toHaveLength(5);
+  it('6 条端点全部登记并汇总进 ROUTES，且归属 purchase', () => {
+    expect(PURCHASE_ORDER_ROUTES).toHaveLength(6);
     for (const route of PURCHASE_ORDER_ROUTES) expect(route.module).toBe('purchase');
 
     const purchaseIds = routesOfModule(ROUTES, 'purchase').map((r) => r.operationId);
@@ -98,6 +98,7 @@ describe('采购单契约（purchase）', () => {
         'GET /api/v1/purchase-orders/{id} purchase.order.detail.read',
         'PATCH /api/v1/purchase-orders/{id} purchase.order.update',
         'POST /api/v1/purchase-orders/{id}/cancel purchase.order.cancel',
+        'POST /api/v1/purchase-orders/{id}/complete purchase.order.complete',
       ].sort(),
     );
 
@@ -107,6 +108,7 @@ describe('采购单契约（purchase）', () => {
     expect(byId.get('purchase.order.create')?.scope).toBe('purchase.create');
     expect(byId.get('purchase.order.update')?.scope).toBe('purchase.update');
     expect(byId.get('purchase.order.cancel')?.scope).toBe('purchase.delete');
+    expect(byId.get('purchase.order.complete')?.scope).toBe('purchase.approve');
   });
 
   it('普通读不记审计；写操作全部 audit=write（D51）', () => {
@@ -289,9 +291,9 @@ describe('采购单契约（purchase）', () => {
     ).toBe(false);
     expect(DETAIL.cancelable).toEqual(canCancel('进行中', false));
 
-    // 本批没有「完成/入库」端点、成本更正端点、S 供应商退货端点。
+    // 本批只有「完成/入库」端点；没有成本更正端点、也没有 S 供应商退货端点（独立契约）。
     const ids = PURCHASE_ORDER_ROUTES.map((r) => r.operationId);
-    expect(ids.some((id) => /complete|inbound|cost-correct|supplier-return|return/.test(id))).toBe(
+    expect(ids.some((id) => /inbound|cost-correct|supplier-return|return/.test(id))).toBe(
       false,
     );
   });

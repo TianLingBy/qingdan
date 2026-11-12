@@ -87,8 +87,8 @@ const CREATE_RETURN_REFUND = {
 const byId = new Map(CUSTOMER_RETURN_ROUTES.map((route) => [route.operationId, route]));
 
 describe('客户退货契约（customer_return）', () => {
-  it('3 条端点全部登记并汇总进 ROUTES，且归属 sales', () => {
-    expect(CUSTOMER_RETURN_ROUTES).toHaveLength(3);
+  it('4 条端点全部登记并汇总进 ROUTES，且归属 sales', () => {
+    expect(CUSTOMER_RETURN_ROUTES).toHaveLength(4);
     for (const route of CUSTOMER_RETURN_ROUTES) expect(route.module).toBe('sales');
 
     const salesIds = routesOfModule(ROUTES, 'sales').map((r) => r.operationId);
@@ -103,12 +103,14 @@ describe('客户退货契约（customer_return）', () => {
         'GET /api/v1/customer-returns customer_return.list.read',
         'POST /api/v1/customer-returns customer_return.create',
         'GET /api/v1/customer-returns/{id} customer_return.detail.read',
+        'POST /api/v1/customer-returns/{id}/complete customer_return.complete',
       ].sort(),
     );
 
     expect(byId.get('customer_return.list.read')?.scope).toBe('customer_return.read');
     expect(byId.get('customer_return.detail.read')?.scope).toBe('customer_return.read');
     expect(byId.get('customer_return.create')?.scope).toBe('customer_return.create');
+    expect(byId.get('customer_return.complete')?.scope).toBe('customer_return.create');
   });
 
   it('普通读不记审计；登记退货 audit=write（D51 / D54 ②）', () => {
