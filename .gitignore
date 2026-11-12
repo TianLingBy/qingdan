@@ -24,5 +24,7 @@ ops/backups/
 .vs/
 .idea/
 .vscode/
+# 本地子代理配置（个人工具产物，入库应走 PR 评审）
+.codex/
 .DS_Store
 Thumbs.db

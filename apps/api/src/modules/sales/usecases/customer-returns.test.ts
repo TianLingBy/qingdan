@@ -1,3 +1,5 @@
+import { registerServices, resetServices } from '../../../platform/services/registry.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 import {
   AppError,
   type CustomerReturn,
@@ -13,6 +15,7 @@ import {
   type TestDatabase,
 } from '../../../testing/pglite.js';
 import {
+  completeCustomerReturn,
   createCustomerReturn,
   getCustomerReturn,
   listCustomerReturns,
@@ -195,6 +198,7 @@ describe('sales R 客户退货用例（PGlite + seed 演示租户）', () => {
   beforeAll(async () => {
     test = await createTestDatabase();
     await seed(test.database);
+    registerServices(inventoryServices);
     await test.database.query(
       `INSERT INTO company (id, tenant_id, name, code, level, status)
        VALUES ($1, $2, '退货二司', '0002', 1, '启用')
@@ -232,6 +236,7 @@ describe('sales R 客户退货用例（PGlite + seed 演示租户）', () => {
   });
 
   afterAll(async () => {
+    resetServices();
     await test?.database.close();
   });
 
@@ -400,4 +405,72 @@ describe('sales R 客户退货用例（PGlite + seed 演示租户）', () => {
     );
     expect(persisted.rows[0]?.count).toBe('0');
   });
+  async function finish(id: string, version = 1) {
+    const request = makeRequest({ principal: principal(), params: { id } });
+    request.headers['if-match'] = `"${version}"`;
+    return completeCustomerReturn({
+      database: test.database, request,
+      reply: { header() { return this; } } as unknown as FastifyReply,
+    });
+  }
+
+  async function stock() {
+    return (await test.database.query(
+      `SELECT id, inbound_qty::text, locked_unit_cost::text FROM inventory_batch ORDER BY id`,
+    )).rows;
+  }
+
+  it('完成：库存与流水同事务、成本不变、完成审计、拒绝重复完成', async () => {
+    const order = (await createReturn((await createOrder()).id)).customerReturn;
+    const before = await stock();
+    const completed = await finish(order.id);
+    expect(completed).toMatchObject({ status: '已完成', version: 2 });
+    const after = await stock();
+    const oldBatch = before.find(row => row.id === BATCH_ID)!;
+    const newBatch = after.find(row => row.id === BATCH_ID)!;
+    expect(Number(newBatch.inbound_qty) - Number(oldBatch.inbound_qty)).toBe(2);
+    expect(newBatch.locked_unit_cost).toBe(oldBatch.locked_unit_cost);
+    const flows = await test.database.query(
+      `SELECT delta::text, source_doc_type FROM inventory_flow WHERE source_doc_id = $1`, [order.id],
+    );
+    expect(flows.rows).toHaveLength(1);
+    expect(flows.rows.map(row => Number(row.delta))).toContain(2);
+    expect(flows.rows.every(row => row.source_doc_type === 'R')).toBe(true);
+    await expectAppError(finish(order.id), 'VERSION_CONFLICT');
+    await expectAppError(finish(order.id, 2), 'VALIDATION_FAILED');
+    expect(await stock()).toEqual(after);
+    const audit = await test.database.query(
+      `SELECT action FROM audit_log WHERE object_id = $1 AND action = 'customer_return.complete'`, [order.id],
+    );
+    expect(audit.rows).toHaveLength(1);
+  });
+
+  it('仅退款完成不改变库存且不生成流水', async () => {
+    const { customerReturn: order } = await createReturn((await createOrder()).id, {
+      returnType: '仅退款', onlyRefundKind: '减成交额', lines: [],
+    });
+    const before = await stock();
+    expect(await finish(order.id)).toMatchObject({ status: '已完成', version: 2 });
+    expect(await stock()).toEqual(before);
+    expect((await test.database.query(`SELECT id FROM inventory_flow WHERE source_doc_id = $1`, [order.id])).rows).toEqual([]);
+  });
+
+  it.each([
+    [undefined, 'PRECONDITION_REQUIRED'],
+    ['', 'PRECONDITION_REQUIRED'],
+    ['1', 'VERSION_CONFLICT'],
+    ['"1""', 'VERSION_CONFLICT'],
+    ['W/"1"', 'VERSION_CONFLICT'],
+  ])('拒绝非法 If-Match %s 且无库存副作用', async (header, code) => {
+    const order = (await createReturn((await createOrder()).id)).customerReturn;
+    const before = await stock();
+    const request = makeRequest({ principal: principal(), params: { id: order.id } });
+    request.headers['if-match'] = header;
+    await expectAppError(completeCustomerReturn({
+      database: test.database, request,
+      reply: { header() { return this; } } as unknown as FastifyReply,
+    }), code);
+    expect(await stock()).toEqual(before);
+  });
+
 });

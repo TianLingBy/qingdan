@@ -267,6 +267,116 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     });
   });
 
+  it('完成：扣减材料批次、生成产出批次与流水、完成审计（#99 B 链路）', async () => {
+    const created = await createOne();
+    const available = async (batchId: string): Promise<number> => {
+      const result = await test.database.query<{ available_qty: string }>(
+        `SELECT trim_scale(available_qty) AS available_qty
+           FROM inventory_batch WHERE id = $1::uuid`,
+        [batchId],
+      );
+      return Number(result.rows[0]?.available_qty);
+    };
+    const before = await available(BATCH_ID);
+
+    const { ctx, state } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"1"' },
+      body: { lossQty: '4' },
+    });
+    const completed = await completeProcessingOrder(ctx);
+
+    expect(completed).toMatchObject({ status: '已完成', lossQty: '4', sellableQty: '96' });
+    expect(completed.outputBatch).toMatchObject({ qty: '96' });
+    expect(state.headers.ETag).toBe('"2"');
+    expect(await available(BATCH_ID)).toBe(before - 100);
+
+    const flows = (
+      await test.database.query(
+        `SELECT trim_scale(f.delta)::text AS delta,
+                f.source_doc_type,
+                b.product_id::text AS product_id
+           FROM inventory_flow f
+           JOIN inventory_batch b ON b.id = f.batch_id
+          WHERE f.source_doc_id = $1
+          ORDER BY f.delta`,
+        [created.id],
+      )
+    ).rows as { delta: string; source_doc_type: string; product_id: string }[];
+    expect(flows.map((row) => Number(row.delta))).toEqual([-100, 96]);
+    expect(flows.every((row) => row.source_doc_type === 'B')).toBe(true);
+
+    const output = (
+      await test.database.query(
+        `SELECT trim_scale(inbound_qty)::text AS qty,
+                trim_scale(locked_unit_cost)::text AS cost,
+                custodian_id::text AS custodian
+           FROM inventory_batch WHERE id = $1::uuid`,
+        [completed.outputBatch?.id],
+      )
+    ).rows[0] as { qty: string; cost: string; custodian: string };
+    expect(Number(output.qty)).toBe(96);
+    // 材料 100×10 + 加工费 100 = 1100，摊到 96 件。
+    expect(Number(output.cost)).toBeCloseTo(1100 / 96, 6);
+    expect(output.custodian).toBe(DEMO_IDS.ownerEmployeeId);
+
+    const audit = await test.database.query(
+      `SELECT action FROM audit_log WHERE object_id = $1 AND action = 'processing.order.complete'`,
+      [created.id],
+    );
+    expect(audit.rows).toHaveLength(1);
+  });
+
+  it('材料可用量不足：整单拒绝，材料未扣且不生成流水 / 产出批次（#99 B 回滚）', async () => {
+    const created = await createOne();
+    const before = (
+      await test.database.query<{ inbound_qty: string; referenced_qty: string }>(
+        `SELECT trim_scale(inbound_qty) AS inbound_qty,
+                trim_scale(referenced_qty) AS referenced_qty
+           FROM inventory_batch WHERE id = $1::uuid`,
+        [BATCH_ID],
+      )
+    ).rows[0]!;
+
+    // 把可用量压到 0：材料扣减必须被库存守卫拒绝，而不是扣成负数。
+    await test.database.query(
+      `UPDATE inventory_batch SET referenced_qty = inbound_qty WHERE id = $1::uuid`,
+      [BATCH_ID],
+    );
+    try {
+      const { ctx } = writeCtx({}, {
+        params: { id: created.id },
+        headers: { 'if-match': '"1"' },
+        body: { lossQty: '4' },
+      });
+      await expectAppError(completeProcessingOrder(ctx), 'VERSION_CONFLICT');
+    } finally {
+      await test.database.query(
+        `UPDATE inventory_batch SET referenced_qty = $1::amount WHERE id = $2::uuid`,
+        [before.referenced_qty, BATCH_ID],
+      );
+    }
+
+    const batch = (
+      await test.database.query<{ inbound_qty: string; status: string }>(
+        `SELECT trim_scale(inbound_qty) AS inbound_qty
+           FROM inventory_batch WHERE id = $1::uuid`,
+        [BATCH_ID],
+      )
+    ).rows[0]!;
+    expect(batch.inbound_qty).toBe(before.inbound_qty);
+    const flows = await test.database.query(
+      `SELECT id FROM inventory_flow WHERE source_doc_id = $1::uuid`,
+      [created.id],
+    );
+    expect(flows.rows).toEqual([]);
+    const state = await test.database.query<{ status: string }>(
+      `SELECT status FROM processing_order WHERE id = $1::uuid`,
+      [created.id],
+    );
+    expect(state.rows[0]?.status).toBe('进行中');
+  });
+
   it('开单：B 单号、材料批次、费用、损耗 / 可售量、审计均落库', async () => {
     const created = await createOne({
       materialBatchIds: [
