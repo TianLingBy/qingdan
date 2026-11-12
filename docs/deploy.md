@@ -190,15 +190,60 @@ Chromium 里 `login 200 → /auth/me 200（含 companyIds 与 scope）→ POST /
 （Windows 自带的 `curl.exe` 走 schannel，会因 Caddy 证书没有吊销信息报 `CRYPT_E_NO_REVOCATION_CHECK`，
 加 `--ssl-no-revoke` 即可；浏览器不受影响。）
 
+**前端 SPA 没人托管（这次最容易被当成「打不开」的坑）**
+
+仓库的 `docker-compose.yml` 只编排了 `postgres` / `api` / `caddy` / `migrate`，**没有任何服务托管 `apps/web` 的构建产物**。
+根路径 `/` 会落到 api 的鉴权中间件上，返回 `401 {"code":"UNAUTHENTICATED",...}` —— 浏览器里就是一段 JSON，
+非常像「站点打不开」，其实 API 是好的。
+
+本机做法（部署副本里的本地文件，**不入库**）：
+
+1. 宿主机 `pnpm -C apps/web build` 产出 `apps/web/dist`；
+2. `docker-compose.override.yml` 把它只读挂进 caddy：`./apps/web/dist:/srv/web:ro`；
+3. `deploy/Caddyfile.local` 里 `handle /api/*` 反代 `api:3000`，其余走 `root * /srv/web` + `try_files {path} /index.html` + `file_server`（SPA 前端路由回退）。
+
+实测（全部 200）：
+
+```text
+https://qingdan.internal/                     -> 200 text/html（index.html）
+https://qingdan.internal/login                -> 200 text/html
+https://qingdan.internal/assets/index-*.js    -> 200，524185 B
+https://qingdan.internal/api/v1/health        -> 200 application/json
+```
+
+真服务器上线时前端应该做成独立镜像/服务（或在多阶段镜像里加一个 web 阶段 + nginx），不要挂宿主目录。
+
+**IP / localhost 打不开是 TLS 的限制，不是证书没签**
+
+TLS 客户端**不会为 IP 字面量发 SNI**（RFC 6066 禁止），Caddy 无法按 SNI 选证书 → 握手直接报 internal error
+（Windows 侧 curl 显示 `SEC_E_ILLEGAL_MESSAGE (0x80090326)`）。所以 `https://127.0.0.1`、`https://10.12.2.75`
+在协议层面就无解，签多少证书都没用。
+
+`Caddyfile.local` 的第二个站点块只在 **80 端口**接住这些 Host，`redir https://qingdan.internal{uri} permanent`，
+让它们从 HTTP 一步跳到唯一正统地址（顺带保证写操作 Origin 能过同源校验）。实测：
+`http://127.0.0.1/ → 301 https://qingdan.internal/`、`https://localhost/ → 301` 同址。
+
+**生产模式下的登录：本机没有短信通道**
+
+`NODE_ENV=production` 时登录只认 `login_code` 表里的一次性验证码（`apps/api/src/modules/platform/usecases/login.ts:104`
+的固定码直通只在非生产生效）；`TENCENT_SMS_*` 全空时点「获取验证码」返回 501「未开通短信服务」。
+本机用 `E:\qingdan-server\issue-login-code.ps1` 直接往库里写一条码（`sha256(phone:code:pepper)`，与
+`send-code.ts` 的 `hashLoginCode` 同算法），默认给 `10000000001` 签 `000000`、30 天有效；
+**一次性**，登录成功即 `consumed_at` 置位，再登录要重跑脚本。
+
+实测走完整 UI 链路：`https://qingdan.internal/ → 手机号 10000000001 + 000000 → 登录 → /workbench（你好，张明）→
+商品资料页「新增商品」成功落库`。桌面上另放了快捷方式 `轻单.lnk`（直接打开 `https://qingdan.internal/`）。
+
 **本机特有改动（只在部署副本里，未入库）**
 
 本机没有直连外网，容器内 `fetch` 不认 `HTTP_PROXY`（Node 24 的 undici 默认不读环境代理），
 所以在 `E:\qingdan-server\app` 放了三个**本地文件**（都不入库）：
 
 - `Dockerfile.local`：`Dockerfile` 的副本，在 `ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0` 后插一行 `ENV NODE_USE_ENV_PROXY=1`；
-- `docker-compose.override.yml`：把 `api` / `migrate` 的 `build.dockerfile` 指向 `Dockerfile.local`，并把 `caddy` 的
-  Caddyfile 挂到 `deploy/Caddyfile.local`；
-- `deploy/Caddyfile.local`：只比仓库版多一行 `tls internal`（内网 HTTPS，见上一节）。
+- `docker-compose.override.yml`：`api` / `migrate` 的 `build.dockerfile` 指向 `Dockerfile.local`；`caddy` 挂
+  `deploy/Caddyfile.local` 与前端产物 `./apps/web/dist:/srv/web:ro`；
+- `deploy/Caddyfile.local`：比仓库版多三处本地专有内容——`tls internal`（内网 HTTPS）、
+  `handle /api/*` + `file_server`（同时托管前端 SPA）、80 端口把 IP/localhost 301 到 `qingdan.internal`。
 
 构建时要带代理：`HTTP_PROXY=http://<网关>:18888 HTTPS_PROXY=… docker compose --profile tools build api migrate`。
 真实服务器直连外网**不需要**这些文件。宿主侧另有中转进程 `D:\tools\wsl-proxy-relay.js`（18888 → 127.0.0.1:7890），
@@ -227,7 +272,7 @@ WSL2 发行版在最后一个 Windows 侧客户端进程退出后会自己停（
 
 - `E:\qingdan-server\start-server.ps1`：依次做「拉起发行版 → 起 keep-alive → 等 docker.service active →
   容器没在跑就 `docker compose up -d` → 用当前 WSL IP 重设 80/443 两个 portproxy → 补防火墙规则/iphlpsvc →
-  自检」，可重复执行，已实测输出 `http://127.0.0.1=308（期望 308）  https://qingdan.internal=200`。
+  自检」，可重复执行，已实测输出 `http://127.0.0.1=301（期望 301）  https://qingdan.internal=200`。
 - 计划任务 `QingdanServer`：`/sc onlogon /rl highest`，动作为
   `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "E:\qingdan-server\start-server.ps1"`。
   已用 `schtasks /run` 实测：任务 Ready（`last_result=0x0`）、发行版 Running、portproxy 在、`https://qingdan.internal/api/v1/health` → 200。
