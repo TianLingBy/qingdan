@@ -4074,6 +4074,44 @@ paths:
                 - method
                 - occurredAt
               additionalProperties: false
+  /api/v1/customer-returns/{id}/complete:
+    post:
+      operationId: customer_return.complete
+      summary: 确认客户退货并入库
+      tags:
+        - customer_return
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerReturn"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: customer_return.create
+      x-module: sales
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_customer_return_complete
+      x-requires-if-match: true
   /api/v1/customer-returns:
     get:
       operationId: customer_return.list.read

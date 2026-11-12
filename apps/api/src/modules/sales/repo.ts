@@ -1318,6 +1318,17 @@ export async function getCustomerReturn(
   };
 }
 
+export async function completeCustomerReturn(ctx: SalesOrderRepoContext, id: string, expectedVersion: number): Promise<CustomerReturn | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE customer_return SET status = '已完成', version = version + 1
+      WHERE id = $1::uuid AND tenant_id = $2 AND company_id = ANY($3::uuid[])
+        AND version = $4 AND status = '进行中' RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) throw new AppError('VERSION_CONFLICT', '客户退货单已被并发修改或不是进行中状态');
+  return getCustomerReturn(ctx, id);
+}
+
 /** D47：客户退货录入 / 审批人限定老板、经理、财务岗位（老板标识同时短路）。 */
 export async function hasCustomerReturnApprovalPosition(
   ctx: SalesOrderRepoContext,

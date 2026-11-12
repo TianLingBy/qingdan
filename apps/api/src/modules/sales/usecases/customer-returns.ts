@@ -17,6 +17,7 @@ import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
+import { stockFlowPort } from '../../../platform/services/registry.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import * as repo from '../repo.js';
 
@@ -37,6 +38,18 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type MutableAuditEvent = { -readonly [K in keyof AuditEvent]: AuditEvent[K] };
+
+const MICRO = 1_000_000n;
+function toMicro(value: string): bigint {
+  const [whole, fraction = ''] = value.split('.');
+  return BigInt(whole ?? '0') * MICRO + BigInt(fraction.padEnd(6, '0'));
+}
+function fromMicro(value: bigint): string {
+  const sign = value < 0n ? '-' : '';
+  const raw = value < 0n ? -value : value;
+  const fraction = (raw % MICRO).toString().padStart(6, '0').replace(/0+$/, '');
+  return `${sign}${raw / MICRO}${fraction ? `.${fraction}` : ''}`;
+}
 
 export interface CustomerReturnContext {
   readonly database: Database | null;
@@ -305,4 +318,45 @@ export async function createCustomerReturn(
 
   ctx.reply.status(201);
   return created;
+}
+
+export async function completeCustomerReturn(ctx: CustomerReturnWriteContext): Promise<CustomerReturn> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'customer_return.complete');
+  requireScope(principal, 'create');
+  assertHumanCreation(principal, ctx.request.auditReason);
+  const id = parseCustomerReturnId(ctx.request);
+  const raw = headerValue(ctx.request, 'if-match');
+  const expectedVersion = Number(raw?.replaceAll('"', ''));
+  if (!Number.isInteger(expectedVersion)) throw new AppError('VALIDATION_FAILED', '缺少合法 If-Match');
+  const audit = auditEventOf(ctx.request, principal, id, { beforeStatus: '进行中', afterStatus: '已完成' });
+  return withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const order = await repo.getCustomerReturn(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '客户退货单不存在');
+    if (order.version !== expectedVersion) throw new AppError('VERSION_CONFLICT', '客户退货单版本与 If-Match 不一致');
+    if (order.status !== '进行中') throw new AppError('VALIDATION_FAILED', '只有进行中的客户退货单可以完成');
+    if (order.returnType === '退货退款') {
+      for (const line of order.lines) {
+        const qtyMicro = toMicro(line.qty);
+        const count = BigInt(line.batchIds.length);
+        const base = qtyMicro / count;
+        const remainder = qtyMicro - base * count;
+        for (const [index, batchId] of line.batchIds.entries()) {
+          const share = index === line.batchIds.length - 1 ? base + remainder : base;
+          if (share === 0n) continue;
+          await stockFlowPort().applyAdjustment(tx, {
+            tenantId: principal.tenantId, companyId: order.companyId, batchId,
+            delta: fromMicro(share), sourceDocType: 'R', sourceDocId: id, handledBy: principal.employeeId,
+          });
+        }
+      }
+    }
+    const completed = await repo.completeCustomerReturn(context, id, expectedVersion);
+    if (!completed) throw new AppError('NOT_FOUND', '客户退货单不存在');
+    audit.companyId = completed.companyId;
+    audit.changeSummary = { beforeStatus: order.status, afterStatus: completed.status, version: completed.version };
+    ctx.reply.header('ETag', `"${completed.version}"`);
+    return completed;
+  });
 }

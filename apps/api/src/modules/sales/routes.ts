@@ -28,6 +28,7 @@ import {
 } from './usecases/sales-receipts.js';
 import {
   createCustomerReturn,
+  completeCustomerReturn,
   getCustomerReturn,
   listCustomerReturns,
 } from './usecases/customer-returns.js';
@@ -53,6 +54,7 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'sales.order.export': 'sales_order',
   'sales.receipt.create': 'sales_receipt',
   'customer_return.create': 'customer_return',
+  'customer_return.complete': 'customer_return',
 };
 
 /** 无数据库时保持骨架语义：501 + operationId。 */
@@ -173,6 +175,8 @@ export function registerSalesRoutes(app: FastifyInstance): void {
         request,
         reply,
       }),
+    'customer_return.complete': async ({ app: instance, request, reply }) =>
+      completeCustomerReturn({ database: instance.database, request, reply }),
   };
 
   mountRoutes(app, {
