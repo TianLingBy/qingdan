@@ -1,6 +1,6 @@
 (function(){
   var NAV=[
-    {d:'公共',items:[['login','登录 / 入企','登录页.html'],['workbench','工作台','工作台.html'],['flow','业务全流程图','业务全流程图.html']]},
+    {d:'公共',items:[['workbench','工作台','工作台.html'],['flow','业务全流程图','业务全流程图.html']]},
     {d:'单据与结算',items:[['purchase-orders','采购单 A','采购单A.html'],['processing-orders','加工单 B','加工单B.html'],['sales-orders','销售单 E','销售单E.html'],['internal-trades','内部交易单 N','内部交易单N.html'],['settlements','结算单 C','结算单C.html']]},
     {d:'冲正',items:[['reversals','冲正单据','冲正单据.html']]},
     {d:'主数据',items:[['products','商品资料','商品资料.html'],['customers','客户','客户.html'],['suppliers','供应商','供应商.html'],['processors','加工厂档案','加工厂档案.html']]},

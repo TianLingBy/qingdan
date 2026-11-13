@@ -43,6 +43,11 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var
 .kpi{background:var(--surf-1);border:1px solid var(--line-1);border-radius:12px;padding:14px 16px}
 .kpi span{font-size:11.5px;color:var(--text-3)}.kpi b{display:block;font-size:24px;letter-spacing:-.02em;margin-top:4px}
 .kpi i{font-style:normal;font-size:11.5px;color:var(--text-3)}
+.whoami{display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;
+  border:1px solid var(--line-2);background:var(--surf-2);font-size:12.5px;color:var(--text-2)}
+.whoami b{color:var(--text-1);font-weight:600}
+.whoami i{font-style:normal;color:var(--text-3);font-size:11.5px}
+.whoami-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.18)}
 </style>
 <script src="motion.js"></script><script src="nav.js"></script><script src="ui.js"></script>
 <style>
@@ -100,7 +105,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var
     <div class="hero-tags"><span class="tagline">本月成本 ¥1,286,400</span><span class="tagline">待处理 3</span><span class="tagline">进行中 12</span></div>
   </div>
   <div class="hero-r">
-    <div class="seg" id="role"><button class="on" data-r="boss">老板视角</button><button data-r="staff">开单员视角</button></div>
+    <div class="whoami"><span class="whoami-dot"></span><b>老板</b><i>黄锦城 · 身份由账号决定</i></div>
     <a class="btn-primary" href="采购单A.html">+ 新建采购单</a>
   </div>
 </div>
@@ -140,7 +145,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var
     <div class="tl"><span class="tl-t">11:05</span><span class="tl-c"><b>张明 完成采购入库 A-0023</b><i>成本已归集</i></span></div>
   </div>
 </div>
-<div class="sec-h">可进入页面（20）</div>
+<div class="sec-h">可进入页面（20）<span style="margin-left:8px;color:var(--text-decor)">按账号身份过滤 · 开单员账号少 6 个入口且不显示负责人列</span></div>
 <div class="entries"><a href="采购单A.html" class="entry"><span class="entry-i">01</span><b>采购单 A</b><i>打开 →</i></a><a href="加工单B.html" class="entry"><span class="entry-i">02</span><b>加工单 B</b><i>打开 →</i></a><a href="销售单E.html" class="entry"><span class="entry-i">03</span><b>销售单 E</b><i>打开 →</i></a><a href="内部交易单N.html" class="entry"><span class="entry-i">04</span><b>内部交易单 N</b><i>打开 →</i></a><a href="结算单C.html" class="entry"><span class="entry-i">05</span><b>结算单 C</b><i>打开 →</i></a><a href="冲正单据.html" class="entry"><span class="entry-i">06</span><b>冲正单据</b><i>打开 →</i></a><a href="库存.html" class="entry"><span class="entry-i">07</span><b>库存数量</b><i>打开 →</i></a><a href="库存流水.html" class="entry"><span class="entry-i">08</span><b>库存流水</b><i>打开 →</i></a><a href="盘点.html" class="entry"><span class="entry-i">09</span><b>盘点</b><i>打开 →</i></a><a href="商品资料.html" class="entry"><span class="entry-i">10</span><b>商品资料</b><i>打开 →</i></a><a href="客户.html" class="entry"><span class="entry-i">11</span><b>客户</b><i>打开 →</i></a><a href="供应商.html" class="entry"><span class="entry-i">12</span><b>供应商</b><i>打开 →</i></a><a href="加工厂档案.html" class="entry"><span class="entry-i">13</span><b>加工厂档案</b><i>打开 →</i></a><a href="员工.html" class="entry"><span class="entry-i">14</span><b>员工</b><i>打开 →</i></a><a href="权限设置.html" class="entry"><span class="entry-i">15</span><b>权限设置</b><i>打开 →</i></a><a href="公司管理.html" class="entry"><span class="entry-i">16</span><b>公司管理</b><i>打开 →</i></a><a href="报表.html" class="entry"><span class="entry-i">17</span><b>利润报表</b><i>打开 →</i></a><a href="业务全流程图.html" class="entry"><span class="entry-i">18</span><b>业务全流程图</b><i>打开 →</i></a><a href="操作日志.html" class="entry"><span class="entry-i">19</span><b>操作日志</b><i>打开 →</i></a><a href="API与集成.html" class="entry"><span class="entry-i">20</span><b>API 与集成</b><i>打开 →</i></a></div></div>
   <footer class="foot">轻单 v0.11 设计稿 · 演示数据 · 字段对齐 docs/api/openapi.yaml</footer></div>
 </body></html>
