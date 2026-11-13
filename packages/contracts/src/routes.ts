@@ -4,6 +4,7 @@ import { defineRoute, type RouteDef } from './registry.js';
 import { ApiTokenCreatedSchema, ApiTokenSchema, EmployeeSummarySchema } from './entities.js';
 import { AuditLogSchema } from './audit.js';
 import { ScopeMatrixSchema } from './authz.js';
+import { WorkbenchEntryListSchema } from './workbench.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
 import { PRODUCT_ROUTES } from './products.js';
 import { CUSTOMER_ROUTES } from './customers.js';
@@ -59,8 +60,12 @@ const MeOutput = z.object({
   employeeId: z.string(),
   tenantId: z.string(),
   displayName: z.string(),
+  /** 老板 / 员工身份位（Issue #227）：老板 = `employee.is_owner`，由账号属性决定，非前端角色切换。 */
+  isOwner: z.boolean(),
   companyIds: z.array(z.string()),
   scope: ScopeMatrixSchema,
+  /** 后端按身份 scope 现算的工作台入口清单；员工看不到的入口不在返回体里。 */
+  entries: WorkbenchEntryListSchema,
 });
 
 const CreateApiTokenInput = z.object({

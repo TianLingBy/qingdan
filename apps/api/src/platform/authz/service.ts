@@ -33,6 +33,10 @@ export interface AuthzResult {
   readonly companyIds: readonly string[];
   /** 已含个人覆盖与 token scope 交集的生效权限。 */
   readonly scope: ScopeMatrix;
+  /** 是否老板（employee.is_owner）；供 /auth/me 下发身份位（Issue #227）。 */
+  readonly isOwner: boolean;
+  /** 是否可看单据「负责人」字段：老板或经理岗位（preset_key ∈ owner/manager，Issue #227 第 3 点）。 */
+  readonly canViewHandler: boolean;
 }
 
 interface PermissionRow {
@@ -44,6 +48,7 @@ interface AuthzQueryRow {
   company_ids: string[] | null;
   permissions: PermissionRow[] | null;
   is_owner: boolean;
+  can_view_handler: boolean;
 }
 
 const AUTHZ_SQL = `WITH emp AS (
@@ -92,7 +97,14 @@ SELECT
     SELECT coalesce(json_agg(json_build_object('domain', domain, 'action', action)), '[]'::json)
     FROM final_permission
   ) AS permissions,
-  (SELECT is_owner FROM emp) AS is_owner
+  (SELECT is_owner FROM emp) AS is_owner,
+  EXISTS (
+    SELECT 1
+    FROM employee_company_position ecp2
+    JOIN position p ON p.id = ecp2.position_id AND p.tenant_id = $2
+    WHERE ecp2.employee_id = $1
+      AND p.preset_key IN ('owner', 'manager')
+  ) AS can_view_handler
 FROM emp`;
 
 /**
@@ -126,7 +138,7 @@ export async function computeAuthz(db: SqlClient, input: AuthzInput): Promise<Au
         tenantId: input.tenantId,
       });
     }
-    return { companyIds, scope: parsedOwner.data };
+    return { companyIds, scope: parsedOwner.data, isOwner: true, canViewHandler: true };
   }
 
   const byDomain = new Map<string, string[]>();
@@ -163,5 +175,5 @@ export async function computeAuthz(db: SqlClient, input: AuthzInput): Promise<Au
     });
   }
 
-  return { companyIds, scope: parsed.data };
+  return { companyIds, scope: parsed.data, isOwner: false, canViewHandler: row.can_view_handler };
 }

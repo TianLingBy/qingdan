@@ -274,8 +274,10 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
       employeeId: string;
       tenantId: string;
       displayName: string;
+      isOwner: boolean;
       companyIds: string[];
       scope: Array<{ domain: string; actions: string[] }>;
+      entries: Array<{ id: string; path: string; page: string; title: string; domain: string }>;
     };
     expect(body).toMatchObject({
       employeeId: DEMO_IDS.ownerEmployeeId,
@@ -283,11 +285,64 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
       displayName: '张明',
       companyIds: [DEMO_IDS.companyId],
     });
-    // 老板 = 全功能域 × 全动作（D15 / D59⑥）。
+    // 老板 = 全功能域 × 全动作（D15 / D59⑥），身份位由账号属性决定（Issue #227）。
+    expect(body.isOwner).toBe(true);
     expect(body.scope.length).toBe(24);
     expect(body.scope.find((entry) => entry.domain === 'sales')?.actions).toEqual(
       expect.arrayContaining(['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'export']),
     );
+    // 老板 = 全部 20 个工作台入口（去掉登录页与工作台自己）。
+    expect(body.entries).toHaveLength(20);
+    expect(body.entries.map((entry) => entry.id)).toContain('flow');
+    expect(body.entries.map((entry) => entry.id)).toContain('audit-logs');
+  });
+
+  it('/auth/me：非老板（销售）isOwner=false，入口为 scope 收窄子集，看不到的入口不在返回体', async () => {
+    const login = await loginRequest('10000000003', '000000', 'req-me-sales-login');
+    expect(login.statusCode).toBe(200);
+    const cookie = cookieOf(login);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { cookie, 'x-request-id': 'req-me-sales-read' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      isOwner: boolean;
+      entries: Array<{ id: string }>;
+    };
+    expect(body.isOwner).toBe(false);
+
+    const ids = body.entries.map((entry) => entry.id);
+    // 销售岗位（seed）持 sales / customer / product / inventory_qty / settlement。
+    expect(ids).toContain('sales-orders');
+    expect(ids).toContain('customers');
+    expect(ids).toContain('products');
+    expect(ids).toContain('inventory');
+    expect(ids).toContain('settlements');
+    expect(ids).toContain('flow');
+    // 无权限的入口根本不在返回体里。
+    expect(ids).not.toContain('purchase-orders');
+    expect(ids).not.toContain('processing-orders');
+    expect(ids).not.toContain('internal-trades');
+    expect(ids).not.toContain('audit-logs');
+    expect(ids).not.toContain('permissions');
+    expect(ids.length).toBeLessThan(20);
+  });
+
+  it('越权拦截：销售直接访问需 audit.read 的端点 → 403 FORBIDDEN', async () => {
+    const login = await loginRequest('10000000003', '000000', 'req-me-sales-guard');
+    const cookie = cookieOf(login);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/audit-logs',
+      headers: { cookie, 'x-request-id': 'req-me-sales-guard-audit' },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: 'FORBIDDEN' });
   });
 
   it('Cookie 序列化：production 才带 Secure，清除指令 Max-Age=0', () => {

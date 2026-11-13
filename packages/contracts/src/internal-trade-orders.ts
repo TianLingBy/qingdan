@@ -123,8 +123,8 @@ export const InternalTradeOrderSchema = z.object({
   /** 单号（服务端按 D16 生成，格式 `N-<公司码4>-<日期8>-<流水4>`）。 */
   orderNo: z.string(),
   status: InternalTradeOrderStatusSchema,
-  /** 经手人。 */
-  handlerId: z.string(),
+  /** 经手人（负责人）；无权查看负责人（非老板/经理）时服务端返回 null（Issue #227）。 */
+  handlerId: z.string().nullable(),
   lines: z.array(InternalTradeOrderLineSchema),
   /** 内部价：制单人手填，系统不自动算（D68①）；decimal 字符串（D54）；**无 `internal_trade.view_price` 时为 null**（D79）。 */
   internalPrice: NonNegativeDecimal.nullable(),

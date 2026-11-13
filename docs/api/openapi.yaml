@@ -290,6 +290,8 @@ paths:
                     type: string
                   displayName:
                     type: string
+                  isOwner:
+                    type: boolean
                   companyIds:
                     type: array
                     items:
@@ -343,12 +345,36 @@ paths:
                         - domain
                         - actions
                       additionalProperties: false
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        path:
+                          type: string
+                        page:
+                          type: string
+                        title:
+                          type: string
+                        domain:
+                          type: string
+                      required:
+                        - id
+                        - path
+                        - page
+                        - title
+                        - domain
+                      additionalProperties: false
                 required:
                   - employeeId
                   - tenantId
                   - displayName
+                  - isOwner
                   - companyIds
                   - scope
+                  - entries
                 additionalProperties: false
         default:
           description: 错误（统一错误体）
@@ -8138,7 +8164,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -8268,7 +8296,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -8541,7 +8571,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -8675,7 +8707,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -8858,7 +8892,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         materialBatchIds:
           type: array
           items:
@@ -8989,7 +9025,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         materialBatchIds:
           type: array
           items:
@@ -9135,7 +9173,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -9236,7 +9276,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:

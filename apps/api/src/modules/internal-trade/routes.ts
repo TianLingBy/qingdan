@@ -7,6 +7,7 @@ import {
 } from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
+import { maskHandlerId, maskHandlerIdInPage } from '../../platform/authz/handler-mask.js';
 import {
   cancelInternalTradeOrder,
   createInternalTradeOrder,
@@ -58,10 +59,11 @@ export function registerInternalTradeRoutes(app: FastifyInstance): void {
       route,
     }) => {
       assertDatabaseConfigured(instance, route);
-      return await listInternalTradeOrders({
+      const page = await listInternalTradeOrders({
         database: instance.database,
         request,
       });
+      return maskHandlerIdInPage(page, request.principal);
     },
     'internal_trade.order.create': async ({
       app: instance,
@@ -90,7 +92,7 @@ export function registerInternalTradeRoutes(app: FastifyInstance): void {
         request,
       });
       reply.header('ETag', etagOf(detail.version));
-      return detail;
+      return maskHandlerId(detail, request.principal);
     },
     'internal_trade.order.update': async ({
       app: instance,

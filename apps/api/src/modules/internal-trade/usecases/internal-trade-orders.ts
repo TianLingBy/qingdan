@@ -562,7 +562,7 @@ export async function receiveInternalTradeOrder(
       relatedLossAmount: '0',
       commissionRateSnapshot: '0',
       commissionAmount: '0',
-      commissionOwnerId: source.handlerId,
+      commissionOwnerId: source.handlerId!,
       createdBy: principal.employeeId,
       requestId: requestIdFor(ctx.request),
     });

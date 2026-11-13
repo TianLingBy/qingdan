@@ -151,8 +151,8 @@ export const ProcessingOrderSchema = z.object({
   /** 成品商品：开单时由契约保证必填；历史单为 null（#150 决策 A）。 */
   outputProductId: z.string().nullable(),
   status: ProcessingOrderStatusSchema,
-  /** 经手人。 */
-  handlerId: z.string(),
+  /** 经手人（负责人）；无权查看负责人（非老板/经理）时服务端返回 null（Issue #227）。 */
+  handlerId: z.string().nullable(),
   /** 材料投入明细（批次 + 行数量）：至少 1 条（F2b）；只能引用本公司批次（D22，实现侧校验）。 */
   materialBatchIds: ProcessingMaterialBatchIdsSchema,
   /** 辅料：选填，默认我方采购，进成本（§3.2）。 */
