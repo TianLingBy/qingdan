@@ -1,0 +1,14 @@
+/* 轻单 v0.9.2 · 字体层：霞鹜文楷（LXGW WenKai）
+   优先用本机已装字体，没装则回落到 jsDelivr 的 webfont 分片。 */
+@import url("https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css");
+@import url("https://unpkg.com/lxgw-wenkai-webfont@1.7.0/style.css");
+
+:root{
+  --sans:"LXGW WenKai","LXGW WenKai Screen","霞鹜文楷","KaiTi","楷体","SimKai",-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  --kai:"LXGW WenKai","霞鹜文楷",serif;
+}
+body{font-family:var(--sans)}
+/* 文楷本身字面偏小，行高与字重微调一档 */
+body{line-height:1.72;letter-spacing:.01em}
+th,thead th{letter-spacing:.02em}
+.num,td.num,.mono{font-family:var(--mono);letter-spacing:0}

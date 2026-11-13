@@ -1,0 +1,65 @@
+<!DOCTYPE html><html lang="zh-CN" data-fs="m" data-trans="fade"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 工作台</title>
+<script>try{var m=location.search.match(/[?&]theme=(moss|mist|bronze|paper)/);var t=m?m[1]:localStorage.getItem("qd-theme");if(t&&t!=="moss")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="components.css"><link rel="stylesheet" href="page.css"><link rel="stylesheet" href="ui.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);font-size:13.5px;line-height:1.65;color:var(--text-1);background:var(--bg-0);display:flex;min-height:100vh;overflow-x:hidden}
+a{color:inherit;text-decoration:none}button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+.sidebar{width:236px;flex:none;background:var(--surf-1);border-right:1px solid var(--line-1);display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{position:sticky;top:0;z-index:10;background:var(--topbar-bg);backdrop-filter:blur(14px);border-bottom:1px solid var(--line-1);display:flex;align-items:center;justify-content:space-between;padding:0 26px;height:52px}
+.crumb{display:flex;gap:8px;font-size:12.5px;color:var(--text-3)}.crumb .cur{color:var(--text-1)}.crumb .sep{color:var(--text-decor)}
+.snapshot{display:flex;gap:14px;font-size:12px;color:var(--text-3)}.snapshot b{color:var(--text-1)}
+.wrap{padding:26px 26px 44px;width:100%;max-width:1240px;margin:0 auto;flex:1}
+.doc .wrap{max-width:1120px}
+.p-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:16px}
+.eyebrow{font-size:11px;letter-spacing:.08em;color:var(--text-decor);margin-bottom:6px}
+.p-head h1{font-size:22px;letter-spacing:-.02em;font-weight:650}
+.p-head .sub{margin-top:8px;font-size:13px;color:var(--text-2);max-width:64ch}
+.actions{display:flex;gap:10px;align-items:center}
+.btn,.btn-primary{height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--line-2);font-size:12.5px;display:inline-flex;align-items:center;gap:6px;color:inherit}
+.btn-primary{background:var(--accent-deep);color:var(--on-accent);border-color:transparent}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.seg{display:flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
+.seg button{padding:6px 12px;font-size:12.5px;color:var(--text-2);border-right:1px solid var(--line-1)}
+.seg button:last-child{border-right:0}.seg button.on{background:var(--surf-2);color:var(--text-1);font-weight:550}
+.search{height:32px;min-width:220px;padding:0 12px;border-radius:8px;border:1px solid var(--line-2);background:var(--surf-1);color:var(--text-2);font-size:12.5px}
+.datebox{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line-2);border-radius:9px;background:var(--surf-1)}
+.datebox input{height:28px;border:1px solid var(--line-1);border-radius:6px;background:var(--bg-0);color:var(--text-1);font-size:12px;padding:0 8px}
+.card{background:var(--surf-1);border:1px solid var(--line-1);border-radius:12px;overflow:hidden;box-shadow:var(--sh-1)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{background:var(--surf-2);color:var(--text-2);font-weight:550;text-align:left;padding:10px 14px;border-bottom:1px solid var(--line-1);white-space:nowrap}
+tbody td{padding:11px 14px;border-bottom:1px solid var(--line-1);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}tbody tr:hover{background:var(--surf-2)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
+.st{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:999px;border:1px solid var(--line-2);font-size:11.5px;color:var(--text-2)}
+.st.ok{color:var(--ok);border-color:var(--ok)}.st.warn{color:var(--accent-light);border-color:var(--a-28);background:var(--a-10)}
+.st.bad{color:var(--danger);border-color:var(--danger)}
+.note{margin-top:12px;font-size:12px;color:var(--text-3)}
+.foot{margin-top:auto;padding:14px 26px;border-top:1px solid var(--line-1);font-size:11.5px;color:var(--text-decor)}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:var(--surf-1);border:1px solid var(--line-1);border-radius:12px;padding:14px 16px}
+.kpi span{font-size:11.5px;color:var(--text-3)}.kpi b{display:block;font-size:24px;letter-spacing:-.02em;margin-top:4px}
+.kpi i{font-style:normal;font-size:11.5px;color:var(--text-3)}
+</style>
+<script src="motion.js"></script><script src="nav.js"></script><script src="ui.js"></script>
+</head><body data-nav="workbench">
+<aside class="sidebar"><div class="sb-brand"><div class="sb-mark">轻</div><div class="sb-name">轻单<small>Qingdan</small></div></div>
+<nav class="sb-nav"></nav><div class="sb-foot"><div class="sb-avatar">何</div><div class="sb-user"><b>何XX</b><small>演示公司</small></div></div></aside>
+<div class="main"><header class="topbar"><nav class="crumb"><a href="工作台.html">轻单</a><span class="sep">/</span><span class="cur">公共 / 工作台</span></nav>
+<div class="snapshot"></div></header>
+<div class="wrap"><div class="p-head"><div><div class="eyebrow">工作台 · 按角色</div><h1>下午好，何永上</h1><p class="sub">还有 3 单等你过手；最早一单是 11-10 开的采购单 A-0024。</p></div>
+<div class="actions"><div class="seg" id="role"><button class="on" data-r="boss">老板视角</button><button data-r="staff">开单员视角</button></div></div></div>
+<div class="kpis"><div class="kpi"><span>待我处理</span><b>3</b><i>采购 1 · 结算 1 · 退货 1</i></div>
+<div class="kpi"><span>我负责的进行中</span><b>12</b><i>其中 2 单卡在等对方确认</i></div>
+<div class="kpi"><span>可进入页面</span><b>20</b><i>按权限过滤后的入口</i></div></div>
+<div class="card" data-card style="margin-bottom:16px"><table><thead><tr><th>单号</th><th>类型</th><th>对接单位</th><th>状态</th><th data-sort>负责人</th><th data-sort>日期</th></tr></thead><tbody>
+<tr><td>A-0024</td><td>采购单 A</td><td>宏远五金</td><td><span class="st warn">待供应商确认</span></td><td>张明</td><td>11-10</td></tr>
+<tr><td>C-0151</td><td>结算单 C</td><td>江北机电</td><td><span class="st warn">待确认</span></td><td>王倩</td><td>11-10</td></tr>
+<tr><td>R-0088</td><td>客户退货 R</td><td>江北机电</td><td><span class="st warn">待审批</span></td><td>陈默</td><td>11-11</td></tr>
+</tbody></table></div>
+<div style="font-size:12.5px;color:var(--text-3);margin-bottom:8px">可进入页面（20）</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px"><a href="采购单A.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">采购单 A</b><i style="margin-top:4px">打开 →</i></a><a href="加工单B.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">加工单 B</b><i style="margin-top:4px">打开 →</i></a><a href="销售单E.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">销售单 E</b><i style="margin-top:4px">打开 →</i></a><a href="内部交易单N.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">内部交易单 N</b><i style="margin-top:4px">打开 →</i></a><a href="结算单C.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">结算单 C</b><i style="margin-top:4px">打开 →</i></a><a href="冲正单据.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">冲正单据</b><i style="margin-top:4px">打开 →</i></a><a href="库存.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">库存数量</b><i style="margin-top:4px">打开 →</i></a><a href="库存流水.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">库存流水</b><i style="margin-top:4px">打开 →</i></a><a href="盘点.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">盘点</b><i style="margin-top:4px">打开 →</i></a><a href="商品资料.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">商品资料</b><i style="margin-top:4px">打开 →</i></a><a href="客户.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">客户</b><i style="margin-top:4px">打开 →</i></a><a href="供应商.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">供应商</b><i style="margin-top:4px">打开 →</i></a><a href="加工厂档案.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">加工厂档案</b><i style="margin-top:4px">打开 →</i></a><a href="员工.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">员工</b><i style="margin-top:4px">打开 →</i></a><a href="权限设置.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">权限设置</b><i style="margin-top:4px">打开 →</i></a><a href="公司管理.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">公司管理</b><i style="margin-top:4px">打开 →</i></a><a href="报表.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">利润报表</b><i style="margin-top:4px">打开 →</i></a><a href="业务全流程图.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">业务全流程图</b><i style="margin-top:4px">打开 →</i></a><a href="操作日志.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">操作日志</b><i style="margin-top:4px">打开 →</i></a><a href="API与集成.html" class="kpi" style="padding:12px 14px"><b style="font-size:13.5px;font-weight:550;margin:0">API 与集成</b><i style="margin-top:4px">打开 →</i></a></div></div><footer class="foot">轻单 v0.9.1 设计稿 · 演示数据 · 字段对齐 docs/api/openapi.yaml</footer></div>
+</body></html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html><html lang="zh-CN" data-fs="m" data-trans="fade"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 登录</title>
+<script>try{var m=location.search.match(/[?&]theme=(moss|mist|bronze|paper)/);var t=m?m[1]:localStorage.getItem("qd-theme");if(t&&t!=="moss")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="components.css"><link rel="stylesheet" href="page.css"><link rel="stylesheet" href="ui.css">
+<style></style>
+<script src="motion.js"></script><script src="nav.js"></script><script src="ui.js"></script>
+</head><body data-nav="login">
+<aside class="sidebar"><div class="sb-brand"><div class="sb-mark">轻</div><div class="sb-name">轻单<small>Qingdan</small></div></div>
+<nav class="sb-nav"></nav><div class="sb-foot"><div class="sb-avatar">何</div><div class="sb-user"><b>何XX</b><small>演示公司</small></div></div></aside>
+<div class="main"><header class="topbar"><nav class="crumb"><a href="工作台.html">轻单</a><span class="sep">/</span><span class="cur">公共 / 登录</span></nav>
+<div class="snapshot"></div></header>
+<div class="wrap"><style>
+body{display:block;background:radial-gradient(1200px 700px at 20% 10%,#1c3a33,#0a0e0c 60%),#080b0a;min-height:100vh}
+.wrap{max-width:none;padding:0;display:flex;align-items:center;justify-content:center;min-height:100vh}
+.card-login{width:380px;padding:30px 28px;border-radius:18px;color:#fff}
+.card-login h1{font-size:22px;letter-spacing:-.02em;margin-bottom:6px}
+.card-login p{font-size:12.5px;color:rgba(255,255,255,.62);margin-bottom:20px}
+.field{margin-bottom:14px}.field label{display:block;font-size:12px;color:rgba(255,255,255,.6);margin-bottom:6px}
+.field input{width:100%;height:42px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff;padding:0 12px;font-size:13px}
+.field input:focus{outline:2px solid rgba(120,200,170,.5);outline-offset:1px}
+.row{display:flex;gap:8px}.row input{flex:1}
+.code-btn{height:42px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.22);color:#fff;font-size:12.5px;white-space:nowrap}
+.code-btn:disabled{opacity:.5}
+.submit{width:100%;height:44px;border-radius:11px;background:var(--accent-deep);color:var(--on-accent);font-size:14px;margin-top:6px}
+.hint{margin-top:14px;font-size:11.5px;color:rgba(255,255,255,.45);line-height:1.6}
+</style>
+<div class="wrap"><div class="card-login glass">
+<h1>登录</h1><p>账号由管理员统一创建。用他给你的手机号登录，验证码点「获取验证码」。</p>
+<div class="field"><label for="p">手机号</label><input id="p" placeholder="请输入手机号"></div>
+<div class="field"><label for="c">验证码</label><div class="row"><input id="c" placeholder="6 位验证码"><button class="code-btn" id="send">获取验证码</button></div></div>
+<button class="submit">登录</button>
+<p class="hint">企业注册与入企一期暂未开放。<br>打不开或收不到验证码，把手机号发给管理员，他能查到这一次请求。</p>
+</div></div>
+<script>
+var b=document.getElementById('send'),n=60,t=null;
+b.onclick=function(){b.disabled=true;b.textContent=n+'s 后重发';t=setInterval(function(){n--;if(n<=0){clearInterval(t);b.disabled=false;b.textContent='获取验证码';n=60}else b.textContent=n+'s 后重发';},1000);};
+</script></div><footer class="foot">轻单 v0.9.1 设计稿 · 演示数据 · 字段对齐 docs/api/openapi.yaml</footer></div>
+</body></html>
