@@ -1,0 +1,103 @@
+/* ============================================================
+   轻单 v0.10 · 视觉回收层（在 page.css 之后加载）
+   目标：保留 v0.9 的 22 页 IA 与新交互，视觉密度回到 v0.7/v0.8
+   ============================================================ */
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes glow{0%,100%{opacity:.55}50%{opacity:.95}}
+
+body{
+  background:
+    radial-gradient(1100px 520px at 10% -10%, rgba(var(--accent-rgb),.10), transparent 62%),
+    radial-gradient(900px 460px at 102% -6%, rgba(var(--accent-2-rgb),.06), transparent 58%),
+    var(--bg-0);
+  background-attachment:fixed;
+}
+html[data-mode="light"] body{
+  background:
+    radial-gradient(1100px 520px at 10% -10%, rgba(var(--accent-rgb),.08), transparent 62%),
+    var(--bg-0);
+}
+
+/* 侧栏 */
+.sidebar{background:linear-gradient(180deg, var(--surf-1), var(--bg-1));box-shadow:1px 0 0 var(--line-1)}
+.sb-brand{padding-bottom:16px}
+.sb-mark{box-shadow:0 6px 18px -8px rgba(var(--accent-rgb),.75)}
+.sb-link{border-radius:8px;transition:background .15s,color .15s,transform .15s}
+.sb-link:hover{transform:translateX(2px)}
+.sb-domain{font-weight:550;letter-spacing:.08em}
+
+/* 页头 */
+.p-head{position:relative;padding-bottom:16px;margin-bottom:20px;border-bottom:1px solid var(--line-1)}
+.p-head::after{content:"";position:absolute;left:0;bottom:-1px;width:56px;height:2px;
+  background:linear-gradient(90deg,var(--accent),transparent);border-radius:2px}
+.eyebrow{display:flex;align-items:center;gap:7px;text-transform:none;letter-spacing:.06em}
+.eyebrow::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 0 3px rgba(var(--accent-rgb),.16);animation:glow 2.6s ease-in-out infinite}
+.p-head h1{font-size:25px;font-weight:680;letter-spacing:-.025em}
+.p-head .sub{margin-top:9px;line-height:1.7}
+
+/* 按钮 */
+.btn{background:var(--surf-1);box-shadow:var(--sh-1);transition:transform .14s,border-color .14s,background .14s}
+.btn:hover{border-color:var(--line-3);background:var(--surf-2);transform:translateY(-1px)}
+.btn-primary{background:linear-gradient(180deg,var(--accent),var(--accent-deep));
+  box-shadow:0 10px 24px -12px rgba(var(--accent-rgb),.9);transition:transform .14s,box-shadow .14s}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 14px 28px -12px rgba(var(--accent-rgb),1)}
+
+/* 卡片 */
+.card{position:relative;border-radius:14px;
+  background:linear-gradient(180deg,var(--surf-1),color-mix(in srgb,var(--surf-1) 92%,var(--bg-0)));
+  box-shadow:var(--sh-1),inset 0 1px 0 rgba(255,255,255,.03);
+  animation:rise .32s cubic-bezier(.32,.72,0,1) both}
+.card::before{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.045),transparent 22%)}
+
+/* 指标卡 */
+.kpis{gap:14px}
+.kpi{position:relative;border-radius:14px;padding:16px 18px;overflow:hidden;
+  background:linear-gradient(180deg,var(--surf-1),var(--bg-1));
+  box-shadow:var(--sh-1),inset 0 1px 0 rgba(255,255,255,.04);
+  animation:rise .34s cubic-bezier(.32,.72,0,1) both}
+.kpi::after{content:"";position:absolute;left:18px;right:18px;top:0;height:1px;
+  background:linear-gradient(90deg,rgba(var(--accent-rgb),.55),transparent)}
+.kpi span{letter-spacing:.04em}
+.kpi b{font-size:28px;font-weight:660;font-variant-numeric:tabular-nums;
+  background:linear-gradient(180deg,var(--text-1),color-mix(in srgb,var(--text-1) 72%,transparent));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.kpi:hover{box-shadow:var(--sh-2),inset 0 1px 0 rgba(255,255,255,.06)}
+.kpis .kpi:nth-child(2){animation-delay:.05s}
+.kpis .kpi:nth-child(3){animation-delay:.1s}
+
+/* 表格 */
+.card table{font-size:12.8px}
+.card thead th{background:linear-gradient(180deg,var(--surf-2),var(--surf-1));
+  letter-spacing:.03em;font-weight:600;padding:11px 16px;
+  box-shadow:inset 0 -1px 0 var(--line-2)}
+.card tbody td{padding:12px 16px;transition:background .12s}
+.card tbody tr{position:relative}
+.card tbody tr:hover td{background:color-mix(in srgb,var(--surf-2) 80%,transparent)}
+.card tbody tr:hover td:first-child{box-shadow:inset 2px 0 0 var(--accent)}
+.card tbody td:first-child{font-variant-numeric:tabular-nums;letter-spacing:.01em}
+td.num{font-weight:550}
+
+/* 状态标签 */
+.st{font-weight:500;letter-spacing:.02em}
+.st.ok{background:rgba(80,190,140,.10)}
+.st.warn{background:rgba(var(--accent-rgb),.12);box-shadow:0 0 0 1px rgba(var(--accent-rgb),.12)}
+
+/* 分区 / 筛选 */
+.sec{background:linear-gradient(180deg,var(--surf-1),var(--bg-1));border-radius:12px}
+.sec>summary{font-weight:550;color:var(--text-2)}
+.chip{transition:transform .12s,border-color .12s,background .12s}
+.chip:hover{transform:translateY(-1px);border-color:var(--line-3);color:var(--text-1)}
+.seg button{transition:background .12s,color .12s}
+
+/* 分页 */
+.pager button:hover{border-color:var(--line-3);color:var(--text-1);background:var(--surf-2)}
+
+/* 页脚 */
+.foot{letter-spacing:.02em}
+
+@media (prefers-reduced-motion:reduce){
+  .card,.kpi{animation:none}
+  .eyebrow::before{animation:none}
+}
