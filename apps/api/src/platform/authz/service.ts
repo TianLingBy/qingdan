@@ -33,6 +33,8 @@ export interface AuthzResult {
   readonly companyIds: readonly string[];
   /** 已含个人覆盖与 token scope 交集的生效权限。 */
   readonly scope: ScopeMatrix;
+  /** 是否老板（employee.is_owner）；供 /auth/me 下发身份位（Issue #227）。 */
+  readonly isOwner: boolean;
 }
 
 interface PermissionRow {
@@ -126,7 +128,7 @@ export async function computeAuthz(db: SqlClient, input: AuthzInput): Promise<Au
         tenantId: input.tenantId,
       });
     }
-    return { companyIds, scope: parsedOwner.data };
+    return { companyIds, scope: parsedOwner.data, isOwner: true };
   }
 
   const byDomain = new Map<string, string[]>();
@@ -163,5 +165,5 @@ export async function computeAuthz(db: SqlClient, input: AuthzInput): Promise<Au
     });
   }
 
-  return { companyIds, scope: parsed.data };
+  return { companyIds, scope: parsed.data, isOwner: false };
 }

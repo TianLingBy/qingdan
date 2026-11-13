@@ -25,6 +25,7 @@ export * from './payments.js';
 export * from './billings.js';
 export * from './errors.js';
 export * from './authz.js';
+export * from './workbench.js';
 export * from './audit.js';
 export * from './entities.js';
 export * from './pagination.js';

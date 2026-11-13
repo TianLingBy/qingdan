@@ -40,6 +40,8 @@ export interface Principal {
   readonly credentialId: string;
   readonly companyIds: readonly string[];
   readonly scope: ScopeMatrix;
+  /** 是否老板（Issue #227 身份位）；由权限引擎现算，随 /auth/me 下发。 */
+  readonly isOwner: boolean;
   /** 审计来源，仍只由 `X-Client` 映射（D59）。 */
   readonly source: AuditSource;
   /** 本请求实际使用的凭证类型（供 CSRF 判定）。 */
@@ -164,6 +166,7 @@ async function resolveApiTokenPrincipal(
     credentialId: row.id,
     companyIds: authz.companyIds,
     scope: authz.scope,
+    isOwner: authz.isOwner,
     source: auditSourceFromClient(input.client),
     credentialType: 'api_token',
     sessionRenewed: false,
@@ -198,6 +201,7 @@ async function resolveSessionPrincipal(
     credentialId: session.id,
     companyIds: authz.companyIds,
     scope: authz.scope,
+    isOwner: authz.isOwner,
     source: auditSourceFromClient(input.client),
     credentialType: 'session',
     sessionRenewed,
