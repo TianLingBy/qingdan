@@ -1,0 +1,42 @@
+<!DOCTYPE html><html lang="zh-CN" data-fs="m" data-trans="fade"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 库存数量</title>
+<script>try{var m=location.search.match(/[?&]theme=(moss|mist|bronze|paper)/);var t=m?m[1]:localStorage.getItem("qd-theme");if(t&&t!=="moss")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="components.css"><link rel="stylesheet" href="page.css"><link rel="stylesheet" href="ui.css"><link rel="stylesheet" href="visual.css"><link rel="stylesheet" href="polish.css">
+<style></style>
+<script src="motion.js"></script><script src="nav.js"></script><script src="ui.js"></script>
+</head><body data-nav="inventory">
+<aside class="sidebar"><div class="sb-brand"><div class="sb-mark">轻</div><div class="sb-name">轻单<small>Qingdan</small></div></div>
+<nav class="sb-nav"></nav><div class="sb-foot"><div class="sb-avatar">何</div><div class="sb-user"><b>何XX</b><small>演示公司</small></div></div></aside>
+<div class="main"><header class="topbar"><nav class="crumb"><a href="工作台.html">轻单</a><span class="sep">/</span><span class="cur">库存 / 库存数量</span></nav>
+<div class="snapshot"></div></header>
+<div class="wrap">
+<div class="p-head"><div><div class="eyebrow">库存 · 数量（含委外在途）</div><h1>库存数量</h1><p class="sub">按批次看可用量，按仓库分支看保管人；要改数就走盘点或冲正，不直接改这里。</p></div>
+<div class="actions"><button class="btn" data-drawer="#entry">录入</button><button class="btn-primary">导出</button></div></div>
+<div class="kpis"><div class="kpi"><span>可售批次</span><b>148</b><i>其中 6 个批次可用量为 0</i></div>
+<div class="kpi"><span>在途量</span><b>0</b><i>内部交易在途单独看 N 单</i></div>
+<div class="kpi"><span>锁定金额</span><b>¥1,286,400</b><i>无看价权限时显示占位符</i></div></div>
+<div class="toolbar">
+ <div class="seg"><button class="on" data-view="normal">标准</button><button data-view="dense">紧凑</button><button data-view="comfy">舒适</button><button data-view="cards-view">卡片</button></div>
+ <div class="seg"><button class="on">全部仓库</button><button>华东主仓</button><button>华南分仓</button><button>西南分仓</button></div>
+ <input class="search" placeholder="搜索商品、批次、保管人">
+ <span style="margin-left:auto;color:var(--text-3);font-size:12px">表格呈现方式可切换</span>
+</div>
+<div class="card" data-card><table><thead><tr><th data-sort>批次号</th><th data-sort>商品</th><th data-sort>仓库</th><th data-sort>保管人</th><th data-sort class="num">入库量</th><th data-sort class="num">已引用</th><th data-sort class="num">在途</th><th data-sort class="num">可用量</th></tr></thead>
+<tbody><tr><td>P-2211</td><td>冷轧钢板 1.2mm</td><td>华东主仓</td><td>王倩</td><td class="num">12,000 千克</td><td class="num">6,000</td><td class="num">0</td><td class="num">6,000</td></tr><tr><td>P-2208</td><td>ABS 颗粒</td><td>华南分仓</td><td>陈默</td><td class="num">3,000 千克</td><td class="num">2,600</td><td class="num">0</td><td class="num">400</td></tr><tr><td>P-2201</td><td>不锈钢管 304</td><td>华东主仓</td><td>王倩</td><td class="num">2,400 千克</td><td class="num">2,400</td><td class="num">0</td><td class="num">0</td></tr><tr><td>P-2199</td><td>法兰盘 DN50</td><td>西南分仓</td><td>李蕾</td><td class="num">1,200 件</td><td class="num">1,182</td><td class="num">0</td><td class="num">18</td></tr><tr><td>P-2190</td><td>PVC 板</td><td>华南分仓</td><td>陈默</td><td class="num">1,500 千克</td><td class="num">900</td><td class="num">0</td><td class="num">600</td></tr><tr><td>P-2188</td><td>轴承座</td><td>华东主仓</td><td>王倩</td><td class="num">600 件</td><td class="num">600</td><td class="num">0</td><td class="num">0</td></tr></tbody></table>
+<div class="cards"><div class="cellcard"><b>冷轧钢板 1.2mm</b><i>批次 P-2211 · 华东主仓 · 保管人 王倩</i><i>可用 6,000 / 入库 12,000 千克</i></div><div class="cellcard"><b>ABS 颗粒</b><i>批次 P-2208 · 华南分仓 · 保管人 陈默</i><i>可用 400 / 入库 3,000 千克</i></div><div class="cellcard"><b>不锈钢管 304</b><i>批次 P-2201 · 华东主仓 · 保管人 王倩</i><i>可用 0 / 入库 2,400 千克</i></div><div class="cellcard"><b>法兰盘 DN50</b><i>批次 P-2199 · 西南分仓 · 保管人 李蕾</i><i>可用 18 / 入库 1,200 件</i></div><div class="cellcard"><b>PVC 板</b><i>批次 P-2190 · 华南分仓 · 保管人 陈默</i><i>可用 600 / 入库 1,500 千克</i></div><div class="cellcard"><b>轴承座</b><i>批次 P-2188 · 华东主仓 · 保管人 王倩</i><i>可用 0 / 入库 600 件</i></div></div>
+<div class="pager" data-pages="8"><button>上一页</button><input value="1" aria-label="页码"><span class="of">/ 8 页</span><button>下一页</button></div></div>
+<div id="entry" hidden style="position:fixed;inset:0;background:rgba(0,0,0,.42);z-index:70;display:flex;justify-content:flex-end">
+ <div style="width:400px;background:var(--surf-1);height:100%;padding:22px;overflow:auto;border-left:1px solid var(--line-2)">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><b style="font-size:15px">录入入库</b><button data-close="#entry">关闭</button></div>
+  <p class="note" style="margin-bottom:14px">录入只写入库流水，不改历史结算；数量单位用中文习惯：千克 / 件 / 箱 / 袋 / 米。</p>
+  <div style="display:grid;gap:12px">
+   <label>商品<input class="search" style="width:100%" value="冷轧钢板 1.2mm"></label>
+   <label>批次号<input class="search" style="width:100%" value="P-2211"></label>
+   <label>数量<input class="search" style="width:100%" value="12,000 千克"></label>
+   <label>仓库<div class="seg" style="margin-top:6px"><button class="on">华东主仓</button><button>华南分仓</button><button>西南分仓</button></div></label>
+   <label>保管人<input class="search" style="width:100%" value="王倩"></label>
+   <button class="btn-primary" style="justify-content:center">确认录入</button>
+  </div>
+ </div></div></div><footer class="foot">轻单 v0.11 设计稿 · 演示数据 · 字段对齐 docs/api/openapi.yaml</footer></div>
+</body></html>

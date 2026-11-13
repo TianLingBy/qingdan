@@ -1,0 +1,24 @@
+<!DOCTYPE html><html lang="zh-CN" data-fs="m" data-trans="fade"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 内部交易单 N</title>
+<script>try{var m=location.search.match(/[?&]theme=(moss|mist|bronze|paper)/);var t=m?m[1]:localStorage.getItem("qd-theme");if(t&&t!=="moss")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="fonts.css"><link rel="stylesheet" href="components.css"><link rel="stylesheet" href="page.css"><link rel="stylesheet" href="ui.css"><link rel="stylesheet" href="visual.css"><link rel="stylesheet" href="polish.css">
+<style></style>
+<script src="motion.js"></script><script src="nav.js"></script><script src="ui.js"></script>
+</head><body data-nav="internal-trades">
+<aside class="sidebar"><div class="sb-brand"><div class="sb-mark">轻</div><div class="sb-name">轻单<small>Qingdan</small></div></div>
+<nav class="sb-nav"></nav><div class="sb-foot"><div class="sb-avatar">何</div><div class="sb-user"><b>何XX</b><small>演示公司</small></div></div></aside>
+<div class="main"><header class="topbar"><nav class="crumb"><a href="工作台.html">轻单</a><span class="sep">/</span><span class="cur">单据与结算 / 内部交易单 N</span></nav>
+<div class="snapshot"></div></header>
+<div class="wrap">
+<div class="p-head"><div><div class="eyebrow">内部交易单 N · 公司间调拨</div><h1>内部交易单 N</h1><p class="sub">发出公司开单，接收公司确认，中间那段叫在途。</p></div>
+<div class="actions"><button class="btn">导出</button><button class="btn-primary">+ 新建</button></div></div>
+<details class="sec" open><summary>单据类型（可收起）</summary><div class="sec-body">
+<a class="chip" href="采购单A.html">采购单 A</a><a class="chip" href="加工单B.html">加工单 B</a><a class="chip" href="销售单E.html">销售单 E</a><a class="chip" href="内部交易单N.html">内部交易单 N</a><a class="chip" href="结算单C.html">结算单 C</a><a class="chip" href="冲正单据.html">冲正单据</a>
+</div></details>
+<div class="toolbar"><div class="seg"><button class="on">全部状态</button><button>草稿</button><button>进行中</button><button>已完成</button><button>已取消</button></div>
+<input class="search" placeholder="搜索单号、对接单位"><span style="margin-left:auto;color:var(--text-3);font-size:12px">点表头可排序：日期 / 金额 / 状态</span></div>
+<div class="card" data-card><table><thead><tr><th data-sort>单号</th><th data-sort>对接单位</th><th data-sort>商品</th><th data-sort class="num">数量</th><th data-sort class="num">金额</th><th data-sort>状态</th><th data-sort>负责人</th><th data-sort class="num">日期</th></tr></thead><tbody><tr><td>N-0042</td><td>华南公司</td><td>冷轧钢板 1.2mm</td><td class="num">8,000 千克</td><td class="num">¥55,200</td><td><span class="st">在途</span></td><td>王倩</td><td>11-11</td></tr><tr><td>N-0041</td><td>华东公司</td><td>ABS 颗粒</td><td class="num">2,000 千克</td><td class="num">¥19,600</td><td><span class="st ok">已接收</span></td><td>王倩</td><td>11-10</td></tr><tr><td>N-0040</td><td>西南公司</td><td>法兰盘 DN50</td><td class="num">1,200 件</td><td class="num">¥25,800</td><td><span class="st warn">待发出</span></td><td>陈默</td><td>11-09</td></tr><tr><td>N-0039</td><td>华南公司</td><td>PVC 板</td><td class="num">600 千克</td><td class="num">¥6,900</td><td><span class="st ok">已接收</span></td><td>陈默</td><td>11-07</td></tr><tr><td>N-0038</td><td>华东公司</td><td>不锈钢管 304</td><td class="num">1,000 千克</td><td class="num">¥9,400</td><td><span class="st ok">已取消</span></td><td>王倩</td><td>11-06</td></tr><tr><td>N-0037</td><td>西南公司</td><td>轴承座</td><td class="num">400 件</td><td class="num">¥12,800</td><td><span class="st ok">已接收</span></td><td>王倩</td><td>11-04</td></tr></tbody></table>
+<div class="pager" data-pages="12"><button>上一页</button><input value="1" aria-label="页码"><span class="of">/ 12 页</span><button>下一页</button></div></div>
+<p class="note">负责人列仅老板 / 经理可见；对接单位按单据类型自动变更（采购＝供应商，销售＝客户，加工＝加工厂，内部交易＝兄弟公司）。</p></div><footer class="foot">轻单 v0.11 设计稿 · 演示数据 · 字段对齐 docs/api/openapi.yaml</footer></div>
+</body></html>
