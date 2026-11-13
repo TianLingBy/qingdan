@@ -975,7 +975,7 @@ export function InternalTradeOrdersPage() {
                     <StatusBadge status={order.status} />
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                    {shortId(order.handlerId)}
+                    {order.handlerId ? shortId(order.handlerId) : '—'}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{formatDateTime(order.createdAt)}</td>
                   <td className="px-4 py-3">

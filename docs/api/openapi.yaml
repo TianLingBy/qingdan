@@ -8164,7 +8164,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -8294,7 +8296,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -8567,7 +8571,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -8701,7 +8707,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -8884,7 +8892,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         materialBatchIds:
           type: array
           items:
@@ -9015,7 +9025,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         materialBatchIds:
           type: array
           items:
@@ -9161,7 +9173,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -9262,7 +9276,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:

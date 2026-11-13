@@ -34,6 +34,7 @@ import {
 } from './usecases/customer-returns.js';
 import { maskSalesOrderDetailAmounts } from './services/masking.js';
 import { renderSalesOrderCustomerCopy } from './services/customer-copy.js';
+import { maskHandlerId, maskHandlerIdInPage } from '../../platform/authz/handler-mask.js';
 
 /**
  * sales 模块（E 销售单一期 5 条 + 收款记录 2 条 + R 客户退货 3 条）。
@@ -76,7 +77,8 @@ export function registerSalesRoutes(app: FastifyInstance): void {
   const handlers: RouteHandlers = {
     'sales.order.list.read': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);
-      return await listSalesOrders({ database: instance.database, request });
+      const page = await listSalesOrders({ database: instance.database, request });
+      return maskHandlerIdInPage(page, request.principal);
     },
     'sales.order.create': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
@@ -108,9 +110,9 @@ export function registerSalesRoutes(app: FastifyInstance): void {
       const canViewPrice = request.principal
         ? allowsScope(request.principal.scope, 'sales', 'view_price')
         : false;
-      return maskSalesOrderDetailAmounts(
-        { ...detail, ...receiptBlock },
-        canViewPrice,
+      return maskHandlerId(
+        maskSalesOrderDetailAmounts({ ...detail, ...receiptBlock }, canViewPrice),
+        request.principal,
       );
     },
     'sales.order.export': async ({ app: instance, request, route }) => {

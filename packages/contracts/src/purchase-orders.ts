@@ -130,8 +130,8 @@ export const PurchaseOrderSchema = z.object({
   /** 供应商名只读回显，避免列表二次查询。 */
   supplierName: z.string(),
   status: PurchaseOrderStatusSchema,
-  /** 经手人。 */
-  handlerId: z.string(),
+  /** 经手人（负责人）；无权查看负责人（非老板/经理）时服务端返回 null（Issue #227）。 */
+  handlerId: z.string().nullable(),
   lines: z.array(PurchaseOrderLineViewSchema),
   fees: z.array(PurchaseOrderFeeViewSchema),
   /** 货款：商品明细金额合计（decimal 字符串，D54）；**无 `purchase.view_price` 时为 null**（D79）。 */
