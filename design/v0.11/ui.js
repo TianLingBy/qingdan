@@ -163,3 +163,17 @@
   function boot(){ initPager(); initEmpty(); }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
 })();
+
+/* v0.11：演示态占位动作 */
+(function(){
+  var box=null;
+  function tip(msg){
+    if(!box){box=document.createElement('div');box.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--surf-2);color:var(--text-1);border:1px solid var(--line-2);border-radius:10px;padding:9px 14px;font-size:12.5px;z-index:90;box-shadow:var(--sh-2);opacity:0;transition:opacity .18s';document.body.appendChild(box);}
+    box.textContent=msg;box.style.opacity='1';clearTimeout(box._t);box._t=setTimeout(function(){box.style.opacity='0';},1800);
+  }
+  document.addEventListener('click',function(e){
+    var a=e.target.closest('a'); if(!a) return;
+    var h=a.getAttribute('href');
+    if(h==='#'){ e.preventDefault(); tip('演示稿：这个操作还没接后端'); }
+  },true);
+})();
