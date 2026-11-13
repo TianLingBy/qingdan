@@ -1,0 +1,252 @@
+/* ============================================================
+   轻单 v0.7 · 共享组件层
+   ------------------------------------------------------------
+   加载顺序：tokens.css → 页面内联 <style> → components.css
+   因此这里既是「唯一来源」（sidebar 已从各页移除），也是
+   「统一覆盖层」（按钮尺寸、焦点、字号下限、层级、强调色收敛）。
+   页面只负责自己的布局，不再各自复制一份组件样式。
+   ============================================================ */
+
+/* ---------------------------------------------------------- 基础 / 焦点 */
+*,*::before,*::after{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:var(--focus-ring);outline-offset:3px;border-radius:4px}
+::selection{background:var(--a-32);color:var(--text-1)}
+.num,.mono{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+
+/* ---------------------------------------------------------- 眉标 / 面包屑 */
+.eyebrow{
+  font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--text-decor);white-space:nowrap;
+}
+.eyebrow::before{content:"// ";color:var(--text-decor)}
+.crumb{
+  display:flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--text-decor);
+}
+.crumb a{color:var(--text-3);transition:color var(--d-1)}
+.crumb a:hover{color:var(--accent-light)}
+.crumb .sep{color:var(--text-decor);opacity:.7}
+.crumb .cur{color:var(--text-2)}
+
+/* ---------------------------------------------------------- SIDEBAR（唯一来源） */
+.sidebar{
+  position:sticky;top:0;left:0;height:100vh;width:var(--sb);flex:none;
+  background:var(--bg-1);border-right:1px solid var(--line-1);
+  display:flex;flex-direction:column;z-index:20;overflow:hidden;
+}
+.sb-brand{display:flex;align-items:center;gap:10px;padding:22px 20px 18px;border-bottom:1px solid var(--line-1)}
+.sb-mark{
+  width:28px;height:28px;border-radius:7px;flex:none;
+  background:var(--text-1);color:var(--bg-0);
+  display:grid;place-items:center;font-size:12px;font-weight:750;
+  box-shadow:0 4px 12px -4px var(--a-28);
+}
+.sb-name{font-size:14px;font-weight:650;letter-spacing:-.01em;color:var(--text-1)}
+.sb-name small{
+  display:block;font-size:10px;letter-spacing:.28em;color:var(--text-decor);
+  text-transform:uppercase;font-weight:500;margin-top:1px;font-family:var(--mono);
+}
+.sb-nav{flex:1;padding:12px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.sb-link{
+  position:relative;display:flex;align-items:center;gap:10px;
+  padding:9px 10px;border-radius:var(--r-control);
+  font-size:13px;color:var(--text-3);min-height:40px;
+  transition:background var(--d-1) var(--ease-out),color var(--d-1);cursor:pointer;
+}
+.sb-link:hover{background:var(--surf-2);color:var(--text-1)}
+.sb-link.on{background:var(--surf-2);color:var(--text-1);font-weight:550}
+.sb-link.on::before{
+  content:"";position:absolute;left:0;top:20%;height:60%;width:3px;
+  border-radius:0 3px 3px 0;background:var(--accent);box-shadow:0 0 8px var(--a-50);
+}
+.sb-link svg{flex:none;stroke:currentColor;fill:none;stroke-width:1.5;transition:stroke var(--d-1)}
+.sb-link.on svg{stroke:var(--accent-light)}
+.sb-link .badge{
+  margin-left:auto;font-family:var(--mono);font-size:11px;font-weight:600;
+  background:var(--a-18);color:var(--accent-light);padding:1px 6px;border-radius:var(--r-pill);
+}
+.sb-foot{padding:14px 16px;border-top:1px solid var(--line-1);display:flex;align-items:center;gap:10px}
+.sb-avatar{
+  width:30px;height:30px;border-radius:50%;flex:none;background:var(--surf-3);
+  border:1px solid var(--line-2);display:grid;place-items:center;
+  font-size:12px;font-weight:600;color:var(--text-1);transition:border-color var(--d-1);
+}
+.sb-avatar:hover{border-color:var(--accent)}
+.sb-user{flex:1;min-width:0}
+.sb-user b{display:block;font-size:12.5px;font-weight:550;color:var(--text-1);line-height:1.3;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-user small{font-size:12px;color:var(--text-3)}
+
+/* ---------------------------------------------------------- 顶栏 */
+.topbar{background:var(--topbar-bg);backdrop-filter:blur(14px);height:var(--topbar-h)}
+
+/* ---------------------------------------------------------- 卡片 / elevation */
+.card,.vessel,.batchcard,.chartbox,.panel,.sk-card{
+  background:var(--bg-2);border:1px solid var(--line-2);
+  box-shadow:var(--sh-1),var(--sh-inset);
+}
+.card::before,.batchcard::before{
+  background:linear-gradient(90deg,transparent,var(--card-hair),transparent);
+}
+.card:hover,.batchcard:hover{box-shadow:var(--sh-2);border-color:var(--line-3)}
+
+/* ---------------------------------------------------------- 按钮（统一尺寸体系） */
+.btn,.btn-p,.btn-g,.btn-primary,.btn-ghost,.st-btn{
+  height:36px;padding:0 16px;border-radius:var(--r-control);
+  font-size:12.5px;font-weight:550;letter-spacing:.01em;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  transition:transform 70ms,box-shadow var(--d-2),background var(--d-2),border-color var(--d-2),color var(--d-2);
+}
+.btn:active,.btn-p:active,.btn-g:active,.btn-primary:active,.btn-ghost:active{transform:scale(.985)}
+.btn-primary,.btn-p,.st-btn.primary,.seg button.on,.time-seg button.on,.wh button.on{
+  background:var(--accent-deep);color:var(--on-accent);
+  border-color:var(--accent);box-shadow:0 8px 24px -10px var(--a-50),inset 0 1px 0 var(--btn-inset);
+}
+.btn-primary:hover,.btn-p:hover{background:var(--accent);color:var(--on-accent);box-shadow:0 12px 30px -10px var(--a-65)}
+.btn-ghost,.btn-g{
+  background:var(--surf-1);color:var(--text-1);
+  border:1px solid var(--line-2);box-shadow:var(--sh-inset);
+}
+.btn-ghost:hover,.btn-g:hover{border-color:var(--line-3);background:var(--surf-2);color:var(--text-1)}
+/* 单据页工具条里的按钮保持紧凑高度，但热区补到 44px */
+.bar .btn,.bar .btn-p,.bar .btn-g{height:34px;min-height:44px;padding:0 12px;font-size:12px}
+/* 工作台页头主操作略高 */
+.page-head .btn-primary{height:40px;min-height:44px;padding:0 20px}
+/* 登录卡里的提交按钮是独立版式，不受内页尺寸影响 */
+form.card .btn{height:46px;min-height:46px;width:100%;padding:0 20px;font-size:13.5px}
+
+/* 44px 最小点击热区（视觉尺寸不变） */
+.cb,.opt .c,.check input{position:relative}
+.cb::before,.opt .c::before,.check input::before{
+  content:"";position:absolute;left:50%;top:50%;width:32px;height:32px;
+  transform:translate(-50%,-50%);border-radius:8px;
+}
+.seg button,.time-seg button,.wh button,.card-action,.st-btn{min-height:44px}
+.search-btn{min-height:36px}
+
+/* ---------------------------------------------------------- 强调色收敛：中性化次级标签 */
+.kpi-label,.rail h3,.metric .k,.panel .cap,.comp-eq,
+thead th,.batchcard .code{color:var(--text-3)}
+.kpi-label i{background:var(--accent);box-shadow:0 0 0 3px var(--a-18)}
+.tag,.st,.pill{
+  color:var(--text-2);background:var(--surf-1);border-color:var(--line-2);
+}
+.tag{border:1px solid var(--line-2)}
+.st.now,.pill.now{color:var(--accent-light);border-color:var(--a-28);background:var(--a-10)}
+.step.now .step-state,.step.now .dot,.sb-link.on{color:var(--text-1)}
+/* 中文表头用 sans，数字列才用 mono */
+thead th,table th{
+  font-family:var(--sans);font-size:12px;letter-spacing:.02em;text-transform:none;
+  font-weight:550;color:var(--text-3);
+}
+td.money,.date,.metric .v,.comp-row .v,.kpi-value.money,.mono,.num{font-family:var(--mono)}
+
+/* ---------------------------------------------------------- 表格扫读 */
+thead th{position:sticky;top:var(--topbar-h);z-index:2;background:var(--bg-0)}
+tbody td,table td{border-bottom:1px solid var(--line-1)}
+tbody tr:nth-child(even),table tbody tr:nth-child(even){background:var(--surf-1)}
+tbody tr:hover,table tbody tr:hover td{background:var(--surf-2)}
+
+/* ---------------------------------------------------------- 字号下限（信息性文字 >= 12px） */
+.sb-user small,.step-state,.foot,.st,.batchcard .tag,.qty em,
+.legend,.wh .sum,.batchcard .spec,.chart-head .legend,.chart-sub,
+.period .hint,.comp-row .v,.metric .d,.panel-desc,.kpi-foot,
+.card-action,.card-sub,.hint,.search-btn,.topbar-right,.opt .n{font-size:12px}
+.metric .k,.panel .cap,.comp-eq,.help-icon,.mini div span,.y-label,.x-label,
+.sb-name small,.eyebrow,.crumb,.search-btn kbd,.sb-link .badge,
+.batchcard .code,.card-eyebrow{font-size:11px}
+.y-label,.x-label{fill:var(--text-3)}
+.grid-line{stroke:var(--track)}
+.help-icon{width:16px;height:16px}
+
+/* ---------------------------------------------------------- 图表：两条线不再同色 */
+.line-main{stroke:var(--accent-light);stroke-width:2.2}
+.line-est{stroke:var(--text-3);stroke-width:1.4;stroke-dasharray:4 4;opacity:.7}
+.guide{stroke:var(--a-35)}
+.comp-row.profit .n,.comp-row.profit .v,.comp-eq{color:var(--accent-light)}
+/* sparkline 提亮，不再是看不见的装饰 */
+.spark path{stroke-width:2;stroke:var(--a-65)}
+/* 报表主指标：只让净毛利保持强调色 */
+.metric .v{color:var(--text-1)}
+.metric:last-child .v,.kpi-value.money{color:var(--accent-light)}
+
+/* ---------------------------------------------------------- 单据类型色点 */
+.tdot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:middle;flex:none}
+.tdot.a{background:var(--accent)}
+.tdot.b{background:var(--accent-2-light)}
+.tdot.e{background:var(--ok)}
+.tdot.c{background:var(--accent-deep)}
+.tdot.n{background:var(--text-3)}
+
+/* ---------------------------------------------------------- 吸底栏 / 批次 */
+.batch{background:var(--batch-bg);border-top:1px solid var(--line-1);backdrop-filter:blur(12px)}
+
+/* ---------------------------------------------------------- 登录页（封面 / 内页品牌连续性） */
+body.login{background:var(--cover-bg);color:#E9E7E0}
+body.login .panel{background:transparent;border:0;box-shadow:none}
+form.card{
+  background:var(--card-bg);color:var(--card-ink);
+  box-shadow:0 0 0 1px var(--a-12),0 40px 80px -20px rgba(0,0,0,.72),0 0 70px -18px var(--a-16);
+}
+form.card .btn,form.card .btn:hover{
+  background:var(--accent-deep);color:var(--on-accent);
+  box-shadow:0 10px 26px -12px var(--a-50),inset 0 1px 0 var(--btn-inset);
+}
+form.card .btn:hover{background:var(--accent)}
+form.card .field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--a-22)}
+/* 浅色卡片内的文字必须用深色墨，不能沿用深底主题的浅色文字 */
+form.card .card-eyebrow{color:rgba(20,26,22,.52)}
+form.card .link{color:rgba(20,26,22,.72);border-bottom-color:rgba(20,26,22,.30)}
+form.card .link:hover{color:#141A16;border-bottom-color:#141A16}
+form.card .field .err{color:#B4483A}
+body.login h1 em{color:var(--accent-light)}
+.brand-foot i{background:var(--accent)}
+body.login .eyebrow::before{background:var(--accent)}
+.mark{background:var(--card-bg);color:var(--card-ink)}
+/* 与 brand-foot 重复的演示提示，v0.7 收掉 */
+.drag-tip{display:none}
+
+/* ---------------------------------------------------------- 主题切换器 */
+.qd-switch{
+  position:fixed;right:16px;bottom:16px;z-index:60;
+  display:flex;align-items:center;gap:6px;
+  padding:6px 8px 6px 12px;border-radius:var(--r-pill);
+  background:var(--topbar-bg);border:1px solid var(--line-2);
+  backdrop-filter:blur(12px);box-shadow:var(--sh-1);
+  font-family:var(--mono);font-size:11px;color:var(--text-3);letter-spacing:.06em;
+}
+.qd-switch button{
+  width:20px;height:20px;border-radius:50%;border:1px solid var(--line-3);
+  cursor:pointer;transition:transform var(--d-1),box-shadow var(--d-1);padding:0;flex:none;
+}
+.qd-switch button:hover{transform:scale(1.18)}
+.qd-switch button[aria-pressed="true"]{box-shadow:0 0 0 2px var(--bg-1),0 0 0 4px var(--accent)}
+.qd-switch.in-sidebar{
+  position:static;right:auto;bottom:auto;width:auto;
+  margin:0 10px 10px;padding:8px 10px;border-radius:var(--r-control);
+  background:var(--surf-1);box-shadow:none;backdrop-filter:none;
+}
+
+/* ---------------------------------------------------------- 统一断点：1024 / 768 / 480 */
+@media(max-width:768px){
+  .sidebar{display:none}
+  .wrap,.content{padding-left:20px;padding-right:20px}
+  .topbar{padding:0 20px}
+  .batch{left:0}
+  .qd-switch{right:10px;bottom:10px}
+}
+@media(max-width:480px){
+  .kpis,.quick,.wall{grid-template-columns:1fr}
+  .qd-switch span{display:none}
+}
+
+/* ============================================================ v0.9 侧栏：22 页 IA 分组 */
+.sb-nav{padding:6px 8px 14px;gap:0}
+.sb-domain{font-size:11px;letter-spacing:.06em;color:var(--text-decor);padding:12px 10px 4px;user-select:none}
+.sb-domain:first-child{padding-top:4px}
+.sb-link{font-size:12.5px;padding:5px 10px;gap:8px}
+.sb-link svg{width:14px;height:14px;flex:none;opacity:.55}
+.sb-link.on svg{opacity:1}
