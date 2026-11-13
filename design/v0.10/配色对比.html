@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="no-js">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 四套配色对比</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0A0B0D;color:#EDEDEA;font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:40px 36px 64px}
+.page-head{max-width:1180px;margin:0 auto 28px}
+.page-head h1{font-size:26px;letter-spacing:-.02em;font-weight:650}
+.page-head p{margin-top:8px;font-size:13px;color:rgba(237,237,234,.55);line-height:1.8;max-width:64em}
+.sw{max-width:1180px;margin:0 auto 28px;background:var(--bg0);color:var(--tx);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.sw-head{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line)}
+.sw-key{font-family:ui-monospace,Consolas,monospace;font-size:11px;font-weight:700;letter-spacing:.1em;
+  color:var(--bg0);background:var(--ac);padding:2px 8px;border-radius:4px}
+.sw-name{font-size:13.5px;font-weight:600}
+.sw-tag{font-size:11.5px;color:var(--tx3)}
+.sw-chips{margin-left:auto;display:flex;gap:6px}
+.sw-chips i{width:16px;height:16px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(127,127,127,.25)}
+.app{display:flex;min-height:280px}
+.side{width:150px;flex:none;background:var(--bg1);border-right:1px solid var(--line);padding:14px 10px;display:flex;flex-direction:column;gap:2px}
+.brand{display:flex;align-items:center;gap:8px;padding:0 6px 12px;border-bottom:1px solid var(--line);margin-bottom:10px}
+.brand b{width:24px;height:24px;border-radius:6px;background:var(--tx);color:var(--bg0);display:grid;place-items:center;font-size:11px}
+.brand span{font-size:12.5px;font-weight:600}
+.nav{position:relative;display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:12px;color:var(--tx3);text-decoration:none}
+.nav i{width:10px;height:10px;border-radius:3px;background:currentColor;opacity:.5}
+.nav.on{background:var(--surf);color:var(--tx);font-weight:550}
+.nav.on::before{content:"";position:absolute;left:0;top:18%;height:64%;width:3px;border-radius:0 3px 3px 0;background:var(--ac)}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{height:38px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--line);
+  font-family:ui-monospace,Consolas,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3)}
+.body{padding:16px 18px 18px}
+.ph{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.ph h3{font-size:17px;font-weight:620;letter-spacing:-.02em}
+.eyebrow{font-family:ui-monospace,Consolas,monospace;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--tx4)}
+.eyebrow::before{content:"// "}
+.btn{margin-left:auto;height:28px;padding:0 14px;border-radius:6px;border:none;font:inherit;font-size:12px;font-weight:550;cursor:pointer}
+.btn.p{background:var(--acDk);color:var(--bg0)}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.kpi{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:12px 12px 8px}
+.kpi .k{font-family:ui-monospace,Consolas,monospace;font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--acLt)}
+.kpi b{display:block;margin-top:8px;font-size:24px;font-weight:620;letter-spacing:-.03em}
+.kpi b.money{font-family:ui-monospace,Consolas,monospace;font-size:18px;color:var(--acLt)}
+.kpi em{display:block;margin-top:4px;font-style:normal;font-size:10.5px;color:var(--tx3)}
+.kpi em font{color:var(--ok);font-weight:600}
+.kpi em font.bad{color:var(--bad)}
+.kpi svg{width:100%;height:18px;margin-top:8px;opacity:.75}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-family:ui-monospace,Consolas,monospace;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--acLt);font-weight:500;padding:0 8px 6px;border-bottom:1px solid var(--line2)}
+td{padding:7px 8px;border-bottom:1px solid var(--line);color:var(--tx2)}
+tr:last-child td{border-bottom:none}
+.r{text-align:right}
+.mono{font-family:ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
+td.bad{color:var(--bad)}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.pill{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 7px;border-radius:999px;border:1px solid var(--line2);font-size:10px;color:var(--tx3)}
+.pill.now{border-color:var(--ac);color:var(--acLt);background:var(--acA)}
+.note{max-width:1180px;margin:0 auto;font-size:12px;color:rgba(237,237,234,.45);line-height:1.9}
+.tb{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:18px}
+.tb>span{font-size:12px;color:rgba(237,237,234,.55);margin-right:4px}
+.tb button{height:30px;padding:0 14px;border-radius:7px;cursor:pointer;
+  border:1px solid rgba(237,237,234,.22);background:rgba(237,237,234,.06);
+  color:#EDEDEA;font:inherit;font-size:12px;font-weight:550;
+  transition:border-color 160ms,background 160ms}
+.tb button:hover{border-color:rgba(237,237,234,.5);background:rgba(237,237,234,.13)}
+.tb button.def{border-color:#93AE9C;background:rgba(147,174,156,.18)}
+.tb em{font-style:normal;font-size:11.5px;color:rgba(237,237,234,.38);margin-left:6px}
+</style>
+</head>
+<body>
+<div class="page-head">
+  <h1>同一套界面 · 四套配色</h1>
+  <p>v0.7 把颜色全部收进 <code>tokens.css</code> 的语义变量，换配色不再编译页面。默认已换成
+     <b>墨黑 · 米白 · 苔绿</b>（B 套）并重做色阶；下方四套均可一键应用到全站，登录页封面恒为深色星空。</p>
+  <div class="tb">
+    <span>应用到全站：</span>
+    <button class="def" data-key="moss">苔绿 · v0.7 默认</button>
+    <button data-key="mist">雾蓝 A</button>
+    <button data-key="bronze">古铜 C</button>
+    <button data-key="paper">宣纸 D · 浅色内页</button>
+    <em>点击后写入本地偏好并跳转工作台；页内右下角也有配色切换器</em>
+  </div>
+</div>
+
+<section class="sw" style="
+  --bg0:#0F1114;--bg1:#13161B;--bg2:#181C22;--bg3:#1F242B;
+  --tx:#E6E8EA;--tx2:rgba(230,232,234,.72);--tx3:rgba(230,232,234,.52);--tx4:rgba(230,232,234,.38);
+  --line:rgba(230,232,234,.10);--line2:rgba(230,232,234,.18);--surf:rgba(230,232,234,.045);
+  --ac:#8FA9BE;--acLt:#AEC6D9;--acDk:#7190A9;--ac2:#6E8296;
+  --acA:rgba(143,169,190,.16);--ok:#8FC0A6;--bad:#E07255;">
+  <div class="sw-head">
+    <span class="sw-key">A</span>
+    <span class="sw-name">石墨 · 雾白 · 雾蓝</span>
+    <span class="sw-tag">冷调极简（推荐）</span>
+    <span class="sw-chips">
+      <i style="background:#0F1114"></i><i style="background:#181C22"></i><i style="background:#E6E8EA"></i><i style="background:#8FA9BE"></i><i style="background:#6E8296"></i>
+    </span>
+  </div>
+
+  <div class="app">
+    <aside class="side">
+      <div class="brand"><b>轻</b><span>轻单</span></div>
+      <a class="nav on"><i></i>工作台</a>
+      <a class="nav"><i></i>单据</a>
+      <a class="nav"><i></i>库存</a>
+      <a class="nav"><i></i>报表</a>
+    </aside>
+    <div class="main">
+      <div class="topbar"><span>轻单 / 工作台 · 演示公司</span><span class="mono">2026.11.11</span></div>
+      <div class="body">
+        <div class="ph"><h3>工作台</h3><span class="eyebrow">workbench</span><button class="btn p">新建采购单</button></div>
+        <div class="kpis">
+          <div class="kpi"><span class="k">今日单据</span><b>24</b><em>较昨日 <font>+6</font></em><svg viewBox="0 0 100 20"><path d="M0 16 L14 13 L28 15 L42 9 L56 12 L70 7 L84 9 L100 5" fill="none" stroke="var(--ac)" stroke-width="1.4"/></svg></div>
+          <div class="kpi"><span class="k">待我处理</span><b>3</b><em>最早等 <font class="bad">2 天</font></em><svg viewBox="0 0 100 20"><path d="M0 10 L14 12 L28 8 L42 13 L56 9 L70 14 L84 10 L100 12" fill="none" stroke="var(--ac)" stroke-width="1.4"/></svg></div>
+          <div class="kpi"><span class="k">本月成本</span><b class="money">¥1,286,400</b><em>入库成本归集</em></div>
+        </div>
+        <table>
+          <thead><tr><th>单据号</th><th>类型</th><th>对方单位</th><th class="r">金额</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">A-0024</td><td><i class="dot" style="background:var(--ac)"></i>采购单 A</td><td>归档果业</td><td class="r mono">¥13,600.00</td><td><span class="pill now">进行中</span></td></tr>
+            <tr><td class="mono">E-0088</td><td><i class="dot" style="background:var(--ok)"></i>销售单 E</td><td>华东商超</td><td class="r mono">¥58,240.00</td><td><span class="pill">已完成</span></td></tr>
+            <tr><td class="mono">R-0003</td><td><i class="dot" style="background:var(--ac2)"></i>客户退货 R</td><td>华东商超</td><td class="r mono bad">▾¥1,204.50</td><td><span class="pill">已完成</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sw" style="
+  --bg0:#101110;--bg1:#141615;--bg2:#191C1A;--bg3:#202422;
+  --tx:#E9E7E0;--tx2:rgba(233,231,224,.72);--tx3:rgba(233,231,224,.52);--tx4:rgba(233,231,224,.38);
+  --line:rgba(233,231,224,.10);--line2:rgba(233,231,224,.18);--surf:rgba(233,231,224,.045);
+  --ac:#93AE9C;--acLt:#AEC7B6;--acDk:#728E7B;--ac2:#7F8F86;
+  --acA:rgba(147,174,156,.16);--ok:#8FC0A6;--bad:#E07255;">
+  <div class="sw-head">
+    <span class="sw-key">B</span>
+    <span class="sw-name">墨黑 · 米白 · 苔绿</span>
+    <span class="sw-tag">儒雅克制</span>
+    <span class="sw-chips">
+      <i style="background:#101110"></i><i style="background:#191C1A"></i><i style="background:#E9E7E0"></i><i style="background:#93AE9C"></i><i style="background:#7F8F86"></i>
+    </span>
+  </div>
+
+  <div class="app">
+    <aside class="side">
+      <div class="brand"><b>轻</b><span>轻单</span></div>
+      <a class="nav on"><i></i>工作台</a>
+      <a class="nav"><i></i>单据</a>
+      <a class="nav"><i></i>库存</a>
+      <a class="nav"><i></i>报表</a>
+    </aside>
+    <div class="main">
+      <div class="topbar"><span>轻单 / 工作台 · 演示公司</span><span class="mono">2026.11.11</span></div>
+      <div class="body">
+        <div class="ph"><h3>工作台</h3><span class="eyebrow">workbench</span><button class="btn p">新建采购单</button></div>
+        <div class="kpis">
+          <div class="kpi"><span class="k">今日单据</span><b>24</b><em>较昨日 <font>+6</font></em><svg viewBox="0 0 100 20"><path d="M0 16 L14 13 L28 15 L42 9 L56 12 L70 7 L84 9 L100 5" fill="none" stroke="var(--ac)" stroke-width="1.4"/></svg></div>
+          <div class="kpi"><span class="k">待我处理</span><b>3</b><em>最早等 <font class="bad">2 天</font></em><svg viewBox="0 0 100 20"><path d="M0 10 L14 12 L28 8 L42 13 L56 9 L70 14 L84 10 L100 12" fill="none" stroke="var(--ac)" stroke-width="1.4"/></svg></div>
+          <div class="kpi"><span class="k">本月成本</span><b class="money">¥1,286,400</b><em>入库成本归集</em></div>
+        </div>
+        <table>
+          <thead><tr><th>单据号</th><th>类型</th><th>对方单位</th><th class="r">金额</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">A-0024</td><td><i class="dot" style="background:var(--ac)"></i>采购单 A</td><td>归档果业</td><td class="r mono">¥13,600.00</td><td><span class="pill now">进行中</span></td></tr>
+            <tr><td class="mono">E-0088</td><td><i class="dot" style="background:var(--ok)"></i>销售单 E</td><td>华东商超</td><td class="r mono">¥58,240.00</td><td><span class="pill">已完成</span></td></tr>
+            <tr><td class="mono">R-0003</td><td><i class="dot" style="background:var(--ac2)"></i>客户退货 R</td><td>华东商超</td><td class="r mono bad">▾¥1,204.50</td><td><span class="pill">已完成</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sw" style="
+  --bg0:#121110;--bg1:#171513;--bg2:#1C1A17;--bg3:#24211D;
+  --tx:#EFEAE1;--tx2:rgba(239,234,225,.72);--tx3:rgba(239,234,225,.52);--tx4:rgba(239,234,225,.38);
+  --line:rgba(239,234,225,.10);--line2:rgba(239,234,225,.18);--surf:rgba(239,234,225,.045);
+  --ac:#C4A57B;--acLt:#DCC3A1;--acDk:#A2835C;--ac2:#9A8B78;
+  --acA:rgba(196,165,123,.16);--ok:#9BBFA3;--bad:#E07255;">
+  <div class="sw-head">
+    <span class="sw-key">C</span>
+    <span class="sw-name">炭黑 · 象牙 · 古铜</span>
+    <span class="sw-tag">温暖（原金色的收敛版）</span>
+    <span class="sw-chips">
+      <i style="background:#121110"></i><i style="background:#1C1A17"></i><i style="background:#EFEAE1"></i><i style="background:#C4A57B"></i><i style="background:#9A8B78"></i>
+    </span>
+  </div>
+
+  <div class="app">
+    <aside class="side">
+      <div class="brand"><b>轻</b><span>轻单</span></div>
+      <a class="nav on"><i></i>工作台</a>
+      <a class="nav"><i></i>单据</a>
+      <a class="nav"><i></i>库存</a>
+      <a class="nav"><i></i>报表</a>
+    </aside>
+    <div class="main">
+      <div class="topbar"><span>轻单 / 工作台 · 演示公司</span><span class="mono">2026.11.11</span></div>
+      <div class="body">
+        <div class="ph"><h3>工作台</h3><span class="eyebrow">workbench</span><button class="btn p">新建采购单</button></div>
+        <div class="kpis">
+          <div class="kpi"><span class="k">今日单据</span><b>24</b><em>较昨日 <font>+6</font></em><svg viewBox="0 0 100 20"><path d="M0 16 L14 13 L28 15 L42 9 L56 12 L70 7 L84 9 L100 5" fill="none" stroke="var(--ac)" stroke-width="1.4"/></svg></div>
+          <div class="kpi"><span class="k">待我处理</span><b>3</b><em>最早等 <font class="bad">2 天</font></em><svg viewBox="0 0 100 20"><path d="M0 10 L14 12 L28 8 L42 13 L56 9 L70 14 L84 10 L100 12" fill="none" stroke="var(--ac)" stroke-width="1.4"/></svg></div>
+          <div class="kpi"><span class="k">本月成本</span><b class="money">¥1,286,400</b><em>入库成本归集</em></div>
+        </div>
+        <table>
+          <thead><tr><th>单据号</th><th>类型</th><th>对方单位</th><th class="r">金额</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">A-0024</td><td><i class="dot" style="background:var(--ac)"></i>采购单 A</td><td>归档果业</td><td class="r mono">¥13,600.00</td><td><span class="pill now">进行中</span></td></tr>
+            <tr><td class="mono">E-0088</td><td><i class="dot" style="background:var(--ok)"></i>销售单 E</td><td>华东商超</td><td class="r mono">¥58,240.00</td><td><span class="pill">已完成</span></td></tr>
+            <tr><td class="mono">R-0003</td><td><i class="dot" style="background:var(--ac2)"></i>客户退货 R</td><td>华东商超</td><td class="r mono bad">▾¥1,204.50</td><td><span class="pill">已完成</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sw" style="
+  --bg0:#F5F3EE;--bg1:#FAF9F6;--bg2:#FFFFFF;--bg3:#EFEBE3;
+  --tx:#1E1D1A;--tx2:rgba(30,29,26,.72);--tx3:rgba(30,29,26,.52);--tx4:rgba(30,29,26,.38);
+  --line:rgba(30,29,26,.10);--line2:rgba(30,29,26,.18);--surf:rgba(30,29,26,.045);
+  --ac:#3E5B50;--acLt:#4A6B5E;--acDk:#2F473E;--ac2:#6B7C88;
+  --acA:rgba(62,91,80,.16);--ok:#3F7A5E;--bad:#B4483A;">
+  <div class="sw-head">
+    <span class="sw-key">D</span>
+    <span class="sw-name">宣纸 · 墨 · 松烟青</span>
+    <span class="sw-tag">浅色极简（和登录页形成封面/内页对比）</span>
+    <span class="sw-chips">
+      <i style="background:#F5F3EE"></i><i style="background:#FFFFFF"></i><i style="background:#1E1D1A"></i><i style="background:#3E5B50"></i><i style="background:#6B7C88"></i>
+    </span>
+  </div>
+
+  <div class="app">
+    <aside class="side">
+      <div class="brand"><b>轻</b><span>轻单</span></div>
+      <a class="nav on"><i></i>工作台</a>
+      <a class="nav"><i></i>单据</a>
+      <a class="nav"><i></i>库存</a>
+      <a class="nav"><i></i>报表</a>
+    </aside>
+    <div class="main">
+      <div class="topbar"><span>轻单 / 工作台 · 演示公司</span><span class="mono">2026.11.11</span></div>
+      <div class="body">
+        <div class="ph"><h3>工作台</h3><span class="eyebrow">workbench</span><button class="btn p">新建采购单</button></div>
+        <div class="kpis">
+          <div class="kpi"><span class="k">今日单据</span><b>24</b><em>较昨日 <font>+6</font></em><svg viewBox="0 0 100 20"><path d="M0 16 L14 13 L28 15 L42 9 L56 12 L70 7 L84 9 L100 5" fill="none" stroke="var(--ac)" stroke-width="1.4"/></svg></div>
+          <div class="kpi"><span class="k">待我处理</span><b>3</b><em>最早等 <font class="bad">2 天</font></em><svg viewBox="0 0 100 20"><path d="M0 10 L14 12 L28 8 L42 13 L56 9 L70 14 L84 10 L100 12" fill="none" stroke="var(--ac)" stroke-width="1.4"/></svg></div>
+          <div class="kpi"><span class="k">本月成本</span><b class="money">¥1,286,400</b><em>入库成本归集</em></div>
+        </div>
+        <table>
+          <thead><tr><th>单据号</th><th>类型</th><th>对方单位</th><th class="r">金额</th><th>状态</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">A-0024</td><td><i class="dot" style="background:var(--ac)"></i>采购单 A</td><td>归档果业</td><td class="r mono">¥13,600.00</td><td><span class="pill now">进行中</span></td></tr>
+            <tr><td class="mono">E-0088</td><td><i class="dot" style="background:var(--ok)"></i>销售单 E</td><td>华东商超</td><td class="r mono">¥58,240.00</td><td><span class="pill">已完成</span></td></tr>
+            <tr><td class="mono">R-0003</td><td><i class="dot" style="background:var(--ac2)"></i>客户退货 R</td><td>华东商超</td><td class="r mono bad">▾¥1,204.50</td><td><span class="pill">已完成</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+<div class="note">
+  v0.7 口径：四套共用同一份 <code>tokens.css</code> 主题块与 <code>components.css</code> 组件层，
+  页面只保留布局；<code>data-theme</code> 切换即时生效，登录页粒子引擎会重建 sprite 跟随强调色。
+  深色三套的三级文字 ≥ 6:1（AA），装饰性眉标单独降级，不再混用同一档透明度。
+</div>
+<script>
+document.querySelectorAll('.tb button').forEach(function(b){
+  b.addEventListener('click',function(){
+    try{localStorage.setItem('qd-theme',b.getAttribute('data-key'));}catch(e){}
+    location.href='工作台.html';
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,325 @@
+﻿/* ============================================================
+   轻单 v0.7 · 设计令牌（唯一色彩真源）
+   ------------------------------------------------------------
+   命名规范：语义命名，不再用色相名（--gold 里存蓝色是 v0.6 的债）
+   默认主题 :root = moss / 墨黑·米白·苔绿（v0.7 新配色）
+   可切换   data-theme = mist | bronze | paper
+   层级     bg-0→bg-2 亮度差 8~12%，卡片真正浮起来
+   可访问性 --text-3 >= 6:1，--text-decor 只给装饰性文字
+   动效     --d-2 160ms / --d-4 240ms，B 端高频操作优先瞬时反馈
+   换配色   只改本文件的主题块，页面零改动
+   ============================================================ */
+
+:root{
+  /* ---- 主题：moss · 墨黑 / 米白 / 苔绿（v0.7 默认） ---- */
+  --bg-0:#0A0E0C;
+  --bg-1:#101613;
+  --bg-2:#1A211C;
+  --bg-3:#252E28;
+  --bg-4:#323C35;
+
+  --text-1:rgba(233,231,224,.96);
+  --text-2:rgba(233,231,224,.76);
+  --text-3:rgba(233,231,224,.62);   /* ≈6.3:1 达 AA，给三级说明 */
+  --text-decor:rgba(233,231,224,.42); /* ≈3.3:1，仅限眉标 / 分隔符 / 装饰 */
+  --text-rgb:233,231,224;
+
+  --accent:#93AE9C;
+  --accent-light:#B6D0BE;
+  --accent-deep:#728E7B;
+  --accent-2:#7F8F86;
+  --accent-2-light:#A6B8AE;
+  --accent-rgb:147,174,156;
+  --accent-2-rgb:127,143,134;
+  --on-accent:#0A0E0C;              /* 强调色实底上的文字 */
+
+  --ok:#9CCBAE;
+  --danger:#C0533A;
+  --danger-on-surface:#E08168;
+
+  --a-04:rgba(147,174,156,.04);  --a-06:rgba(147,174,156,.06);
+  --a-10:rgba(147,174,156,.10);  --a-12:rgba(147,174,156,.12);
+  --a-14:rgba(147,174,156,.14);  --a-16:rgba(147,174,156,.16);
+  --a-18:rgba(147,174,156,.18);  --a-22:rgba(147,174,156,.22);
+  --a-24:rgba(147,174,156,.24);  --a-28:rgba(147,174,156,.28);
+  --a-30:rgba(147,174,156,.30);  --a-32:rgba(147,174,156,.32);
+  --a-35:rgba(147,174,156,.35);  --a-36:rgba(147,174,156,.36);
+  --a-40:rgba(147,174,156,.40);  --a-45:rgba(147,174,156,.45);
+  --a-50:rgba(147,174,156,.50);  --a-65:rgba(147,174,156,.65);
+  --b-04:rgba(127,143,134,.04);  --b-06:rgba(127,143,134,.06);
+  --b-16:rgba(127,143,134,.16);  --b-18:rgba(127,143,134,.18);
+  --b-30:rgba(127,143,134,.30);  --b-40:rgba(127,143,134,.40);
+
+  --line-1:rgba(233,231,224,.12);   /* v0.6 是 .06，表格行几乎看不见 */
+  --line-2:rgba(233,231,224,.18);
+  --line-3:rgba(233,231,224,.28);
+  --surf-1:rgba(233,231,224,.035);
+  --surf-2:rgba(233,231,224,.06);
+  --surf-3:rgba(233,231,224,.09);
+  --track:rgba(233,231,224,.05);
+
+  --topbar-bg:rgba(10,14,12,.90);
+  --batch-bg:rgba(10,14,12,.96);
+  --btn-inset:rgba(255,255,255,.16);
+  --sh-1:0 10px 28px -12px rgba(0,0,0,.68);
+  --sh-2:0 22px 52px -16px rgba(0,0,0,.82);
+  --sh-accent:0 0 0 1px var(--a-18),0 8px 28px -10px var(--a-12);
+  --sh-inset:inset 0 1px 0 rgba(233,231,224,.06);
+  --elev-1:0 0 0 1px var(--line-2),0 14px 34px -16px rgba(0,0,0,.72);
+  --focus-ring:2px solid var(--accent-light);
+  --card-hair:rgba(233,231,224,.12);
+
+  --cover-bg:#080C0A;               /* 登录页封面固定深色 */
+  --card-bg:#EEF0EA;                /* 登录卡：中性浅色 */
+  --card-ink:#141A16;
+  --card-line:rgba(20,26,22,.14);
+}
+
+/* ---- 主题：mist · 石墨 / 雾白 / 雾蓝（v0.6 的 A 套，重做层级） ---- */
+[data-theme="mist"]{
+  --bg-0:#0A0D11; --bg-1:#10141A; --bg-2:#1A2029; --bg-3:#262E38; --bg-4:#333D49;
+  --text-1:rgba(230,232,234,.96); --text-2:rgba(230,232,234,.76);
+  --text-3:rgba(230,232,234,.62); --text-decor:rgba(230,232,234,.42);
+  --text-rgb:230,232,234;
+  --accent:#8FA9BE; --accent-light:#AEC6D9; --accent-deep:#7190A9;
+  --accent-2:#6E8296; --accent-2-light:#8FA5BA;
+  --accent-rgb:143,169,190; --accent-2-rgb:110,130,150;
+  --on-accent:#0A0D11;
+  --ok:#8FC0A6; --danger-on-surface:#E07255;
+  --a-04:rgba(143,169,190,.04); --a-06:rgba(143,169,190,.06);
+  --a-10:rgba(143,169,190,.10); --a-12:rgba(143,169,190,.12);
+  --a-14:rgba(143,169,190,.14); --a-16:rgba(143,169,190,.16);
+  --a-18:rgba(143,169,190,.18); --a-22:rgba(143,169,190,.22);
+  --a-24:rgba(143,169,190,.24); --a-28:rgba(143,169,190,.28);
+  --a-30:rgba(143,169,190,.30); --a-32:rgba(143,169,190,.32);
+  --a-35:rgba(143,169,190,.35); --a-36:rgba(143,169,190,.36);
+  --a-40:rgba(143,169,190,.40); --a-45:rgba(143,169,190,.45);
+  --a-50:rgba(143,169,190,.50); --a-65:rgba(143,169,190,.65);
+  --b-04:rgba(110,130,150,.04); --b-06:rgba(110,130,150,.06);
+  --b-16:rgba(110,130,150,.16); --b-18:rgba(110,130,150,.18);
+  --b-30:rgba(110,130,150,.30); --b-40:rgba(110,130,150,.40);
+  --line-1:rgba(230,232,234,.12); --line-2:rgba(230,232,234,.18); --line-3:rgba(230,232,234,.28);
+  --surf-1:rgba(230,232,234,.035); --surf-2:rgba(230,232,234,.06); --surf-3:rgba(230,232,234,.09);
+  --track:rgba(230,232,234,.05);
+  --topbar-bg:rgba(10,13,17,.90); --batch-bg:rgba(10,13,17,.96);
+  --sh-inset:inset 0 1px 0 rgba(230,232,234,.06);
+  --card-hair:rgba(230,232,234,.12);
+  --cover-bg:#080B10; --card-bg:#EEF0F8; --card-ink:#0A0D11; --card-line:rgba(10,13,17,.14);
+}
+
+/* ---- 主题：bronze · 炭黑 / 象牙 / 古铜 ---- */
+[data-theme="bronze"]{
+  --bg-0:#0D0B09; --bg-1:#141210; --bg-2:#201C17; --bg-3:#2C2720; --bg-4:#3A342B;
+  --text-1:rgba(239,234,225,.96); --text-2:rgba(239,234,225,.76);
+  --text-3:rgba(239,234,225,.62); --text-decor:rgba(239,234,225,.42);
+  --text-rgb:239,234,225;
+  --accent:#C4A57B; --accent-light:#DCC3A1; --accent-deep:#A2835C;
+  --accent-2:#9A8B78; --accent-2-light:#BCAE9B;
+  --accent-rgb:196,165,123; --accent-2-rgb:154,139,120;
+  --on-accent:#0D0B09;
+  --ok:#9BBFA3; --danger-on-surface:#E08168;
+  --a-04:rgba(196,165,123,.04); --a-06:rgba(196,165,123,.06);
+  --a-10:rgba(196,165,123,.10); --a-12:rgba(196,165,123,.12);
+  --a-14:rgba(196,165,123,.14); --a-16:rgba(196,165,123,.16);
+  --a-18:rgba(196,165,123,.18); --a-22:rgba(196,165,123,.22);
+  --a-24:rgba(196,165,123,.24); --a-28:rgba(196,165,123,.28);
+  --a-30:rgba(196,165,123,.30); --a-32:rgba(196,165,123,.32);
+  --a-35:rgba(196,165,123,.35); --a-36:rgba(196,165,123,.36);
+  --a-40:rgba(196,165,123,.40); --a-45:rgba(196,165,123,.45);
+  --a-50:rgba(196,165,123,.50); --a-65:rgba(196,165,123,.65);
+  --b-04:rgba(154,139,120,.04); --b-06:rgba(154,139,120,.06);
+  --b-16:rgba(154,139,120,.16); --b-18:rgba(154,139,120,.18);
+  --b-30:rgba(154,139,120,.30); --b-40:rgba(154,139,120,.40);
+  --line-1:rgba(239,234,225,.12); --line-2:rgba(239,234,225,.18); --line-3:rgba(239,234,225,.28);
+  --surf-1:rgba(239,234,225,.035); --surf-2:rgba(239,234,225,.06); --surf-3:rgba(239,234,225,.09);
+  --track:rgba(239,234,225,.05);
+  --topbar-bg:rgba(13,11,9,.90); --batch-bg:rgba(13,11,9,.96);
+  --sh-inset:inset 0 1px 0 rgba(239,234,225,.06);
+  --card-hair:rgba(239,234,225,.12);
+  --cover-bg:#0B0908; --card-bg:#F3EEE5; --card-ink:#1A160F; --card-line:rgba(26,22,15,.14);
+}
+
+/* ---- 主题：paper · 宣纸 / 墨 / 松烟青（浅色内页） ---- */
+[data-theme="paper"]{
+  --bg-0:#F5F3EE; --bg-1:#FAF9F6; --bg-2:#FFFFFF; --bg-3:#EFEBE3; --bg-4:#E4DFD5;
+  --text-1:rgba(30,29,26,.96); --text-2:rgba(30,29,26,.76);
+  --text-3:rgba(30,29,26,.64); --text-decor:rgba(30,29,26,.44);
+  --text-rgb:30,29,26;
+  --accent:#3E5B50; --accent-light:#4A6B5E; --accent-deep:#2F473E;
+  --accent-2:#6B7C88; --accent-2-light:#556A78;
+  --accent-rgb:62,91,80; --accent-2-rgb:107,124,136;
+  --on-accent:#FFFFFF;
+  --ok:#3F7A5E; --danger:#A32D2D; --danger-on-surface:#B4483A;
+  --a-04:rgba(62,91,80,.04); --a-06:rgba(62,91,80,.06);
+  --a-10:rgba(62,91,80,.10); --a-12:rgba(62,91,80,.12);
+  --a-14:rgba(62,91,80,.14); --a-16:rgba(62,91,80,.16);
+  --a-18:rgba(62,91,80,.18); --a-22:rgba(62,91,80,.22);
+  --a-24:rgba(62,91,80,.24); --a-28:rgba(62,91,80,.28);
+  --a-30:rgba(62,91,80,.30); --a-32:rgba(62,91,80,.32);
+  --a-35:rgba(62,91,80,.35); --a-36:rgba(62,91,80,.36);
+  --a-40:rgba(62,91,80,.40); --a-45:rgba(62,91,80,.45);
+  --a-50:rgba(62,91,80,.50); --a-65:rgba(62,91,80,.65);
+  --b-04:rgba(107,124,136,.04); --b-06:rgba(107,124,136,.06);
+  --b-16:rgba(107,124,136,.16); --b-18:rgba(107,124,136,.18);
+  --b-30:rgba(107,124,136,.30); --b-40:rgba(107,124,136,.40);
+  --line-1:rgba(30,29,26,.12); --line-2:rgba(30,29,26,.18); --line-3:rgba(30,29,26,.28);
+  --surf-1:rgba(30,29,26,.035); --surf-2:rgba(30,29,26,.06); --surf-3:rgba(30,29,26,.09);
+  --track:rgba(30,29,26,.06);
+  --topbar-bg:rgba(250,249,246,.92); --batch-bg:rgba(250,249,246,.96);
+  --btn-inset:rgba(255,255,255,.45);
+  --sh-1:0 10px 28px -14px rgba(30,29,26,.20);
+  --sh-2:0 22px 52px -18px rgba(30,29,26,.26);
+  --sh-accent:0 0 0 1px var(--a-18),0 8px 28px -10px var(--a-12);
+  --sh-inset:inset 0 1px 0 rgba(255,255,255,.7);
+  --elev-1:0 0 0 1px var(--line-2),0 14px 34px -18px rgba(30,29,26,.22);
+  --card-hair:rgba(30,29,26,.10);
+  --cover-bg:#0C1310; --card-bg:#FAF9F6; --card-ink:#1E1D1A; --card-line:rgba(30,29,26,.14);
+}
+
+/* ---- 兼容别名：让尚未迁移的旧写法也能工作，不产生裸色 ---- */
+:root,[data-theme]{
+  --w-1:var(--text-1); --w-2:var(--text-2); --w-3:var(--text-3); --w-4:var(--text-decor);
+  --gold:var(--accent); --gold-lt:var(--accent-light); --gold-dk:var(--accent-deep);
+  --blue:var(--accent-2); --blue-lt:var(--accent-2-light);
+  --g06:var(--a-06); --g10:var(--a-10); --g16:var(--a-16);
+  --g28:var(--a-28); --g45:var(--a-45); --g65:var(--a-65);
+  --b16:var(--b-16); --b30:var(--b-30);
+  --red:var(--danger); --red-on-dark:var(--danger-on-surface);
+  --danger-on-ink:var(--danger-on-surface);
+  --green:var(--accent-deep); --green-lt:var(--accent-light);
+  --sh-gold:var(--sh-accent);
+}
+
+/* ---- 尺度与几何 ---- */
+:root{
+  --r-card:12px; --r-panel:14px; --r-control:7px; --r-tag:5px; --r-pill:999px;
+  --fs-9:10px; --fs-10:11px; --fs-11:12px; --fs-12:12px; --fs-13:13px;
+  --fs-14:14px; --fs-16:16px; --fs-18:18px; --fs-20:20px; --fs-24:24px;
+  --fs-30:30px; --fs-38:38px; --fs-48:48px;
+  --fs-body:14px; --fs-label:12px; --fs-min:12px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px;
+  --sp-5:24px; --sp-6:32px; --sp-7:48px; --sp-8:64px;
+  /* 收敛后的动效档：交互 <=160ms，入场 240ms */
+  --d-1:110ms; --d-2:160ms; --d-3:200ms; --d-4:240ms; --d-5:320ms; --d-data:420ms;
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --ease-in:cubic-bezier(.7,0,.2,1);
+  --ease-io:cubic-bezier(.65,0,.35,1);
+  --ease-spring:cubic-bezier(.34,1.28,.52,1);
+  --sans:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,Consolas,"SF Mono","Liberation Mono",monospace;
+  --sb:208px; --topbar-h:52px;
+  /* 断点规范（CSS 变量不能用于 media query，这里只作文档）：1280 / 1024 / 768 / 480 */
+}
+
+html{background:var(--bg-0)}
+body{background:var(--bg-0);color:var(--text-1)}
+:focus-visible{outline:var(--focus-ring);outline-offset:3px;border-radius:4px}
+::selection{background:var(--a-32);color:var(--text-1)}
+
+/* 转场幕 */
+.qd-veil{
+  position:fixed;inset:0;z-index:9999;pointer-events:none;
+  background:var(--bg-0);opacity:0;
+  transition:opacity 160ms var(--ease-out);will-change:opacity;
+}
+html.qd-enter .qd-veil{opacity:1;transition:none}
+html.qd-leave .qd-veil{opacity:1;pointer-events:all;transition:opacity 150ms var(--ease-in)}
+
+/* 顶部柔光（静态，只画一次） */
+.qd-field{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.qd-field::before{
+  content:"";position:absolute;border-radius:50%;
+  width:min(900px,80vw);height:min(900px,80vw);right:-20vw;top:-40vw;
+  background:radial-gradient(circle,var(--a-06) 0%,var(--b-04) 40%,transparent 65%);
+}
+.qd-field::after{
+  content:"";position:absolute;border-radius:50%;
+  width:min(700px,65vw);height:min(700px,65vw);left:-18vw;bottom:-35vw;
+  background:radial-gradient(circle,var(--b-06) 0%,var(--a-04) 44%,transparent 68%);
+}
+
+/* 指针柔光 */
+.qd-aura{
+  position:fixed;left:0;top:0;width:420px;height:420px;margin:-210px 0 0 -210px;
+  border-radius:50%;z-index:1;pointer-events:none;
+  background:radial-gradient(circle,var(--a-06) 0%,var(--b-04) 44%,transparent 70%);
+  opacity:0;transition:opacity 240ms var(--ease-out);will-change:transform,opacity;
+}
+html.qd-pointer .qd-aura{opacity:1}
+
+/* 入场原语 */
+[data-reveal]{
+  opacity:0;transform:translate3d(0,8px,0);
+  transition:opacity var(--d-4) var(--ease-out) var(--rd,0ms),
+             transform var(--d-4) var(--ease-out) var(--rd,0ms);
+}
+[data-reveal="fade"]{transform:none}
+[data-reveal="scale"]{transform:translate3d(0,5px,0) scale(.992)}
+[data-reveal].is-in{opacity:1;transform:none}
+html.no-js [data-reveal]{opacity:1!important;transform:none!important}
+
+/* 数据区状态机：容器加 data-state，内部放 .st-block 直接子元素 */
+[data-state] > .st-block{display:none}
+[data-state="filled"] > .st-filled,
+[data-state="empty"] > .st-empty,
+[data-state="loading"] > .st-loading,
+[data-state="error"] > .st-error{display:block}
+[data-state="empty"] > .st-filled,
+[data-state="loading"] > .st-filled,
+[data-state="error"] > .st-filled{display:none}
+tbody[data-state="empty"] tr.r-row,
+tbody[data-state="loading"] tr.r-row,
+tbody[data-state="error"] tr.r-row{display:none}
+tbody > tr.st-tr{display:none}
+tbody[data-state="empty"] > tr.st-tr.st-empty,
+tbody[data-state="loading"] > tr.st-tr.st-loading,
+tbody[data-state="error"] > tr.st-tr.st-error{display:table-row}
+tbody > tr.st-tr > td{padding:0;border-bottom:none;white-space:normal;height:auto}
+
+/* 骨架屏 */
+.sk{
+  background:linear-gradient(90deg,var(--surf-1) 25%,var(--surf-3) 37%,var(--surf-1) 63%);
+  background-size:400% 100%;animation:shimmer 1.4s var(--ease-io) infinite;border-radius:4px;
+}
+@keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.sk-line{height:9px;margin:7px 0}
+.sk-line.w40{width:40%} .sk-line.w60{width:60%} .sk-line.w80{width:80%}
+.sk-block{border-radius:var(--r-card);background:var(--surf-1);border:1px solid var(--line-1);padding:16px}
+
+/* 空态 / 错误态 */
+.st-box{padding:44px 24px;text-align:center;display:flex;flex-direction:column;align-items:center}
+/* v0.8：空态改成等距线稿（96px），不再是「虚线圈 + 18px 小图标」 */
+.st-ico{
+  width:96px;height:96px;display:grid;place-items:center;
+  color:var(--accent-light);margin:0 auto 10px;border:0;background:none;
+}
+.st-ico svg{display:block;width:100%;height:100%}
+.st-title{font-size:14px;font-weight:600;color:var(--text-1);margin-bottom:6px}
+.st-desc{font-size:12px;line-height:1.75;color:var(--text-3);max-width:36em;margin-bottom:16px}
+.st-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.st-btn{
+  min-height:36px;padding:0 14px;border-radius:var(--r-control);
+  font-size:12px;font-weight:520;display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--line-2);background:var(--surf-1);color:var(--text-2);
+  transition:background var(--d-1),border-color var(--d-1),color var(--d-1);cursor:pointer;
+}
+.st-btn:hover{border-color:var(--line-3);color:var(--text-1);background:var(--surf-2)}
+.st-btn.primary{background:var(--accent-deep);border-color:var(--accent);color:var(--on-accent);font-weight:550}
+.st-btn.primary:hover{background:var(--accent);color:var(--on-accent)}
+.st-error .st-ico{color:var(--danger-on-surface)}
+
+
+/* ---- 轻提示（v0.8）：不遮屏、不打断，2.6 秒自己走 ---- */
+.qd-toast{
+  position:fixed;left:50%;bottom:28px;transform:translate(-50%,10px);
+  padding:10px 16px;border-radius:10px;font-size:12.5px;max-width:80vw;
+  background:var(--bg-2);color:var(--text-1);border:1px solid var(--line-3);
+  box-shadow:var(--sh-2);opacity:0;pointer-events:none;z-index:80;
+  transition:opacity 180ms var(--ease-out),transform 200ms var(--ease-out);
+}
+.qd-toast.on{opacity:1;transform:translate(-50%,0)}@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important}
+  [data-reveal]{opacity:1!important;transform:none!important}
+  .qd-veil,.qd-aura{display:none}
+  .sk{animation:none;background:var(--surf-2)}
+}
