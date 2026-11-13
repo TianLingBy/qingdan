@@ -546,7 +546,7 @@ export async function completeProcessingOrder(
         productId: order.outputProductId,
         qty: decimal(sellable),
         lockedUnitCost: unitCost,
-        custodianId: input.custodianId ?? order.handlerId,
+        custodianId: input.custodianId ?? order.handlerId!,
         sourceDocType: 'B',
         sourceDocId: id,
         handledBy: principal.employeeId,

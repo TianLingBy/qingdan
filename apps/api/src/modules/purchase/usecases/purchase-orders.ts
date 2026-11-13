@@ -446,7 +446,7 @@ export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Pro
       if (line.unitPrice === null) throw new AppError('VALIDATION_FAILED', '完成采购单需要看价权限');
       const batch = await stockFlowPort().createBatch(tx, {
         tenantId: principal.tenantId, companyId: order.companyId, productId: line.productId,
-        qty: line.qty, lockedUnitCost: line.unitPrice, custodianId: order.handlerId,
+        qty: line.qty, lockedUnitCost: line.unitPrice, custodianId: order.handlerId!,
         sourceDocType: 'A', sourceDocId: id, handledBy: principal.employeeId,
       });
       void batch;

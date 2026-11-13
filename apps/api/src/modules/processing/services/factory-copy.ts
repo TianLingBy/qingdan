@@ -139,7 +139,7 @@ export function renderProcessingOrderFactoryCopy(
     <div><dt>单号</dt><dd>${escapeHtml(order.orderNo)}</dd></div>
     <div><dt>日期</dt><dd>${escapeHtml(formatDate(order.createdAt))}</dd></div>
     <div><dt>加工厂</dt><dd>${escapeHtml(order.processorName)}</dd></div>
-    <div><dt>经手人</dt><dd>${escapeHtml(order.handlerId)}</dd></div>
+    <div><dt>经手人</dt><dd>${escapeHtml(order.handlerId ?? '—')}</dd></div>
     <div><dt>材料批次</dt><dd>${batchList(order.materialBatchIds)}</dd></div>
     <div><dt>辅料</dt><dd>${text(order.auxMaterials)}</dd></div>
   </dl>
