@@ -10,6 +10,8 @@
   if (q.get('fs')) fs = q.get('fs');
   if (q.get('trans')) trans = q.get('trans');
   function apply() {
+    /* ONLY_TWO_MODES: 四套配色收成一套，只剩亮/暗 */
+    root.removeAttribute('data-theme');
     root.setAttribute('data-mode', mode);
     root.setAttribute('data-fs', fs);
     root.setAttribute('data-trans', trans);

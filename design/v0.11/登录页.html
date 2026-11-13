@@ -1,67 +1,715 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-fs="m" data-trans="fade"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="zh-CN" class="no-js">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>轻单 · 登录</title>
 <script>try{var m=location.search.match(/[?&]theme=(moss|mist|bronze|paper)/);var t=m?m[1]:localStorage.getItem("qd-theme");if(t&&t!=="moss")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
-<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="fonts.css">
-<link rel="stylesheet" href="components.css"><link rel="stylesheet" href="ui.css">
-<style>*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--sans);color:#fff;min-height:100vh;overflow:hidden;
-  background:radial-gradient(1200px 700px at 18% 8%,rgba(60,120,100,.30),transparent 62%),
-  radial-gradient(900px 600px at 82% 92%,rgba(40,80,110,.30),transparent 62%),#070b09}
-body::before{content:"";position:fixed;inset:0;pointer-events:none;
-  background-image:radial-gradient(1.6px 1.6px at 20% 30%,rgba(255,255,255,.9),transparent),
-  radial-gradient(1.2px 1.2px at 72% 18%,rgba(255,255,255,.75),transparent),
-  radial-gradient(1.4px 1.4px at 44% 68%,rgba(255,255,255,.6),transparent),
-  radial-gradient(1.8px 1.8px at 86% 54%,rgba(255,255,255,.7),transparent),
-  radial-gradient(1.1px 1.1px at 12% 78%,rgba(255,255,255,.55),transparent),
-  radial-gradient(1.3px 1.3px at 62% 84%,rgba(255,255,255,.5),transparent);
-  animation:tw 6s ease-in-out infinite alternate}
-@keyframes tw{from{opacity:.6}to{opacity:1}}
-.halo{position:fixed;left:50%;top:50%;width:760px;height:760px;margin:-380px 0 0 -380px;border-radius:50%;
-  background:radial-gradient(circle,rgba(var(--accent-rgb),.18),transparent 62%);filter:blur(4px)}
-.stage{position:relative;z-index:2;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-.card-login{width:392px;padding:32px 30px 26px;border-radius:20px;
-  background:rgba(255,255,255,.085);backdrop-filter:blur(22px) saturate(150%);
-  border:1px solid rgba(255,255,255,.16);
-  box-shadow:0 30px 80px -30px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.2)}
-.brand{display:flex;align-items:center;gap:10px;margin-bottom:20px}
-.brand i{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-style:normal;font-weight:700;
-  background:linear-gradient(180deg,var(--accent),var(--accent-deep))}
-.brand b{font-size:13.5px}.brand small{display:block;font-size:10px;letter-spacing:.16em;color:rgba(255,255,255,.45)}
-h1{font-size:24px;letter-spacing:-.02em;margin-bottom:8px}
-.lead{font-size:12.5px;line-height:1.7;color:rgba(255,255,255,.62);margin-bottom:20px}
-.f{margin-bottom:14px}.f label{display:block;font-size:11.5px;color:rgba(255,255,255,.55);margin-bottom:7px}
-.f input{width:100%;height:44px;border-radius:11px;border:1px solid rgba(255,255,255,.16);
-  background:rgba(255,255,255,.06);color:#fff;padding:0 13px;font-size:13px}
-.f input::placeholder{color:rgba(255,255,255,.34)}
-.f input:focus{outline:none;border-color:rgba(var(--accent-rgb),.75);background:rgba(255,255,255,.1)}
-.row{display:flex;gap:8px}.row input{flex:1}
-.code{height:44px;padding:0 14px;border-radius:11px;border:1px solid rgba(255,255,255,.22);
-  background:rgba(255,255,255,.05);color:#fff;font-size:12.5px;white-space:nowrap;cursor:pointer}
-.code:disabled{opacity:.45;cursor:default}
-.submit{width:100%;height:46px;border-radius:12px;margin-top:8px;font-size:14px;cursor:pointer;border:0;
-  color:var(--on-accent);background:linear-gradient(180deg,var(--accent),var(--accent-deep));
-  box-shadow:0 14px 30px -14px rgba(var(--accent-rgb),.95)}
-.hint{margin-top:15px;font-size:11.5px;line-height:1.7;color:rgba(255,255,255,.42)}
-.foot{position:fixed;left:0;right:0;bottom:14px;text-align:center;font-size:11px;color:rgba(255,255,255,.3);z-index:2}
-</style><script src="ui.js"></script><link rel="stylesheet" href="page.css"><link rel="stylesheet" href="visual.css"><link rel="stylesheet" href="polish.css">
+<link rel="stylesheet" href="tokens.css">
+<style>
+/* ============================================================
+   轻单 v0.8 · 登录页
+   底色：深冷蓝黑 #0F1114  强调：强调色 #8FA9BE
+   沿用 v0.3 星座粒子引擎，适配新配色
+   登录卡 focus 状态修正：米白底上用深色边框+强调色柔光
+   ============================================================ */
+:root{
+  --paper:#E8EDF8;
+  --ink:#0A0D11;
+  --mist:var(--accent-2);
+  --sans:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg-0,#0F1114);
+  color:var(--paper);
+  font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;cursor:default;
+}
+::selection{background:rgba(var(--accent-rgb), .36);color:var(--paper)}
+
+#fx{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0}
+
+/* 跟手柔光：强调色调 */
+.aura{
+  position:fixed;width:480px;height:480px;border-radius:50%;z-index:1;
+  pointer-events:none;translate:-50% -50%;
+  background:radial-gradient(circle,rgba(var(--accent-rgb), .14) 0%,rgba(var(--accent-2-rgb), .06) 42%,transparent 68%);
+  filter:blur(8px);
+  transition:opacity 500ms var(--ease-out,cubic-bezier(.16,1,.3,1));
+  opacity:0;
+}
+body.has-pointer .aura{opacity:1}
+
+/* 页面骨架 */
+.stage{
+  position:relative;z-index:2;height:100%;
+  display:grid;grid-template-columns:1.1fr .9fr;
+}
+
+/* 左：品牌陈述 */
+.brand{
+  position:relative;
+  display:flex;flex-direction:column;justify-content:space-between;
+  padding:56px 0 48px 64px;
+  pointer-events:none;user-select:none;
+}
+.brand::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(70% 55% at 26% 46%,rgba(8,12,10,.7),transparent 72%);
+}
+.brand-top{position:relative;display:flex;align-items:center;gap:12px}
+.mark{
+  width:30px;height:30px;border-radius:7px;display:grid;place-items:center;
+  background:var(--paper);color:var(--ink);font-weight:800;font-size:13px;
+}
+.brand-name{font-size:17px;font-weight:650;letter-spacing:.01em}
+.brand-name span{
+  display:block;font-size:9.5px;letter-spacing:.34em;color:rgba(var(--text-rgb), .35);
+  text-transform:uppercase;font-weight:500;margin-top:2px;
+}
+
+.statement{position:relative;max-width:580px;margin-bottom:40px}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:10px;
+  font-size:10px;letter-spacing:.24em;text-transform:uppercase;
+  color:rgba(var(--text-rgb), .40);margin-bottom:28px;
+}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--accent)}
+h1{
+  font-size:clamp(32px,3.6vw,54px);line-height:1.18;font-weight:600;
+  letter-spacing:-.025em;color:var(--paper);
+}
+h1 em{font-style:normal;color:var(--accent-light);position:relative}
+.lede{
+  margin-top:26px;max-width:26em;font-size:14px;line-height:1.85;
+  color:rgba(var(--text-rgb), .50);
+}
+.lede b{color:rgba(var(--text-rgb), .82);font-weight:520}
+
+.brand-foot{
+  display:flex;align-items:center;gap:14px;
+  font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(var(--text-rgb), .24);
+}
+.brand-foot i{width:4px;height:4px;border-radius:50%;background:var(--accent);flex:none}
+
+/* 右：登录卡 */
+.panel{
+  display:grid;place-items:center;padding:48px 64px 48px 24px;
+  animation:panelIn var(--d-5,320ms) var(--ease-out,cubic-bezier(.16,1,.3,1));
+}
+@keyframes panelIn{
+  from{transform:translateY(16px) scale(.990)}
+  to{transform:none}
+}
+.card{
+  width:100%;max-width:386px;position:relative;
+  background:#EEF0F8;color:#0A0D14;
+  border-radius:14px;padding:34px 32px 28px;
+  box-shadow:
+    0 0 0 1px rgba(var(--text-rgb), .08),
+    0 40px 80px -20px rgba(0,0,0,.72),
+    0 0 70px -18px rgba(var(--accent-rgb), .16);
+  will-change:transform;
+}
+
+.card-head{margin-bottom:24px}
+.card-eyebrow{
+  font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;
+  color:rgba(10,13,20,.38);margin-bottom:10px;
+}
+.card h2{font-size:24px;font-weight:650;letter-spacing:-.02em;color:#0A0D14}
+.card-sub{font-size:12.5px;color:rgba(10,13,20,.48);margin-top:6px}
+
+.field{margin-bottom:16px;position:relative}
+.field label{display:block;font-size:11.5px;font-weight:550;color:rgba(10,13,20,.58);margin-bottom:7px}
+.field input{
+  width:100%;height:44px;padding:0 13px;font:inherit;font-size:13.5px;
+  color:#0A0D14;background:#fff;
+  border:1.5px solid rgba(10,13,20,.14);border-radius:8px;
+  transition:border-color var(--d-2,200ms),box-shadow var(--d-2,200ms);
+}
+.field input::placeholder{color:rgba(10,13,20,.26)}
+/* v0.4 修正：米白底上用深色边框+强调色柔光，而非灰青蓝轮廓 */
+.field input:focus{
+  outline:none;
+  border-color:#7190A9;
+  box-shadow:0 0 0 3px rgba(var(--accent-rgb), .22);
+}
+
+.field .err{font-size:11.5px;color:#B84030;margin-top:6px;display:none}
+.field.invalid input{border-color:#B84030;box-shadow:0 0 0 3px rgba(184,64,48,.12)}
+.field.invalid .err{display:block}
+
+.row-between{display:flex;align-items:center;justify-content:space-between;margin:2px 0 20px}
+.check{display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(10,13,20,.52);cursor:pointer}
+.check input{
+  appearance:none;width:15px;height:15px;
+  border:1.5px solid rgba(10,13,20,.22);border-radius:4px;
+  display:grid;place-items:center;
+  transition:background var(--d-2,200ms),border-color var(--d-2,200ms);
+}
+.check input:checked{background:#0A0D14;border-color:#0A0D14}
+.check input:checked::after{
+  content:"";width:7px;height:4px;
+  border-left:1.6px solid #EEF0F8;border-bottom:1.6px solid #EEF0F8;
+  transform:rotate(-45deg) translateY(-1px);
+}
+/* v0.4 修正：忘记密码加明确 hover 状态 */
+.link{
+  font-size:12px;color:var(--accent-deep);text-decoration:none;
+  border-bottom:1px solid rgba(var(--accent-rgb), .30);padding-bottom:1px;
+  transition:color var(--d-1,110ms),border-color var(--d-1,110ms);
+}
+.link:hover{color:#0A0D14;border-color:#0A0D14}
+
+.btn{
+  position:relative;width:100%;height:46px;border:none;border-radius:8px;
+  background:#0A0D14;color:#EEF0F8;
+  font:inherit;font-size:13.5px;font-weight:560;letter-spacing:.02em;cursor:pointer;
+  overflow:hidden;display:flex;align-items:center;justify-content:center;gap:9px;
+  transition:transform 70ms ease,box-shadow var(--d-2,200ms),background var(--d-2,200ms);
+}
+.btn:hover{background:#111726;box-shadow:0 10px 26px -12px rgba(0,0,0,.8)}
+.btn:active{transform:scale(.986)}
+.btn::after{
+  content:"";position:absolute;top:0;bottom:0;width:38%;
+  background:linear-gradient(90deg,transparent,rgba(var(--text-rgb), .12),transparent);
+  transform:translateX(-160%) skewX(-16deg);
+}
+.btn:hover::after{animation:sweep var(--d-4,580ms) var(--ease-out,cubic-bezier(.16,1,.3,1))}
+@keyframes sweep{to{transform:translateX(360%) skewX(-16deg)}}
+.btn .spin{
+  width:13px;height:13px;border:1.6px solid rgba(var(--text-rgb), .3);border-top-color:#EEF0F8;
+  border-radius:50%;display:none;animation:spin 700ms linear infinite;
+}
+.btn.is-loading .spin{display:block}
+.btn.is-loading .label{opacity:.65}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.card-foot{margin-top:22px;padding-top:18px;border-top:1px solid rgba(10,13,20,.10)}
+.hint{font-size:11.5px;line-height:1.75;color:rgba(10,13,20,.40)}
+.hint code{
+  font-family:var(--mono,monospace);font-size:11px;
+  background:rgba(10,13,20,.07);padding:1px 5px;border-radius:4px;color:rgba(10,13,20,.64);
+}
+.copy-hint{
+  position:fixed;left:50%;bottom:34px;translate:-50% 10px;
+  padding:10px 16px;border-radius:8px;font-size:12px;
+  background:rgba(var(--text-rgb), .08);color:var(--paper);
+  border:1px solid rgba(var(--text-rgb), .12);
+  backdrop-filter:blur(8px);
+  opacity:0;pointer-events:none;z-index:30;
+  transition:opacity var(--d-2,200ms),translate var(--d-3,320ms) var(--ease-out,cubic-bezier(.16,1,.3,1));
+}
+.copy-hint.on{opacity:1;translate:-50% 0}
+
+/* 卡片背后的呼吸光锥：强调色调 */
+.beam{
+  position:fixed;left:56%;top:46%;z-index:1;pointer-events:none;
+  width:1400px;height:1100px;translate:-50% -50%;
+  background:radial-gradient(ellipse 44% 26% at 50% 50%,
+    rgba(var(--accent-rgb), .10) 0%,rgba(var(--accent-2-rgb), .07) 42%,transparent 72%);
+  filter:blur(4px);
+  animation:beamSweep 26s var(--ease-io,cubic-bezier(.65,0,.35,1)) infinite alternate;
+}
+@keyframes beamSweep{
+  0%  {transform:rotate(-15deg) translate(-5%,-3%) scale(1);opacity:.75}
+  50% {transform:rotate(-8deg) translate(3%,4%) scale(1.08);opacity:1}
+  100%{transform:rotate(-17deg) translate(8%,-4%) scale(1.03);opacity:.82}
+}
+
+.corner{
+  position:fixed;right:24px;top:20px;z-index:3;
+  font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+  color:rgba(var(--text-rgb), .18);pointer-events:none;
+}
+.drag-tip{
+  position:fixed;left:64px;bottom:96px;z-index:3;
+  font-size:11px;color:rgba(var(--text-rgb), .24);letter-spacing:.04em;
+  display:flex;align-items:center;gap:9px;pointer-events:none;
+  opacity:1;
+}
+@keyframes fadeIn{to{opacity:1}}
+.drag-tip i{
+  width:6px;height:6px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 0 0 rgba(var(--accent-rgb), .5);
+  animation:ping 2600ms var(--ease-out,cubic-bezier(.16,1,.3,1)) infinite;
+}
+@keyframes ping{
+  0%{box-shadow:0 0 0 0 rgba(var(--accent-rgb), .45)}
+  70%{box-shadow:0 0 0 9px rgba(var(--accent-rgb), 0)}
+  100%{box-shadow:0 0 0 0 rgba(var(--accent-rgb), 0)}
+}
+
+@media(max-width:1024px){
+  .stage{grid-template-columns:1fr}
+  .brand{display:none}
+  .panel{padding:24px}
+}
+
+.code-row{display:flex;gap:8px;align-items:center}
+.code-row input{flex:1}
+.code-btn{flex:none;height:40px;padding:0 14px;border-radius:8px;
+  border:1px solid rgba(var(--accent-rgb),.38);background:rgba(var(--accent-rgb),.06);
+  color:var(--accent-deep);font-size:12.5px;font-weight:550;cursor:pointer;transition:background .15s,border-color .15s,opacity .15s;
+  font-family:inherit;white-space:nowrap}
+.code-btn:hover{background:rgba(var(--accent-rgb),.18);border-color:rgba(var(--accent-rgb),.7)}
+.code-btn:disabled{opacity:.45;cursor:default}
+.qd-switch{display:none!important}
+.mode-fab{position:fixed;right:16px;bottom:16px;z-index:80;height:34px;padding:0 14px;border-radius:999px;
+  border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#fff;font-size:12.5px;
+  backdrop-filter:blur(10px);cursor:pointer}
+.mode-fab:hover{background:rgba(255,255,255,.16)}
+</style>
+<link rel="stylesheet" href="components.css">
 <script src="motion.js"></script>
-<script src="nav.js"></script>
+<link rel="stylesheet" href="ui.css">
 </head>
-<body>
-<div class="halo"></div>
-<div class="stage"><div class="card-login">
-  <div class="brand"><i>轻</i><div><b>轻单</b><small>QINGDAN</small></div></div>
-  <h1>登录</h1>
-  <p class="lead">账号由管理员统一创建。用他给你的手机号登录，验证码点「获取验证码」。</p>
-  <div class="f"><label for="p">手机号</label><input id="p" placeholder="请输入手机号"></div>
-  <div class="f"><label for="c">验证码</label><div class="row"><input id="c" placeholder="6 位验证码"><button class="code" id="send">获取验证码</button></div></div>
-  <button class="submit">登录</button>
-  <p class="hint">企业注册与入企一期暂未开放。<br>收不到验证码，把手机号发给管理员，他能查到这一次请求。</p>
-</div></div>
-<div class="foot">轻单 v0.10 · 设计稿 · 演示数据</div>
+<body class="login">
+<div class="qd-veil"></div>
+<canvas id="fx"></canvas>
+<div class="beam"></div>
+<div class="aura" id="aura"></div>
+
+<div class="stage">
+  <div class="brand">
+    <div class="brand-top">
+      <div class="mark">轻</div>
+      <div class="brand-name">轻单<span>Qingdan</span></div>
+    </div>
+    <div class="statement">
+      <div class="eyebrow">Internal Ledger</div>
+      <h1>每一笔内部交易，<br>都<em>算得清</em>成本。</h1>
+      <p class="lede">
+        采购、加工、销售、内部交易与结算，<b>一套口径跑通</b>；
+        权限与数据可见性一律<b>服务端判定</b>，数据只给该看的人。
+      </p>
+    </div>
+    <div class="brand-foot">
+      <i></i> 集团内部交易与成本归集 · 内部系统
+    </div>
+  </div>
+
+  <div class="panel">
+    <form class="card" id="form" novalidate>
+      <div class="card-head">
+        <div class="card-eyebrow">// Sign in</div>
+        <h2>登录</h2>
+        <p class="card-sub">账号由管理员统一创建。用他给你的手机号登录，验证码点「获取验证码」。</p>
+      </div>
+      <div class="field" id="f-phone">
+        <label for="phone">手机号</label>
+        <input id="phone" name="phone" inputmode="numeric" autocomplete="username" placeholder="11 位手机号">
+        <span class="err">请输入 11 位手机号</span>
+      </div>
+      <div class="field" id="f-code">
+        <label for="code">验证码</label>
+        <div class="code-row"><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位验证码"><button type="button" class="code-btn" id="send">获取验证码</button></div>
+        <span class="err">请输入验证码</span>
+      </div>
+      <div class="row-between">
+        <label class="check">
+          <input type="checkbox" id="remember" checked>
+          在这台设备上保持登录
+        </label>
+        <a class="link" href="#" id="help">忘记密码</a>
+      </div>
+      <button class="btn" type="submit" id="submit">
+        <span class="spin"></span>
+        <span class="label">登 录</span>
+      </button>
+      <div class="card-foot">
+        <p class="hint">
+          企业注册与入企暂未开放（一期），账号由管理员统一创建。<br>
+          测试环境演示账号 <code>10000000001</code>，验证码 <code>000000</code>。
+        </p>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="corner">Qingdan · v0.7</div>
+<div class="drag-tip"><i></i> 拖动鼠标，光点会跟着走</div>
+<div class="copy-hint" id="toast">已进入（演示环境）</div>
+
 <script>
-var b=document.getElementById('send'),n=60,t=null;
-b.onclick=function(){b.disabled=true;b.textContent=n+' 秒后重发';t=setInterval(function(){n--;if(n<=0){clearInterval(t);b.disabled=false;b.textContent='获取验证码';n=60}else b.textContent=n+' 秒后重发';},1000);};
-</script></body></html>
+/* ============================================================
+   轻单 v0.8 · 登录页粒子引擎（沿用 v0.3 星座，适配新配色）
+   主色：冷白 --text-rgb + 强调色 --accent-rgb（随主题切换）
+   ============================================================ */
+var cv=document.getElementById('fx');
+var ctx=cv.getContext('2d');
+var aura=document.getElementById('aura');
+var card=document.querySelector('.card');
+
+var COLD='233,231,224'; /* 封面恒为深色，星点恒用冷白；只有强调色随主题变 */
+var GOLD=(getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb')||'147,174,156').trim();
+/* v0.6：光点整体提亮 30% */
+var GLOW=1.3;
+var reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+var W=0,H=0,DPR=1;
+
+var SPR={};
+function makeSprite(rgb,core){
+  var s=document.createElement('canvas');
+  var size=64;s.width=s.height=size;
+  var c=s.getContext('2d');
+  var g=c.createRadialGradient(size/2,size/2,0,size/2,size/2,size/2);
+  g.addColorStop(0,'rgba('+rgb+','+core+')');
+  g.addColorStop(.28,'rgba('+rgb+','+(core*.5)+')');
+  g.addColorStop(.62,'rgba('+rgb+','+(core*.12)+')');
+  g.addColorStop(1,'rgba('+rgb+',0)');
+  c.fillStyle=g;c.beginPath();c.arc(size/2,size/2,size/2,0,Math.PI*2);c.fill();
+  return s;
+}
+function buildSprites(){
+  SPR.cold=makeSprite(COLD,1);
+  SPR.gold=makeSprite(GOLD,1);
+}
+
+var CONSTELLATIONS=[
+  {x:.30,y:.245,size:.50,depth:1.0,
+   pts:[[.00,.35],[.18,.62],[.38,.55],[.22,.25],[.54,.46],[.72,.30],[.92,.10]],
+   links:[[0,1],[1,2],[2,3],[3,0],[2,4],[4,5],[5,6]]},
+  {x:.40,y:.780,size:.44,depth:.8,
+   pts:[[.26,.06],[.74,.02],[.36,.46],[.50,.48],[.64,.50],[.30,.94],[.70,.88]],
+   links:[[0,2],[1,4],[2,3],[3,4],[2,5],[4,6],[0,1]]}
+];
+var layout=[];var focusIdx=-1;
+
+function layoutConstellations(){
+  var base=Math.min(W,H);
+  layout=CONSTELLATIONS.map(function(c){
+    var size=base*c.size,cx=W*c.x,cy=H*c.y;
+    var pts=c.pts.map(function(p){return{x:cx+(p[0]-.5)*size,y:cy+(p[1]-.5)*size};});
+    return Object.assign({},c,{cx:cx,cy:cy,size:size,pts:pts});
+  });
+}
+
+var COUNT=function(){return window.innerWidth<900?240:440;};
+var LINK_DIST=90,ATTRACT_R=200,GATHER_R=32,BLOOM_R=140,BLOOM_COOLDOWN=240,BLOOM_DECAY=1100;
+var pts=[];
+
+var BLANKS=[
+  {x:.25,y:.47,rx:.19,ry:.15},
+  {x:.57,y:.48,rx:.09,ry:.28},
+  {x:.80,y:.10,rx:.15,ry:.10},
+  {x:.10,y:.86,rx:.11,ry:.12},
+  {x:.47,y:.86,rx:.10,ry:.10}
+];
+
+function spawn(){
+  pts.length=0;var n=COUNT();
+  var cols=Math.max(1,Math.round(Math.sqrt(n*(W/Math.max(1,H)))));
+  var rows=Math.max(1,Math.ceil(n/cols));
+  var cw=W/cols,ch=H/rows;var k=0;
+  for(var r=0;r<rows&&k<n;r++){
+    for(var c=0;c<cols&&k<n;c++,k++){
+      var isGold=Math.random()<.12;
+      var hx=(c+.5)*cw+(Math.random()-.5)*cw*.66;
+      var hy=(r+.5)*ch+(Math.random()-.5)*ch*.66;
+      var blank=0;
+      for(var b=0;b<BLANKS.length;b++){
+        var bk=BLANKS[b];
+        var nx=(hx/W-bk.x)/bk.rx,ny=(hy/H-bk.y)/bk.ry;
+        var v=Math.exp(-(nx*nx+ny*ny));
+        if(v>blank) blank=v;
+      }
+      if(Math.random()<blank*.95) continue;
+      pts.push({x:hx,y:hy,hx:hx,hy:hy,px:0,py:0,
+        vx:(Math.random()-.5)*.16,vy:(Math.random()-.5)*.16,
+        r:isGold?8+Math.random()*14:1.0+Math.random()*1.8,
+        a:isGold?.12+Math.random()*.10:.32+Math.random()*.36,
+        gold:isGold,ph:Math.random()*Math.PI*2,
+        sp:.4+Math.random()*.8,bl:null});
+    }
+  }
+}
+
+var CELL=LINK_DIST,gridMap=new Map();
+function buildGrid(){
+  gridMap.clear();
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];if(p.gold) continue;
+    var key=Math.floor(p.x/CELL)+':'+Math.floor(p.y/CELL);
+    var arr=gridMap.get(key);
+    if(!arr){arr=[];gridMap.set(key,arr);}
+    arr.push(i);
+  }
+}
+
+var ptr={x:W/2,y:H/2,tx:W/2,ty:H/2,down:false,inside:false,spd:0,anchor:{x:W/2,y:H/2}};
+var prevCursor={x:W/2,y:H/2},lastBloom=0,releaseAt=0;
+var parallax={x:0,y:0,tx:0,ty:0},paused=false;
+
+addEventListener('pointermove',function(e){
+  ptr.tx=e.clientX;ptr.ty=e.clientY;
+  if(!ptr.inside){ptr.inside=true;document.body.classList.add('has-pointer');}
+  parallax.tx=(e.clientX/W-.5)*2;parallax.ty=(e.clientY/H-.5)*2;
+  aura.style.left=e.clientX+'px';aura.style.top=e.clientY+'px';
+},{passive:true});
+addEventListener('pointerdown',function(e){
+  if(e.target.closest('.card,.panel')) return;
+  ptr.down=true;
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];var dx=p.x-e.clientX,dy=p.y-e.clientY;
+    var d=Math.hypot(dx,dy)||1;
+    if(d<300){var f=(1-d/300)*7;p.vx+=dx/d*f;p.vy+=dy/d*f;}
+  }
+});
+addEventListener('pointerup',function(){ptr.down=false;});
+addEventListener('pointerleave',function(){
+  if(!reduce) bloom(ptr.x,ptr.y,1.1);
+  ptr.inside=false;ptr.spd=0;document.body.classList.remove('has-pointer');
+});
+addEventListener('visibilitychange',function(){paused=document.hidden;});
+
+function bloom(cx,cy,power){
+  var now=performance.now();
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];var dx=p.x-cx,dy=p.y-cy;
+    var d=Math.hypot(dx,dy)||1;
+    if(d>BLOOM_R) continue;
+    var f=(1-d/BLOOM_R)*power;if(f<.05) continue;
+    p.bl={t0:now+d*.95,ax:dx/d,ay:dy/d,f:f};
+  }
+}
+
+var T=0;
+function tick(t){
+  if(paused){if(!reduce) requestAnimationFrame(tick);return;}
+  T=t;
+  var dt=Math.max(1,Math.min(48,t-(tick._last||t)));tick._last=t;
+  ptr.x+=(ptr.tx-ptr.x)*.10;ptr.y+=(ptr.ty-ptr.y)*.10;
+  parallax.x+=(parallax.tx-parallax.x)*.05;parallax.y+=(parallax.ty-parallax.y)*.05;
+  var ox=parallax.x*14,oy=parallax.y*10;
+  var instSpd=Math.hypot(ptr.tx-prevCursor.x,ptr.ty-prevCursor.y)/dt;
+  ptr.spd+=(instSpd-ptr.spd)*.3;prevCursor.x=ptr.tx;prevCursor.y=ptr.ty;
+  if(!reduce&&ptr.inside){
+    if(ptr.spd>1.15&&t-lastBloom>BLOOM_COOLDOWN){
+      bloom(ptr.anchor.x,ptr.anchor.y,Math.min(1.2,ptr.spd*.4));
+      lastBloom=t;ptr.anchor.x=ptr.x;ptr.anchor.y=ptr.y;
+    } else if(ptr.spd<.35){
+      ptr.anchor.x+=(ptr.x-ptr.anchor.x)*.07;ptr.anchor.y+=(ptr.y-ptr.anchor.y)*.07;
+    }
+  }
+  ctx.clearRect(0,0,W,H);
+  focusIdx=-1;var bestD=1e9;
+  layout.forEach(function(c,i){
+    var d=Math.hypot(c.cx+ox*c.depth-ptr.x,c.cy+oy*c.depth-ptr.y);
+    if(d<c.size*.95&&d<bestD){bestD=d;focusIdx=i;}
+  });
+  drawConstellations(ox,oy);
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];p.px=p.x;p.py=p.y;
+    if(!reduce&&ptr.inside){
+      var dx=ptr.x-p.x,dy=ptr.y-p.y;var d=Math.hypot(dx,dy)||1;
+      var ux=dx/d,uy=dy/d;var fast=ptr.spd>.85;
+      if(!fast&&d<ATTRACT_R){
+        var k=(1-d/ATTRACT_R);var f=k*(ptr.down?.85:.45);
+        p.vx+=ux*f;p.vy+=uy*f;
+        if(d<GATHER_R){p.gatherT=(p.gatherT||0)+dt;p.vx*=.84;p.vy*=.84;}
+        else{p.gatherT=(p.gatherT||0)*.96;}
+      } else if(fast&&d<ATTRACT_R){
+        var f=Math.min(1.4,ptr.spd*.40)*(1-d/ATTRACT_R);
+        p.vx-=ux*f;p.vy-=uy*f;p.gatherT=(p.gatherT||0)*.6;
+      }
+    }
+    p.vx*=.968;p.vy*=.968;
+    p.vx+=(Math.random()-.5)*.008;p.vy+=(Math.random()-.5)*.008;
+    p.vx+=(p.hx-p.x)*.0026;p.vy+=(p.hy-p.y)*.0026;
+    if(p.bl){
+      var age=t-p.bl.t0;
+      if(age>=0){var kk=1-age/BLOOM_DECAY;if(kk<=0){p.bl=null;}else{p.vx+=p.bl.ax*p.bl.f*kk*.052;p.vy+=p.bl.ay*p.bl.f*kk*.052;}}
+    }
+    var sp=Math.hypot(p.vx,p.vy);if(sp>4.6){p.vx=p.vx/sp*4.6;p.vy=p.vy/sp*4.6;}
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x<0){p.x=0;p.vx=Math.abs(p.vx)*.55;}else if(p.x>W){p.x=W;p.vx=-Math.abs(p.vx)*.55;}
+    if(p.y<0){p.y=0;p.vy=Math.abs(p.vy)*.55;}else if(p.y>H){p.y=H;p.vy=-Math.abs(p.vy)*.55;}
+  }
+  if(!reduce&&ptr.inside&&t>releaseAt){
+    var gathered=0;for(var i=0;i<pts.length;i++) if((pts[i].gatherT||0)>160) gathered++;
+    if(gathered>18){bloom(ptr.x,ptr.y,1.05+Math.min(.7,gathered/40));for(var i=0;i<pts.length;i++) pts[i].gatherT=0;releaseAt=t+1000;}
+  }
+  buildGrid();ctx.lineWidth=1;
+  var linkAlpha=(focusIdx>=0?.08:.12)*GLOW;
+  for(var i=0;i<pts.length;i++){
+    var a=pts[i];if(a.gold) continue;
+    var cx=Math.floor(a.x/CELL),cy2=Math.floor(a.y/CELL);
+    for(var gx=cx-1;gx<=cx+1;gx++){
+      for(var gy=cy2-1;gy<=cy2+1;gy++){
+        var arr=gridMap.get(gx+':'+gy);if(!arr) continue;
+        for(var j=0;j<arr.length;j++){
+          var ji=arr[j];if(ji<=i) continue;
+          var b=pts[ji];var dx2=a.x-b.x,dy2=a.y-b.y;
+          var dist=Math.hypot(dx2,dy2);if(dist>LINK_DIST) continue;
+          var alpha=(1-dist/LINK_DIST)*linkAlpha;
+          ctx.strokeStyle='rgba('+COLD+','+alpha.toFixed(3)+')';
+          ctx.beginPath();ctx.moveTo(a.x+ox,a.y+oy);ctx.lineTo(b.x+ox,b.y+oy);ctx.stroke();
+        }
+      }
+    }
+  }
+  if(ptr.down){
+    for(var i=0;i<pts.length;i++){
+      var p=pts[i];var vx=p.x-p.px,vy=p.y-p.py;
+      var speed=Math.hypot(vx,vy);
+      if(speed>.7){
+        ctx.strokeStyle='rgba('+(p.gold?GOLD:COLD)+','+Math.min(.28,speed*.06).toFixed(3)+')';
+        ctx.beginPath();ctx.moveTo(p.px+ox,p.py+oy);ctx.lineTo(p.x+ox,p.y+oy);ctx.stroke();
+      }
+    }
+  }
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];
+    var breathe=.82+Math.sin(t*.001*p.sp+p.ph)*.18;
+    var x=p.x+ox,y=p.y+oy,rr=p.r*breathe;
+    ctx.globalAlpha=Math.min(1,p.a*breathe*GLOW);
+    ctx.drawImage(p.gold?SPR.gold:SPR.cold,x-rr,y-rr,rr*2,rr*2);
+  }
+  ctx.globalAlpha=1;
+  if(!reduce){
+    card.style.transform='translate3d('+(parallax.x*-3).toFixed(2)+'px,'+(parallax.y*-2.5).toFixed(2)+'px,0)';
+    requestAnimationFrame(tick);
+  }
+}
+
+function drawConstellations(ox,oy){
+  layout.forEach(function(c,ci){
+    var focused=focusIdx===ci,anyFocus=focusIdx>=0,k=c.depth;
+    var swayX=Math.sin(T*.00008+ci*1.7)*5,swayY=Math.cos(T*.00006+ci*2.3)*4;
+    var dx=ox*k+swayX,dy=oy*k+swayY;
+    var lineA=(focused?.36:(anyFocus?.07:.16))*GLOW;
+    var starBoost=focused?1.5:1;
+    ctx.lineWidth=focused?1.2:1;
+    ctx.strokeStyle='rgba('+COLD+','+lineA+')';
+    ctx.beginPath();
+    c.links.forEach(function(l){
+      var a=c.pts[l[0]],b=c.pts[l[1]];if(!a||!b) return;
+      ctx.moveTo(a.x+dx,a.y+dy);ctx.lineTo(b.x+dx,b.y+dy);
+    });
+    ctx.stroke();
+    c.pts.forEach(function(p,pi){
+      var tw=.75+Math.sin(T*.0012+pi*1.9+ci)*.25;
+      var r=(1.6+(pi%3)*.7)*starBoost*tw;
+      var x=p.x+dx,y=p.y+dy;
+      ctx.globalAlpha=Math.min(1,(focused?.95:(anyFocus?.32:.7))*tw*GLOW);
+      ctx.drawImage(SPR.cold,x-r*2,y-r*2,r*4,r*4);
+      ctx.globalAlpha=Math.min(1,(focused?1:(anyFocus?.4:.85))*GLOW);
+      ctx.fillStyle='rgba('+COLD+',.95)';
+      ctx.beginPath();ctx.arc(x,y,Math.max(.7,r*.28),0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;
+    });
+  });
+}
+
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.floor(W*DPR);cv.height=Math.floor(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  buildSprites();spawn();layoutConstellations();
+}
+addEventListener('resize',function(){resize();if(reduce) tick(performance.now());});
+resize();requestAnimationFrame(tick);
+addEventListener('qd-theme-change',function(){
+  GOLD=(getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb')||'147,174,156').trim();
+  buildSprites();
+});
+
+/* ---- 登录表单 ---- */
+var form=document.getElementById('form');
+var submit=document.getElementById('submit');
+var toast=document.getElementById('toast');
+var root=document.documentElement;
+
+function showToast(msg){
+  toast.textContent=msg;toast.classList.add('on');
+  clearTimeout(showToast._h);
+  showToast._h=setTimeout(function(){toast.classList.remove('on');},2400);
+}
+function markField(id,invalid){
+  document.getElementById(id).classList.toggle('invalid',invalid);return !invalid;
+}
+form.addEventListener('submit',function(e){
+  e.preventDefault();
+  var phone=document.getElementById('phone').value.trim();
+  var code=document.getElementById('code').value.trim();
+  var okPhone=markField('f-phone',!/^\d{11}$/.test(phone));
+  var okCode=markField('f-code',code.length===0);
+  if(!okPhone||!okCode) return;
+  submit.classList.add('is-loading');
+  submit.querySelector('.label').textContent='验证中…';
+  setTimeout(function(){
+    submit.querySelector('.label').textContent='进入工作台';
+    if(!reduce){
+      card.animate(
+        [{transform:'scale(1)'},{transform:'scale(1.008)'},{transform:'scale(1)'}],
+        {duration:400,easing:'cubic-bezier(.16,1,.3,1)'}
+      );
+    }
+    setTimeout(function(){
+      if(reduce){location.href='工作台.html';return;}
+      root.classList.add('qd-leave');
+      setTimeout(function(){location.href='工作台.html';},190);
+    },260);
+  },900);
+});
+document.getElementById('phone').addEventListener('input',function(e){
+  e.target.value=e.target.value.replace(/\D/g,'').slice(0,11);
+  if(e.target.value.length===11) document.getElementById('f-phone').classList.remove('invalid');
+});
+document.getElementById('code').addEventListener('input',function(e){
+  e.target.value=e.target.value.replace(/\D/g,'').slice(0,6);
+  if(e.target.value) document.getElementById('f-code').classList.remove('invalid');
+});
+document.getElementById('help').addEventListener('click',function(e){
+  e.preventDefault();showToast('一期不发短信：忘记密码请联系管理员重置');
+});
+addEventListener('keydown',function(e){
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();document.getElementById('phone').focus();}
+  if(e.key==='Escape'){
+    document.getElementById('f-phone').classList.remove('invalid');
+    document.getElementById('f-code').classList.remove('invalid');
+  }
+});
+</script>
+<script>
+(function(){
+  var b=document.getElementById('send'); if(!b) return;
+  var n=60,t=null;
+  b.addEventListener('click',function(){
+    b.disabled=true; b.textContent=n+' 秒后重发';
+    t=setInterval(function(){
+      n--;
+      if(n<=0){clearInterval(t);b.disabled=false;b.textContent='获取验证码';n=60;}
+      else b.textContent=n+' 秒后重发';
+    },1000);
+  });
+})();
+</script>
+<button class="mode-fab" id="modeFab">切换亮色</button>
+<script>
+(function(){
+  var q=new URLSearchParams(location.search);
+  var mode=q.get('mode')||localStorage.getItem('qd-mode')||'dark';
+  document.documentElement.setAttribute('data-mode',mode);
+  var b=document.getElementById('modeFab');
+  function paint(){b.textContent = mode==='dark' ? '切换亮色' : '切换暗色';}
+  paint();
+  b.onclick=function(){
+    mode = mode==='dark' ? 'light' : 'dark';
+    localStorage.setItem('qd-mode',mode);
+    location.search = '?mode='+mode;
+  };
+})();
+</script>
+</body>
+</html>
+
+

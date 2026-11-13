@@ -1,0 +1,53 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 v0.11 · 整站预览</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="fonts.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{display:flex;height:100vh;overflow:hidden;background:var(--bg-0);color:var(--text-1);
+  font-family:var(--sans);font-size:13px}
+.side{width:210px;flex:none;border-right:1px solid var(--line-1);background:var(--surf-1);
+  display:flex;flex-direction:column;overflow:hidden}
+.brand{display:flex;align-items:center;gap:9px;padding:14px 14px 12px;border-bottom:1px solid var(--line-1)}
+.brand i{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-style:normal;
+  font-weight:700;font-size:12px;background:linear-gradient(180deg,var(--accent),var(--accent-deep));color:var(--on-accent)}
+.brand b{font-size:12.5px}.brand small{display:block;font-size:9.5px;letter-spacing:.14em;color:var(--text-decor)}
+.list{overflow:auto;padding:6px}
+.list a{display:block;padding:6px 10px;border-radius:7px;font-size:12.5px;color:var(--text-2)}
+.list a:hover{background:var(--surf-2);color:var(--text-1)}
+.list a.on{background:rgba(var(--accent-rgb),.14);color:var(--accent-light);font-weight:550}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.top{height:46px;flex:none;display:flex;align-items:center;gap:10px;padding:0 14px;
+  border-bottom:1px solid var(--line-1);background:var(--topbar-bg)}
+.top b{font-size:13px}.top span{font-size:11.5px;color:var(--text-3)}
+.top .sp{flex:1}
+.top button{height:28px;padding:0 10px;border-radius:7px;border:1px solid var(--line-2);
+  background:var(--surf-1);color:var(--text-2);font-size:11.5px;cursor:pointer}
+.top button.on{background:var(--accent-deep);color:var(--on-accent);border-color:transparent}
+iframe{flex:1;width:100%;border:0;background:var(--bg-0)}
+</style><link rel="stylesheet" href="round.css">
+<link rel="stylesheet" href="ui.css">
+</head><body>
+<aside class="side"><div class="brand"><i>轻</i><div><b>轻单 v0.11</b><small>PREVIEW</small></div></div>
+<div class="list"><a href="#" data-f="登录页.html" data-n="登录">1. 登录</a><a href="#" data-f="工作台.html" data-n="工作台" class="on">2. 工作台</a><a href="#" data-f="业务全流程图.html" data-n="业务全流程图">3. 业务全流程图</a><a href="#" data-f="采购单A.html" data-n="采购单 A">4. 采购单 A</a><a href="#" data-f="加工单B.html" data-n="加工单 B">5. 加工单 B</a><a href="#" data-f="销售单E.html" data-n="销售单 E">6. 销售单 E</a><a href="#" data-f="内部交易单N.html" data-n="内部交易单 N">7. 内部交易单 N</a><a href="#" data-f="结算单C.html" data-n="结算单 C">8. 结算单 C</a><a href="#" data-f="冲正单据.html" data-n="冲正单据">9. 冲正单据</a><a href="#" data-f="商品资料.html" data-n="商品资料">10. 商品资料</a><a href="#" data-f="客户.html" data-n="客户">11. 客户</a><a href="#" data-f="供应商.html" data-n="供应商">12. 供应商</a><a href="#" data-f="加工厂档案.html" data-n="加工厂档案">13. 加工厂档案</a><a href="#" data-f="库存.html" data-n="库存数量">14. 库存数量</a><a href="#" data-f="库存流水.html" data-n="库存流水">15. 库存流水</a><a href="#" data-f="盘点.html" data-n="盘点">16. 盘点</a><a href="#" data-f="员工.html" data-n="员工">17. 员工</a><a href="#" data-f="权限设置.html" data-n="权限设置">18. 权限设置</a><a href="#" data-f="公司管理.html" data-n="公司管理">19. 公司管理</a><a href="#" data-f="报表.html" data-n="利润报表">20. 利润报表</a><a href="#" data-f="操作日志.html" data-n="操作日志">21. 操作日志</a><a href="#" data-f="API与集成.html" data-n="API 与集成">22. API 与集成</a><a href="#" data-f="单据详情.html" data-n="单据详情">23. 单据详情</a></div></aside>
+<div class="main">
+ <div class="top"><b id="ttl">工作台</b><span id="file">工作台.html</span><span class="sp"></span>
+  <button id="mDark" class="on">暗</button><button id="mLight">亮</button>
+  <button id="fsS">小</button><button id="fsM" class="on">中</button><button id="fsL">大</button>
+  <button id="open">新窗口打开</button></div>
+ <iframe id="fr" src="工作台.html"></iframe>
+</div>
+<script>
+var fr=document.getElementById('fr'),ttl=document.getElementById('ttl'),fl=document.getElementById('file');
+var cur='工作台.html', mode='dark', fs='m';
+function go(f,n){cur=f;fr.src=f+'?mode='+mode+'&fs='+fs;ttl.textContent=n;fl.textContent=f;
+  document.querySelectorAll('.list a').forEach(function(a){a.classList.toggle('on',a.dataset.f===f);});}
+document.querySelectorAll('.list a').forEach(function(a){a.onclick=function(e){e.preventDefault();go(a.dataset.f,a.dataset.n);};});
+document.getElementById('mDark').onclick=function(){mode='dark';go(cur,ttl.textContent);mark(this,'mLight');};
+document.getElementById('mLight').onclick=function(){mode='light';go(cur,ttl.textContent);mark(this,'mDark');};
+document.getElementById('fsS').onclick=function(){fs='s';go(cur,ttl.textContent);mark(this,'fsM');};
+document.getElementById('fsM').onclick=function(){fs='m';go(cur,ttl.textContent);mark(this,'fsS');};
+document.getElementById('fsL').onclick=function(){fs='l';go(cur,ttl.textContent);mark(this,'fsM');};
+function mark(el,other){el.classList.add('on');document.getElementById(other).classList.remove('on');}
+document.getElementById('open').onclick=function(){window.open(fr.src,'_blank');};
+</script></body></html>
