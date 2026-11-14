@@ -1,6 +1,6 @@
 # 轻单项目记忆（项目根 AGENTS.md）
 
-本文件只对 `D:\Desktop\dsh\Qingdan`（`github.com/TianLingBy/qingdan`）生效。**DSH 全局记忆在 `C:\Users\32800\.dsh\AGENTS.md`**，两边不重复：全局记「每次会话都要遵守的行为约定 + 本机环境结论」，这里记「这个项目的派活与进度口径」。
+本文件只对 `D:\快捷方式\工作台\dsh\Qingdan`（`github.com/TianLingBy/qingdan`）生效。**DSH 全局记忆在 `C:\Users\32800\.dsh\AGENTS.md`**，两边不重复：全局记「每次会话都要遵守的行为约定 + 本机环境结论」，这里记「这个项目的派活与进度口径」。
 
 ## 有疑惑就直接问用户，不许猜（2026-11-13 用户新增规则）
 
