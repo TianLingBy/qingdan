@@ -5,9 +5,8 @@
  * 状态 / 归属单，工具条上「新建加工单」，金额受「看价」权限控制（D27 / D79）。
  *
  * 与原型不同的地方，都是本批接口口径决定的：
- * - **「完成 / 验收」本批没有端点**（D5 锁价要生成产出批次，依赖 inventory 写能力，
- *   API 侧 `processing.order.complete` 还没登记），所以 B 单现在只能「进行中 → 已取消」，
- *   损耗量也只能等完成后才有——不画「填损耗」的假按钮；
+ * - **「完成 / 验收」需要 `processing.approve`**：一次填入损耗量，完成时扣材料、
+ *   生成产出批次并锁价；全损耗（可售量 = 0）必须二次确认（D5 / F3 / G2）；
  * - **投入量由材料行合计自动派生**（F2b：各行 `qty` 合计必须等于 `inputQty`），
  *   让人手填两个数字去对齐是故意制造 422；
  * - 材料投入要选批次，批次来自 inventory 只读端点；一个批次都没有时页面说清原因，
@@ -16,6 +15,7 @@
 
 import type {
   InventoryBatch,
+  ProcessingOrderCompleteBody,
   ProcessingOrderDetail,
   ProcessingOrderStatus,
   Product,
@@ -36,6 +36,7 @@ import {
 import {
   MASKED_AMOUNT,
   cancelDisabledReason,
+  compareDecimal,
   formatMoney,
   formatQty,
   isPositiveDecimal,
@@ -48,8 +49,10 @@ import {
   EMPTY_FEES_HINT,
   EMPTY_MATERIALS_HINT,
   isAttributionDoc,
+  isFullLoss,
   processingApi,
   processingQueryKeys,
+  sellableQtyText,
 } from './processing-api';
 
 const STATUS_STYLE: Readonly<Record<ProcessingOrderStatus, string>> = {
@@ -120,6 +123,25 @@ function feeAmountOf(fee: FeeDraft): string {
 function materialTotal(materials: readonly MaterialDraft[]): string {
   const valid = materials.map((row) => row.qty.trim()).filter((qty) => isPositiveDecimal(qty));
   return valid.length === 0 ? '0' : sumDecimal(valid);
+}
+
+/** 完成 / 验收前校验：损耗量由服务端再做一次同口径校验（F3 / G2）。 */
+export function validateCompletionDraft(
+  inputQty: string,
+  lossQty: string,
+  confirmFullLoss: boolean,
+): string[] {
+  const errors: string[] = [];
+  const loss = lossQty.trim();
+  if (!isPositiveDecimal(loss)) {
+    return ['损耗量必须是非负数字（最多 6 位小数）。'];
+  }
+  if (compareDecimal(loss, inputQty) > 0) {
+    errors.push('损耗量不能大于投入量。');
+  } else if (isFullLoss(inputQty, loss) && !confirmFullLoss) {
+    errors.push('可售量为 0 属于全损耗，请勾选二次确认。');
+  }
+  return errors;
 }
 
 /** 提交前的本地校验：只挡「明显错」，字段级口径仍以服务端 422 为准。 */
@@ -563,10 +585,137 @@ function OrderForm({
           {busy ? '提交中…' : editing ? '保存修改' : '开单'}
         </button>
         <span className="text-xs text-slate-500">
-          单号由服务端生成（D16）；损耗量验收时一次填入，本批完成端点未落地（F3）。
+          单号由服务端生成（D16）；损耗量在「完成 / 验收」时一次填入（F3）。
         </span>
       </div>
     </form>
+  );
+}
+
+export interface CompletionPanelProps {
+  readonly order: ProcessingOrderDetail;
+  readonly lossQty: string;
+  readonly confirmFullLoss: boolean;
+  readonly errors: readonly string[];
+  readonly busy: boolean;
+  readonly onLossQtyChange: (value: string) => void;
+  readonly onConfirmFullLossChange: (value: boolean) => void;
+  readonly onSubmit: (event: FormEvent) => void;
+  readonly onCancel: () => void;
+}
+
+export function CompletionPanel({
+  order,
+  lossQty,
+  confirmFullLoss,
+  errors,
+  busy,
+  onLossQtyChange,
+  onConfirmFullLossChange,
+  onSubmit,
+  onCancel,
+}: CompletionPanelProps) {
+  const normalizedLoss = lossQty.trim();
+  const sellable =
+    isPositiveDecimal(normalizedLoss) && compareDecimal(normalizedLoss, order.inputQty) <= 0
+      ? sellableQtyText(order.inputQty, normalizedLoss)
+      : null;
+  const fullLoss = isFullLossForCompletion(order.inputQty, normalizedLoss);
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="font-semibold text-slate-900">完成 / 验收 {order.orderNo}</h3>
+          <p className="mt-1 text-xs text-slate-600">
+            损耗量只填一次；确认后扣减材料、生成产出批次并按 D5 锁价，不可回退。
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-sm text-slate-500 hover:text-slate-900"
+        >
+          取消
+        </button>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="text-sm">
+          <span className="text-slate-600">投入量</span>
+          <input
+            readOnly
+            value={formatQty(order.inputQty)}
+            className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="text-slate-600">损耗量</span>
+          <input
+            required
+            inputMode="decimal"
+            value={lossQty}
+            onChange={(event) => onLossQtyChange(event.target.value)}
+            placeholder="0"
+            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="text-slate-600">可售量</span>
+          <input
+            readOnly
+            value={sellable === null ? '待填入损耗量' : formatQty(sellable)}
+            className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+          />
+        </label>
+      </div>
+
+      {fullLoss ? (
+        <label className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <input
+            type="checkbox"
+            checked={confirmFullLoss}
+            onChange={(event) => onConfirmFullLossChange(event.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            可售量为 0，属于全损耗：确认后会扣减全部材料、不生成产出批次，材料与加工费全额记损失。
+          </span>
+        </label>
+      ) : null}
+
+      {errors.length > 0 ? (
+        <ul className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+          {errors.map((message) => (
+            <li key={message}>· {message}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+        >
+          {busy ? '完成中…' : fullLoss ? '确认全损耗并完成' : '确认完成'}
+        </button>
+        <span className="text-xs text-slate-500">
+          提交会带当前单据版本；若被他人改过，页面会提示并同步最新状态。
+        </span>
+      </div>
+    </form>
+  );
+}
+
+function isFullLossForCompletion(inputQty: string, lossQty: string): boolean {
+  return (
+    isPositiveDecimal(lossQty) &&
+    compareDecimal(lossQty, inputQty) <= 0 &&
+    isFullLoss(inputQty, lossQty)
   );
 }
 
@@ -576,10 +725,13 @@ interface DetailPanelProps {
   readonly batches: readonly InventoryBatch[];
   readonly canViewPrice: boolean;
   readonly canCancel: boolean;
+  readonly canComplete: boolean;
   readonly canceling: boolean;
+  readonly completing: boolean;
   readonly onClose: () => void;
   readonly onEdit: () => void;
   readonly onCancel: () => void;
+  readonly onComplete: () => void;
   readonly onPrint: () => void;
 }
 
@@ -589,10 +741,13 @@ function DetailPanel({
   batches,
   canViewPrice,
   canCancel,
+  canComplete,
   canceling,
+  completing,
   onClose,
   onEdit,
   onCancel,
+  onComplete,
   onPrint,
 }: DetailPanelProps) {
   const feeTotal = sumDecimal(order.fees.map((fee) => fee.amount));
@@ -704,7 +859,7 @@ function DetailPanel({
         </div>
         <div className="flex gap-2">
           <dt className="text-slate-500">产出批次</dt>
-          <dd className="font-medium">{order.outputBatchId ?? '完成时生成（等 inventory 落地）'}</dd>
+          <dd className="font-medium">{order.outputBatchId ?? '完成时生成'}</dd>
         </div>
         <div className="flex gap-2">
           <dt className="text-slate-500">归属单</dt>
@@ -718,7 +873,9 @@ function DetailPanel({
           <dt className="text-slate-500">损失记录</dt>
           <dd className="font-medium">
             {order.lossRecord
-              ? `${formatQty(order.lossRecord.lossQty)} / ${formatMoney(order.lossRecord.amount)} / ${formatDateTime(order.lossRecord.recordedAt)}`
+              ? `${formatQty(order.lossRecord.lossQty)} / ${
+                  canViewPrice ? formatMoney(order.lossRecord.amount) : MASKED_AMOUNT
+                } / ${formatDateTime(order.lossRecord.recordedAt)}`
               : '—'}
           </dd>
         </div>
@@ -729,6 +886,14 @@ function DetailPanel({
       </dl>
 
       <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={onComplete}
+          disabled={order.status !== '进行中' || !canComplete || completing}
+          className="rounded border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-40"
+        >
+          {completing ? '完成中…' : '完成 / 验收'}
+        </button>
         <button
           type="button"
           onClick={onEdit}
@@ -753,6 +918,11 @@ function DetailPanel({
           打印发厂联
         </button>
         {cancelReason && <span className="text-xs text-slate-500">{cancelReason}</span>}
+        {!canComplete && order.status === '进行中' && (
+          <span className="text-xs text-slate-500">
+            完成 / 验收需要 processing.approve
+          </span>
+        )}
         {!canCancel && order.cancelable.allowed && (
           <span className="text-xs text-slate-500">当前身份无取消权限（processing.delete）</span>
         )}
@@ -792,6 +962,10 @@ export function ProcessingOrdersPage() {
   const [staleNotice, setStaleNotice] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [completingOrder, setCompletingOrder] = useState<ProcessingOrderDetail | null>(null);
+  const [completionLossQty, setCompletionLossQty] = useState('');
+  const [completionConfirmFullLoss, setCompletionConfirmFullLoss] = useState(false);
+  const [completionErrors, setCompletionErrors] = useState<string[]>([]);
   const printUrlRef = useRef<string | null>(null);
 
   const processorsQuery = useQuery({
@@ -973,6 +1147,51 @@ export function ProcessingOrdersPage() {
     },
   });
 
+  const completeOrder = useMutation({
+    mutationFn: (input: {
+      readonly order: ProcessingOrderDetail;
+      readonly body: ProcessingOrderCompleteBody;
+    }) => processingApi.complete(input.order.id, input.body, input.order.version),
+    onSuccess: async (result) => {
+      const parts = [`完成成功：${result.outputBatch ? '已生成产出批次' : '全损耗，未生成产出批次'}`];
+      if (result.outputBatch) {
+        parts.push(`批次 ${result.outputBatch.batchNo}`);
+        parts.push(`数量 ${formatQty(result.outputBatch.qty)}`);
+        if (canViewPrice) parts.push(`锁价 ${formatMoney(result.outputBatch.lockedUnitCost)}`);
+      }
+      if (result.lossRecord) {
+        parts.push(`损耗 ${formatQty(result.lossRecord.lossQty)}`);
+      }
+      setNotice(parts.join('；'));
+      setCompletingOrder(null);
+      setCompletionLossQty('');
+      setCompletionConfirmFullLoss(false);
+      setCompletionErrors([]);
+      setActionError(null);
+      setStaleNotice(null);
+      await queryClient.invalidateQueries({ queryKey: ['processing-orders'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory', 'batches'] });
+    },
+    onError: async (error, input) => {
+      const fresh = await recoverFromStaleVersion(error, input.order.id, processingApi.detail);
+      if (!fresh) {
+        setCompletionErrors([describeWriteError(error, '完成加工单失败，请稍后重试')]);
+        return;
+      }
+      setCompletionErrors([]);
+      if (fresh.status === '进行中') {
+        setStaleNotice(staleActionRetryText(fresh.version, '完成 / 验收'));
+        setCompletingOrder(fresh);
+      } else {
+        setStaleNotice(
+          `这张单刚被别人更新为「${fresh.status}」（v${fresh.version}），不能再完成。`,
+        );
+        setCompletingOrder(null);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['processing-orders'] });
+    },
+  });
+
   const print = useMutation({
     mutationFn: (id: string) => processingApi.print(id),
     onSuccess: (doc) => {
@@ -997,6 +1216,24 @@ export function ProcessingOrdersPage() {
     save.reset();
     setFormOpen(true);
     setDetailId(null);
+  };
+
+  const beginComplete = (order: ProcessingOrderDetail) => {
+    setCompletingOrder(order);
+    setCompletionLossQty(order.lossQty ?? '');
+    setCompletionConfirmFullLoss(false);
+    setCompletionErrors([]);
+    setActionError(null);
+    setStaleNotice(null);
+    setFormOpen(false);
+  };
+
+  const resetCompletion = () => {
+    setCompletingOrder(null);
+    setCompletionLossQty('');
+    setCompletionConfirmFullLoss(false);
+    setCompletionErrors([]);
+    completeOrder.reset();
   };
 
   const beginEdit = (order: ProcessingOrderDetail) => {
@@ -1084,10 +1321,9 @@ export function ProcessingOrdersPage() {
       </header>
 
       <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        本批不含「完成 / 验收」：完成时要按 D5 生成产出批次并锁价，
-        依赖 inventory 的批次写入能力（<code className="font-mono">processing.order.complete</code>{' '}
-        尚未登记，调用会回 501）。所以现在加工单只能「进行中 → 已取消」，
-        损耗量与可售量都停在「待验收填入」——这里不画假按钮。
+        「完成 / 验收」需要 <code className="font-mono">processing.approve</code>：损耗量只填一次，
+        系统按 D5 扣减材料、生成产出批次并锁价。可售量为 0 时必须二次确认全损耗；
+        提交带强 <code className="font-mono">If-Match</code>，版本冲突会提示并同步最新状态。
       </p>
 
       {meData && !canViewPrice && (
@@ -1304,6 +1540,19 @@ export function ProcessingOrdersPage() {
                       </button>
                       <button
                         type="button"
+                        disabled={
+                          !can('approve') ||
+                          order.status !== '进行中' ||
+                          completeOrder.isPending
+                        }
+                        onClick={() => void withFreshDetail(order.id, beginComplete)}
+                        className="rounded border border-emerald-300 px-2 py-1 text-xs text-emerald-700 disabled:opacity-40"
+                        title={!can('approve') ? '需要 processing.approve' : undefined}
+                      >
+                        完成 / 验收
+                      </button>
+                      <button
+                        type="button"
                         disabled={!can('update') || !canViewPrice || order.status !== '进行中'}
                         onClick={() => void withFreshDetail(order.id, beginEdit)}
                         className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-40"
@@ -1371,14 +1620,60 @@ export function ProcessingOrdersPage() {
               batches={detailBatches}
               canViewPrice={canViewPrice}
               canCancel={can('delete')}
+              canComplete={can('approve')}
               canceling={cancelOrder.isPending}
-              onClose={() => setDetailId(null)}
+              completing={completeOrder.isPending}
+              onClose={() => {
+                setDetailId(null);
+                setCompletingOrder(null);
+              }}
               onEdit={() => beginEdit(detailOrder)}
               onCancel={() => askCancel(detailOrder)}
+              onComplete={() => void withFreshDetail(detailOrder.id, beginComplete)}
               onPrint={() => print.mutate(detailOrder.id)}
             />
           )}
         </>
+      )}
+
+      {completingOrder && (
+        <CompletionPanel
+          order={completingOrder}
+          lossQty={completionLossQty}
+          confirmFullLoss={completionConfirmFullLoss}
+          errors={completionErrors}
+          busy={completeOrder.isPending}
+          onLossQtyChange={(value) => {
+            setCompletionLossQty(value);
+            setCompletionErrors([]);
+            if (
+              !isPositiveDecimal(value.trim()) ||
+              !isFullLoss(completingOrder.inputQty, value.trim())
+            ) {
+              setCompletionConfirmFullLoss(false);
+            }
+          }}
+          onConfirmFullLossChange={setCompletionConfirmFullLoss}
+          onSubmit={(event) => {
+            event.preventDefault();
+            const errors = validateCompletionDraft(
+              completingOrder.inputQty,
+              completionLossQty,
+              completionConfirmFullLoss,
+            );
+            setCompletionErrors(errors);
+            if (errors.length > 0) return;
+            const fullLoss = isFullLoss(completingOrder.inputQty, completionLossQty.trim());
+            completeOrder.mutate({
+              order: completingOrder,
+              body: {
+                lossQty: completionLossQty.trim(),
+                confirmFullLoss: fullLoss || undefined,
+              },
+            });
+          }}
+          onCancel={resetCompletion}
+        />
       )}
     </section>
   );
