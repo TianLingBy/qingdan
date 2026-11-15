@@ -15,8 +15,8 @@ import { SCHEMA_MIGRATIONS_TABLE } from './migrate.js';
 /** 代码硬依赖的迁移：缺一条就拒绝启动。新增依赖时在这里登记。 */
 export const REQUIRED_MIGRATIONS: readonly string[] = [
   '0026_settlement_orders_settled_at.sql',
-  // D88 / #288：撤销结算把结算期快照列置 NULL，0034 必须已应用。
-  '0034_settlement_orders_unsettle.sql',
+  // D88 / #288：撤销结算把结算期快照列置 NULL，20261116043000 必须已应用。
+  '20261116043000_settlement_orders_unsettle.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

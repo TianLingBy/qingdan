@@ -1,4 +1,4 @@
--- 0034_settlement_orders_unsettle.sql
+-- 20261116043000_settlement_orders_unsettle.sql
 -- 结算单可撤销（D88 / #288）：撤销后回到「待确认」，清空结算期快照列。
 --
 -- 背景：

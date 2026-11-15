@@ -82,7 +82,7 @@ describe('纯 SQL 迁移 runner（PGlite / 内存 PG18）', () => {
     ]);
   });
 
-  it('结算单快照列可空（0034_settlement_orders_unsettle.sql / D88）：撤销结算才能清空快照', async () => {
+  it('结算单快照列可空（20261116043000_settlement_orders_unsettle.sql / D88）：撤销结算才能清空快照', async () => {
     const result = await test.database.query<{ column_name: string; is_nullable: string }>(
       `SELECT column_name, is_nullable
          FROM information_schema.columns
