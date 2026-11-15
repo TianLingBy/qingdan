@@ -176,6 +176,9 @@ trigram：对规范化名称取 3 字符滑窗集合（含首尾边界符），`
 | 10 | 前端：自己公司只读卡 + 管理子公司页按权限显隐 + 客户财务字段补录 | `apps/web/src/pages/companies/**`、`customers/**` | — |
 | 11 | 决策记录 **D92** | `docs/decisions.md` | ✅ decisions |
 | 12 | 迁移用 14 位时间戳 + `node tools/check-numbering.mjs --base origin/main` | — | — |
+| 13 | 对接人三张表 + 单据 `*_contact_id` + 存量回填 | 同上一个迁移 | ✅ 迁移 |
+| 14 | 对接人 CRUD + 详情聚合（summary）端点 | `packages/contracts/src/{customers,suppliers,processors}.ts`、`apps/api/src/modules/masterdata/usecases/contacts.ts` | ✅ 契约 |
+| 15 | 前端：档案管理页按公司分组、详情页（对接人/历史订单/总流水） | `apps/web/src/pages/masterdata/**` | — |
 
 端点：
 
@@ -210,7 +213,12 @@ pwsh -NoProfile -File tests/run.ps1
 7. 只有 `update` 无 `merge` 的账号调合并 → 403；跨公司合并 422；自己并自己 422；
 8. 非老板账号 `PATCH` 自己公司 → 403；非本人读 `is_owner` 员工详情 → 404/403 且列表中不出现；
 9. N 单传 `companyDraft` → 422「公司只能选不能建」；
-10. 确认独立 → 不再进队列。
+10. 确认独立 → 不再进队列；
+11. 对接人：一个档案只能有一个 `is_primary`（插第二条主联系人 → 409/422）；
+12. 开单传别人的 `customer_contact_id`（不同客户或不同公司）→ 422；
+13. 无 `view_price` 调 `summary` → 返回 `contacts` 与 `recentOrders`、**不含 `totalAmount`**；
+14. 存量 `contact_name`/`contact_phone` 回填成主对接人，重复执行不报错（幂等）；
+15. `summary` 只统计本公司单据，跨子公司不计入。
 
 ## 九、明确不做（一期）
 
@@ -230,3 +238,78 @@ pwsh -NoProfile -File tests/run.ps1
 | 4 | 阈值 | 按设计默认 |
 | 5 | 合并权限 | 拆开：新增第 9 个动作 `merge` |
 | 6 | 同名不同规格商品 | 必提示 |
+
+## 十一、档案的「多对接人」与「按公司维度」视图（负责人 2026-11-16 追加）
+
+需求原话：客户管理页面按不同公司保存资料，**同一公司下可能有不同的人来下单**，且可查看历史订单、总消费流水；加工厂与供应商同理。
+
+### 11.1 现状为什么不够
+- `customer` / `supplier` 只有**单组** `contact_name` + `contact_phone`（`0005_masterdata_customer.sql:31-32`、`0006_masterdata_supplier.sql:30-31`），一个客户只能记一个人，第二个人来下单只能覆盖前者或口头记。
+- `customer.company_id NOT NULL` 与列表接口的 `companyId` 筛选已经存在（`packages/contracts/src/customers.ts:48`），**数据层本来就按公司隔离**；缺的是「按公司分组看」和「一个档案下挂多个对接人」。
+- 单据只记 `customer_id`，不记「这次是谁来下的」，历史订单一聚合就分不清对接人。
+
+### 11.2 数据模型
+三张对接人表，各自带真 FK（不用一张多态表）：理由是多态表拿不到外键约束，删档时会出现孤儿行——数据安全（§十一·2 铁律）优先于「少两张表」。
+
+```sql
+CREATE TABLE customer_contact (
+  id uuid PRIMARY KEY,
+  tenant_id uuid NOT NULL REFERENCES tenant (id),
+  company_id uuid NOT NULL REFERENCES company (id),
+  customer_id uuid NOT NULL REFERENCES customer (id) ON DELETE RESTRICT,
+  name text NOT NULL CHECK (length(btrim(name)) > 0),
+  phone text CHECK (phone ~ '^[0-9+\-]{6,20}$'),
+  title text,                      -- 职务：采购、财务、仓库…
+  is_primary boolean NOT NULL DEFAULT false,
+  status text NOT NULL DEFAULT '启用' CHECK (status IN ('启用','停用')),
+  version integer NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT customer_contact_tenant_company_customer_key UNIQUE (company_id, customer_id, name)
+);
+CREATE INDEX customer_contact_lookup_idx ON customer_contact (tenant_id, company_id, customer_id, status);
+-- supplier_contact / processor_contact 同构（supplier_id / processor_id）
+```
+
+每档案最多一个 `is_primary`：用部分唯一索引保证
+```sql
+CREATE UNIQUE INDEX customer_contact_one_primary_idx
+  ON customer_contact (customer_id) WHERE is_primary AND status = '启用';
+```
+
+单据加对接人（可空，历史单不受影响）：
+```sql
+ALTER TABLE sales_order    ADD COLUMN customer_contact_id  uuid REFERENCES customer_contact (id) ON DELETE RESTRICT;
+ALTER TABLE purchase_order ADD COLUMN supplier_contact_id  uuid REFERENCES supplier_contact (id) ON DELETE RESTRICT;
+-- 加工单同款 processor_contact_id（若其表名按 processing 前缀，跟随实际表名）
+```
+
+存量迁移：把已有 `contact_name`/`contact_phone` **回填**成一条 `is_primary=true` 的对接人（唯一一次 backfill，且幂等 `ON CONFLICT DO NOTHING`）。**老字段保留不删**（前向 only，别为了干净去动历史迁移；新写入时同步维护首联系人字段以兼容旧读端）。
+
+### 11.3 公司维度视图
+| 端点 | 说明 |
+|---|---|
+| `GET /api/v1/customers?companyId=&keyword=&status=` | 已有，前端按公司切 tab（一个 tab 一个 `companyId`） |
+| `GET /api/v1/customers/{id}/summary` | 详情聚合：`orderCount` / `totalAmount` / `lastOrderAt` / `recentOrders[10]` / `contacts[]` |
+| `GET /api/v1/suppliers/{id}/summary` | 同上，取 `purchase_order` 汇总 |
+| `GET /api/v1/processors/{id}/summary` | 同上，取加工单汇总 |
+| `GET /api/v1/customers/{id}/contacts`、`POST`、`PATCH /contacts/{cid}`、`DELETE /contacts/{cid}` | 对接人增删改（软停用） |
+
+**统计口径（默认值，待负责人确认）**
+- `totalAmount` = 该档案下 `status <> '已取消'` 的单据金额合计；`orderCount` 同口径；`lastOrderAt` = `max(created_at)`。
+- 只统计**本公司**（`company_id` 与档案一致）的单据——跨子公司不合并，因为那是两套账。
+- 聚合走 `SUM/COUNT` + 现有索引 `sales_order_tenant_company_customer_idx`（`0013_sales_orders.sql:45`），不建物化汇总表；等单表过百万行再谈（§七 性能标尺）。
+
+### 11.4 开单时的对接人
+开单页选中客户后，对接人下拉列出该客户 `status='启用'` 的对接人，默认选 `is_primary`；**允许手填新对接人**，保存时静默 upsert（与主数据静默建档同口径，不提示、进相似度队列，`entity='customer_contact'`）。单据存 `customer_contact_id`，历史订单因此能按对接人筛。
+
+### 11.5 权限（沿用，不新增动作）
+- 读档案与对接人：`customer.read` / `supplier.read` / `processor.read`
+- 增删改对接人：对应域 `create` / `update` / `delete`（对接人是档案的从属数据，不单独立域）
+- 看金额：`view_price`（**总消费流水算价格信息**，无 `view_price` 时 `totalAmount` 不返回、列表列整列隐藏）
+
+### 11.6 安全影响四类
+- 用户安全：对接人手机号按需脱敏（列表只显示后 4 位，详情页完整）；无 `view_price` 看不到金额；单据里的对接人必须是同客户、同公司、启用状态（用例断言）。
+- 数据安全：回填幂等；对接人删除一律软停用（`status='停用'`），单据引用不悬空；RLS 口径与其它表一致。
+- 产品安全：`is_primary` 唯一由部分索引 + 应用层双保险；停用客户不显示其对接人下拉。
+- 服务器安全：聚合查询一次 SQL 搞定，禁止「先查列表再逐条查汇总」的 N+1；无新依赖。
