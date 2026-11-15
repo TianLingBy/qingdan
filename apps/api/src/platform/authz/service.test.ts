@@ -176,7 +176,7 @@ describe('权限判定（D15 / D50 / D52.1，三层合并 + token 交集）', ()
     expect(result!.canViewHandler).toBe(true);
   });
 
-  it('view_handler：manager 岗位未授予该权限点则不可看（岗位预设可被撤销）', async () => {
+  it('view_handler：manager 岗位默认授予，撤销权限点后不可看（可被撤销）', async () => {
     const POSITION_MANAGER = '01900000-0000-7000-8000-000000000213';
     const EMP_MANAGER = '01900000-0000-7000-8000-000000000224';
     await test.database.transaction(async (tx) => {
@@ -185,10 +185,10 @@ describe('权限判定（D15 / D50 / D52.1，三层合并 + token 交集）', ()
          VALUES ($1, $2, '经理', '预设', true, 'manager')`,
         [POSITION_MANAGER, TENANT],
       );
-      // 只授 read，不授 view_handler：preset_key='manager' 本身不能带来负责人可见性。
+      // 模拟 seed 默认：manager 岗位授予 sales.read + sales.view_handler。
       await tx.query(
         `INSERT INTO position_permission (tenant_id, position_id, domain, action, granted)
-         VALUES ($1, $2, 'sales', 'read', true)`,
+         VALUES ($1, $2, 'sales', 'read', true), ($1, $2, 'sales', 'view_handler', true)`,
         [TENANT, POSITION_MANAGER],
       );
       await tx.query(
@@ -202,8 +202,20 @@ describe('权限判定（D15 / D50 / D52.1，三层合并 + token 交集）', ()
         [TENANT, EMP_MANAGER, COMPANY_A, POSITION_MANAGER],
       );
     });
-    const result = await computeAuthz(test.database, { employeeId: EMP_MANAGER, tenantId: TENANT });
-    expect(result).not.toBeNull();
-    expect(result!.canViewHandler).toBe(false);
+
+    // 默认授予：可见（preset_key='manager' 本身不带来可见性，是权限点带来的）。
+    const before = await computeAuthz(test.database, { employeeId: EMP_MANAGER, tenantId: TENANT });
+    expect(before).not.toBeNull();
+    expect(before!.canViewHandler).toBe(true);
+
+    // 撤销权限点：从岗位模板里撤掉 view_handler。
+    await test.database.query(
+      `UPDATE position_permission SET granted = false
+        WHERE tenant_id = $1 AND position_id = $2 AND domain = 'sales' AND action = 'view_handler'`,
+      [TENANT, POSITION_MANAGER],
+    );
+    const after = await computeAuthz(test.database, { employeeId: EMP_MANAGER, tenantId: TENANT });
+    expect(after).not.toBeNull();
+    expect(after!.canViewHandler).toBe(false);
   });
 });
