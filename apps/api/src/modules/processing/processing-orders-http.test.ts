@@ -19,7 +19,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  *   - update / cancel 必须带 If-Match；缺失 428、弱 ETag / 旧版本 409；
  *   - 已完成不可改、不可取消（422）；有下游不可取消（409）；
  *   - materialBatchIds 为空 / D39 负数费用 → 422；
- *   - D52① AI 凭证开单 / 取消 → 403 AI_ACTION_FORBIDDEN；
+ *   - D52① AI 凭证开单 / 修改 / 取消 → 403 AI_ACTION_FORBIDDEN；
  *   - 写操作成功审计落 audit_log（D51），普通读不记。
  */
 
@@ -383,6 +383,17 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(noBatches.statusCode).toBe(422);
     expect(noBatches.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
 
+    // 同一批次两行 → 拒绝并点明材料行号（完成时会按行重复扣减）。
+    const duplicateBatch = await createOrder(nextRequestId('duplicate-batch'), {
+      materialBatchIds: [
+        { batchId: BATCH_ID, qty: '50.000000' },
+        { batchId: BATCH_ID, qty: '50.000000' },
+      ],
+    });
+    expect(duplicateBatch.statusCode).toBe(422);
+    expect(duplicateBatch.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(JSON.stringify(duplicateBatch.json())).toContain('材料第 2 行');
+
     const badFee = await createOrder(nextRequestId('bad-fee'), {
       fees: [
         {
@@ -494,6 +505,25 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       code: 'VALIDATION_FAILED',
       details: { field: 'fees' },
     });
+
+    // 改单同样不允许同一批次出现两行。
+    const duplicateBatch = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/processing-orders/${created.id}`,
+      headers: writeHeaders(ownerCookie, 'req-processing-update-duplicate-batch', {
+        'if-match': '"1"',
+      }),
+      payload: {
+        materialBatchIds: [
+          { batchId: BATCH_2_ID, qty: '10.000000' },
+          { batchId: BATCH_2_ID, qty: '10.000000' },
+        ],
+        inputQty: '20',
+      },
+    });
+    expect(duplicateBatch.statusCode).toBe(422);
+    expect(duplicateBatch.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(JSON.stringify(duplicateBatch.json())).toContain('材料第 2 行');
 
     const unchanged = await app.inject({
       method: 'GET',
@@ -636,7 +666,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(completedCancel.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 
-  it('D52①：AI 凭证开单 / 取消 → 403 AI_ACTION_FORBIDDEN', async () => {
+  it('D52①：AI 凭证开单 / 修改 / 取消 → 403 AI_ACTION_FORBIDDEN', async () => {
     const tokenResponse = await app.inject({
       method: 'POST',
       url: '/api/v1/api-tokens',
@@ -644,7 +674,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         name: 'HTTP Processing AI Token',
         employeeId: DEMO_IDS.ownerEmployeeId,
-        scope: [{ domain: 'processing', actions: ['read', 'create', 'delete'] }],
+        scope: [{ domain: 'processing', actions: ['read', 'create', 'update', 'delete'] }],
       },
     });
     expect(tokenResponse.statusCode).toBe(201);
@@ -674,6 +704,22 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     });
 
     const target = await createOne(nextRequestId('ai-cancel'));
+    const updateForbidden = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/processing-orders/${target.id}`,
+      headers: {
+        authorization: `Bearer ${secret}`,
+        'x-reason': 'HTTP 测试 AI 修改加工单',
+        'if-match': '"1"',
+        'x-request-id': 'req-processing-ai-update',
+      },
+      payload: { auxMaterials: 'AI 修改' },
+    });
+    expect(updateForbidden.statusCode).toBe(403);
+    expect(updateForbidden.json()).toMatchObject({
+      code: 'AI_ACTION_FORBIDDEN',
+    });
+
     const cancelForbidden = await app.inject({
       method: 'POST',
       url: `/api/v1/processing-orders/${target.id}/cancel`,
@@ -689,10 +735,18 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       code: 'AI_ACTION_FORBIDDEN',
     });
 
-    const row = await test.database.query<{ status: string }>(
-      'SELECT status FROM processing_order WHERE id = $1',
+    const row = await test.database.query<{
+      status: string;
+      version: number;
+      aux_materials: string | null;
+    }>(
+      'SELECT status, version, aux_materials FROM processing_order WHERE id = $1',
       [target.id],
     );
-    expect(row.rows[0]?.status).toBe('进行中');
+    expect(row.rows[0]).toMatchObject({
+      status: '进行中',
+      version: 1,
+      aux_materials: '纸箱',
+    });
   });
 });

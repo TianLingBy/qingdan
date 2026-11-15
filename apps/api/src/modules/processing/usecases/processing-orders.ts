@@ -40,7 +40,7 @@ import * as repo from '../repo.js';
  * - 单号（D16）：创建时在业务事务内取号，格式 `B-<公司码4>-<日期8>-<流水4>`；
  * - 数量 / 金额（D54）：一律 decimal 字符串；可售量由 SQL 计算；
  * - 审计（D51）：create / update / cancel 与业务同事务写；普通读不写；
- * - AI（D52①）：开单 / 取消默认拒绝，修改允许；
+ * - AI（D52①）：开单 / 修改 / 取消 / 完成一律拒绝 AI 直接执行；
  * - 取消（D21）：复用 `assertCancelable`，完成后不可取消，有下游先取消下游。
  */
 
@@ -125,7 +125,7 @@ function assertCompanyVisible(principal: Principal, companyId: string): void {
   }
 }
 
-/** 契约里开单与取消均为 `ai.policy = forbid`；修改允许。 */
+/** 契约里开单 / 修改 / 取消 / 完成均为 `ai.policy = forbid`。 */
 function assertHumanCredential(principal: Principal, action: string): void {
   if (principal.actorType === 'ai') {
     throw new AppError('AI_ACTION_FORBIDDEN', `AI 不得直接${action}，需人类审批`);
@@ -400,6 +400,7 @@ export async function updateProcessingOrder(
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'processing.order.update');
   requireScope(principal, 'update');
+  assertHumanCredential(principal, '修改加工单');
 
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);

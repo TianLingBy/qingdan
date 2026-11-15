@@ -5306,8 +5306,8 @@ paths:
         kind: write
         required: true
       x-ai-policy:
-        policy: allow
-        reasonRequired: false
+        policy: forbid
+        reasonRequired: true
       x-mcp-tool: qingdan_processing_order_update
       x-requires-if-match: true
       requestBody:
@@ -6426,8 +6426,8 @@ paths:
         kind: none
         required: false
       x-ai-policy:
-        policy: allow
-        reasonRequired: false
+        policy: forbid
+        reasonRequired: true
       x-mcp-tool: qingdan_sales_order_print
   /api/v1/processing-orders/{id}/print:
     get:
@@ -6572,8 +6572,8 @@ paths:
         kind: sensitive-read
         required: true
       x-ai-policy:
-        policy: allow
-        reasonRequired: false
+        policy: forbid
+        reasonRequired: true
       x-mcp-tool: qingdan_sales_order_export
   /api/v1/payments/{channel}/callback:
     post:
