@@ -17,6 +17,7 @@ import {
   createSalesOrder,
   getSalesOrder,
   listSalesOrders,
+  shipSalesOrder,
   updateSalesOrder,
 } from './sales-orders.js';
 
@@ -33,9 +34,13 @@ const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000003103';
 const FLOW_ID = '01900000-0000-7000-8000-000000003131';
 
 const FULL_SCOPE: ScopeMatrix = [
-  { domain: 'sales', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
+  { domain: 'sales', actions: ['read', 'create', 'update', 'ship', 'delete', 'view_price'] },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'sales', actions: ['read', 'view_price'] }];
+/** D85 的对照组：能改单（update）、能看价，但没有 ship。 */
+const UPDATE_ONLY_SCOPE: ScopeMatrix = [
+  { domain: 'sales', actions: ['read', 'update', 'view_price'] },
+];
 
 const LINE = {
   productId: PRODUCT_ID,
@@ -556,6 +561,30 @@ describe('sales 销售单用例（PGlite + seed 演示租户）', () => {
       [created.id],
     );
     expect(audit.rows[0]?.count).toBe('2');
+  });
+
+  it('出库：只有 sales.update 时 403（D85：能改单不等于能出库）', async () => {
+    const order = await createOne({ fees: [] });
+
+    await expectAppError(
+      shipSalesOrder(
+        writeCtx(
+          { scope: UPDATE_ONLY_SCOPE },
+          {
+            params: { id: order.id },
+            headers: { 'if-match': '"1"' },
+          },
+        ).ctx,
+      ),
+      'FORBIDDEN',
+    );
+
+    // 拒绝发生在写入前：状态与版本都不变。
+    const detail = (await getSalesOrder(
+      readCtx({}, { params: { id: order.id } }),
+    )) as SalesOrderDetail;
+    expect(detail.status).toBe('进行中');
+    expect(detail.version).toBe(order.version);
   });
 
   it('取消：D21 有下游 / 已完成拒绝，AI 禁止；成功置已取消并记审计', async () => {

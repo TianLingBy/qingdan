@@ -152,7 +152,7 @@ describe('E 单打印（客户联）', () => {
 
     const completed = await app.inject({
       method: 'POST',
-      url: `/api/v1/sales-orders/${order.id}/complete`,
+      url: `/api/v1/sales-orders/${order.id}/ship`,
       headers: writeHeaders(ownerCookie, 'req-print-complete', {
         'if-match': `"${order.version}"`,
       }),
@@ -196,5 +196,34 @@ describe('E 单打印（客户联）', () => {
     expect(doc.content).not.toContain(LINE_AMOUNT);
     expect(doc.content).not.toContain(FEE_AMOUNT);
     expect(doc.content).not.toContain(TOTAL_AMOUNT);
+  });
+
+  it('AI 凭证打印 → 403 AI_ACTION_FORBIDDEN；人类凭证同一路径仍 200', async () => {
+    const tokenResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/api-tokens',
+      headers: writeHeaders(ownerCookie, 'req-print-ai-token'),
+      payload: {
+        name: 'HTTP Sales Print AI Token',
+        employeeId: DEMO_IDS.ownerEmployeeId,
+        scope: [{ domain: 'sales', actions: ['read'] }],
+      },
+    });
+    expect(tokenResponse.statusCode).toBe(201);
+    const { secret } = tokenResponse.json() as { secret: string };
+
+    const aiPrint = await app.inject({
+      method: 'GET',
+      url: `/api/v1/sales-orders/${order.id}/print`,
+      headers: {
+        authorization: `Bearer ${secret}`,
+        'x-request-id': 'req-print-ai',
+      },
+    });
+    expect(aiPrint.statusCode).toBe(403);
+    expect(aiPrint.json()).toMatchObject({ code: 'AI_ACTION_FORBIDDEN' });
+
+    const humanPrint = await print(ownerCookie, 'req-print-human-after-ai');
+    expect(humanPrint.statusCode).toBe(200);
   });
 });

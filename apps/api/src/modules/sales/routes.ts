@@ -13,12 +13,12 @@ import {
 } from '../../platform/http/route-mount.js';
 import {
   cancelSalesOrder,
-  completeSalesOrder,
   createSalesOrder,
   exportSalesOrders,
   getSalesOrder,
   getSalesOrderForPrint,
   listSalesOrders,
+  shipSalesOrder,
   updateSalesOrder,
 } from './usecases/sales-orders.js';
 import {
@@ -44,13 +44,14 @@ import { maskHandlerId, maskHandlerIdInPage } from '../../platform/authz/handler
  * - 取消必须复用 `assertCancelable`（D21），有下游时先取消下游；
  * - E 单详情内嵌收款块，余额由 SQL 聚合（D24）；
  * - R 客户退货录入只校验 `customer_return.create` 权限点，不看岗位；
- * - 完成端点按 D72 接线：扣库存 + 生成 C 单草稿（D70 端口，同事务）。
+ * - 出库端点 `sales.order.ship` 按 D72 接线：扣库存 + 生成 C 单草稿（D70 端口，同事务）；
+ *   `complete` 已按 D85 改名，权限走 `sales.ship`。
  */
 
 const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'sales.order.create': 'sales_order',
   'sales.order.update': 'sales_order',
-  'sales.order.complete': 'sales_order',
+  'sales.order.ship': 'sales_order',
   'sales.order.cancel': 'sales_order',
   'sales.order.export': 'sales_order',
   'sales.receipt.create': 'sales_receipt',
@@ -143,9 +144,9 @@ export function registerSalesRoutes(app: FastifyInstance): void {
         reply,
       });
     },
-    'sales.order.complete': async ({ app: instance, request, reply, route }) => {
+    'sales.order.ship': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
-      return await completeSalesOrder({
+      return await shipSalesOrder({
         database: instance.database,
         request,
         reply,
