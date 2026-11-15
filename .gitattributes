@@ -33,3 +33,8 @@ Dockerfile       text eol=lf
 .dockerignore    text eol=lf
 .env.example     text eol=lf
 Caddyfile        text eol=lf
+
+# JS 源码与 .gitignore 钉 LF：本机 autocrlf=true 会在 checkout 时写成 CRLF，
+# 导致「整文件 diff」假象与跨平台噪音。
+*.js             text eol=lf
+.gitignore       text eol=lf

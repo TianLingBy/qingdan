@@ -1,0 +1,74 @@
+name: 派工单（给智能体或成员）
+description: 一个可验证的改动任务。写给 superagent 时在正文 @Tylanbot。
+title: "[任务] "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        一单只做一件事：**一个可验证的产出**。
+        不明确、要口径裁定、跨仓、要动本机环境的活，不要开在这里——先找负责人（@TianLingBy）在会话里定。
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标（一句话，可验证）
+      description: 写成「改完之后，谁能用什么方式看出它对了」。
+      placeholder: 例：apps/web 主数据列表把分页默认值改成 20 条，第 1 页显示 20 行。
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 允许改动的路径
+      description: 只写这一单会碰的目录或文件。范围外的东西不要顺手动。
+      placeholder: |
+        - apps/web/src/pages/masterdata/
+        - apps/web/src/pages/masterdata/__tests__/
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收方式
+      description: 填这一单需要跑的命令与期望结果。默认三项见下方注释。
+      value: |
+        - [ ] `pnpm install --frozen-lockfile`
+        - [ ] `pnpm -r build`
+        - [ ] `pwsh -NoProfile -File ./tests/run.ps1`
+        - [ ] 手动/截图验证：
+    validations:
+      required: true
+
+  - type: textarea
+    id: notdoing
+    attributes:
+      label: 明确不做
+      description: 写清相邻但不在这一单里的东西，防止顺手扩大范围。
+      placeholder: 例：不改后端接口、不动 packages/contracts、不重构组件库。
+
+  - type: dropdown
+    id: reviewer
+    attributes:
+      label: 预期审阅人
+      description: 按 docs/OWNERSHIP 与 route-review 路由；不确定就留空，CI 会自动 @。
+      multiple: true
+      options:
+        - TianLingBy（主线 / platform / 契约 / 文档口径）
+        - Vince-Leong（后端业务模块 / 主数据 / 库存）
+        - lozy66（单据与结算页）
+        - 2696708617-web（账号与权限、员工、公司管理）
+        - Meow-Yay（设计规范与公共组件）
+        - karryL921（页面视觉稿、apps/web）
+
+  - type: checkboxes
+    id: ready
+    attributes:
+      label: 开单前自检
+      options:
+        - label: 这单不涉及 packages/contracts、apps/api/src/platform、数据库迁移、docs/decisions.md（涉及则必须先由负责人批准）
+          required: true
+        - label: 我确认这个路径当前没有别人正在改的 open PR
+          required: true
