@@ -81,9 +81,9 @@ pnpm openapi
 | P1 | `inventory` | 批次、库存数量、库存流水、盘点调整、成本更正 |
 | P2 | `purchase` | A 采购单 + S 供应商退货 |
 | P2 | `processing` | B 加工单 + 损失记录 |
-| P3 | `sales` | E 销售单 + 收款记录 + 在线支付 + R 客户退货 |
+| P3 | `sales` | E 销售单 + 收款记录 + 在线支付（见独立 `payment` 模块）+ R 客户退货 |
 | P3 | `internal-trade` | N 内部交易单 + 内部定价 |
-| P4 | `settlement` | C 结算单 + 提成 + 利润报表 |
+| P4 | `settlement` | C 结算单 + 提成 + 利润报表（见独立 `report` 模块） |
 
 ## 许可
 

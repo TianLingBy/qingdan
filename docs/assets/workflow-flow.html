@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: #f4f6f9; color: #1f2937; padding: 34px 40px 40px; width: 1120px;
+  }
+  h1 { font-size: 26px; letter-spacing: .5px; }
+  h1 small { display: block; font-size: 14px; font-weight: 400; color: #6b7280; margin-top: 6px; letter-spacing: 0; }
+  .legend { display: flex; gap: 18px; margin: 18px 0 26px; font-size: 13px; color: #4b5563; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .flow { display: flex; flex-direction: column; gap: 0; }
+  .step {
+    display: flex; align-items: stretch; gap: 0;
+    background: #fff; border: 1px solid #e3e8ef; border-radius: 10px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04); overflow: hidden;
+  }
+  .role {
+    width: 108px; flex: 0 0 108px; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; color: #fff; letter-spacing: .5px;
+  }
+  .body { flex: 1; padding: 12px 16px; }
+  .title { font-size: 16px; font-weight: 600; }
+  .out { font-size: 13px; color: #6b7280; margin-top: 4px; }
+  .num {
+    width: 44px; flex: 0 0 44px; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: #9aa3af; border-left: 1px dashed #e3e8ef;
+  }
+  .arrow { height: 22px; display: flex; justify-content: center; }
+  .arrow span { color: #b9c0ca; font-size: 13px; line-height: 22px; }
+
+  .r-human { background: #2563eb; }
+  .r-dsh   { background: #7c3aed; }
+  .r-sa    { background: #059669; }
+  .r-ci    { background: #d97706; }
+
+  .gate { border: 1px solid #fecaca; background: #fff5f5; }
+  .gate .role { background: #dc2626; }
+  .gate .title { color: #b91c1c; }
+  .gate .num { color: #f0a4a4; border-left-color: #fecaca; }
+
+  .foot { margin-top: 22px; display: flex; gap: 14px; }
+  .note {
+    flex: 1; background: #fff; border: 1px solid #e3e8ef; border-left: 3px solid #059669;
+    border-radius: 8px; padding: 12px 14px; font-size: 13px; line-height: 1.65; color: #374151;
+  }
+  .note b { display: block; font-size: 13px; margin-bottom: 4px; color: #111827; }
+  .note.red { border-left-color: #dc2626; }
+</style>
+</head>
+<body>
+  <h1>轻单 · 一张单子的完整旅程
+    <small>每个方框标注「谁在做」，红色为门禁：不过不许往下走</small>
+  </h1>
+
+  <div class="legend">
+    <span><i style="background:#2563eb"></i>人（团队成员）</span>
+    <span><i style="background:#7c3aed"></i>DSH 会话（你的指挥台）</span>
+    <span><i style="background:#059669"></i>superagent（云端 worker）</span>
+    <span><i style="background:#d97706"></i>机器 / CI</span>
+    <span><i style="background:#dc2626"></i>门禁</span>
+  </div>
+
+  <div class="flow">
+
+    <div class="step">
+      <div class="role r-human">人</div>
+      <div class="body">
+        <div class="title">发现要改的事</div>
+        <div class="out">想清楚「改完之后，谁能用什么方式看出它对了」</div>
+      </div>
+      <div class="num">1</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step">
+      <div class="role r-human">人</div>
+      <div class="body">
+        <div class="title">用模板写派工单</div>
+        <div class="out">产物：GitHub Issue（目标 / 允许路径 / 验收命令 / 明确不做）</div>
+      </div>
+      <div class="num">2</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step gate">
+      <div class="role">门禁 0</div>
+      <div class="body">
+        <div class="title">是不是 critical 路径？</div>
+        <div class="out">契约 / platform 内核 / 数据库迁移 / decisions.md / .github → 先拿到你的批准才许动手；其余直接过</div>
+      </div>
+      <div class="num">3</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step">
+      <div class="role r-human">人</div>
+      <div class="body">
+        <div class="title">在 issue 里 @Tylanbot</div>
+        <div class="out">这是唯一的派活动作，没有 @ 就不会动</div>
+      </div>
+      <div class="num">4</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step">
+      <div class="role r-sa">superagent</div>
+      <div class="body">
+        <div class="title">评估并接单</div>
+        <div class="out">范围清楚就接，在 issue 里回帖说「改哪几个文件」；不明确就只观察、不回复</div>
+      </div>
+      <div class="num">5</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step">
+      <div class="role r-sa">superagent</div>
+      <div class="body">
+        <div class="title">在独立目录里改代码</div>
+        <div class="out">clone 到自己的目录，开 <code>superagent/&lt;issue#&gt;-&lt;slug&gt;</code> 分支；只碰派工单写的路径</div>
+      </div>
+      <div class="num">6</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step gate">
+      <div class="role">门禁 1</div>
+      <div class="body">
+        <div class="title">自验收：三条命令全绿才许开 PR</div>
+        <div class="out">pnpm install → pnpm -r build → pwsh tests/run.ps1（改契约再加 pnpm openapi；红着不许提 PR）</div>
+      </div>
+      <div class="num">7</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step">
+      <div class="role r-sa">superagent</div>
+      <div class="body">
+        <div class="title">开 PR</div>
+        <div class="out">套 PR 模板，把命令输出和截图贴上，未验证的写在「备注 / 未验证」</div>
+      </div>
+      <div class="num">8</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step">
+      <div class="role r-ci">CI</div>
+      <div class="body">
+        <div class="title">route-review 自动路由</div>
+        <div class="out">按路径打 scope 标签、@ 该路径的 owner；critical 额外打「需批准」+ 跑四个 CI job</div>
+      </div>
+      <div class="num">9</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step gate">
+      <div class="role">门禁 2</div>
+      <div class="body">
+        <div class="title">owner 评审 + 需批准项由你 approve</div>
+        <div class="out">不是自己领域的不评价；有意见就 request changes，worker 在同分支继续改</div>
+      </div>
+      <div class="num">10</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step">
+      <div class="role r-human">owner</div>
+      <div class="body">
+        <div class="title">squash 合并到 main</div>
+        <div class="out">CI 必须绿；不许直推、不许跳过 hook</div>
+      </div>
+      <div class="num">11</div>
+    </div>
+    <div class="arrow"><span>▼</span></div>
+
+    <div class="step">
+      <div class="role r-dsh">DSH</div>
+      <div class="body">
+        <div class="title">收尾</div>
+        <div class="out">关 issue、更新真源文档（TEAM-PLAN / module-report）、需要时部署</div>
+      </div>
+      <div class="num">12</div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <div class="note">
+      <b>高效来自哪里</b>
+      并行 3 单按目录错开，互不抢文件<br>
+      自验收在人工之前，红色 CI 不浪费评审时间<br>
+      小单原则：一单一个可验证产出，超一天就拆
+    </div>
+    <div class="note red">
+      <b>合规来自哪里</b>
+      critical 先审后做，不靠自觉<br>
+      一律分支 + PR，worker 碰不到部署与主机<br>
+      禁止命令 ssh / scp / kubectl / docker / rsync
+    </div>
+  </div>
+</body>
+</html>

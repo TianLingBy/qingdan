@@ -137,6 +137,10 @@ const IMPLEMENTED_PAGES: { [K in ImplementedPageId]: ComponentType } = {
     () => import('../pages/inventory/StocktakesPage'),
     'StocktakesPage',
   ),
+  'profit-report': lazyRouteComponent(
+    () => import('../pages/report/ProfitReportPage'),
+    'ProfitReportPage',
+  ),
   employees: lazyRouteComponent(
     () => import('../pages/employees/EmployeesPage'),
     'EmployeesPage',
