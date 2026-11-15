@@ -27,9 +27,6 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - 写操作必记审计（D51）；普通读不记（D54 ②）。
  *
  * 本批明确不做（写进契约，防止后续顺手加端点）：
- * - **不做「发货 / 在途」端点**：进入在途要按 D31 锁定批次可用量（在途占用），依赖 inventory 写能力；
- * - **不做「到货确认 / 转司」端点**：转司要在同一事务里改批次 `company_id` 并解锁在途占用（D22 / D31 / D68③），
- *   同样依赖 inventory 写能力；
  * - **不做内部定价规则表**：一期内部价手工填（D68①），系统不按成本价 / 加成自动算；
  * - **不做 N 单完成自动生成 C 单草稿**（D29，与 E 单同规则）：等结算模块落地后再加。
  */
@@ -203,14 +200,33 @@ export const InternalTradeOrderReceiveInputSchema = z.object({
 });
 export type InternalTradeOrderReceiveInput = z.infer<typeof InternalTradeOrderReceiveInputSchema>;
 
+/** 确认发货是危险写操作，要求显式确认，避免误触发批次在途占用（D22 / D31 / D68③）。 */
+export const InternalTradeOrderDispatchInputSchema = z.object({
+  confirm: z.literal(true),
+});
+export type InternalTradeOrderDispatchInput = z.infer<typeof InternalTradeOrderDispatchInputSchema>;
+
 /**
- * internal-trade 模块 N 内部交易单端点（6 条，含到货确认）。
+ * 撤销发货是异常回退，要求显式确认 + 必填原因（D68②）。
+ * `reason` 必填且原样落审计（changeSummary.reason）——没有理由就不是撤销。
+ */
+export const InternalTradeOrderDispatchRevokeInputSchema = z.object({
+  confirm: z.literal(true),
+  reason: z.string().trim().min(1).max(200),
+});
+export type InternalTradeOrderDispatchRevokeInput = z.infer<
+  typeof InternalTradeOrderDispatchRevokeInputSchema
+>;
+
+/**
+ * internal-trade 模块 N 内部交易单端点（8 条，含发货 / 撤销发货与到货确认）。
  *
  * operationId 以 `internal_trade` 开头（与功能域同名，registry 校验要求）；
- * 权限 scope 仍按功能域推导为 `internal_trade.read/create/update/delete`（D44）。
+ * 权限 scope 仍按功能域推导（D44）：读 `read`、写 `create`、编 `update`、删 `delete`，
+ * 发货 / 撤销发货走专属动作 `ship`（出，D4 八动作之一），不与 `update` 混用。
  * 审计：写操作必记（D51）；普通读不记（D54 ②）。
- * AI：开单属业务动作默认禁止；修改允许；取消属危险动作，默认禁止且必须给原因（D52① / D54 ⑥）。
- * 并发：update / cancel 强制 If-Match 强 ETag。
+ * AI：开单属业务动作默认禁止；修改允许；取消 / 发货 / 撤销发货 / 到货确认属危险动作，默认禁止且必须给原因（D52① / D54 ⑥）。
+ * 并发：update / cancel / dispatch / dispatch_revoke / receive 强制 If-Match 强 ETag。
  * 取消：按四态映射后复用 `canCancel` / `assertCancelable`（D21 / D68②）。
  */
 export const INTERNAL_TRADE_ORDER_ROUTES: readonly RouteDef[] = [
@@ -276,6 +292,34 @@ export const INTERNAL_TRADE_ORDER_ROUTES: readonly RouteDef[] = [
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
+    response: { status: 200, schema: InternalTradeOrderSchema },
+  }),
+  defineRoute({
+    module: 'internal-trade',
+    operationId: 'internal_trade.order.dispatch',
+    method: 'POST',
+    path: '/api/v1/internal-trade-orders/{id}/dispatch',
+    domain: 'internal_trade',
+    action: 'ship',
+    summary: '确认发货：N 单进入在途，锁定发出公司批次可用量（D22 / D31 / D68③）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    request: { body: InternalTradeOrderDispatchInputSchema },
+    response: { status: 200, schema: InternalTradeOrderSchema },
+  }),
+  defineRoute({
+    module: 'internal-trade',
+    operationId: 'internal_trade.order.dispatch_revoke',
+    method: 'POST',
+    path: '/api/v1/internal-trade-orders/{id}/dispatch-revoke',
+    domain: 'internal_trade',
+    action: 'ship',
+    summary: '撤销发货：N 单退回进行中，释放在途占用（保留审计）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    request: { body: InternalTradeOrderDispatchRevokeInputSchema },
     response: { status: 200, schema: InternalTradeOrderSchema },
   }),
   defineRoute({

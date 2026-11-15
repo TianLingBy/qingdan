@@ -406,31 +406,65 @@ describe('settlement C 结算单用例（PGlite + seed 演示租户）', () => {
     ]);
   });
 
-  it('确认响应同样按看价脱敏：有 approve 但无 view_price 时金额为 null（D78）', async () => {
+  it('确认：有 approve + view_price 可正常确认（P0-13）', async () => {
     const id = '01900000-0000-7000-8000-000000008901';
     await insertDraft({
       id,
       orderNo: 'C-0001-20261107-0901',
       sourceDocId: '01900000-0000-7000-8000-000000008902',
     });
-    const noViewPrice: ScopeMatrix = [
-      { domain: 'settlement', actions: ['read', 'approve'] },
-    ];
 
     const confirmed = await confirmSettlementOrder(
       confirmCtx(
         id,
-        { scope: noViewPrice },
+        {},
         { headers: { 'if-match': '"1"' }, auditReason: '财务复核确认' },
       ).ctx,
     );
 
     expect(confirmed.status).toBe('已结算');
-    expect(confirmed.totalSaleAmount).toBeNull();
-    expect(confirmed.grossProfit).toBeNull();
-    expect(confirmed.netProfit).toBeNull();
-    expect(confirmed.commissionAmount).toBeNull();
-    // 比例不是金额，不脱敏；本单无归属人 → 快照 0（D77 ③）。
-    expect(confirmed.commissionRateSnapshot).toBe('0');
+    expect(confirmed.version).toBe(2);
+    expect(confirmed.totalSaleAmount).toBe('100');
+    expect(confirmed.netProfit).toBe('25');
+  });
+
+  it('确认：缺少 settlement.view_price 时 403，且不落状态与成功审计（P0-13）', async () => {
+    const id = '01900000-0000-7000-8000-000000008903';
+    await insertDraft({
+      id,
+      orderNo: 'C-0001-20261107-0903',
+      sourceDocId: '01900000-0000-7000-8000-000000008904',
+    });
+    const approveOnly: ScopeMatrix = [
+      { domain: 'settlement', actions: ['read', 'approve'] },
+    ];
+
+    await expect(
+      confirmSettlementOrder(
+        confirmCtx(
+          id,
+          { scope: approveOnly },
+          { headers: { 'if-match': '"1"' }, auditReason: '财务复核确认' },
+        ).ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: '缺少 settlement.view_price 权限',
+    });
+
+    const state = await test.database.query<{ status: string; version: number }>(
+      `SELECT status, version FROM settlement_order WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(state.rows[0]).toEqual({ status: '待确认', version: 1 });
+
+    const audits = await test.database.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM audit_log
+        WHERE object_id = $1
+          AND action = 'settlement.order.confirm'`,
+      [id],
+    );
+    expect(audits.rows[0]?.count).toBe('0');
   });
 });

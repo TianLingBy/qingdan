@@ -7,14 +7,14 @@ import { DEMO_IDS, seed } from '../../platform/db/seed.js';
 import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
 
 /**
- * purchase 采购单 HTTP 层（D15 / D16 / D21 / D39 / D51 / D52 / D52.1 / D54）。
+ * purchase 采购单 HTTP 层（D15 / D16 / D21 / D51 / D52 / D52.1 / D54 / D83）。
  *
  * 覆盖 routes.ts 的分派与 platform 统一错误映射：
  *   - 未认证 401、无 purchase 写权限 403、跨公司不可见 404 / 空列表；
  *   - create 201 + 强 ETag，detail 200 + ETag + cancelable（D21）；
  *   - update / cancel 必须带 If-Match；缺失 428、弱 ETag / 旧版本 409；
  *   - 已完成不可改、不可取消（422）；有下游不可取消（409）；
- *   - D39 负数费用无备注 422；
+ *   - D83 负数费用 422；
  *   - D52.1 AI 凭证开单 / 取消 → 403 AI_ACTION_FORBIDDEN；
  *   - 写操作成功审计落 audit_log（D51），普通读不记。
  */
@@ -208,7 +208,7 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
       ],
       fees: [
         { feeName: '运费', qty: '2', unitPrice: '10', amount: '20', remark: null },
-        { feeName: '供应商返利', qty: '1', unitPrice: '5', amount: '-5', remark: '返利' },
+        { feeName: '运输费', qty: '1', unitPrice: '5', amount: '5', remark: '长途' },
       ],
     });
 
@@ -229,8 +229,8 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
     expect(body.orderNo).toMatch(/^A-0001-\d{8}-\d{4}$/);
     expect(typeof body.goodsAmount).toBe('string');
     expect(Number(body.goodsAmount)).toBe(29.5);
-    expect(Number(body.feeAmount)).toBe(15);
-    expect(Number(body.totalAmount)).toBe(44.5);
+    expect(Number(body.feeAmount)).toBe(25);
+    expect(Number(body.totalAmount)).toBe(54.5);
     expect(body.lines).toHaveLength(2);
     expect(body.fees).toHaveLength(2);
 
@@ -260,9 +260,9 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
     expect(reads.rows[0]?.count).toBe('0');
   });
 
-  it('D39：负数费用无备注 → 422；D15：跨公司详情 404、列表为空', async () => {
+  it('D83：负数费用 → 422；D15：跨公司详情 404、列表为空', async () => {
     const badFee = await createOrder(nextRequestId('bad-fee'), {
-      fees: [{ feeName: '返利', qty: '1', unitPrice: '5', amount: '-5' }],
+      fees: [{ feeName: '返利', qty: '1', unitPrice: '5', amount: '-5', remark: '返利' }],
     });
     expect(badFee.statusCode).toBe(422);
     expect(badFee.json()).toMatchObject({ code: 'VALIDATION_FAILED' });

@@ -106,6 +106,27 @@ describe('采购单接口封装', () => {
     expect(calls[1]?.init.body).toBeUndefined();
   });
 
+  it('完成走 POST /purchase-orders/{id}/complete，带 If-Match 且无请求体', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const api = createPurchaseApi(
+      new ApiClient({
+        baseUrl: '/api/v1',
+        fetchImpl: async (input, init) => {
+          calls.push({ url: String(input), init: init ?? {} });
+          return jsonResponse({ id: 'o1' }, 200);
+        },
+      }),
+    );
+
+    await api.complete('o1', 9);
+
+    expect(calls[0]?.url).toBe('/api/v1/purchase-orders/o1/complete');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"9"');
+    // 完成端点 request: {}，前端不能自己加 body（reason 只约束 AI 调用）
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
+
   it('查询键按筛选条件区分，避免不同筛选共用缓存', () => {
     expect(purchaseQueryKeys.list({ status: '进行中' })).not.toEqual(
       purchaseQueryKeys.list({ status: '已取消' }),
@@ -122,7 +143,7 @@ describe('decimal 定点运算（D54 numeric(18,6)）', () => {
     expect(multiplyDecimal('1.5', '2.25')).toBe('3.375');
   });
 
-  it('合计支持负数费用行（D39）', () => {
+  it('合计支持带符号金额（费用行本身非负，D83）', () => {
     expect(sumDecimal(['4300', '120', '-200'])).toBe('4220');
     expect(sumDecimal(['0.1', '0.2'])).toBe('0.3');
     expect(sumDecimal([])).toBe('0');

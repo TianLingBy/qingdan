@@ -108,7 +108,7 @@ describe('采购单契约（purchase）', () => {
     expect(byId.get('purchase.order.create')?.scope).toBe('purchase.create');
     expect(byId.get('purchase.order.update')?.scope).toBe('purchase.update');
     expect(byId.get('purchase.order.cancel')?.scope).toBe('purchase.delete');
-    expect(byId.get('purchase.order.complete')?.scope).toBe('purchase.approve');
+    expect(byId.get('purchase.order.complete')?.scope).toBe('purchase.update');
   });
 
   it('普通读不记审计；写操作全部 audit=write（D51）', () => {
@@ -168,31 +168,23 @@ describe('采购单契约（purchase）', () => {
     expect(PurchaseOrderLineSchema.safeParse({ ...LINE, qty: '1.234567' }).success).toBe(true);
   });
 
-  it('A 单费用允许负数，但负数必须填备注（D39，refine 校验，不只是注释）', () => {
-    // 正数 / 零：备注可空。
+  it('A 单费用金额不得为负，最低 0（2026-11-15 口径，D39 作废）', () => {
+    // 正数 / 零：通过，备注可空。
     expect(PurchaseOrderFeeSchema.safeParse(FEE).success).toBe(true);
     expect(PurchaseOrderFeeSchema.safeParse({ ...FEE, amount: '0' }).success).toBe(true);
     expect(PurchaseOrderFeeSchema.safeParse({ ...FEE, remark: null }).success).toBe(true);
 
-    // 负数：无备注 / 空备注 / 纯空白备注一律拒绝。
-    for (const remark of [undefined, null, '', '   ']) {
+    // 负数一律拒绝——即使填了备注（费用只能增加成本，不存在返利冲减）。
+    for (const remark of [undefined, null, '', '   ', '供应商返利']) {
       expect(
         PurchaseOrderFeeSchema.safeParse({ ...FEE, amount: '-20', remark }).success,
         String(remark),
       ).toBe(false);
     }
-    // 负数 + 有效备注：通过（供应商返利 / 对方承担运费等）。
-    expect(
-      PurchaseOrderFeeSchema.safeParse({ ...FEE, amount: '-20', remark: '供应商返利' }).success,
-    ).toBe(true);
-    expect(
-      PurchaseOrderFeeSchema.safeParse({ ...FEE, amount: '-0.01', remark: '退运费' }).success,
-    ).toBe(true);
+    expect(PurchaseOrderFeeSchema.safeParse({ ...FEE, amount: '-0.01' }).success).toBe(false);
 
     // 金额必须是 decimal 字符串；数量 / 单价仍非负。
-    expect(PurchaseOrderFeeSchema.safeParse({ ...FEE, amount: -20, remark: '返利' }).success).toBe(
-      false,
-    );
+    expect(PurchaseOrderFeeSchema.safeParse({ ...FEE, amount: -20 }).success).toBe(false);
     expect(PurchaseOrderFeeSchema.safeParse({ ...FEE, amount: '1.2345678' }).success).toBe(false);
     expect(PurchaseOrderFeeSchema.safeParse({ ...FEE, qty: '-1' }).success).toBe(false);
     expect(PurchaseOrderFeeSchema.safeParse({ ...FEE, unitPrice: -10 }).success).toBe(false);
@@ -207,7 +199,7 @@ describe('采购单契约（purchase）', () => {
         ...ORDER,
         fees: [{ ...FEE, amount: '-1', remark: '返利' }],
       }).success,
-    ).toBe(true);
+    ).toBe(false);
     expect(
       PurchaseOrderCreateInputSchema.safeParse({
         ...CREATE_INPUT,
@@ -219,7 +211,7 @@ describe('采购单契约（purchase）', () => {
         ...CREATE_INPUT,
         fees: [{ feeName: '返利', qty: '1', unitPrice: '5', amount: '-5', remark: '返利' }],
       }).success,
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('开单入参不接收单号（D16），商品明细至少 1 行；fees 选填', () => {

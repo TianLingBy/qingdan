@@ -225,10 +225,10 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
     await test.database.close();
   });
 
-  it('开单：201、单号服务端生成、金额由 SQL 计算、负数费用需备注、审计落库', async () => {
+  it('开单：201、单号服务端生成、金额由 SQL 计算、费用不得为负、审计落库', async () => {
     const created = await createOne({
       lines: [LINE, { productId: PRODUCT_2_ID, qty: '3', unitPrice: '1.5', amount: '1' }],
-      fees: [FEE, { feeName: '供应商返利', qty: '1', unitPrice: '5', amount: '-5', remark: '返利' }],
+      fees: [FEE, { feeName: '运输费', qty: '1', unitPrice: '5', amount: '5', remark: '长途' }],
     });
 
     expect(created.id).toMatch(/^[0-9a-f-]{36}$/i);
@@ -243,10 +243,10 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
     expect(Number(created.lines[0]?.amount)).toBe(25);
     expect(Number(created.lines[1]?.amount)).toBe(4.5);
     expect(created.fees).toHaveLength(2);
-    expect(created.fees[1]).toMatchObject({ feeName: '供应商返利', amount: '-5', remark: '返利' });
+    expect(created.fees[1]).toMatchObject({ feeName: '运输费', amount: '5', remark: '长途' });
     expect(Number(created.goodsAmount)).toBe(29.5);
-    expect(Number(created.feeAmount)).toBe(15);
-    expect(Number(created.totalAmount)).toBe(44.5);
+    expect(Number(created.feeAmount)).toBe(25);
+    expect(Number(created.totalAmount)).toBe(54.5);
 
     // D51：成功审计落到 audit_log（outbox 已搬运）。
     const audit = await test.database.query<{ action: string; object_type: string; result: string }>(
@@ -257,7 +257,7 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
       { action: 'purchase.order.create', object_type: 'purchase_order', result: 'success' },
     ]);
 
-    // D39：负数费用无备注 → 契约层拒绝。
+    // D83：费用金额不得为负，最低 0（D39 的负数口径作废）→ 契约层拒绝。
     await expectAppError(
       createPurchaseOrder(
         writeCtx({}, {
@@ -266,7 +266,7 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
             supplierId: SUPPLIER_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
             lines: [LINE],
-            fees: [{ feeName: '返利', qty: '1', unitPrice: '5', amount: '-5' }],
+            fees: [{ feeName: '运输费', qty: '1', unitPrice: '5', amount: '-5', remark: '负数一律拒绝' }],
           },
         }).ctx,
       ),

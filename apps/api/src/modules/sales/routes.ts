@@ -43,7 +43,7 @@ import { maskHandlerId, maskHandlerIdInPage } from '../../platform/authz/handler
  * - 开单 / 修改的破下限审批走 platform（D20），不要在这里另造审批表；
  * - 取消必须复用 `assertCancelable`（D21），有下游时先取消下游；
  * - E 单详情内嵌收款块，余额由 SQL 聚合（D24）；
- * - R 客户退货录入按 D47 校验老板 / 经理 / 财务岗位；
+ * - R 客户退货录入只校验 `customer_return.create` 权限点，不看岗位；
  * - 完成端点按 D72 接线：扣库存 + 生成 C 单草稿（D70 端口，同事务）。
  */
 

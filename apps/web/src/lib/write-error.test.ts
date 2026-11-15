@@ -5,6 +5,7 @@ import {
   isStaleVersionError,
   recoverFromStaleVersion,
   staleActionRetryText,
+  staleUnrecoveredText,
   staleVersionRecoveredText,
 } from './write-error';
 
@@ -111,5 +112,18 @@ describe('staleActionRetryText', () => {
 
   it('明确「核对当前状态」——状态可能已被别人改掉（如已取消），不能盲目重提', () => {
     expect(staleActionRetryText(5, '取消')).toContain('核对单据当前状态');
+  });
+});
+
+describe('staleUnrecoveredText', () => {
+  it('自愈失败也要有一句话：不刷新页面、不重新保存就不是死的', () => {
+    const text = staleUnrecoveredText();
+    expect(text).toContain('没能读取到最新版本');
+    // 必须给出下一步动作，否则用户还是卡在原地
+    expect(text).toContain('刷新页面');
+  });
+
+  it('不冒称「已同步」——同步失败时不能说自己成功了', () => {
+    expect(staleUnrecoveredText()).not.toContain('已同步到最新版本');
   });
 });

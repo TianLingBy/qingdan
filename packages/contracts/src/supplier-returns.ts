@@ -117,8 +117,8 @@ export const SupplierReturnListQuerySchema = PageQuerySchema.extend({
 export const SUPPLIER_RETURN_ROUTES: readonly RouteDef[] = [
   defineRoute({
     module: 'purchase', operationId: 'supplier_return.complete', method: 'POST',
-    path: '/api/v1/supplier-returns/{id}/complete', domain: 'supplier_return', action: 'create',
-    summary: '确认供应商退货并出库', audit: { kind: 'write' },
+    path: '/api/v1/supplier-returns/{id}/complete', domain: 'supplier_return', action: 'approve',
+    summary: '确认供应商退货并出库（审批动作）', audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true }, requiresIfMatch: true,
     request: {}, response: { status: 200, schema: SupplierReturnSchema },
   }),

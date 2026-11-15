@@ -5,7 +5,9 @@
  * ——现实里不存在「抵下次货款」「换货补发」，所以这里也不给这三个下拉。
  * 加一个「抵货款」选项看起来更"完整"，但那是凭空造业务。
  *
- * 和 R 一样，只追加：没有改 / 删 / 完成端点（D47）。
+ * 和 R 一样，只追加：没有改 / 删 / 取消端点（D47）。多一个「完成」动作
+ * （`supplier_return.complete`，审批动作 `supplier_return.approve`）：按批次出库并写库存流水，
+ * 然后置为「已完成」。应付冲减尚未接入（见 #211），不是改单。
  */
 
 import type { SupplierReturn, SupplierReturnStatus } from '@qingdan/contracts';
@@ -42,18 +44,23 @@ const EMPTY_LINE: ReturnLineDraft = { productId: '', batchIds: [], qty: '1', uni
 
 export interface SupplierReturnsPanelProps {
   readonly canCreate: boolean;
+  readonly canApprove: boolean;
   readonly canViewPrice: boolean;
   readonly companyIds: readonly string[];
   readonly companyId: string;
   readonly onCompanyChange: (id: string) => void;
+  /** 测试用：让详情区在首帧就打开，便于静态渲染断言「完成」按钮。 */
+  readonly initialDetailId?: string | null;
 }
 
 export function SupplierReturnsPanel({
   canCreate,
+  canApprove,
   canViewPrice,
   companyIds,
   companyId,
   onCompanyChange,
+  initialDetailId = null,
 }: SupplierReturnsPanelProps) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<'' | SupplierReturnStatus>('');
@@ -67,7 +74,7 @@ export function SupplierReturnsPanel({
   const [lines, setLines] = useState<ReturnLineDraft[]>([{ ...EMPTY_LINE }]);
   const [clientErrors, setClientErrors] = useState<string[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(initialDetailId);
 
   useEffect(() => {
     setCursors([null]);
@@ -160,6 +167,34 @@ export function SupplierReturnsPanel({
     setClientErrors(errors);
     if (errors.length > 0) return;
     create.mutate();
+  };
+
+  const complete = useMutation({
+    mutationFn: (row: SupplierReturn) => reversalsApi.supplierReturnComplete(row.id, row.version),
+    onSuccess: () => {
+      // 完成后状态变「已完成」：列表与详情一起刷新。
+      void queryClient.invalidateQueries({ queryKey: ['reversals', 'supplier'] });
+      setActionError(null);
+    },
+    onError: (error) => {
+      setActionError(error instanceof ApiError ? error.message : '完成失败，请稍后重试');
+    },
+  });
+
+  const askComplete = (row: SupplierReturn) => {
+    /** 详情里的状态可能是旧的（别人刚完成/取消），别静默失败。 */
+    if (row.status !== '进行中') {
+      setActionError(`这张单当前是「${row.status}」，不能再完成；请刷新列表查看最新状态。`);
+      return;
+    }
+    setActionError(null);
+    if (
+      globalThis.confirm?.(`确认完成供应商退货 ${row.returnNo} 吗？完成后状态变为「已完成」，不可撤销。`) ===
+      false
+    ) {
+      return;
+    }
+    complete.mutate(row);
   };
 
   const items = list.data?.items ?? [];
@@ -572,9 +607,28 @@ export function SupplierReturnsPanel({
                 </table>
               </div>
 
-              <p className="text-[11px] leading-relaxed text-slate-400">
-                一期 S 单只有「登记」一步，没有完成 / 取消端点（D47）；退钱不走库存流水，批次数量不变。
-              </p>
+              {actionError ? <ErrorBar message={actionError} /> : null}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => askComplete(detail.data!)}
+                  disabled={!canApprove || detail.data.status !== '进行中' || complete.isPending}
+                  title={
+                    !canApprove
+                      ? '当前身份没有 supplier_return.approve 权限'
+                      : detail.data.status !== '进行中'
+                        ? '仅「进行中」状态的单据可完成'
+                        : undefined
+                  }
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+                >
+                  {complete.isPending ? '完成中…' : '完成'}
+                </button>
+                <span className="text-[11px] leading-relaxed text-slate-400">
+                  完成即审批：会按批次出库并写库存流水，然后置为「已完成」；应付冲减尚未接入（见 #211）；冲正单据只追加，不可改、不可删（D47）。
+                </span>
+              </div>
             </div>
           )}
         </section>

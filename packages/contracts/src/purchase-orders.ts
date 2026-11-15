@@ -12,8 +12,9 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - **公司隔离**（D15）：采购单归属某一个公司，跨公司不可见；
  * - **A 单按「入库时生成批次」建模，不是引用既有批次**：商品明细**不含 `batchIds`**——
  *   这是与 E 单（§5.1 引用本公司批次，D22）的关键差异，别把 E 单明细照抄过来；
- * - **A 单费用行金额允许为负**（供应商返利 / 对方承担运费 / 退运费冲减），
- *   但**负数行必须填写备注**（D39），schema 层用 `refine` 校验，不只是注释；
+ * - **A 单费用行金额不得为负，最低 0**（2026-11-15 产品口径）：费用一律增加采购成本，
+ *   不支持负数费用冲减成本；原 D39「负数必须带备注」规则作废。
+ *   完成建批次时费用按明细金额占比摊入锁价（D83）；
  * - **状态直接复用** `documents.ts` 的 `HEADER_STATES`（进行中 / 已完成 / 已取消，§10），
  *   不另造英文枚举（D54 §9-6）；
  * - **取消规则复用** `documents.ts` 的 `canCancel` / `assertCancelable`（D21），
@@ -63,60 +64,48 @@ export const PurchaseOrderLineViewSchema = PurchaseOrderLineSchema.extend({
   amount: NonNegativeDecimal.nullable(),
 });
 
-/** D39：A 单负数费用行必须填写非空备注，否则拒绝。 */
-function negativeFeeHasRemark(fee: { amount: string | null; remark?: string | null }): boolean {
-  if (fee.amount === null) return true;
-  if (Number(fee.amount) >= 0) return true;
-  return typeof fee.remark === 'string' && fee.remark.trim().length > 0;
-}
-
-const NEGATIVE_FEE_MESSAGE = 'A 单负数费用行必须填写备注（D39，供应商返利等须可追溯）';
-
 /** 费用行公共字段（响应实体与创建入参共用，备注可空性不同）。 */
 const feeShape = {
   feeName: z.string().min(1).max(64),
   qty: NonNegativeDecimal,
   unitPrice: NonNegativeDecimal,
-  /** 金额可负（D39）；负数时必须填备注，见下方 refine。 */
-  amount: DecimalString,
+  /**
+   * 金额由开单人手动填写，**不得为负，最低 0**（2026-11-15 产品口径）。
+   * 费用一律增加采购成本，不支持「负数费用冲减成本」的玩法；
+   * 原 D39 的「负数必须带备注」规则随之作废。
+   */
+  amount: NonNegativeDecimal,
 };
 
 /**
- * 费用明细（§5.2）：运费 / 杂费 / 加工费等。
- * **A 单费用行金额允许为负（D39）**——供应商返利、对方承担运费、退运费冲减；
- * 但负数会让「成本构成」变得不直观，故 **负数时 `remark` 必填**，用 refine 锁死。
+ * 费用明细（§5.2）：运费 / 杂费 / 加工费等，金额 ≥ 0。
+ * 完成采购单建批次时，费用按明细金额占比摊入批次锁价（D83）。
  */
-export const PurchaseOrderFeeSchema = z
-  .object({
-    ...feeShape,
-    /** 备注可空（§5.2；负数时条件必填）。 */
-    remark: z.string().max(255).nullable(),
-  })
-  .refine(negativeFeeHasRemark, { message: NEGATIVE_FEE_MESSAGE, path: ['remark'] });
+export const PurchaseOrderFeeSchema = z.object({
+  ...feeShape,
+  /** 备注可空（§5.2）。 */
+  remark: z.string().max(255).nullable(),
+});
 export type PurchaseOrderFee = z.infer<typeof PurchaseOrderFeeSchema>;
 
-/** 实体视图：金额可为 null（D79）；null 表示无看价权限，跳过负数备注校验。 */
-export const PurchaseOrderFeeViewSchema = z
-  .object({
-    ...feeShape,
-    unitPrice: NonNegativeDecimal.nullable(),
-    amount: DecimalString.nullable(),
-    remark: z.string().max(255).nullable(),
-  })
-  .refine(negativeFeeHasRemark, { message: NEGATIVE_FEE_MESSAGE, path: ['remark'] });
+/** 实体视图：金额可为 null（D79）；null 表示无看价权限。 */
+export const PurchaseOrderFeeViewSchema = z.object({
+  ...feeShape,
+  unitPrice: NonNegativeDecimal.nullable(),
+  amount: NonNegativeDecimal.nullable(),
+  remark: z.string().max(255).nullable(),
+});
 
-/** 创建入参里的费用行：`remark` 可省略（响应实体仍回 `null`），负数校验口径不变。 */
-const PurchaseOrderFeeInputSchema = z
-  .object({
-    ...feeShape,
-    remark: z.string().max(255).nullable().optional(),
-  })
-  .refine(negativeFeeHasRemark, { message: NEGATIVE_FEE_MESSAGE, path: ['remark'] });
+/** 创建入参里的费用行：`remark` 可省略（响应实体仍回 `null`）。 */
+const PurchaseOrderFeeInputSchema = z.object({
+  ...feeShape,
+  remark: z.string().max(255).nullable().optional(),
+});
 
 /**
  * 采购单实体（§3.1）：`supplierName` 为只读回显，单号服务端生成（D16）。
  * - `goodsAmount` = 商品明细金额合计（货款，非负）；
- * - `feeAmount` = 费用明细金额合计（可为负，D39）；
+ * - `feeAmount` = 费用明细金额合计（非负，费用一律增加成本）；
  * - `totalAmount` = 货款 + 费用合计，由实现侧计算并落库（D5 成本分子）。
  */
 export const PurchaseOrderSchema = z.object({
@@ -136,8 +125,8 @@ export const PurchaseOrderSchema = z.object({
   fees: z.array(PurchaseOrderFeeViewSchema),
   /** 货款：商品明细金额合计（decimal 字符串，D54）；**无 `purchase.view_price` 时为 null**（D79）。 */
   goodsAmount: NonNegativeDecimal.nullable(),
-  /** 费用合计：可为负（D39）；无看价权限时为 null。 */
-  feeAmount: DecimalString.nullable(),
+  /** 费用合计：非负（费用一律增加成本）；无看价权限时为 null。 */
+  feeAmount: NonNegativeDecimal.nullable(),
   /** 单据总金额 = 货款 + 费用合计（decimal 字符串，D54 / D5）；无看价权限时为 null。 */
   totalAmount: DecimalString.nullable(),
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
@@ -220,7 +209,7 @@ export type PurchaseOrderUpdateInput = z.infer<typeof PurchaseOrderUpdateInputSc
 export const PURCHASE_ORDER_ROUTES: readonly RouteDef[] = [
   defineRoute({
     module: 'purchase', operationId: 'purchase.order.complete', method: 'POST',
-    path: '/api/v1/purchase-orders/{id}/complete', domain: 'purchase', action: 'approve',
+    path: '/api/v1/purchase-orders/{id}/complete', domain: 'purchase', action: 'update',
     summary: '完成采购单并入库', audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true }, requiresIfMatch: true,
     request: {}, response: { status: 200, schema: PurchaseOrderSchema },

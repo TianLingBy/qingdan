@@ -1,10 +1,10 @@
-import type { Product, PurchaseOrder } from '@qingdan/contracts';
+import type { Product, PurchaseOrder, PurchaseOrderDetail } from '@qingdan/contracts';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
 import { authKeys } from '../auth/auth-api';
-import { PurchaseOrdersPage, validateDraft } from './PurchaseOrdersPage';
+import { DetailPanel, PurchaseOrdersPage, validateDraft } from './PurchaseOrdersPage';
 import { MASKED_AMOUNT, purchaseQueryKeys } from './purchase-api';
 
 const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
@@ -143,6 +143,50 @@ describe('采购单 A 页面', () => {
   });
 });
 
+describe('采购单详情「完成」入口', () => {
+  const DETAIL: PurchaseOrderDetail = {
+    ...ORDER,
+    cancelable: { allowed: true, reason: null },
+  };
+
+  function renderDetail(order: PurchaseOrderDetail): string {
+    return renderToStaticMarkup(
+      <DetailPanel
+        order={order}
+        products={[PRODUCT]}
+        canCancel
+        canceling={false}
+        canComplete
+        completing={false}
+        onClose={() => {}}
+        onEdit={() => {}}
+        onCancel={() => {}}
+        onComplete={() => {}}
+      />,
+    );
+  }
+
+  /** 从 SSR HTML 里摘出「完成采购单」按钮的标签，用于断言它是否置灰（disabled）。 */
+  function completeButtonMarkup(html: string): string {
+    return /<button[^>]*>完成采购单<\/button>/.exec(html)?.[0] ?? '';
+  }
+
+  it('进行中的单据渲染「完成采购单」按钮，且可点', () => {
+    const html = renderDetail({ ...DETAIL, status: '进行中' });
+    expect(html).toContain('完成采购单');
+    expect(completeButtonMarkup(html)).not.toContain('disabled=""');
+  });
+
+  it('已完成 / 已取消的单据完成按钮置灰，不可点', () => {
+    expect(completeButtonMarkup(renderDetail({ ...DETAIL, status: '已完成' }))).toContain(
+      'disabled=""',
+    );
+    expect(completeButtonMarkup(renderDetail({ ...DETAIL, status: '已取消' }))).toContain(
+      'disabled=""',
+    );
+  });
+});
+
 describe('采购单开单前校验', () => {
   const validLine = { productId: PRODUCT_ID, qty: '500', unitPrice: '8.6' };
 
@@ -161,13 +205,17 @@ describe('采购单开单前校验', () => {
     );
   });
 
-  it('D39：负数费用行必须填备注，正数不强制', () => {
-    const negative = { feeName: '返利', qty: '1', unitPrice: '100', amount: '-100', remark: '' };
+  it('费用金额不得为负，最低 0（D83：D39 的负数口径已作废）', () => {
+    const negative = { feeName: '运费', qty: '1', unitPrice: '100', amount: '-100', remark: '' };
     expect(validateDraft(SUPPLIER_ID, [validLine], [negative])).toContain(
-      '第 1 行费用：负数费用必须填写备注（D39，返利 / 对方承担运费须可追溯）',
+      '第 1 行费用：金额必须是非负数字（最多 6 位小数）',
     );
+    // 填了备注也照样拒——负数费用没有合法场景。
     expect(
-      validateDraft(SUPPLIER_ID, [validLine], [{ ...negative, remark: '季度返利 3%' }]),
+      validateDraft(SUPPLIER_ID, [validLine], [{ ...negative, remark: '供应商返利' }]),
+    ).toContain('第 1 行费用：金额必须是非负数字（最多 6 位小数）');
+    expect(
+      validateDraft(SUPPLIER_ID, [validLine], [{ ...negative, amount: '0' }]),
     ).toHaveLength(0);
     expect(
       validateDraft(SUPPLIER_ID, [validLine], [{ ...negative, amount: '100' }]),

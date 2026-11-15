@@ -38,10 +38,16 @@ interface TestMe {
   readonly tenantId: string;
   readonly displayName: string;
   readonly companyIds: readonly string[];
-  readonly scope: readonly {
-    readonly domain: 'settlement';
-    readonly actions: readonly ('read' | 'approve' | 'view_price')[];
-  }[];
+  readonly scope: readonly (
+    | {
+        readonly domain: 'settlement';
+        readonly actions: readonly ('read' | 'approve' | 'view_price')[];
+      }
+    | {
+        readonly domain: 'commission';
+        readonly actions: readonly ('read' | 'create' | 'delete')[];
+      }
+  )[];
 }
 
 const FULL: TestMe = {
@@ -54,6 +60,19 @@ const FULL: TestMe = {
 
 function meWith(actions: readonly ('read' | 'approve' | 'view_price')[]): TestMe {
   return { ...FULL, scope: [{ domain: 'settlement', actions }] };
+}
+
+/** 提成域是独立 scope（commission.read/create/delete）；这里用来验入口显隐。 */
+function meWithCommission(
+  actions: readonly ('read' | 'create' | 'delete')[],
+): TestMe {
+  return {
+    ...FULL,
+    scope: [
+      { domain: 'settlement', actions: ['read', 'approve', 'view_price'] },
+      { domain: 'commission', actions },
+    ],
+  };
 }
 
 function seedClient(input: {
@@ -133,5 +152,21 @@ describe('结算单 C 页面', () => {
 
     expect(html).toContain('不可冲正');
     expect(html).toContain('D2③');
+  });
+
+  it('只持 settlement 权限时看不到提成比例配置入口（域不同，别拿结算权限冒充提成权限）', () => {
+    const html = renderPage(seedClient({ me: meWith(['read', 'approve', 'view_price']), orders: [ORDER] }));
+
+    expect(html).not.toContain('提成比例配置');
+  });
+
+  it('持 commission.read 时出现提成比例配置入口（入口默认收起，不抢结算单的位置）', () => {
+    const html = renderPage(
+      seedClient({ me: meWithCommission(['read']), orders: [ORDER] }),
+    );
+
+    expect(html).toContain('提成比例配置');
+    // 收起态不该把面板内容渲染出来
+    expect(html).not.toContain('一期只按人');
   });
 });

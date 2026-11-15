@@ -6,7 +6,7 @@
  *
  * 与原型不同的地方，都是本批接口口径决定的：
  * - 原型里「审核」按钮本批没有对应端点（采购单没有审批状态机），不画假按钮；
- * - 「入库 / 完成」也不做（D5 锁价依赖 inventory，等它落地），所以 A 单只有「进行中 → 已取消」；
+ * - 「完成」已接入（`purchase.update`）：服务端为每行创建库存批次并写库存流水，再把单据置为「已完成」；取消仍是另一个动作。
  * - 明细里只有 `productId`，商品名靠主数据映射（没有 `product.read` 时降级显示短 id）。
  */
 
@@ -28,6 +28,7 @@ import {
   isStaleVersionError,
   recoverFromStaleVersion,
   staleActionRetryText,
+  staleUnrecoveredText,
   staleVersionRecoveredText,
 } from '../../lib/write-error';
 import { authApi, authKeys } from '../auth/auth-api';
@@ -38,7 +39,6 @@ import {
   cancelDisabledReason,
   formatMoney,
   formatQty,
-  isNegativeDecimal,
   isPositiveDecimal,
   multiplyDecimal,
   purchaseApi,
@@ -53,7 +53,7 @@ const STATUS_STYLE: Readonly<Record<PurchaseOrderStatus, string>> = {
 };
 
 const PAGE_DESCRIPTION =
-  '原材料采购：选供应商、填物料与单价，费用行可含运费 / 杂费（负数须填备注，D39）。单号由服务端生成（D16），本批不含入库锁价（D5，随库存一起上）。';
+  '原材料采购：选供应商、填物料与单价，费用行可含运费 / 杂费（不得为负，最低 0）。单号由服务端生成（D16）；完成时费用按明细金额占比摊入批次成本（D83）。';
 
 interface LineDraft {
   productId: string;
@@ -65,7 +65,7 @@ interface FeeDraft {
   feeName: string;
   qty: string;
   unitPrice: string;
-  /** 留空则按 数量 × 单价 自动算；允许手填负数（供应商返利，D39）。 */
+  /** 留空则按 数量 × 单价 自动算；不得为负，最低 0（费用一律增加成本）。 */
   amount: string;
   remark: string;
 }
@@ -153,10 +153,8 @@ export function validateDraft(
     if (!isPositiveDecimal(fee.qty)) errors.push(`${row}：数量必须是非负数字`);
     if (!isPositiveDecimal(fee.unitPrice)) errors.push(`${row}：单价必须是非负数字`);
     const amount = fee.amount.trim();
-    if (amount.length > 0 && !/^-?\d{1,12}(\.\d{1,6})?$/.test(amount)) {
-      errors.push(`${row}：金额必须是数字（可为负，最多 6 位小数）`);
-    } else if (isNegativeDecimal(amount) && fee.remark.trim().length === 0) {
-      errors.push(`${row}：负数费用必须填写备注（D39，返利 / 对方承担运费须可追溯）`);
+    if (amount.length > 0 && !/^\d{1,12}(\.\d{1,6})?$/.test(amount)) {
+      errors.push(`${row}：金额必须是非负数字（最多 6 位小数）`);
     }
     if (fee.remark.trim().length > 255) errors.push(`${row}：备注最多 255 字`);
   });
@@ -450,7 +448,7 @@ function OrderForm({
                       <input
                         value={fee.remark}
                         onChange={(event) => onFeeChange(index, { remark: event.target.value })}
-                        placeholder={isNegativeDecimal(feeAmountOf(fee)) ? '负数必填（D39）' : '可选'}
+                        placeholder="可选"
                         className="w-full rounded border border-slate-300 px-2 py-1"
                       />
                     </td>
@@ -512,22 +510,28 @@ function OrderForm({
   );
 }
 
-function DetailPanel({
+export function DetailPanel({
   order,
   products,
   canCancel,
   canceling,
+  canComplete,
+  completing,
   onClose,
   onEdit,
   onCancel,
+  onComplete,
 }: {
   order: PurchaseOrderDetail;
   products: readonly Product[];
   canCancel: boolean;
   canceling: boolean;
+  canComplete: boolean;
+  completing: boolean;
   onClose: () => void;
   onEdit: () => void;
   onCancel: () => void;
+  onComplete: () => void;
 }) {
   const disabledReason = cancelDisabledReason(order.cancelable.reason);
   return (
@@ -624,6 +628,14 @@ function DetailPanel({
         </button>
         <button
           type="button"
+          onClick={onComplete}
+          disabled={order.status !== '进行中' || !canComplete || completing}
+          className="rounded border border-emerald-200 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-40"
+        >
+          {completing ? '完成中…' : '完成采购单'}
+        </button>
+        <button
+          type="button"
           onClick={onCancel}
           disabled={!order.cancelable.allowed || !canCancel || canceling}
           className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-700 disabled:opacity-40"
@@ -633,6 +645,9 @@ function DetailPanel({
         {disabledReason && <span className="text-xs text-slate-500">{disabledReason}</span>}
         {!canCancel && order.cancelable.allowed && (
           <span className="text-xs text-slate-500">当前身份无取消权限（purchase.delete）</span>
+        )}
+        {!canComplete && order.status === '进行中' && (
+          <span className="text-xs text-slate-500">当前身份无完成权限（purchase.approve）</span>
         )}
       </div>
     </section>
@@ -766,7 +781,11 @@ export function PurchaseOrdersPage() {
     onError: async (error) => {
       if (!editing) return;
       const fresh = await recoverFromStaleVersion(error, editing.id, purchaseApi.detail);
-      if (!fresh) return;
+      if (!fresh) {
+        // 非 stale 的红条由 `save.error` 渲染；stale 但读不到最新版本时那条被抑制，必须在这里兜底
+        if (isStaleVersionError(error)) setActionError(staleUnrecoveredText());
+        return;
+      }
       setEditing({ ...editing, version: fresh.version });
       setStaleNotice(staleVersionRecoveredText(fresh.version));
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
@@ -802,6 +821,29 @@ export function PurchaseOrdersPage() {
       }
       setActionError(null);
       setStaleNotice(staleActionRetryText(fresh.version, '取消'));
+      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+    },
+  });
+
+  const completeOrder = useMutation({
+    mutationFn: (order: PurchaseOrderDetail) => purchaseApi.complete(order.id, order.version),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+    },
+    /**
+     * 完成撞版本冲突（别人刚改过、或刚把这张单完成了）：
+     * 把最新版本同步过来并说清楚，**不自动重提**——完成不可逆（状态单向），
+     * 得让用户看清当前状态再点（D60）。
+     */
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, purchaseApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '完成失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(staleActionRetryText(fresh.version, '完成'));
       await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
     },
   });
@@ -861,6 +903,18 @@ export function PurchaseOrdersPage() {
       return;
     }
     cancelOrder.mutate(order);
+  };
+
+  const askComplete = (order: PurchaseOrderDetail) => {
+    setActionError(null);
+    if (
+      globalThis.confirm?.(
+        `确认完成采购单 ${order.orderNo} 吗？完成后状态变为「已完成」，不可撤销。`,
+      ) === false
+    ) {
+      return;
+    }
+    completeOrder.mutate(order);
   };
 
   /**
@@ -1145,9 +1199,12 @@ export function PurchaseOrdersPage() {
               products={products}
               canCancel={can('delete')}
               canceling={cancelOrder.isPending}
+              canComplete={can('update')}
+              completing={completeOrder.isPending}
               onClose={() => setDetailId(null)}
               onEdit={() => beginEdit(detailOrder)}
               onCancel={() => askCancel(detailOrder)}
+              onComplete={() => askComplete(detailOrder)}
             />
           )}
         </>
