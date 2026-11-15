@@ -83,11 +83,12 @@ describe('加工单接口封装', () => {
     expect(body.lossQty).toBeUndefined();
   });
 
-  it('修改 / 取消都带强 ETag If-Match（D60③），取消没有请求体', async () => {
+  it('修改 / 取消 / 完成都带强 ETag If-Match（D60③）', async () => {
     const { api, calls } = recorder();
 
     await api.update('o1', { auxMaterials: '包装膜 20 卷' }, 3);
     await api.cancel('o1', 3);
+    await api.complete('o1', { lossQty: '4', confirmFullLoss: false }, 3);
 
     expect(calls[0]?.url).toBe('/api/v1/processing-orders/o1');
     expect(calls[0]?.init.method).toBe('PATCH');
@@ -97,6 +98,14 @@ describe('加工单接口封装', () => {
     expect(calls[1]?.init.method).toBe('POST');
     expect(headerOf(calls[1]!.init, 'If-Match')).toBe('"3"');
     expect(calls[1]?.init.body).toBeUndefined();
+
+    expect(calls[2]?.url).toBe('/api/v1/processing-orders/o1/complete');
+    expect(calls[2]?.init.method).toBe('POST');
+    expect(headerOf(calls[2]!.init, 'If-Match')).toBe('"3"');
+    expect(JSON.parse(String(calls[2]?.init.body))).toEqual({
+      lossQty: '4',
+      confirmFullLoss: false,
+    });
   });
 
   it('修改入参不接收 lossQty（F3：验收时一次填入、事后不改）', async () => {
