@@ -22,6 +22,7 @@ import {
   getInternalTradeOrder,
   listInternalTradeOrders,
   receiveInternalTradeOrder,
+  revokeDispatchInternalTradeOrder,
   updateInternalTradeOrder,
 } from './internal-trade-orders.js';
 
@@ -878,5 +879,259 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
       `UPDATE inventory_batch SET company_id = $1::uuid WHERE id IN ($2::uuid, $3::uuid)`,
       [DEMO_IDS.companyId, BATCH_A_ID, BATCH_B_ID],
     );
+  });
+
+  it('撤销发货：dispatch → revoke 成功，回进行中、在途量归零、available_qty 回升、审计 reason 落库', async () => {
+    const created = await createOne();
+    await dispatchInternalTradeOrder(writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"1"' },
+    }).ctx);
+
+    const afterDispatch = await test.database.query<{ in_transit_qty: string; available_qty: string }>(
+      `SELECT trim_scale(in_transit_qty) AS in_transit_qty, trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id IN ($1::uuid, $2::uuid)
+        ORDER BY id`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+    expect(afterDispatch.rows).toEqual([
+      { in_transit_qty: '1', available_qty: '999' },
+      { in_transit_qty: '1', available_qty: '999' },
+    ]);
+
+    const { ctx, state } = writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true, reason: '司机临时取消' },
+      headers: { 'if-match': '"2"' },
+    });
+    const revoked = await revokeDispatchInternalTradeOrder(ctx);
+    expect(revoked.status).toBe('进行中');
+    expect(revoked.inTransitQty).toBe('0');
+    expect(revoked.version).toBe(3);
+    expect(state.headers.ETag).toBe('"3"');
+
+    const afterRevoke = await test.database.query<{ in_transit_qty: string; available_qty: string }>(
+      `SELECT trim_scale(in_transit_qty) AS in_transit_qty, trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id IN ($1::uuid, $2::uuid)
+        ORDER BY id`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+    expect(afterRevoke.rows).toEqual([
+      { in_transit_qty: '0', available_qty: '1000' },
+      { in_transit_qty: '0', available_qty: '1000' },
+    ]);
+
+    const audit = await test.database.query<{ action: string; changes: Record<string, unknown> }>(
+      `SELECT action, changes
+         FROM audit_log
+        WHERE object_id = $1
+          AND action = 'internal_trade.order.dispatch_revoke'`,
+      [created.id],
+    );
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0]).toMatchObject({ action: 'internal_trade.order.dispatch_revoke' });
+    expect(audit.rows[0]?.changes).toMatchObject({
+      beforeStatus: '在途',
+      afterStatus: '进行中',
+      releasedBatchCount: 2,
+      reason: '司机临时取消',
+    });
+  });
+
+  it('撤销发货：撤销后能再次 dispatch（状态机闭环）', async () => {
+    const created = await createOne();
+    await dispatchInternalTradeOrder(writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"1"' },
+    }).ctx);
+
+    const revoked = await revokeDispatchInternalTradeOrder(writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true, reason: '点错了' },
+      headers: { 'if-match': '"2"' },
+    }).ctx);
+    expect(revoked).toMatchObject({ status: '进行中', version: 3, inTransitQty: '0' });
+
+    const { ctx: reCtx, state } = writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"3"' },
+    });
+    const redispatched = await dispatchInternalTradeOrder(reCtx);
+    expect(redispatched).toMatchObject({ status: '在途', version: 4, inTransitQty: '2' });
+    expect(state.headers.ETag).toBe('"4"');
+
+    await test.database.query(
+      `UPDATE inventory_batch SET in_transit_qty = 0 WHERE id IN ($1::uuid, $2::uuid)`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+  });
+
+  it('撤销发货：进行中 / 已完成 / 已取消 → VALIDATION_FAILED', async () => {
+    for (const status of ['进行中', '已完成', '已取消'] as const) {
+      const created = await createOne();
+      await test.database.query(
+        `UPDATE internal_trade_order SET status = $1 WHERE id = $2`,
+        [status, created.id],
+      );
+      await expectAppError(
+        () =>
+          revokeDispatchInternalTradeOrder(
+            writeCtx({}, {
+              params: { id: created.id },
+              body: { confirm: true, reason: '不该能撤' },
+              headers: { 'if-match': '"1"' },
+            }).ctx,
+          ),
+        'VALIDATION_FAILED',
+      );
+    }
+  });
+
+  it('撤销发货：reason 缺失或空串 → VALIDATION_FAILED', async () => {
+    const created = await createOne();
+    await dispatchInternalTradeOrder(writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"1"' },
+    }).ctx);
+
+    await expectAppError(
+      () =>
+        revokeDispatchInternalTradeOrder(
+          writeCtx({}, {
+            params: { id: created.id },
+            body: { confirm: true },
+            headers: { 'if-match': '"2"' },
+          }).ctx,
+        ),
+      'VALIDATION_FAILED',
+    );
+    await expectAppError(
+      () =>
+        revokeDispatchInternalTradeOrder(
+          writeCtx({}, {
+            params: { id: created.id },
+            body: { confirm: true, reason: '   ' },
+            headers: { 'if-match': '"2"' },
+          }).ctx,
+        ),
+      'VALIDATION_FAILED',
+    );
+
+    await test.database.query(
+      `UPDATE inventory_batch SET in_transit_qty = 0 WHERE id IN ($1::uuid, $2::uuid)`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+  });
+
+  it('撤销发货：批次在途量被外部改小 → VERSION_CONFLICT，且不减成负数', async () => {
+    const created = await createOne();
+    await dispatchInternalTradeOrder(writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"1"' },
+    }).ctx);
+    // 外部把 BATCH_A 的在途量改小，模拟数据被别处动过。
+    await test.database.query(
+      `UPDATE inventory_batch SET in_transit_qty = 0 WHERE id = $1::uuid`,
+      [BATCH_A_ID],
+    );
+
+    await expectAppError(
+      () =>
+        revokeDispatchInternalTradeOrder(
+          writeCtx({}, {
+            params: { id: created.id },
+            body: { confirm: true, reason: '在途量被改小' },
+            headers: { 'if-match': '"2"' },
+          }).ctx,
+        ),
+      'VERSION_CONFLICT',
+    );
+
+    const batches = await test.database.query<{ in_transit_qty: string }>(
+      `SELECT trim_scale(in_transit_qty) AS in_transit_qty
+         FROM inventory_batch
+        WHERE id IN ($1::uuid, $2::uuid)
+        ORDER BY id`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+    // BATCH_A 停在 0（没有减成负数），BATCH_B 因事务回滚仍保持 1。
+    expect(batches.rows).toEqual([{ in_transit_qty: '0' }, { in_transit_qty: '1' }]);
+
+    await test.database.query(
+      `UPDATE inventory_batch SET in_transit_qty = 0 WHERE id IN ($1::uuid, $2::uuid)`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+  });
+
+  it('撤销发货：调用者不属发出公司 → FORBIDDEN', async () => {
+    const created = await createOne();
+    await dispatchInternalTradeOrder(writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"1"' },
+    }).ctx);
+
+    await expectAppError(
+      () =>
+        revokeDispatchInternalTradeOrder(
+          writeCtx(
+            { companyIds: [TO_COMPANY_ID] },
+            {
+              params: { id: created.id },
+              body: { confirm: true, reason: '接收方想撤' },
+              headers: { 'if-match': '"2"' },
+            },
+          ).ctx,
+        ),
+      'FORBIDDEN',
+    );
+
+    await test.database.query(
+      `UPDATE inventory_batch SET in_transit_qty = 0 WHERE id IN ($1::uuid, $2::uuid)`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+  });
+
+  it('撤销发货：只有 ship 能撤，仅 update / delete 无 ship → FORBIDDEN', async () => {
+    const created = await createOne();
+    await dispatchInternalTradeOrder(writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"1"' },
+    }).ctx);
+
+    await expectAppError(
+      () =>
+        revokeDispatchInternalTradeOrder(
+          writeCtx(
+            { scope: [{ domain: 'internal_trade', actions: ['update', 'delete'] }] },
+            {
+              params: { id: created.id },
+              body: { confirm: true, reason: '没有出权限还想撤' },
+              headers: { 'if-match': '"2"' },
+            },
+          ).ctx,
+        ),
+      'FORBIDDEN',
+    );
+
+    const { ctx, state } = writeCtx(
+      { scope: [{ domain: 'internal_trade', actions: ['ship'] }] },
+      {
+        params: { id: created.id },
+        body: { confirm: true, reason: '有出权限就能撤' },
+        headers: { 'if-match': '"2"' },
+      },
+    );
+    const revoked = await revokeDispatchInternalTradeOrder(ctx);
+    expect(revoked).toMatchObject({ status: '进行中', version: 3, inTransitQty: '0' });
+    expect(state.headers.ETag).toBe('"3"');
   });
 });

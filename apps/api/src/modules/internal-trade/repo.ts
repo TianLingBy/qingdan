@@ -828,3 +828,70 @@ export async function dispatchInternalTradeOrder(
   }
   return getInternalTradeOrder(ctx, id);
 }
+
+/**
+ * 撤销发货释放（D22 / D31 / D68③）：与 `occupyBatchesForDispatch` 完全同一算法，
+ * 把已占用的批次在途量逐条回退。`quantities` 已按批次聚合去重，数量为正 decimal 字符串。
+ * 在途量不足以释放（数据被别处动过）抛 VERSION_CONFLICT，绝不允许减成负数。
+ */
+export async function releaseBatchesForRevoke(
+  ctx: InternalTradeOrderRepoContext,
+  fromCompanyId: string,
+  quantities: readonly { batchId: string; qty: string }[],
+): Promise<void> {
+  if (quantities.length === 0) {
+    throw new AppError('VALIDATION_FAILED', '内部交易单没有可释放的批次');
+  }
+  for (const { batchId, qty } of quantities) {
+    const released = await ctx.tx.query<{ id: string }>(
+      `UPDATE inventory_batch
+          SET in_transit_qty = in_transit_qty - $1::amount
+        WHERE id = $2::uuid
+          AND tenant_id = $3
+          AND company_id = $4::uuid
+          AND in_transit_qty >= $1::amount
+        RETURNING id`,
+      [qty, batchId, ctx.tenantId, fromCompanyId],
+    );
+    if (released.rows.length === 0) {
+      throw new AppError('VERSION_CONFLICT', '批次在途量不足以释放，无法撤销发货', {
+        batchId,
+        releaseQty: qty,
+      });
+    }
+  }
+}
+
+/** 撤销发货：把「在途」N 单退回「进行中」并清空在途量（D22 / D31 / D68③）。 */
+export async function revokeDispatchInternalTradeOrder(
+  ctx: InternalTradeOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<InternalTradeOrder | null> {
+  const current = await loadInternalTradeOrderState(ctx, id);
+  if (!current) return null;
+  if (current.version !== expectedVersion) {
+    throw new AppError(
+      'VERSION_CONFLICT',
+      '内部交易单版本与 If-Match 不一致，请重新读取后重试',
+      { expected: expectedVersion, current: current.version },
+    );
+  }
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE internal_trade_order
+        SET status = '进行中',
+            in_transit_qty = 0,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND from_company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '在途'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('NOT_FOUND', '内部交易单不存在或已不在途');
+  }
+  return getInternalTradeOrder(ctx, id);
+}
