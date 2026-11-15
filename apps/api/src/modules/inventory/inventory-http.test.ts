@@ -1003,15 +1003,20 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       { 'if-match': '"1"' },
     );
     expect(insufficient.statusCode).toBe(409);
-    expect(insufficient.json()).toMatchObject({
+    const insufficientBody = insufficient.json() as { code: string; message: string };
+    expect(insufficientBody).toMatchObject({
       code: 'VERSION_CONFLICT',
       details: {
         reason: 'insufficient_available_qty',
         batchId: STOCK_BATCH_TIGHT_ID,
+        batchNo: 'HTTP-STOCK-TIGHT',
         availableQty: '2',
         delta: '-10',
       },
     });
+    // #269：盘点保留「盘亏调整」口吻，并带批次号便于定位。
+    expect(insufficientBody.message).toContain('盘亏调整');
+    expect(insufficientBody.message).toContain('HTTP-STOCK-TIGHT');
 
     const tightStocktake = await test.database.query<{ status: string; version: number }>(
       `SELECT status, version FROM inventory_stocktake WHERE id = $1::uuid`,

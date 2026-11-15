@@ -185,7 +185,7 @@ export interface StockAdjustmentInput {
   readonly batchId: string;
   /** 有符号数量变化：盘盈为正、盘亏为负（decimal 字符串，D54）。 */
   readonly delta: string;
-  /** 来源单据类型：盘点固定 `stocktake`。 */
+  /** 来源单据类型：盘点固定 `stocktake`；也用于把校验失败文案说成对应业务动作（#269）。 */
   readonly sourceDocType: string;
   readonly sourceDocId: string;
   /** 经手人（盘点为审批人 employee id）。 */
@@ -211,6 +211,10 @@ interface BatchRow {
   custodian_id: string | null;
 }
 
+interface LockedBatchRow extends BatchRow {
+  batch_no: string;
+}
+
 interface NewBatchRow {
   available_qty: string | number;
   custodian_id: string;
@@ -219,6 +223,31 @@ interface NewBatchRow {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NON_NEGATIVE_DECIMAL_RE = /^\d{1,12}(\.\d{1,6})?$/;
+
+/**
+ * 可用量不足时的业务动作文案（#269）。
+ *
+ * 同一条库存守卫被销售完成（E）、加工领料（B）、盘点审批（stocktake）共用；
+ * 调用方本来就把来源单据类型传进来了，这里只按它选动作措辞，不改校验逻辑、
+ * 错误码（VERSION_CONFLICT）或 HTTP 状态码。无法识别来源时用中性文案。
+ * 盘点保留原句尾的「拒绝审批」；其余动作没有审批环节，只说动作与批次。
+ */
+function insufficientAvailableMessage(
+  sourceDocType: string,
+  batchNo: string,
+): string {
+  const batch = `（批次 ${batchNo}）`;
+  switch (sourceDocType) {
+    case 'E':
+      return `销售出库后批次可用量将为负${batch}`;
+    case 'B':
+      return `加工领料后批次可用量将为负${batch}`;
+    case 'stocktake':
+      return `盘亏调整后可用量将为负${batch}，拒绝审批`;
+    default:
+      return `该操作会使批次可用量变为负数${batch}`;
+  }
+}
 
 function assertUuid(value: string, field: string): void {
   if (!UUID_RE.test(value)) {
@@ -362,14 +391,16 @@ export async function createBatch(
  *
  * 先 `FOR UPDATE` 锁定批次，再按「入库量 / 可用量调整后均非负」校验；
  * 任何一条不满足都抛 409（VERSION_CONFLICT）并在 details 说明原因，事务整体回滚。
+ * 可用量不足的文案按调用方传入的 sourceDocType 区分销售 / 加工 / 盘点（#269）。
  */
 export async function applyStockAdjustment(
   tx: SqlClient,
   input: StockAdjustmentInput,
 ): Promise<StockAdjustmentResult> {
-  const locked = await tx.query<BatchRow>(
+  const locked = await tx.query<LockedBatchRow>(
     `SELECT trim_scale(inbound_qty) AS inbound_qty,
             trim_scale(available_qty) AS available_qty,
+            batch_no,
             custodian_id
        FROM inventory_batch
       WHERE id = $1::uuid
@@ -413,12 +444,17 @@ export async function applyStockAdjustment(
     });
   }
   if (!checks.available_ok) {
-    throw new AppError('VERSION_CONFLICT', '盘亏调整后可用量将为负，拒绝审批', {
-      reason: 'insufficient_available_qty',
-      batchId: input.batchId,
-      availableQty: String(current.available_qty),
-      delta: input.delta,
-    });
+    throw new AppError(
+      'VERSION_CONFLICT',
+      insufficientAvailableMessage(input.sourceDocType, current.batch_no),
+      {
+        reason: 'insufficient_available_qty',
+        batchId: input.batchId,
+        batchNo: current.batch_no,
+        availableQty: String(current.available_qty),
+        delta: input.delta,
+      },
+    );
   }
 
   const updated = await tx.query<BatchRow>(
