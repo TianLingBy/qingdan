@@ -108,7 +108,7 @@ describe('采购单契约（purchase）', () => {
     expect(byId.get('purchase.order.create')?.scope).toBe('purchase.create');
     expect(byId.get('purchase.order.update')?.scope).toBe('purchase.update');
     expect(byId.get('purchase.order.cancel')?.scope).toBe('purchase.delete');
-    expect(byId.get('purchase.order.complete')?.scope).toBe('purchase.approve');
+    expect(byId.get('purchase.order.complete')?.scope).toBe('purchase.update');
   });
 
   it('普通读不记审计；写操作全部 audit=write（D51）', () => {

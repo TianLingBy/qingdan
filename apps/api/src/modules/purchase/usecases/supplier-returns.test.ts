@@ -38,7 +38,7 @@ const PURCHASE_ORDER_ID = '01900000-0000-7000-8000-000000000531';
 const SECOND_PURCHASE_ORDER_ID = '01900000-0000-7000-8000-000000000532';
 
 const FULL_SCOPE: ScopeMatrix = [
-  { domain: 'supplier_return', actions: ['read', 'create'] },
+  { domain: 'supplier_return', actions: ['read', 'create', 'approve'] },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [
   { domain: 'supplier_return', actions: ['read'] },

@@ -31,7 +31,7 @@ const SALES_SCOPE: ScopeMatrix = [
   { domain: 'sales', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
 ];
 const RETURN_WRITE_SCOPE: ScopeMatrix = [
-  { domain: 'customer_return', actions: ['read', 'create'] },
+  { domain: 'customer_return', actions: ['read', 'create', 'approve'] },
 ];
 const RETURN_READ_SCOPE: ScopeMatrix = [
   { domain: 'customer_return', actions: ['read'] },
