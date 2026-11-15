@@ -1,0 +1,33 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
+<title>轻单 · 亮/暗 双主题对照</title>
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="fonts.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{display:flex;flex-direction:column;height:100vh;background:var(--bg-0);color:var(--text-1);font-family:var(--sans)}
+.bar{height:48px;flex:none;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line-1);background:var(--surf-1)}
+.bar b{font-size:13.5px}.bar span{font-size:11.5px;color:var(--text-3)}.bar .sp{flex:1}
+.bar button{height:28px;padding:0 12px;border-radius:999px;border:1px solid var(--line-2);background:var(--surf-1);color:var(--text-2);font-size:11.5px;cursor:pointer}
+.bar button.on{background:var(--accent-deep);color:var(--on-accent);border-color:transparent}
+.panes{flex:1;display:flex;min-height:0}
+.pane{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line-1)}
+.pane:last-child{border-right:0}
+.ph{height:32px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:11.5px;color:var(--text-3);border-bottom:1px solid var(--line-1)}
+.ph b{font-size:11.5px;color:var(--text-2);letter-spacing:.06em}
+iframe{flex:1;width:100%;border:0}
+</style></head><body>
+<div class="bar"><b>亮 / 暗 双主题</b><span id="fname">工作台</span><span class="sp"></span>
+<button data-f="工作台.html" data-n="工作台" class="on">工作台</button><button data-f="采购单A.html" data-n="采购单 A">采购单 A</button><button data-f="库存.html" data-n="库存数量">库存数量</button><button data-f="报表.html" data-n="利润报表">利润报表</button></div>
+<div class="panes">
+ <div class="pane"><div class="ph"><b>深色（默认）</b><span>mode=dark</span></div><iframe id="dark"></iframe></div>
+ <div class="pane"><div class="ph"><b>浅色（白天）</b><span>mode=light</span></div><iframe id="light"></iframe></div>
+</div>
+<script>
+var d=document.getElementById('dark'),l=document.getElementById('light');
+function go(f,n){
+  d.src=f+'?mode=dark'; l.src=f+'?mode=light';
+  document.getElementById('fname').textContent=n;
+  document.querySelectorAll('.bar button[data-f]').forEach(function(b){b.classList.toggle('on',b.dataset.f===f);});
+}
+document.querySelectorAll('.bar button[data-f]').forEach(function(b){b.onclick=function(){go(b.dataset.f,b.dataset.n);};});
+go('工作台.html','工作台');
+</script></body></html>

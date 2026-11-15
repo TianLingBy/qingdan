@@ -29,6 +29,7 @@ import {
   isStaleVersionError,
   recoverFromStaleVersion,
   staleActionRetryText,
+  staleUnrecoveredText,
   staleVersionRecoveredText,
 } from '../../lib/write-error';
 import {
@@ -821,7 +822,11 @@ export function InternalTradeOrdersPage() {
     onError: async (error) => {
       if (!editing) return;
       const fresh = await recoverFromStaleVersion(error, editing.id, internalTradesApi.detail);
-      if (!fresh) return;
+      if (!fresh) {
+        // 非 stale 的红条由 `save.error` 渲染；stale 但读不到最新版本时那条被抑制，必须在这里兜底
+        if (isStaleVersionError(error)) setActionError(staleUnrecoveredText());
+        return;
+      }
       setEditing({ ...editing, version: fresh.version });
       setStaleNotice(staleVersionRecoveredText(fresh.version));
       await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
