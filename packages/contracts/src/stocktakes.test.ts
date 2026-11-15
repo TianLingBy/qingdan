@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { HEADER_STATES } from './documents.js';
 import { ENTITIES } from './entities.js';
+import { isDangerousOperation } from './mcp-map.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { routesOfModule, validateRegistry } from './registry.js';
 import { ROUTES } from './routes.js';
@@ -15,6 +16,7 @@ import {
   StocktakeDetailSchema,
   StocktakeIncreaseInputSchema,
   StocktakeListQuerySchema,
+  StocktakeRejectInputSchema,
   StocktakeSchema,
   StocktakeStatusSchema,
   stocktakeApprovable,
@@ -42,6 +44,7 @@ const STOCKTAKE = {
   status: '待审批',
   applicantId: 'emp-1',
   approverId: null,
+  rejectReason: null,
   remark: '盘亏',
   version: 1,
   createdAt: '2026-11-05T03:00:00.000Z',
@@ -64,8 +67,8 @@ const CREATE = {
 const byId = new Map(STOCKTAKE_ROUTES.map((route) => [route.operationId, route]));
 
 describe('盘点调整契约（stocktake）', () => {
-  it('5 条端点全部登记并汇总进 ROUTES，且归属 inventory（D71 拆盘盈/盘亏）', () => {
-    expect(STOCKTAKE_ROUTES).toHaveLength(5);
+  it('6 条端点全部登记并汇总进 ROUTES，且归属 inventory（D71 拆盘盈/盘亏）', () => {
+    expect(STOCKTAKE_ROUTES).toHaveLength(6);
     for (const route of STOCKTAKE_ROUTES) expect(route.module).toBe('inventory');
 
     const inventoryIds = routesOfModule(ROUTES, 'inventory').map((r) => r.operationId);
@@ -82,6 +85,7 @@ describe('盘点调整契约（stocktake）', () => {
         'POST /api/v1/stocktakes/decreases stocktake.decrease.create',
         'GET /api/v1/stocktakes/{id} stocktake.detail.read',
         'POST /api/v1/stocktakes/{id}/approve stocktake.approve',
+        'POST /api/v1/stocktakes/{id}/reject stocktake.reject',
       ].sort(),
     );
 
@@ -90,8 +94,9 @@ describe('盘点调整契约（stocktake）', () => {
     // D71：盘盈 = create（入账增加）、盘亏 = delete（「仅删减」）。
     expect(byId.get('stocktake.increase.create')?.scope).toBe('stocktake.create');
     expect(byId.get('stocktake.decrease.create')?.scope).toBe('stocktake.delete');
-    // 审批是 approve 动作，不是 update（D44 / D47）。
+    // 审批是 approve 动作，不是 update（D44 / D47）；驳回与批准同一权限点。
     expect(byId.get('stocktake.approve')?.scope).toBe('stocktake.approve');
+    expect(byId.get('stocktake.reject')?.scope).toBe('stocktake.approve');
     for (const route of STOCKTAKE_ROUTES) expect(route.domain).toBe('stocktake');
     // 盘点调整的功能域是 stocktake；stocktake_page 只是页面权限域，别混。
     expect(STOCKTAKE_ROUTES.some((route) => route.domain === ('stocktake_page' as never))).toBe(
@@ -99,33 +104,42 @@ describe('盘点调整契约（stocktake）', () => {
     );
   });
 
-  it('响应码：发起 201、审批 200、读 200', () => {
+  it('响应码：发起 201、审批 / 驳回 200、读 200', () => {
     expect(byId.get('stocktake.increase.create')?.response?.status).toBe(201);
     expect(byId.get('stocktake.decrease.create')?.response?.status).toBe(201);
     expect(byId.get('stocktake.approve')?.response?.status).toBe(200);
+    expect(byId.get('stocktake.reject')?.response?.status).toBe(200);
     expect(byId.get('stocktake.list.read')?.response?.status).toBe(200);
     expect(byId.get('stocktake.detail.read')?.response?.status).toBe(200);
   });
 
-  it('普通读不记审计；发起 / 审批 audit=write（D51 / D54 ②）', () => {
+  it('普通读不记审计；发起 / 审批 / 驳回 audit=write（D51 / D54 ②）', () => {
     expect(byId.get('stocktake.list.read')?.audit).toEqual({ kind: 'none', required: false });
     expect(byId.get('stocktake.detail.read')?.audit).toEqual({ kind: 'none', required: false });
     expect(byId.get('stocktake.increase.create')?.audit).toEqual({ kind: 'write', required: true });
     expect(byId.get('stocktake.decrease.create')?.audit).toEqual({ kind: 'write', required: true });
     expect(byId.get('stocktake.approve')?.audit).toEqual({ kind: 'write', required: true });
+    expect(byId.get('stocktake.reject')?.audit).toEqual({ kind: 'write', required: true });
   });
 
-  it('AI 边界：发起默认禁止；审批只能人类 → forbid + 必须给原因（D52 / D54 ⑥）', () => {
+  it('AI 边界：发起默认禁止；审批 / 驳回只能人类 → forbid + 必须给原因（D52 / D54 ⑥）', () => {
     expect(byId.get('stocktake.increase.create')?.ai).toEqual({ policy: 'forbid', reasonRequired: false });
     expect(byId.get('stocktake.decrease.create')?.ai).toEqual({ policy: 'forbid', reasonRequired: false });
     expect(byId.get('stocktake.approve')?.ai).toEqual({
       policy: 'forbid',
       reasonRequired: true,
     });
+    expect(byId.get('stocktake.reject')?.ai).toEqual({
+      policy: 'forbid',
+      reasonRequired: true,
+    });
+    // MCP 也把驳回标为危险动作（destructiveHint）。
+    expect(isDangerousOperation('stocktake.reject')).toBe(true);
   });
 
-  it('审批强制 If-Match 强 ETag', () => {
+  it('审批 / 驳回强制 If-Match 强 ETag', () => {
     expect(byId.get('stocktake.approve')?.requiresIfMatch).toBe(true);
+    expect(byId.get('stocktake.reject')?.requiresIfMatch).toBe(true);
     expect(byId.get('stocktake.increase.create')?.requiresIfMatch).toBe(false);
     expect(byId.get('stocktake.decrease.create')?.requiresIfMatch).toBe(false);
   });
@@ -159,6 +173,7 @@ describe('盘点调整契约（stocktake）', () => {
       'status',
       'applicantId',
       'approverId',
+      'rejectReason',
       'version',
       'createdAt',
       'updatedAt',
@@ -259,6 +274,7 @@ describe('盘点调整契约（stocktake）', () => {
         'status',
         'applicantId',
         'approverId',
+        'rejectReason',
         'remark',
         'version',
         'createdAt',
@@ -267,6 +283,7 @@ describe('盘点调整契约（stocktake）', () => {
     );
 
     expect(StocktakeSchema.safeParse({ ...STOCKTAKE, approverId: 'emp-2' }).success).toBe(true);
+    expect(StocktakeSchema.safeParse({ ...STOCKTAKE, rejectReason: '依据不足' }).success).toBe(true);
     expect(StocktakeSchema.safeParse({ ...STOCKTAKE, remark: null }).success).toBe(true);
     expect(StocktakeSchema.safeParse({ ...STOCKTAKE, remark: 'x'.repeat(201) }).success).toBe(false);
 
@@ -282,6 +299,7 @@ describe('盘点调整契约（stocktake）', () => {
       'status',
       'applicantId',
       'approverId',
+      'rejectReason',
       'remark',
       'version',
       'createdAt',
@@ -346,9 +364,30 @@ describe('盘点调整契约（stocktake）', () => {
     ]);
   });
 
-  it('本批不做：驳回端点 / 批量盘点 / 盘点明细表', () => {
+  it('驳回入参：必须显式确认 + 原因 1~200（去首尾空白）', () => {
+    expect(StocktakeRejectInputSchema.safeParse({ confirm: true, reason: '依据不足' }).success).toBe(
+      true,
+    );
+    expect(
+      StocktakeRejectInputSchema.safeParse({ confirm: true, reason: '  依据不足  ' }).data,
+    ).toEqual({ confirm: true, reason: '依据不足' });
+    expect(StocktakeRejectInputSchema.safeParse({ reason: '依据不足' }).success).toBe(false);
+    expect(StocktakeRejectInputSchema.safeParse({ confirm: false, reason: '依据不足' }).success).toBe(
+      false,
+    );
+    expect(StocktakeRejectInputSchema.safeParse({ confirm: true }).success).toBe(false);
+    expect(StocktakeRejectInputSchema.safeParse({ confirm: true, reason: '   ' }).success).toBe(false);
+    expect(
+      StocktakeRejectInputSchema.safeParse({ confirm: true, reason: '原'.repeat(201) }).success,
+    ).toBe(false);
+    expect(
+      StocktakeRejectInputSchema.safeParse({ confirm: true, reason: '原'.repeat(200) }).success,
+    ).toBe(true);
+  });
+
+  it('本批不做：批量盘点 / 盘点明细表', () => {
     const ids = STOCKTAKE_ROUTES.map((route) => route.operationId);
-    expect(ids.some((id) => /reject|batch|line|detail-line/.test(id))).toBe(false);
+    expect(ids.some((id) => /batch|line|detail-line/.test(id))).toBe(false);
     expect(StocktakeSchema.shape).not.toHaveProperty('lines');
     expect(StocktakeCreateInputSchema.shape).not.toHaveProperty('lines');
   });
@@ -367,7 +406,7 @@ describe('盘点调整契约（stocktake）', () => {
     };
     expect(stocktake).toBeDefined();
     expect(detail).toBeDefined();
-    for (const field of ['stocktakeNo', 'batchId', 'bookQty', 'actualQty', 'diffQty', 'approverId']) {
+    for (const field of ['stocktakeNo', 'batchId', 'bookQty', 'actualQty', 'diffQty', 'approverId', 'rejectReason']) {
       expect(stocktake.properties).toHaveProperty(field);
     }
     expect(detail.properties).toHaveProperty('approvable');
@@ -435,5 +474,22 @@ describe('盘点调整契约（stocktake）', () => {
     expect(approve.post?.['x-mcp-tool']).toBe('qingdan_stocktake_approve');
     expect(approve.post?.responses).toHaveProperty('200');
     expect(approve.post?.responses).not.toHaveProperty('201');
+
+    const reject = doc.paths['/api/v1/stocktakes/{id}/reject'] as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(reject.post?.['operationId']).toBe('stocktake.reject');
+    expect(reject.post?.['x-module']).toBe('inventory');
+    expect(reject.post?.['x-scope']).toBe('stocktake.approve');
+    expect(reject.post?.['x-audit']).toEqual({ kind: 'write', required: true });
+    expect(reject.post?.['x-ai-policy']).toEqual({
+      policy: 'forbid',
+      reasonRequired: true,
+    });
+    expect(reject.post?.['x-requires-if-match']).toBe(true);
+    expect(reject.post?.['x-mcp-tool']).toBe('qingdan_stocktake_reject');
+    expect(reject.post?.responses).toHaveProperty('200');
+    expect(reject.post?.responses).not.toHaveProperty('201');
   });
 });

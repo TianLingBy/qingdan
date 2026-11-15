@@ -15,10 +15,12 @@ import {
   createStocktakeIncrease,
   getStocktake,
   listStocktakes,
+  rejectStocktake,
 } from './usecases/stocktakes.js';
 
 /**
- * inventory 端点：首批只读 3 条（Issue #49）+ 盘点调整 I 5 条（D71：盘盈/盘亏拆两条）。
+ * inventory 端点：首批只读 3 条（Issue #49）+ 盘点调整 I 6 条（D71：盘盈/盘亏拆两条，
+ * 另含审批 / 驳回）。
  *
  * 全部端点由用例完成权限、公司隔离与查询；本层只做 operationId 分派和 ETag。
  * **不要在这里直接写 SQL 或改批次数字**——库存写入只能经单据用例调用 inventory
@@ -89,6 +91,16 @@ export function registerInventoryRoutes(app: FastifyInstance): void {
       });
       reply.header('ETag', etagOf(detail.version));
       return detail;
+    },
+    'stocktake.reject': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const stocktake = await rejectStocktake({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(stocktake.version));
+      return stocktake;
     },
     'inventory.cost.adjustment.create': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
