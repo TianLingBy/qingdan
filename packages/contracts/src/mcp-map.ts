@@ -8,8 +8,8 @@ export function mcpToolName(route: Pick<RouteDef, 'operationId'>): string {
   return `qingdan_${route.operationId.replace(/\./g, '_')}`;
 }
 
-/** 危险动作（D54 ⑥）：删除 / 冲正 / 成本更正 / 结算确认 / 权限变更 / 销售出库（D85）。 */
-const DANGEROUS_SUFFIXES = ['.delete', '.revoke', '.reverse', '.cost-correct', '.confirm', '.permission-update', '.dispatch_revoke', '.ship'];
+/** 危险动作（D54 ⑥）：删除 / 驳回 / 冲正 / 成本更正 / 结算确认 / 权限变更 / 销售出库（D85）。 */
+const DANGEROUS_SUFFIXES = ['.delete', '.reject', '.revoke', '.reverse', '.cost-correct', '.confirm', '.permission-update', '.dispatch_revoke', '.ship'];
 
 export function isDangerousOperation(operationId: string): boolean {
   return DANGEROUS_SUFFIXES.some((s) => operationId.endsWith(s)) || operationId.includes('.permission.');
