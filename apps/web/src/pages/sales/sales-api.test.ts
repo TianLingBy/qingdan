@@ -83,18 +83,18 @@ describe('销售单接口封装', () => {
     expect(body.lines).toEqual([LINE]);
   });
 
-  it('修改 / 完成 / 取消都带强 ETag If-Match（D60③），完成与取消没有请求体', async () => {
+  it('修改 / 出库 / 取消都带强 ETag If-Match（D60③），出库与取消没有请求体', async () => {
     const { api, calls } = recorder();
 
     await api.update('o1', { customerId: 'cu2' }, 3);
-    await api.complete('o1', 3);
+    await api.ship('o1', 3);
     await api.cancel('o1', 3);
 
     expect(calls[0]?.url).toBe('/api/v1/sales-orders/o1');
     expect(calls[0]?.init.method).toBe('PATCH');
     expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"3"');
 
-    expect(calls[1]?.url).toBe('/api/v1/sales-orders/o1/complete');
+    expect(calls[1]?.url).toBe('/api/v1/sales-orders/o1/ship');
     expect(calls[1]?.init.method).toBe('POST');
     expect(headerOf(calls[1]!.init, 'If-Match')).toBe('"3"');
     expect(calls[1]?.init.body).toBeUndefined();
