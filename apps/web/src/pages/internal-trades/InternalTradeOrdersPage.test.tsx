@@ -1,10 +1,11 @@
-import type { InternalTradeOrder, Product } from '@qingdan/contracts';
+import type { InternalTradeOrder, InternalTradeOrderDetail, Product } from '@qingdan/contracts';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
+import { employeeDirectoryKey } from '../../lib/employee-directory';
 import { authKeys } from '../auth/auth-api';
-import { InternalTradeOrdersPage } from './InternalTradeOrdersPage';
+import { DetailPanel, InternalTradeOrdersPage } from './InternalTradeOrdersPage';
 import { internalTradeQueryKeys } from './internal-trades-api';
 
 const FROM = '00000000-0000-4000-8000-000000000001';
@@ -114,6 +115,35 @@ function renderPage(client: ReturnType<typeof createQueryClient>): string {
   );
 }
 
+const DETAIL: InternalTradeOrderDetail = {
+  ...ORDER,
+  cancelable: { allowed: true, reason: null },
+};
+
+function renderDetail(order: InternalTradeOrderDetail): string {
+  const client = createQueryClient();
+  // 姓名簿空表：详情面板回显经手人走 id 前缀兜底，不触发网络。
+  client.setQueryData(employeeDirectoryKey, []);
+  return renderToStaticMarkup(
+    <QueryClientProvider client={client}>
+      <DetailPanel
+        order={order}
+        products={[PRODUCT]}
+        batches={[]}
+        canUpdate
+        canCancel
+        canReceive
+        busy={false}
+        receiveBusy={false}
+        onClose={() => {}}
+        onEdit={() => {}}
+        onCancel={() => {}}
+        onReceive={() => {}}
+      />
+    </QueryClientProvider>,
+  );
+}
+
 describe('内部交易单 N 页面', () => {
   it('列表渲染单号、方向、内部价、在途量与四态状态', () => {
     const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
@@ -126,14 +156,18 @@ describe('内部交易单 N 页面', () => {
     expect(html).toContain('新建内部交易单');
   });
 
-  it('不画「发货 / 到货确认」按钮，而是写清为什么没有（D31 / D68③）', () => {
-    const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
+  it('「在途」单据渲染「到货确认」按钮，已完成 / 已取消不渲染（#211 口径变更）', () => {
+    // #211 起契约补充了 internal_trade.order.receive 端点（D31 / D68③），
+    // 前端从「故意不画到货确认按钮」改为「仅在途可点」。发货仍无端点，所以依旧不画「发货」。
+    const inTransit = renderDetail(DETAIL);
+    expect(inTransit).toContain('>到货确认<');
+    expect(inTransit).not.toContain('>发货<');
 
-    // 说明文字里会提到「到货确认」，所以按按钮文案判，而不是全文搜关键词
-    expect(html).not.toContain('>发货<');
-    expect(html).not.toContain('>到货确认<');
-    expect(html).toContain('本批没有发货与到货确认端点');
-    expect(html).toContain('D68③');
+    const completed = renderDetail({ ...DETAIL, status: '已完成' });
+    expect(completed).not.toContain('>到货确认<');
+
+    const cancelled = renderDetail({ ...DETAIL, status: '已取消' });
+    expect(cancelled).not.toContain('>到货确认<');
   });
 
   it('「在途」单的编辑与取消都禁用：只有进行中能改（D68②）', () => {

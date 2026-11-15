@@ -13,7 +13,7 @@
  *
  * 口径（别在这里发明）：
  * - 金额 / 数量一律 decimal 字符串（D54），运算走 `lib/decimal` 定点；
- * - R / S 都没有 update / delete / 完成 / 取消端点（D47 冲正只追加）；
+ * - R / S 都没有 update / delete / 取消端点（D47 冲正只追加），完成走各自的 complete 端点；
  * - 同一批数据里，**R 单与 S 单的金额受看价权限管**（D79）：无权限时前端显示 `—`；
  * - I 盘点的审批用强 ETag（D60③），且 `approvable` 只认服务端结论（D21 同款思路）。
  */
@@ -83,7 +83,7 @@ function ifMatch(version: number): Record<string, string> {
 
 export function createReversalsApi(client: ApiClient = apiClient) {
   return {
-    /* R 客户退货（3 条） */
+    /* R 客户退货（4 条） */
     listCustomerReturns: (filters: CustomerReturnListFilters = {}) =>
       client.get<PageResult<CustomerReturn>>('/customer-returns', {
         query: {
@@ -98,8 +98,12 @@ export function createReversalsApi(client: ApiClient = apiClient) {
     customerReturnDetail: (id: string) => client.get<CustomerReturn>(`/customer-returns/${id}`),
     createCustomerReturn: (input: CustomerReturnCreateInput) =>
       client.post<CustomerReturn>('/customer-returns', input),
+    customerReturnComplete: (id: string, version: number) =>
+      client.post<CustomerReturn>(`/customer-returns/${id}/complete`, undefined, {
+        headers: ifMatch(version),
+      }),
 
-    /* S 供应商退货（3 条） */
+    /* S 供应商退货（4 条） */
     listSupplierReturns: (filters: SupplierReturnListFilters = {}) =>
       client.get<PageResult<SupplierReturn>>('/supplier-returns', {
         query: {
@@ -114,6 +118,10 @@ export function createReversalsApi(client: ApiClient = apiClient) {
     supplierReturnDetail: (id: string) => client.get<SupplierReturn>(`/supplier-returns/${id}`),
     createSupplierReturn: (input: SupplierReturnCreateInput) =>
       client.post<SupplierReturn>('/supplier-returns', input),
+    supplierReturnComplete: (id: string, version: number) =>
+      client.post<SupplierReturn>(`/supplier-returns/${id}/complete`, undefined, {
+        headers: ifMatch(version),
+      }),
 
     /* I 盘点（5 条；D71 盘盈 / 盘亏拆成两条创建端点） */
     listStocktakes: (filters: StocktakeListFilters = {}) =>

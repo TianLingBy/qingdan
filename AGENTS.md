@@ -1,6 +1,6 @@
 # 轻单项目记忆（项目根 AGENTS.md）
 
-本文件只对 `D:\Desktop\dsh\Qingdan`（`github.com/TianLingBy/qingdan`）生效。**DSH 全局记忆在 `C:\Users\32800\.dsh\AGENTS.md`**，两边不重复：全局记「每次会话都要遵守的行为约定 + 本机环境结论」，这里记「这个项目的派活与进度口径」。
+本文件只对 `D:\快捷方式\工作台\dsh\Qingdan`（`github.com/TianLingBy/qingdan`）生效。**DSH 全局记忆在 `C:\Users\32800\.dsh\AGENTS.md`**，两边不重复：全局记「每次会话都要遵守的行为约定 + 本机环境结论」，这里记「这个项目的派活与进度口径」。
 
 ## 有疑惑就直接问用户，不许猜（2026-11-13 用户新增规则）
 
@@ -8,6 +8,17 @@
 - 问法：一个决策点一个问题，附上**我倾向的候选答案 + 选它会影响什么**，让用户一句话就能拍板；多个决策点可一次列全，不要挤牙膏式来回问。
 - 唯一的例外：**客观事实类**（能靠命令、代码、文档、issue 查清的）先去查，查不到、查到互相冲突、或查到结果与用户说法不一致时，再带着「我查到了什么」去问。事实不用问，判断必须问。
 - 与上面「不派发的：需求澄清、口径裁定」一致：澄清是 DSH 自己的活，不外派给 Claude Code / Codex 去替用户猜。
+
+## 权限模型铁律：没有"职位"，只有权限点（2026-11-15 用户拍板）
+
+用户原话：「大部分权限都是按这个权限表来做的，你不要说固定死哪个职位，只是说我们在设计这个职位的时候呢，默认是有这些权限的。」
+
+- **权限 = 功能域 × 动作**，唯一真源是 `packages/contracts/src/domains.ts`：24 个 domain × 8 个动作（`read` 查 / `create` 建 / `update` 编 / `approve` 审 / `ship` 出 / `delete` 删 / `view_price` 看价 / `export` 导）。scope 形如 `internal_trade.ship`。
+- **代码里永远不写角色判断**：不出现 `if (role === 'finance')`、`isManager`、`isAdmin` 这类常量。一律 `requireScope(principal, '<action>')` / `allowsScope(...)`。职位（老板/财务/仓管/开发者）只是**权限设置页里的默认预设**，本质是一组被授予的 scope，随时可按人增删。
+- **一个动作只对应一件事**。别为了让功能跑起来借用相邻动作（2026-11-15 的真实教训：把「发货」挂到 `update` 上，等于"能改单的人就能发货"，老板再也拆不开这两个权限）。发货/出库一律用 `ship`。
+- **新增 domain 或 action 必须同时改**：`packages/contracts/src/domains.ts` 与 `docs/decisions.md`。模块不得自造 key。
+- **回答用户时不要说"只有财务能撤"这种话**，要说"谁被授予了 `internal_trade.ship`，谁就能撤"。
+- 前端权限配置页已支持全部 8 个动作（`apps/web/src/lib/access.test.ts`），新权限点不用另做界面。
 
 ## 多智能体路由
 

@@ -1,8 +1,9 @@
 /**
  * R 客户退货分栏（`/reversals` 第一栏；D36 / D40 / D47）。
  *
- * 这一栏只有一个动作：**登记**。R 单没有改 / 删 / 完成 / 取消端点（D47 冲正只追加），
- * 所以页面上不会出现「完成退货」这种按钮——错账继续追加新单，不改历史。
+ * 这一栏有两个动作：**登记** 与 **完成**（`customer_return.complete`，把进行中的单置为「已完成」）。
+ * R 单没有改 / 删 / 取消端点（D47 冲正只追加），所以错账继续追加新单，不改历史；
+ * 「完成」只是把进行中的退货单置为「已完成」并 +version；入库与应收冲减尚未接入（见 #211），不是改单。
  *
  * 三个容易做错的地方，这里都按契约来：
  * - `退货退款` 必须填商品明细（有入库流水），`仅退款` 必须选 `纠收款 / 减成交额`；
@@ -64,6 +65,8 @@ export interface CustomerReturnsPanelProps {
   readonly companyIds: readonly string[];
   readonly companyId: string;
   readonly onCompanyChange: (id: string) => void;
+  /** 测试用：让详情区在首帧就打开，便于静态渲染断言「完成」按钮。 */
+  readonly initialDetailId?: string | null;
 }
 
 export function CustomerReturnsPanel({
@@ -72,6 +75,7 @@ export function CustomerReturnsPanel({
   companyIds,
   companyId,
   onCompanyChange,
+  initialDetailId = null,
 }: CustomerReturnsPanelProps) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<'' | CustomerReturnStatus>('');
@@ -88,7 +92,7 @@ export function CustomerReturnsPanel({
   const [lines, setLines] = useState<ReturnLineDraft[]>([{ ...EMPTY_LINE }]);
   const [clientErrors, setClientErrors] = useState<string[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(initialDetailId);
 
   useEffect(() => {
     setCursors([null]);
@@ -191,6 +195,33 @@ export function CustomerReturnsPanel({
     setClientErrors(errors);
     if (errors.length > 0) return;
     create.mutate();
+  };
+
+  const complete = useMutation({
+    mutationFn: (row: CustomerReturn) => reversalsApi.customerReturnComplete(row.id, row.version),
+    onSuccess: () => {
+      // 完成后状态变「已完成」：列表与详情一起刷新。
+      void queryClient.invalidateQueries({ queryKey: ['reversals', 'customer'] });
+      setActionError(null);
+    },
+    onError: (error) => {
+      setActionError(error instanceof ApiError ? error.message : '完成失败，请稍后重试');
+    },
+  });
+
+  const askComplete = (row: CustomerReturn) => {
+    /** 详情里的状态可能是旧的（别人刚完成/取消），别静默失败。 */
+    if (row.status !== '进行中') {
+      setActionError(`这张单当前是「${row.status}」，不能再完成；请刷新列表查看最新状态。`);
+      return;
+    }
+    setActionError(null);
+    if (
+      globalThis.confirm?.(`确认完成客户退货 ${row.returnNo} 吗？完成后状态变为「已完成」，不可撤销。`) === false
+    ) {
+      return;
+    }
+    complete.mutate(row);
   };
 
   const items = list.data?.items ?? [];
@@ -680,10 +711,29 @@ export function CustomerReturnsPanel({
                 </div>
               )}
 
-              <p className="text-[11px] leading-relaxed text-slate-400">
-                一期 R 单只有「登记」一步：状态停在「进行中」，没有完成 / 取消端点（D47 冲正只追加）。
-                实际退款请在原销售单里追加负数收款行（D40）。
-              </p>
+              {actionError ? <ErrorBar message={actionError} /> : null}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => askComplete(detail.data!)}
+                  disabled={!canCreate || detail.data.status !== '进行中' || complete.isPending}
+                  title={
+                    !canCreate
+                      ? '当前身份没有 customer_return.create 权限'
+                      : detail.data.status !== '进行中'
+                        ? '仅「进行中」状态的单据可完成'
+                        : undefined
+                  }
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+                >
+                  {complete.isPending ? '完成中…' : '完成'}
+                </button>
+                <span className="text-[11px] leading-relaxed text-slate-400">
+                  完成后只改单据状态，入库与应收冲减尚未接入（见 #211）；冲正单据只追加，不可改、不可删（D47）。
+                  实际退款请在原销售单里追加负数收款行（D40）。
+                </span>
+              </div>
             </div>
           )}
         </section>

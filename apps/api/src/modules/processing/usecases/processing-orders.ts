@@ -274,7 +274,7 @@ export async function listProcessingOrders(
   );
 }
 
-/** 加工单详情（普通读，不记审计）；补产出批次占位、损失记录占位与取消判定。 */
+/** 加工单详情（普通读，不记审计）；回读完成后的产出批次、损失快照与取消判定。 */
 export async function getProcessingOrder(
   ctx: ProcessingOrderContext,
 ): Promise<ProcessingOrderDetail> {
@@ -294,9 +294,19 @@ export async function getProcessingOrder(
     );
     return {
       ...order,
-      /** 本批无「验收 / 完成」端点，产出批次与损失记录均保持占位。 */
-      outputBatchId: null,
-      lossRecord: null,
+      outputBatchId: state.outputBatchId,
+      /**
+       * 只有完成时落了 `loss_amount`、且损耗量大于 0 才返回损失记录。
+       * 创建时可预填 lossQty，但那时尚未验收，不能凭它伪造损失金额。
+       */
+      lossRecord:
+        state.lossQty !== null && micros(state.lossQty) > 0n && state.lossAmount !== null
+          ? {
+              lossQty: state.lossQty,
+              amount: state.lossAmount,
+              recordedAt: state.updatedAt,
+            }
+          : null,
       cancelable: canCancel(order.status, downstream),
     };
   });
