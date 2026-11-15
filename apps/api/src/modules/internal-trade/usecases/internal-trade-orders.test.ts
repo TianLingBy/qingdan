@@ -807,21 +807,28 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
       `UPDATE inventory_batch SET inbound_qty = 0 WHERE id = $1::uuid`,
       [BATCH_A_ID],
     );
-    await expectAppError(
-      () =>
-        dispatchInternalTradeOrder(
-          writeCtx({}, {
-            params: { id: created.id },
-            body: { confirm: true },
-            headers: { 'if-match': '"1"' },
-          }).ctx,
-        ),
-      'VERSION_CONFLICT',
-    );
+    const failure = await dispatchInternalTradeOrder(
+      writeCtx({}, {
+        params: { id: created.id },
+        body: { confirm: true },
+        headers: { 'if-match': '"1"' },
+      }).ctx,
+    ).catch((error: unknown) => error);
     await test.database.query(
       `UPDATE inventory_batch SET inbound_qty = 1000 WHERE id = $1::uuid`,
       [BATCH_A_ID],
     );
+
+    // #269：N 单发货必须说「内部交易发货」，并带批次标识。
+    expect(failure).toBeInstanceOf(AppError);
+    expect(failure).toMatchObject({
+      code: 'VERSION_CONFLICT',
+      details: { batchId: BATCH_A_ID, batchNo: 'N-UNIT-A' },
+    });
+    const failureMessage = (failure as AppError).message;
+    expect(failureMessage).toContain('内部交易发货');
+    expect(failureMessage).toContain('N-UNIT-A');
+    expect(failureMessage).not.toContain('盘亏');
   });
 
   it('发货：调用者不属发出公司 → FORBIDDEN', async () => {

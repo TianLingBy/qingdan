@@ -140,17 +140,33 @@ describe('销售单 E 页面', () => {
     expect(html).toContain('不等于已结算');
   });
 
-  it('列表行给出完成 / 取消入口，但无 update 权限时完成按钮禁用', () => {
+  it('销售身份（有 update、无 ship）看到完成按钮被禁用并写明缺 sales.ship（D85）', () => {
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
+
+    expect(html).toContain('完成');
+    expect(html).toContain('取消');
+    // D85：能改单不等于能出库——只有 sales.update 时按钮仍在但禁用，并给出具体权限点。
+    expect(html).toContain('当前身份没有 sales.ship 权限');
+    expect(html).toContain('disabled');
+  });
+
+  it('授予 sales.ship 后不再提示缺权限（按钮可点）', () => {
     const html = renderPage(
       seedClient({
-        me: { ...ME_WITH_PRICE, scope: [{ domain: 'sales', actions: ['read', 'view_price'] }] },
+        me: {
+          ...ME_WITH_PRICE,
+          scope: [
+            {
+              domain: 'sales',
+              actions: ['read', 'create', 'update', 'ship', 'delete', 'export', 'view_price'],
+            },
+          ],
+        },
         orders: [ORDER],
       }),
     );
 
     expect(html).toContain('完成');
-    expect(html).toContain('取消');
-    // 只有 read + view_price：按钮在，但 disabled（权限判定在服务端，前端只是不放开）
-    expect(html).toContain('disabled');
+    expect(html).not.toContain('当前身份没有 sales.ship 权限');
   });
 });

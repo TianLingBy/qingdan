@@ -193,14 +193,15 @@ export const SalesOrderUpdateInputSchema = z
 export type SalesOrderUpdateInput = z.infer<typeof SalesOrderUpdateInputSchema>;
 
 /**
- * sales 模块 E 销售单端点（6 条：5 条第一批 + D72 完成）。
+ * sales 模块 E 销售单端点（6 条：5 条第一批 + D72 出库）。
  *
- * 权限：`sales.read` / `.create` / `.update` / `.delete`（scope = domain.action，D44）。
+ * 权限：`sales.read` / `.create` / `.update` / `.ship` / `.delete`（scope = domain.action，D44）。
  * 审计：写操作必记（D51）；普通读不记（D54 ②）。
  * AI：**开单属业务动作，默认禁止**（与既有写端点口径一致）；
  *     修改允许；**取消属危险动作，默认禁止且必须给原因**（D52① / D54 ⑥）。
- * 完成（D72）：扣库存 + 生成 C 单草稿，同事务；AI 默认禁止（会锁定库存与结算额）。
- * 并发：update / complete / cancel 强制 If-Match 强 ETag。
+ * 出库（D72 / D85）：`complete` 已改名为 `ship`——销售单没有「出货后再确认」这一步，
+ * 扣库存 + 生成 C 单草稿就是出库本身；权限走 `sales.ship`，与 `sales.update` 分离。
+ * AI 默认禁止（会锁定库存与结算额）。并发：update / ship / cancel 强制 If-Match 强 ETag。
  * 取消：规则复用 `documents.ts` 的 `assertCancelable`（D21：有下游不可取消，先取消下游）。
  */
 export const SALES_ORDER_ROUTES: readonly RouteDef[] = [
@@ -257,13 +258,13 @@ export const SALES_ORDER_ROUTES: readonly RouteDef[] = [
   }),
   defineRoute({
     module: 'sales',
-    operationId: 'sales.order.complete',
+    operationId: 'sales.order.ship',
     method: 'POST',
-    path: '/api/v1/sales-orders/{id}/complete',
+    path: '/api/v1/sales-orders/{id}/ship',
     domain: 'sales',
-    action: 'update',
+    action: 'ship',
     summary:
-      '完成销售单（D72：扣减批次可用量 + 生成 C 单草稿，同事务；仅「进行中」可完成；AI 默认禁止）',
+      '销售出库（D72 扣减批次可用量 + 生成 C 单草稿，同事务；仅「进行中」可出库；权限 sales.ship，D85；AI 默认禁止）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
