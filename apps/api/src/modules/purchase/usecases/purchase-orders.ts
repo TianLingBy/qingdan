@@ -27,16 +27,19 @@ import { requestIdFor } from '../../../platform/http/request-id.js';
 import { stockFlowPort } from '../../../platform/services/registry.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import * as repo from '../repo.js';
+import { allocatePurchaseFees } from '../services/fee-allocation.js';
 import { maskPurchaseOrderAmounts } from '../services/masking.js';
 
 /**
- * 采购单 A 用例（D15 / D16 / D21 / D39 / D51 / D52 / D52.1 / D54）。
+ * 采购单 A 用例（D15 / D16 / D21 / D39 / D51 / D52 / D52.1 / D54 / D84）。
  *
  * - 权限：`purchase.read|create|update|delete`（scope = domain.action，D44）；
  * - 公司隔离（D15）：读改删由 repo 带可见公司集合，跨公司等同不存在；创建显式校验归属公司；
  * - 单号（D16）：创建时在业务事务内取号，格式 `A-<公司码4>-<日期8>-<流水4>`；
  * - 金额（D54）：一律 decimal 字符串；明细金额与单头合计都由 SQL 计算 / 聚合；
- * - 审计（D51）：create / update / cancel 与业务同事务写；普通读不写（D54②）；
+ * - 完成（D84）：费用按明细金额占比摊入行锁价，行金额合计为 0 时退化为按数量占比，
+ *   末行承接余数；分摊口径与每行份额写进完成审计；
+ * - 审计（D51）：create / update / cancel / complete 与业务同事务写；普通读不写（D54②）；
  * - AI（D52 / D52.1）：开单、取消属危险动作，AI 凭证默认拒绝；修改允许；
  * - 取消（D21）：复用 `assertCancelable`，已完成 / 已取消不可取消，有下游先取消下游；
  *   错账走冲正单据，不物理删除（D47）。
@@ -426,6 +429,17 @@ export async function cancelPurchaseOrder(
   );
 }
 
+/**
+ * 完成采购单（D84 / D5）：逐行建入库批次并锁成本。
+ *
+ * 锁价不再是明细单价，而是「行金额 + 该行分摊费用」÷ 数量：
+ * - 费用按行金额占比摊，末行承接余数（`SUM(share) = feeTotal`）；
+ * - 行金额合计为 0 时退化为按数量占比；
+ * - 数量为 0 的行跳过（不建批次、不参与分摊）。
+ *
+ * 权限 `purchase.update`；AI 默认禁止（会锁定库存与成本）。整单在一个事务里完成，
+ * 任一环节失败整体回滚；返回的响应仍按 D79 脱敏。
+ */
 export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Promise<PurchaseOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'purchase.order.complete');
@@ -442,19 +456,53 @@ export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Pro
     if (state.status !== '进行中') throw new AppError('VALIDATION_FAILED', '只有进行中的采购单可以完成');
     const order = await repo.getPurchaseOrder(context, id);
     if (!order) throw new AppError('NOT_FOUND', '采购单不存在');
-    for (const line of order.lines) {
-      if (line.unitPrice === null) throw new AppError('VALIDATION_FAILED', '完成采购单需要看价权限');
-      const batch = await stockFlowPort().createBatch(tx, {
-        tenantId: principal.tenantId, companyId: order.companyId, productId: line.productId,
-        qty: line.qty, lockedUnitCost: line.unitPrice, custodianId: order.handlerId,
+    // 完成即锁成本：先把所有行一次性校验完，避免建到一半才发现某行缺看价权限。
+    const allocationLines = order.lines.map((line, index) => {
+      if (line.unitPrice === null || line.amount === null) {
+        throw new AppError('VALIDATION_FAILED', '完成采购单需要看价权限');
+      }
+      return { lineNo: index + 1, qty: line.qty, unitPrice: line.unitPrice };
+    });
+    // D84：费用按明细金额占比摊入行锁价；行金额合计为 0 时退化为按数量占比，末行承接余数。
+    const allocation = allocatePurchaseFees(
+      allocationLines,
+      order.fees.map((fee) => {
+        if (fee.amount === null) throw new AppError('INTERNAL_ERROR', '采购单费用金额读取异常');
+        return fee.amount;
+      }),
+    );
+    const productByLineNo = new Map(order.lines.map((line, index) => [index + 1, line.productId]));
+    for (const line of allocation.lines) {
+      const productId = productByLineNo.get(line.lineNo);
+      if (productId === undefined) {
+        throw new AppError('INTERNAL_ERROR', '采购单费用分摊行与明细行不匹配', { lineNo: line.lineNo });
+      }
+      await stockFlowPort().createBatch(tx, {
+        tenantId: principal.tenantId, companyId: order.companyId, productId,
+        qty: line.qty, lockedUnitCost: line.adjustedUnitCost, custodianId: order.handlerId,
         sourceDocType: 'A', sourceDocId: id, handledBy: principal.employeeId,
       });
-      void batch;
     }
     const completed = await repo.completePurchaseOrder(context, id, expectedVersion);
     if (!completed) throw new AppError('NOT_FOUND', '采购单不存在');
     audit.companyId = completed.companyId;
-    audit.changeSummary = { beforeStatus: state.status, afterStatus: completed.status, version: completed.version };
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: completed.status,
+      version: completed.version,
+      // D84：审计保留分摊口径与每行明细，事后可从「费用总额 + 各行份额 + 摊后单价」反推成本。
+      feeAllocation: {
+        basis: allocation.basis,
+        feeTotal: allocation.feeTotal,
+        lines: allocation.lines.map((line) => ({
+          lineNo: line.lineNo,
+          qty: line.qty,
+          unitPrice: line.unitPrice,
+          feeShare: line.feeShare,
+          adjustedUnitCost: line.adjustedUnitCost,
+        })),
+      },
+    };
     ctx.reply.header('ETag', etagOf(completed.version));
     return maskPurchaseOrderAmounts(completed, allowsScope(principal.scope, 'purchase', 'view_price'));
   });
