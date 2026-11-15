@@ -26,5 +26,9 @@ ops/backups/
 .vscode/
 # 本地子代理配置（个人工具产物，入库应走 PR 评审）
 .codex/
+
+# 本地工具运行时产物（DSH 会话库 / 并行派活演示，均不该入库）
+.sessions/
+.parallel-demo/
 .DS_Store
 Thumbs.db
