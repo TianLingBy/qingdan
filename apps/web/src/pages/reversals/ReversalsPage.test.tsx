@@ -1,8 +1,12 @@
-import type { ScopeMatrix } from '@qingdan/contracts';
+import type { CustomerReturn, ScopeMatrix, SupplierReturn } from '@qingdan/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { createQueryClient } from '../../api/query';
+import { CustomerReturnsPanel } from './CustomerReturnsPanel';
 import { ReversalsView } from './ReversalsPage';
+import { SupplierReturnsPanel } from './SupplierReturnsPanel';
+import { reversalsQueryKeys } from './reversals-api';
 
 /**
  * 冲正页版式（#140 三条验收：原单关联、看价遮罩、三态齐全）。
@@ -134,5 +138,123 @@ describe('三态齐全', () => {
     const html = view(OWNER, []);
     // 开单按钮 disabled 在 HTML 里是布尔属性
     expect(html).toContain('disabled');
+  });
+});
+
+describe('完成入口（R / S）', () => {
+  const PRODUCT_ID = '01900000-0000-7000-8000-0000000000p1';
+  const BATCH_ID = '01900000-0000-7000-8000-0000000001b1';
+
+  function customerReturn(status: CustomerReturn['status']): CustomerReturn {
+    return {
+      id: '01900000-0000-7000-8000-0000000000c1',
+      tenantId: 't1',
+      companyId: COMPANY,
+      returnNo: 'R-0001-20261115-0001',
+      originalSalesOrderId: '01900000-0000-7000-8000-0000000000e1',
+      originalSettlementOrderId: null,
+      returnType: '退货退款',
+      onlyRefundKind: null,
+      refundMode: '原路退款',
+      status,
+      refundAmount: '100',
+      lines: [{ productId: PRODUCT_ID, batchIds: [BATCH_ID], qty: '2', unitPrice: '50', amount: '100' }],
+      remark: null,
+      version: 1,
+      createdAt: '2026-11-15T00:00:00.000Z',
+      updatedAt: '2026-11-15T00:00:00.000Z',
+    };
+  }
+
+  function supplierReturn(status: SupplierReturn['status']): SupplierReturn {
+    return {
+      id: '01900000-0000-7000-8000-0000000000c1',
+      tenantId: 't1',
+      companyId: COMPANY,
+      returnNo: 'S-0001-20261115-0001',
+      originalPurchaseOrderId: '01900000-0000-7000-8000-0000000000a1',
+      status,
+      refundAmount: '1200',
+      lines: [{ productId: PRODUCT_ID, batchIds: [BATCH_ID], qty: '2', unitPrice: '600', amount: '1200' }],
+      remark: null,
+      version: 1,
+      createdAt: '2026-11-15T00:00:00.000Z',
+      updatedAt: '2026-11-15T00:00:00.000Z',
+    };
+  }
+
+  function renderCustomerDetail(status: CustomerReturn['status']): string {
+    const detail = customerReturn(status);
+    const client = createQueryClient();
+    client.setQueryData(reversalsQueryKeys.customerReturn(detail.id), detail);
+    client.setQueryData(
+      reversalsQueryKeys.customerReturns({
+        companyId: COMPANY,
+        status: undefined,
+        keyword: undefined,
+        cursor: null,
+      }),
+      { items: [detail], nextCursor: null },
+    );
+    client.setQueryData(reversalsQueryKeys.batches(COMPANY), { items: [], nextCursor: null });
+    return renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <CustomerReturnsPanel
+          canCreate
+          canViewPrice
+          companyIds={[COMPANY]}
+          companyId={COMPANY}
+          onCompanyChange={() => {}}
+          initialDetailId={detail.id}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  function renderSupplierDetail(status: SupplierReturn['status']): string {
+    const detail = supplierReturn(status);
+    const client = createQueryClient();
+    client.setQueryData(reversalsQueryKeys.supplierReturn(detail.id), detail);
+    client.setQueryData(
+      reversalsQueryKeys.supplierReturns({
+        companyId: COMPANY,
+        status: undefined,
+        keyword: undefined,
+        cursor: null,
+      }),
+      { items: [detail], nextCursor: null },
+    );
+    client.setQueryData(reversalsQueryKeys.batches(COMPANY), { items: [], nextCursor: null });
+    return renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <SupplierReturnsPanel
+          canCreate
+          canViewPrice
+          companyIds={[COMPANY]}
+          companyId={COMPANY}
+          onCompanyChange={() => {}}
+          initialDetailId={detail.id}
+        />
+      </QueryClientProvider>,
+    );
+  }
+
+  it('进行中的客户退货单详情渲染「完成」按钮', () => {
+    const html = renderCustomerDetail('进行中');
+    expect(html).toContain('完成');
+    // 状态满足条件：不出现「仅进行中」的禁用提示
+    expect(html).not.toContain('仅「进行中」状态的单据可完成');
+  });
+
+  it('进行中的供应商退货单详情渲染「完成」按钮', () => {
+    const html = renderSupplierDetail('进行中');
+    expect(html).toContain('完成');
+    expect(html).not.toContain('仅「进行中」状态的单据可完成');
+  });
+
+  it('已完成的单据「完成」按钮禁用并说明原因', () => {
+    const html = renderCustomerDetail('已完成');
+    expect(html).toContain('完成');
+    expect(html).toContain('仅「进行中」状态的单据可完成');
   });
 });
