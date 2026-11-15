@@ -15,9 +15,9 @@
 
 const SCALE = 6;
 const SCALE_FACTOR = 10n ** 6n;
-/** 非负 decimal（数量 / 单价 / B 单费用金额，D39）。 */
+/** 非负 decimal（数量 / 单价 / 各单费用金额，D83）。 */
 const DECIMAL_PATTERN = /^\d{1,12}(\.\d{1,6})?$/;
-/** 可负 decimal（A 单费用金额可为负：供应商返利，D39）。 */
+/** 带符号 decimal（金额合计 / 差额计算用；业务上费用一律非负，D83）。 */
 const SIGNED_DECIMAL_PATTERN = /^-?\d{1,12}(\.\d{1,6})?$/;
 
 /** 是否是非负 decimal 字符串（最多 6 位小数）。 */

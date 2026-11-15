@@ -31,13 +31,13 @@ import { allocatePurchaseFees } from '../services/fee-allocation.js';
 import { maskPurchaseOrderAmounts } from '../services/masking.js';
 
 /**
- * 采购单 A 用例（D15 / D16 / D21 / D39 / D51 / D52 / D52.1 / D54 / D83）。
+ * 采购单 A 用例（D15 / D16 / D21 / D39 / D51 / D52 / D52.1 / D54 / D84）。
  *
  * - 权限：`purchase.read|create|update|delete`（scope = domain.action，D44）；
  * - 公司隔离（D15）：读改删由 repo 带可见公司集合，跨公司等同不存在；创建显式校验归属公司；
  * - 单号（D16）：创建时在业务事务内取号，格式 `A-<公司码4>-<日期8>-<流水4>`；
  * - 金额（D54）：一律 decimal 字符串；明细金额与单头合计都由 SQL 计算 / 聚合；
- * - 完成（D83）：费用按明细金额占比摊入行锁价，行金额合计为 0 时退化为按数量占比，
+ * - 完成（D84）：费用按明细金额占比摊入行锁价，行金额合计为 0 时退化为按数量占比，
  *   末行承接余数；分摊口径与每行份额写进完成审计；
  * - 审计（D51）：create / update / cancel / complete 与业务同事务写；普通读不写（D54②）；
  * - AI（D52 / D52.1）：开单、取消属危险动作，AI 凭证默认拒绝；修改允许；
@@ -430,7 +430,7 @@ export async function cancelPurchaseOrder(
 }
 
 /**
- * 完成采购单（D83 / D5）：逐行建入库批次并锁成本。
+ * 完成采购单（D84 / D5）：逐行建入库批次并锁成本。
  *
  * 锁价不再是明细单价，而是「行金额 + 该行分摊费用」÷ 数量：
  * - 费用按行金额占比摊，末行承接余数（`SUM(share) = feeTotal`）；
@@ -463,7 +463,7 @@ export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Pro
       }
       return { lineNo: index + 1, qty: line.qty, unitPrice: line.unitPrice };
     });
-    // D83：费用按明细金额占比摊入行锁价；行金额合计为 0 时退化为按数量占比，末行承接余数。
+    // D84：费用按明细金额占比摊入行锁价；行金额合计为 0 时退化为按数量占比，末行承接余数。
     const allocation = allocatePurchaseFees(
       allocationLines,
       order.fees.map((fee) => {
@@ -490,7 +490,7 @@ export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Pro
       beforeStatus: state.status,
       afterStatus: completed.status,
       version: completed.version,
-      // D83：审计保留分摊口径与每行明细，事后可从「费用总额 + 各行份额 + 摊后单价」反推成本。
+      // D84：审计保留分摊口径与每行明细，事后可从「费用总额 + 各行份额 + 摊后单价」反推成本。
       feeAllocation: {
         basis: allocation.basis,
         feeTotal: allocation.feeTotal,

@@ -90,7 +90,7 @@ const PURCHASE: FlowDocStep = {
   routeId: 'purchase-orders',
   domains: ['purchase'],
   tone: 'sky',
-  summary: '向供应商采购原料：商品明细 + 费用行，费用可为负（D39）。单据本身不引用批次。',
+  summary: '向供应商采购原料：商品明细 + 费用行，费用不得为负（D83），完成时按明细金额占比摊入批次成本。单据本身不引用批次。',
   stock: '不产生批次。原料要变成可引用的批次，得先走「原料入库」（D5）。',
   done: [
     'purchase.order.list.read',

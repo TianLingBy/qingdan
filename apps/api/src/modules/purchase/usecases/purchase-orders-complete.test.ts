@@ -9,7 +9,7 @@ import { createTestDatabase, type TestDatabase } from '../../../testing/pglite.j
 import { completePurchaseOrder, createPurchaseOrder } from './purchase-orders.js';
 
 /**
- * 采购单 A 完成（#99 A 链路）：逐行建批次 + 入库流水；D83 起费用按明细金额占比摊入锁价。
+ * 采购单 A 完成（#99 A 链路）：逐行建批次 + 入库流水；D84 起费用按明细金额占比摊入锁价。
  *
  * 断言覆盖库存、流水、批次成本、费用分摊审计；重复完成/旧版本/AI 凭证必须被拒且无副作用。
  */
@@ -277,7 +277,7 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
     expect(await batchCount()).toBe(before);
   });
 
-  it('D83：单行 + 正运费，批次锁价 = (行金额 + 运费) / 数量', async () => {
+  it('D84：单行 + 正运费，批次锁价 = (行金额 + 运费) / 数量', async () => {
     const order = await createOne(
       [{ productId: PRODUCT_ID, qty: '2', unitPrice: '12.5', amount: '25' }],
       [{ feeName: '运费', qty: '1', unitPrice: '5', amount: '5' }],
@@ -296,7 +296,7 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
     ]);
   });
 
-  it('D83：多行按金额占比摊，末行承接余数，SUM(share) 精确等于 feeTotal', async () => {
+  it('D84：多行按金额占比摊，末行承接余数，SUM(share) 精确等于 feeTotal', async () => {
     const order = await createOne(
       [
         { productId: PRODUCT_ID, qty: '1', unitPrice: '10', amount: '10' },
@@ -318,7 +318,7 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
     ]);
   });
 
-  it('D83：行金额合计为 0 时退化为按数量占比，末行承接余数', async () => {
+  it('D84：行金额合计为 0 时退化为按数量占比，末行承接余数', async () => {
     const order = await createOne(
       [
         { productId: PRODUCT_ID, qty: '2', unitPrice: '0', amount: '0' },
@@ -337,7 +337,7 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
     expect(allocation.lines.map((line) => line.feeShare)).toEqual(['1.6', '2.4']);
   });
 
-  it('D83 回归：无费用行时批次锁价仍等于明细单价，审计 feeTotal=0', async () => {
+  it('D84 回归：无费用行时批次锁价仍等于明细单价，审计 feeTotal=0', async () => {
     const order = await createOne([
       { productId: PRODUCT_ID, qty: '2', unitPrice: '12.5', amount: '25' },
     ]);
@@ -352,7 +352,7 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
     expect(allocation.lines.map((line) => line.adjustedUnitCost)).toEqual(['12.5']);
   });
 
-  it('D83：qty=0 的行不建批次、不参与分摊', async () => {
+  it('D84：qty=0 的行不建批次、不参与分摊', async () => {
     const order = await createOne(
       [
         { productId: PRODUCT_ID, qty: '0', unitPrice: '10', amount: '0' },

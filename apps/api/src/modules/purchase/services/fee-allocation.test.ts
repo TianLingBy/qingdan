@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { allocatePurchaseFees } from './fee-allocation.js';
 
 /**
- * A 单费用分摊（D83 / #272）：按明细金额占比摊、末行承接余数、按数量退化、零数量跳过。
+ * A 单费用分摊（D84 / #272）：按明细金额占比摊、末行承接余数、按数量退化、零数量跳过。
  *
  * 纯函数测试，不碰数据库；集成行为（批次落库 + 审计）见
  * `apps/api/src/modules/purchase/usecases/purchase-orders-complete.test.ts`。

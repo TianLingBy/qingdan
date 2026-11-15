@@ -39,7 +39,6 @@ import {
   cancelDisabledReason,
   formatMoney,
   formatQty,
-  isNegativeDecimal,
   isPositiveDecimal,
   multiplyDecimal,
   purchaseApi,
@@ -54,7 +53,7 @@ const STATUS_STYLE: Readonly<Record<PurchaseOrderStatus, string>> = {
 };
 
 const PAGE_DESCRIPTION =
-  '原材料采购：选供应商、填物料与单价，费用行可含运费 / 杂费（负数须填备注，D39）。单号由服务端生成（D16），本批不含入库锁价（D5，随库存一起上）。';
+  '原材料采购：选供应商、填物料与单价，费用行可含运费 / 杂费（不得为负，最低 0）。单号由服务端生成（D16）；完成时费用按明细金额占比摊入批次成本（D83）。';
 
 interface LineDraft {
   productId: string;
@@ -66,7 +65,7 @@ interface FeeDraft {
   feeName: string;
   qty: string;
   unitPrice: string;
-  /** 留空则按 数量 × 单价 自动算；允许手填负数（供应商返利，D39）。 */
+  /** 留空则按 数量 × 单价 自动算；不得为负，最低 0（费用一律增加成本）。 */
   amount: string;
   remark: string;
 }
@@ -154,10 +153,8 @@ export function validateDraft(
     if (!isPositiveDecimal(fee.qty)) errors.push(`${row}：数量必须是非负数字`);
     if (!isPositiveDecimal(fee.unitPrice)) errors.push(`${row}：单价必须是非负数字`);
     const amount = fee.amount.trim();
-    if (amount.length > 0 && !/^-?\d{1,12}(\.\d{1,6})?$/.test(amount)) {
-      errors.push(`${row}：金额必须是数字（可为负，最多 6 位小数）`);
-    } else if (isNegativeDecimal(amount) && fee.remark.trim().length === 0) {
-      errors.push(`${row}：负数费用必须填写备注（D39，返利 / 对方承担运费须可追溯）`);
+    if (amount.length > 0 && !/^\d{1,12}(\.\d{1,6})?$/.test(amount)) {
+      errors.push(`${row}：金额必须是非负数字（最多 6 位小数）`);
     }
     if (fee.remark.trim().length > 255) errors.push(`${row}：备注最多 255 字`);
   });
@@ -451,7 +448,7 @@ function OrderForm({
                       <input
                         value={fee.remark}
                         onChange={(event) => onFeeChange(index, { remark: event.target.value })}
-                        placeholder={isNegativeDecimal(feeAmountOf(fee)) ? '负数必填（D39）' : '可选'}
+                        placeholder="可选"
                         className="w-full rounded border border-slate-300 px-2 py-1"
                       />
                     </td>

@@ -143,7 +143,7 @@ describe('decimal 定点运算（D54 numeric(18,6)）', () => {
     expect(multiplyDecimal('1.5', '2.25')).toBe('3.375');
   });
 
-  it('合计支持负数费用行（D39）', () => {
+  it('合计支持带符号金额（费用行本身非负，D83）', () => {
     expect(sumDecimal(['4300', '120', '-200'])).toBe('4220');
     expect(sumDecimal(['0.1', '0.2'])).toBe('0.3');
     expect(sumDecimal([])).toBe('0');

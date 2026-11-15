@@ -205,13 +205,17 @@ describe('采购单开单前校验', () => {
     );
   });
 
-  it('D39：负数费用行必须填备注，正数不强制', () => {
-    const negative = { feeName: '返利', qty: '1', unitPrice: '100', amount: '-100', remark: '' };
+  it('费用金额不得为负，最低 0（D83：D39 的负数口径已作废）', () => {
+    const negative = { feeName: '运费', qty: '1', unitPrice: '100', amount: '-100', remark: '' };
     expect(validateDraft(SUPPLIER_ID, [validLine], [negative])).toContain(
-      '第 1 行费用：负数费用必须填写备注（D39，返利 / 对方承担运费须可追溯）',
+      '第 1 行费用：金额必须是非负数字（最多 6 位小数）',
     );
+    // 填了备注也照样拒——负数费用没有合法场景。
     expect(
-      validateDraft(SUPPLIER_ID, [validLine], [{ ...negative, remark: '季度返利 3%' }]),
+      validateDraft(SUPPLIER_ID, [validLine], [{ ...negative, remark: '供应商返利' }]),
+    ).toContain('第 1 行费用：金额必须是非负数字（最多 6 位小数）');
+    expect(
+      validateDraft(SUPPLIER_ID, [validLine], [{ ...negative, amount: '0' }]),
     ).toHaveLength(0);
     expect(
       validateDraft(SUPPLIER_ID, [validLine], [{ ...negative, amount: '100' }]),
