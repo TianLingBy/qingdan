@@ -35,7 +35,7 @@ versions: node=v24.22.0 zod=4.6.7 fastify=5.12.8
 $d="$env:TEMP\qingdan-spike"; New-Item -ItemType Directory -Force $d | Out-Null; cd $d
 & "$env:LOCALAPPDATA\nvm\v24.22.0\npm.cmd" init -y
 npm install zod fastify drizzle-orm @electric-sql/pglite uuid
-Copy-Item "D:\Desktop\dsh\Qingdan\tools\spike-0001-pipeline.mjs" "$d\spike.mjs"
+Copy-Item "D:\快捷方式\工作台\dsh\Qingdan\tools\spike-0001-pipeline.mjs" "$d\spike.mjs"
 & "$env:LOCALAPPDATA\nvm\v24.22.0\node.exe" "$d\spike.mjs"
 ```
 
