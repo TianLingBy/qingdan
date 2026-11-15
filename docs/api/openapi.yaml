@@ -55,6 +55,8 @@ tags:
     description: 在线支付（客户扫码 / 回调）
   - name: billing
     description: 订阅与计费（平台收取商家费用）
+  - name: workbench
+    description: 工作台
 paths:
   /api/v1/health:
     get:
@@ -326,6 +328,7 @@ paths:
                             - api_integration
                             - payment
                             - billing
+                            - workbench
                         actions:
                           type: array
                           items:
@@ -774,6 +777,7 @@ paths:
                           - api_integration
                           - payment
                           - billing
+                          - workbench
                       actions:
                         minItems: 1
                         type: array
@@ -890,6 +894,7 @@ paths:
                           - api_integration
                           - payment
                           - billing
+                          - workbench
                       actions:
                         minItems: 1
                         type: array
@@ -1237,6 +1242,7 @@ paths:
                           - api_integration
                           - payment
                           - billing
+                          - workbench
                       actions:
                         type: array
                         items:
@@ -1434,6 +1440,7 @@ paths:
                           - api_integration
                           - payment
                           - billing
+                          - workbench
                       action:
                         type: string
                         enum:
@@ -6777,6 +6784,66 @@ paths:
                       pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
                     - type: "null"
               additionalProperties: false
+  /api/v1/todos:
+    get:
+      operationId: workbench.todos.read
+      summary: 工作台待办：按权限点 × 动作与本人负责聚合真实单据笔数（普通读不记审计）
+      tags:
+        - workbench
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind:
+                          type: string
+                        title:
+                          type: string
+                        count:
+                          type: integer
+                          minimum: 0
+                          maximum: 9007199254740991
+                        hint:
+                          type: string
+                        routeId:
+                          type: string
+                      required:
+                        - kind
+                        - title
+                        - count
+                        - hint
+                        - routeId
+                      additionalProperties: false
+                required:
+                  - items
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: workbench.read
+      x-module: platform
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_todos_read
   /api/v1/reports/profit:
     get:
       operationId: profit_report.read
@@ -7036,6 +7103,7 @@ components:
                   - api_integration
                   - payment
                   - billing
+                  - workbench
               actions:
                 type: array
                 items:
@@ -7149,6 +7217,7 @@ components:
                   - api_integration
                   - payment
                   - billing
+                  - workbench
               actions:
                 type: array
                 items:
@@ -7685,6 +7754,7 @@ components:
                   - api_integration
                   - payment
                   - billing
+                  - workbench
               actions:
                 minItems: 1
                 type: array

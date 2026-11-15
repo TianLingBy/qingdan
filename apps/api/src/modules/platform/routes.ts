@@ -40,6 +40,7 @@ import {
 } from './usecases/positions.js';
 import { updatePermissionOverrides } from './usecases/permission-overrides.js';
 import { getCompanySubscription, updateCompanySubscription } from './usecases/subscription.js';
+import { getWorkbenchTodos } from '../workbench/usecases/todos.js';
 
 /**
  * platform 端点挂载。
@@ -185,6 +186,11 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
       updatePosition({ database: instance.database, request, reply }),
     'platform.position.delete': ({ app: instance, request, reply }) =>
       disablePosition({ database: instance.database, request, reply }),
+    // 工作台待办（D89 / #289）：归属 platform（跨模块只读聚合），用例在 modules/workbench。
+    'workbench.todos.read': ({ app: instance, request, route }) => {
+      requireDatabase(instance, route);
+      return getWorkbenchTodos({ database: instance.database, request });
+    },
     'billing.subscription.read': async ({ app: instance, request, route }) => {
       const database = requireDatabase(instance, route);
       const principal = request.principal;
