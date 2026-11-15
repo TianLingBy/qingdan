@@ -68,13 +68,13 @@ export function registerProcessingRoutes(app: FastifyInstance): void {
     },
     'processing.order.print': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);
-      const { order, companyName } = await getProcessingOrderForPrint({
+      const { order, companyName, canViewPrice } = await getProcessingOrderForPrint({
         database: instance.database,
         request,
       });
       return {
         contentType: 'text/html',
-        content: renderProcessingOrderFactoryCopy(order, companyName),
+        content: renderProcessingOrderFactoryCopy(order, companyName, canViewPrice),
         filename: `加工单-${order.orderNo}.html`,
       };
     },
