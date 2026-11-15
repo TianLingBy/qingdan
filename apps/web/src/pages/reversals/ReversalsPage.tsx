@@ -140,6 +140,7 @@ export function ReversalsView({
           {activeTab === 'customer' ? (
             <CustomerReturnsPanel
               canCreate={allows(scope, 'customer_return', 'create')}
+              canApprove={allows(scope, 'customer_return', 'approve')}
               canViewPrice={allows(scope, 'customer_return', 'view_price')}
               companyIds={companyIds}
               companyId={effectiveCompanyId}
@@ -148,6 +149,7 @@ export function ReversalsView({
           ) : activeTab === 'supplier' ? (
             <SupplierReturnsPanel
               canCreate={allows(scope, 'supplier_return', 'create')}
+              canApprove={allows(scope, 'supplier_return', 'approve')}
               canViewPrice={allows(scope, 'supplier_return', 'view_price')}
               companyIds={companyIds}
               companyId={effectiveCompanyId}

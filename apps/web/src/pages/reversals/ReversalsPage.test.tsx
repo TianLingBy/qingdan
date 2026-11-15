@@ -183,7 +183,7 @@ describe('完成入口（R / S）', () => {
     };
   }
 
-  function renderCustomerDetail(status: CustomerReturn['status']): string {
+  function renderCustomerDetail(status: CustomerReturn['status'], canApprove = true): string {
     const detail = customerReturn(status);
     const client = createQueryClient();
     client.setQueryData(reversalsQueryKeys.customerReturn(detail.id), detail);
@@ -201,6 +201,7 @@ describe('完成入口（R / S）', () => {
       <QueryClientProvider client={client}>
         <CustomerReturnsPanel
           canCreate
+          canApprove={canApprove}
           canViewPrice
           companyIds={[COMPANY]}
           companyId={COMPANY}
@@ -211,7 +212,7 @@ describe('完成入口（R / S）', () => {
     );
   }
 
-  function renderSupplierDetail(status: SupplierReturn['status']): string {
+  function renderSupplierDetail(status: SupplierReturn['status'], canApprove = true): string {
     const detail = supplierReturn(status);
     const client = createQueryClient();
     client.setQueryData(reversalsQueryKeys.supplierReturn(detail.id), detail);
@@ -229,6 +230,7 @@ describe('完成入口（R / S）', () => {
       <QueryClientProvider client={client}>
         <SupplierReturnsPanel
           canCreate
+          canApprove={canApprove}
           canViewPrice
           companyIds={[COMPANY]}
           companyId={COMPANY}
@@ -256,5 +258,17 @@ describe('完成入口（R / S）', () => {
     const html = renderCustomerDetail('已完成');
     expect(html).toContain('完成');
     expect(html).toContain('仅「进行中」状态的单据可完成');
+  });
+
+  it('完成是审批动作：没有 customer_return.approve 时按钮禁用并写缺哪个权限点', () => {
+    const html = renderCustomerDetail('进行中', false);
+    expect(html).toContain('当前身份没有 customer_return.approve 权限');
+    expect(html).not.toContain('customer_return.create 权限');
+  });
+
+  it('完成是审批动作：没有 supplier_return.approve 时按钮禁用并写缺哪个权限点', () => {
+    const html = renderSupplierDetail('进行中', false);
+    expect(html).toContain('当前身份没有 supplier_return.approve 权限');
+    expect(html).not.toContain('supplier_return.create 权限');
   });
 });
