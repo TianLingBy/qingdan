@@ -5995,7 +5995,7 @@ paths:
   /api/v1/internal-trade-orders/{id}/receive:
     post:
       operationId: internal_trade.order.receive
-      summary: 确认 N 单到货并将占用批次转入接收公司（D22 / D31 / D68③）
+      summary: 确认 N 单到货并将占用批次转入接收公司（审批动作；D22 / D31 / D68③ / D86）
       tags:
         - internal_trade
       security:
@@ -6020,7 +6020,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiErrorBody"
-      x-scope: internal_trade.update
+      x-scope: internal_trade.approve
       x-module: internal-trade
       x-audit:
         kind: write
