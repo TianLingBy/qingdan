@@ -151,7 +151,7 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create' | 'update' | 'ship' | 'delete',
+  action: 'read' | 'create' | 'update' | 'ship' | 'delete' | 'approve',
 ): void {
   if (!allowsScope(principal.scope, 'internal_trade', action)) {
     throw new AppError('FORBIDDEN', `缺少 internal_trade.${action} 权限`);
@@ -669,7 +669,7 @@ export async function receiveInternalTradeOrder(
 ): Promise<InternalTradeOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'internal_trade.order.receive');
-  requireScope(principal, 'update');
+  requireScope(principal, 'approve');
   assertHumanCredential(principal, '确认内部交易到货');
   const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
   parseReceiveInput(ctx.request.body);

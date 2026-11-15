@@ -68,7 +68,7 @@ interface TestMe {
   readonly companyIds: readonly string[];
   readonly scope: readonly {
     readonly domain: 'internal_trade';
-    readonly actions: readonly ('read' | 'create' | 'update' | 'delete' | 'ship')[];
+    readonly actions: readonly ('read' | 'create' | 'update' | 'delete' | 'ship' | 'approve')[];
   }[];
 }
 
@@ -77,12 +77,12 @@ const OWNER: TestMe = {
   tenantId: 't1',
   displayName: '张明',
   companyIds: [FROM, TO],
-  scope: [{ domain: 'internal_trade', actions: ['read', 'create', 'update', 'delete', 'ship'] }],
+  scope: [{ domain: 'internal_trade', actions: ['read', 'create', 'update', 'delete', 'ship', 'approve'] }],
 };
 
 /** 造不同权限的身份，避免把 `readonly ['read']` 这种字面量元组塞进上面的窄类型。 */
 function meWith(
-  actions: readonly ('read' | 'create' | 'update' | 'delete' | 'ship')[],
+  actions: readonly ('read' | 'create' | 'update' | 'delete' | 'ship' | 'approve')[],
 ): TestMe {
   return { ...OWNER, scope: [{ domain: 'internal_trade', actions }] };
 }
@@ -129,6 +129,7 @@ const DETAIL: InternalTradeOrderDetail = {
 };
 
 interface RenderDetailOptions {
+  readonly canReceive?: boolean;
   readonly canShip?: boolean;
   readonly revoking?: boolean;
   readonly revokeReason?: string;
@@ -147,7 +148,7 @@ function renderDetail(order: InternalTradeOrderDetail, options: RenderDetailOpti
         batches={[]}
         canUpdate
         canCancel
-        canReceive
+        canReceive={options.canReceive ?? true}
         canShip={options.canShip ?? true}
         busy={false}
         receiveBusy={false}
@@ -219,6 +220,17 @@ describe('内部交易单 N 页面', () => {
     expect(cancelled).toContain('不能发货或撤销发货');
   });
 
+  it('没有 internal_trade.approve 时「到货确认」禁用并写明缺哪个权限点（D86）', () => {
+    // 到货确认会把批次转司并生成结算草稿，按 D86 走 approve，不再借用 update：
+    // 能改单不等于能把货收进自己公司。
+    const html = renderDetail(DETAIL, { canReceive: false });
+    expect(html).toContain('>到货确认<');
+    expect(html).toContain('当前身份没有 internal_trade.approve 权限');
+    expect(html).toContain('disabled');
+
+    const allowed = renderDetail(DETAIL);
+    expect(allowed).not.toContain('当前身份没有 internal_trade.approve 权限');
+  });
   it('没有 internal_trade.ship 时不渲染「发货」/「撤销发货」（权限断言）', () => {
     const inProgress = renderDetail({ ...DETAIL, status: '进行中' }, { canShip: false });
     expect(inProgress).not.toContain('>发货<');
