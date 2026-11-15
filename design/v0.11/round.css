@@ -1,0 +1,30 @@
+/* v0.11 · 圆润化：标志、按钮、输入、卡片统一加大圆角 */
+.sb-mark{border-radius:50%!important;box-shadow:0 8px 20px -10px rgba(var(--accent-rgb),.9),inset 0 1px 0 rgba(255,255,255,.25)}
+.sb-avatar{border-radius:50%!important}
+.brand i,.entry-i{border-radius:50%!important}
+
+.btn,.btn-primary,.st-btn,.code-btn{border-radius:999px!important}
+.btn,.btn-primary{padding:0 18px}
+.btn-primary{box-shadow:0 12px 26px -14px rgba(var(--accent-rgb),.95)}
+
+.seg{border-radius:999px!important;padding:2px}
+.seg button{border:0;border-radius:999px!important;padding:5px 14px}
+.seg button.on{background:rgba(var(--accent-rgb),.16)}
+html[data-mode="light"] .seg button.on{background:rgba(var(--accent-rgb),.14)}
+
+.chip{border-radius:999px!important}
+.search,.datebox,.datebox input,#entry input{border-radius:999px!important}
+.datebox{padding:6px 12px}
+.datebox input{border:0;background:transparent;padding:0 8px}
+
+.card,.kpi,.sec,.entry{border-radius:18px!important}
+.card.pad{border-radius:18px!important}
+.hero{border-radius:22px!important}
+.table-wrap,.doc table{border-radius:14px}
+.qd-dock-btn{border-radius:50%!important}
+.qd-dock-panel{border-radius:16px!important}
+.qd-opts button{border-radius:999px!important}
+.pager button{border-radius:999px!important}
+.pager input{border-radius:999px!important}
+.st{border-radius:999px!important}
+.kpi b{letter-spacing:-.03em}
