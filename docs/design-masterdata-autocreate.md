@@ -295,7 +295,7 @@ ALTER TABLE purchase_order ADD COLUMN supplier_contact_id  uuid REFERENCES suppl
 | `GET /api/v1/processors/{id}/summary` | 同上，取加工单汇总 |
 | `GET /api/v1/customers/{id}/contacts`、`POST`、`PATCH /contacts/{cid}`、`DELETE /contacts/{cid}` | 对接人增删改（软停用） |
 
-**统计口径（默认值，待负责人确认）**
+**统计口径（负责人 2026-11-16 已确认：①不含已取消单 ②金额需 `view_price` ③同一外部客户在两个子公司各存一份、不合并统计）**
 - `totalAmount` = 该档案下 `status <> '已取消'` 的单据金额合计；`orderCount` 同口径；`lastOrderAt` = `max(created_at)`。
 - 只统计**本公司**（`company_id` 与档案一致）的单据——跨子公司不合并，因为那是两套账。
 - 聚合走 `SUM/COUNT` + 现有索引 `sales_order_tenant_company_customer_idx`（`0013_sales_orders.sql:45`），不建物化汇总表；等单表过百万行再谈（§七 性能标尺）。
@@ -303,7 +303,7 @@ ALTER TABLE purchase_order ADD COLUMN supplier_contact_id  uuid REFERENCES suppl
 ### 11.4 开单时的对接人
 开单页选中客户后，对接人下拉列出该客户 `status='启用'` 的对接人，默认选 `is_primary`；**允许手填新对接人**，保存时静默 upsert（与主数据静默建档同口径，不提示、进相似度队列，`entity='customer_contact'`）。单据存 `customer_contact_id`，历史订单因此能按对接人筛。
 
-### 11.5 权限（沿用，不新增动作）
+### 11.5 权限（沿用，不新增动作 · 已确认金额需 `view_price`）
 - 读档案与对接人：`customer.read` / `supplier.read` / `processor.read`
 - 增删改对接人：对应域 `create` / `update` / `delete`（对接人是档案的从属数据，不单独立域）
 - 看金额：`view_price`（**总消费流水算价格信息**，无 `view_price` 时 `totalAmount` 不返回、列表列整列隐藏）
