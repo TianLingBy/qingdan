@@ -127,7 +127,7 @@ function assertCompanyVisible(principal: Principal, companyId: string): void {
   }
 }
 
-/** 契约里开单与取消均为 ai.policy=forbid；修改允许。 */
+/** 契约里开单 / 取消 / 打印 / 导出均为 ai.policy=forbid；修改允许。 */
 function assertHumanCredential(principal: Principal, action: string): void {
   if (principal.actorType === 'ai') {
     throw new AppError(
@@ -317,6 +317,7 @@ function exportDateStamp(now: Date): string {
  * - 权限：`sales.export`；数据范围仍走列表同款租户 + 可见公司过滤；
  * - 不分页：一次取全部符合条件行，超过 5000 行报 400（不静默截断）；
  * - 金额按 `sales.view_price` 脱敏：无权限时金额列留空，并加一行 CSV 注释说明；
+ * - AI 凭证禁止直接导出（契约 `sales.order.export` 为 `ai.policy=forbid`，D52①）；
  * - 成功必记 `action='export'` 审计；失败由 route-mount 统一补 fail 审计。
  */
 export async function exportSalesOrders(
@@ -325,6 +326,7 @@ export async function exportSalesOrders(
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.export');
   requireScope(principal, 'export');
+  assertHumanCredential(principal, '导出销售单列表');
   const query = parseListQuery(ctx.request);
   const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
 
@@ -449,6 +451,7 @@ export interface SalesOrderPrintSource {
  *
  * 与详情端点共用装配与公司可见性逻辑；金额仍按 `sales.view_price` 脱敏，
  * 由渲染层把 null 显示为「—」。公司名暂无跨模块端口，只读 `company.name`。
+ * AI 凭证禁止直接打印（契约 `sales.order.print` 为 `ai.policy=forbid`，D52①）。
  */
 /**
  * 打印展示文案（商品名 / 批次号）：走 D70 端口，未注册端口时退回空表，
@@ -484,6 +487,7 @@ export async function getSalesOrderForPrint(
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.print');
   requireScope(principal, 'read');
+  assertHumanCredential(principal, '打印销售单');
   const id = parseOrderId(ctx.request);
 
   const source = await withTenant(database, principal.tenantId, async (tx) => {

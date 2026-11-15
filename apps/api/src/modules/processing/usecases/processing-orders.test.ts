@@ -646,7 +646,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     expect(reads.rows[0]?.count).toBe('0');
   });
 
-  it('修改：If-Match 必填、版本冲突、仅进行中、替换批次 / 费用；AI 修改放行', async () => {
+  it('修改：If-Match 必填、版本冲突、仅进行中、替换批次 / 费用；AI 修改禁止', async () => {
     const created = await createOne({ lossQty: '4' });
 
     await expectAppError(
@@ -721,7 +721,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       { feeName: '运杂费', qty: '1', unitPrice: '8', amount: '8', remark: null },
     ]);
 
-    // 契约 ai.policy=allow：AI 普通编辑可以落库。
+    // 契约 ai.policy=forbid：AI 直接改加工单一律拒绝，且不落库。
     const aiUpdate = writeCtx({}, {
       principal: aiPrincipal(),
       auditReason: 'AI 修改加工单备注',
@@ -729,9 +729,12 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       headers: { 'if-match': '"2"' },
       body: { auxMaterials: 'AI 修改' },
     });
-    const aiUpdated = await updateProcessingOrder(aiUpdate.ctx);
-    expect(aiUpdated.auxMaterials).toBe('AI 修改');
-    expect(aiUpdated.version).toBe(3);
+    await expectAppError(updateProcessingOrder(aiUpdate.ctx), 'AI_ACTION_FORBIDDEN');
+    const afterAi = await getProcessingOrder(
+      readCtx({}, { params: { id: created.id } }),
+    );
+    expect(afterAi.auxMaterials).toBeNull();
+    expect(afterAi.version).toBe(2);
 
     const completed = await createOne();
     await test.database.query(
@@ -757,7 +760,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           AND result = 'success'`,
       [created.id],
     );
-    expect(audit.rows[0]?.count).toBe('2');
+    expect(audit.rows[0]?.count).toBe('1');
   });
 
   it('取消：D21 有下游 / 已完成拒绝，AI 禁止；成功置已取消并记审计', async () => {

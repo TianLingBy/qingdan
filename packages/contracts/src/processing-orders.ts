@@ -63,11 +63,30 @@ export type ProcessingMaterialInput = z.infer<typeof ProcessingMaterialInputSche
  * 材料投入明细（§3.2 / F2b）：**至少 1 条**，否则拒绝。
  * 只校验形状；「只能引用本公司批次」的归属校验由实现侧按 D22 做；
  * 「各行 `qty` 合计 = 请求体里的 `inputQty`」由开单 / 改单入参在请求体层校验。
+ *
+ * 同一次投入内同一批次只能出现一次：完成加工单会逐行 `applyStockAdjustment`，
+ * 同一批次出现两行就会被扣两次。这里直接拒绝并点明行号，**不自动去重合并**——
+ * 数量怎么合是业务判断，静默改数据比报错更危险。
  */
 export const ProcessingMaterialBatchIdsSchema = z
   .array(ProcessingMaterialInputSchema)
   .refine((rows) => rows.length > 0, {
     message: 'B 单必须至少引用 1 个材料投入批次（F2b；包工包料请走 A 单）',
+  })
+  .superRefine((rows, ctx) => {
+    const firstRowOfBatch = new Map<string, number>();
+    rows.forEach((row, index) => {
+      const firstIndex = firstRowOfBatch.get(row.batchId);
+      if (firstIndex === undefined) {
+        firstRowOfBatch.set(row.batchId, index);
+        return;
+      }
+      ctx.addIssue({
+        code: 'custom',
+        path: [index, 'batchId'],
+        message: `材料第 ${index + 1} 行重复引用批次（与第 ${firstIndex + 1} 行相同），请合并数量或拆单`,
+      });
+    });
   });
 export type ProcessingMaterialBatchIds = z.infer<typeof ProcessingMaterialBatchIdsSchema>;
 
@@ -316,8 +335,8 @@ export type ProcessingOrderUpdateInput = z.infer<typeof ProcessingOrderUpdateInp
  * 权限：`processing.read` / `.create` / `.update` / `.approve` / `.delete`
  *      （scope = domain.action，D44）。
  * 审计：写操作必记（D51）；普通读不记（D54 ②）。
- * AI：**开单 / 完成属业务动作，默认禁止**（与既有写端点口径一致）；
- *     修改允许；**取消属危险动作，默认禁止且必须给原因**（D52① / D54 ⑥）。
+ * AI：**写路径一律默认禁止**（开单 / 修改 / 完成 / 取消，与既有写端点口径一致）；
+ *     修改与取消属危险动作，默认禁止且必须给原因（D52① / D54 ⑥）。
  * 并发：update / cancel / complete 强制 If-Match 强 ETag。
  * 取消：规则复用 `documents.ts` 的 `assertCancelable`（D21：有下游不可取消，先取消下游）。
  */
@@ -368,7 +387,7 @@ export const PROCESSING_ORDER_ROUTES: readonly RouteDef[] = [
     action: 'update',
     summary: '修改加工单（仅「进行中」可改；强 ETag If-Match；损耗量验收时一次填入，F3）',
     audit: { kind: 'write' },
-    ai: { policy: 'allow' },
+    ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
     request: { body: ProcessingOrderUpdateInputSchema },
     response: { status: 200, schema: ProcessingOrderSchema },
