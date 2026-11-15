@@ -1,11 +1,21 @@
-import type { ProcessingOrder, Product, Processor } from '@qingdan/contracts';
+import type {
+  ProcessingOrder,
+  ProcessingOrderDetail,
+  Product,
+  Processor,
+} from '@qingdan/contracts';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
 import { MASKED_AMOUNT } from '../../lib/decimal';
 import { authKeys } from '../auth/auth-api';
-import { ProcessingOrdersPage, validateDraft } from './ProcessingOrdersPage';
+import {
+  CompletionPanel,
+  ProcessingOrdersPage,
+  validateCompletionDraft,
+  validateDraft,
+} from './ProcessingOrdersPage';
 import { processingQueryKeys } from './processing-api';
 
 const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
@@ -70,7 +80,10 @@ const ME_WITH_PRICE = {
   displayName: '张明',
   companyIds: [COMPANY_ID],
   scope: [
-    { domain: 'processing', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
+    {
+      domain: 'processing',
+      actions: ['read', 'create', 'update', 'delete', 'approve', 'view_price'],
+    },
   ],
 };
 
@@ -151,12 +164,77 @@ describe('加工单 B 页面', () => {
     expect(html).toContain('暂无加工单');
   });
 
-  it('页面直说「完成 / 验收」端点还没落地，不画假按钮', () => {
+  it('进行中的单据显示「完成 / 验收」入口，不再写早已过期的 501 说明', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
-    expect(html).toContain('processing.order.complete');
-    expect(html).toContain('尚未登记');
-    expect(html).not.toContain('完成加工单');
+    expect(html).toContain('完成 / 验收');
+    expect(html).toContain('processing.approve');
+    expect(html).not.toContain('调用会回 501');
+    expect(html).not.toContain('尚未登记');
+  });
+});
+
+describe('加工单完成 / 验收', () => {
+  const DETAIL: ProcessingOrderDetail = {
+    ...ORDER,
+    outputBatchId: null,
+    lossRecord: null,
+    cancelable: { allowed: true, reason: null },
+  };
+
+  it('录入损耗量后实时显示可售量，并提供确认完成入口', () => {
+    const html = renderToStaticMarkup(
+      <CompletionPanel
+        order={DETAIL}
+        lossQty="4"
+        confirmFullLoss={false}
+        errors={[]}
+        busy={false}
+        onLossQtyChange={() => {}}
+        onConfirmFullLossChange={() => {}}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(html).toContain('完成 / 验收');
+    expect(html).toContain('损耗量');
+    expect(html).toContain('可售量');
+    expect(html).toContain('496');
+    expect(html).toContain('确认完成');
+  });
+
+  it('全损耗展示二次确认且按钮文案明确', () => {
+    const html = renderToStaticMarkup(
+      <CompletionPanel
+        order={DETAIL}
+        lossQty="500"
+        confirmFullLoss={false}
+        errors={['可售量为 0 属于全损耗，请勾选二次确认。']}
+        busy={false}
+        onLossQtyChange={() => {}}
+        onConfirmFullLossChange={() => {}}
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(html).toContain('全损耗');
+    expect(html).toContain('确认全损耗并完成');
+    expect(html).toContain('扣减全部材料');
+    expect(html).toContain('请勾选二次确认');
+  });
+
+  it('损耗量必填、不能超过投入，全损耗必须二次确认', () => {
+    expect(validateCompletionDraft('500', '', false)).toEqual([
+      '损耗量必须是非负数字（最多 6 位小数）。',
+    ]);
+    expect(validateCompletionDraft('500', '501', false)).toEqual(['损耗量不能大于投入量。']);
+    expect(validateCompletionDraft('500', '500', false)).toEqual([
+      '可售量为 0 属于全损耗，请勾选二次确认。',
+    ]);
+    expect(validateCompletionDraft('500', '4', false)).toEqual([]);
+    expect(validateCompletionDraft('500', '500', true)).toEqual([]);
   });
 });
 

@@ -99,14 +99,6 @@ export function ApiIntegrationPage() {
           </span>
         </div>
         <div className="flex gap-2">
-          <a
-            href="/api/v1/openapi.json"
-            target="_blank"
-            rel="noreferrer"
-            className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-          >
-            OpenAPI 文档
-          </a>
           <button
             type="button"
             onClick={() => setForm({ open: true, name: '', domains: new Set() })}

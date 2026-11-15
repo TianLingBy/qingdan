@@ -49,13 +49,16 @@ export interface ProcessingOrderPage {
   readonly nextCursor: string | null;
 }
 
-/** 修改 / 取消前读取的最小状态（含可售量重算所需的投入量与损耗量）。 */
+/** 修改 / 取消 / 详情读取的状态（含完成后的产出批次与损失快照）。 */
 export interface ProcessingOrderState {
   readonly id: string;
   readonly companyId: string;
   readonly status: ProcessingOrderStatus;
   readonly inputQty: string;
   readonly lossQty: string | null;
+  readonly outputBatchId: string | null;
+  readonly lossAmount: string | null;
+  readonly updatedAt: string;
   readonly version: number;
 }
 
@@ -94,6 +97,9 @@ interface StateRow {
   status: string;
   input_qty: string | number;
   loss_qty: string | number | null;
+  output_batch_id: string | null;
+  loss_amount: string | number | null;
+  updated_at: Date | string;
   version: number;
 }
 
@@ -326,7 +332,7 @@ export async function getProcessingOrder(
   };
 }
 
-/** 修改 / 取消前读取状态；跨公司等同不存在。 */
+/** 修改 / 取消 / 详情读取状态；跨公司等同不存在。 */
 export async function loadProcessingOrderState(
   ctx: ProcessingOrderRepoContext,
   id: string,
@@ -337,6 +343,9 @@ export async function loadProcessingOrderState(
             status,
             trim_scale(input_qty) AS input_qty,
             trim_scale(loss_qty) AS loss_qty,
+            output_batch_id,
+            trim_scale(loss_amount) AS loss_amount,
+            updated_at,
             version
        FROM processing_order
       WHERE id = $1::uuid
@@ -352,6 +361,9 @@ export async function loadProcessingOrderState(
     status: row.status as ProcessingOrderStatus,
     inputQty: decimal(row.input_qty),
     lossQty: nullableDecimal(row.loss_qty),
+    outputBatchId: row.output_batch_id,
+    lossAmount: nullableDecimal(row.loss_amount),
+    updatedAt: toDate(row.updated_at).toISOString(),
     version: row.version,
   };
 }
