@@ -89,8 +89,9 @@ describe('库存契约（inventory）', () => {
       expect(route.audit, route.operationId).toEqual({ kind: 'none', required: false });
     }
     // 反向锁：库存写入只能经单据用例（Issue #48 §2），不允许出现 direct-write 端点。
-    // 盘点调整 I 的 `stocktake.increase.create` / `stocktake.decrease.create` / `stocktake.approve`
-    // 是库存数量写动作的白名单（D71 拆盘盈/盘亏）；成本更正的 3 条写端点只改成本、
+    // 盘点调整 I 的 `stocktake.increase.create` / `stocktake.decrease.create` /
+    // `stocktake.approve` / `stocktake.reject` 是库存数量写动作的白名单（D71 拆盘盈/盘亏；
+    // 驳回本身不动库存，只是盘点审批流的一部分）；成本更正的 3 条写端点只改成本、
     // **绝不写 inventory_flow / delta**（Issue #163），因此也必须在白名单里显式登记。
     const nonGetInventoryRoutes = routesOfModule(ROUTES, 'inventory')
       .filter((route) => route.method !== 'GET')
@@ -99,6 +100,7 @@ describe('库存契约（inventory）', () => {
       'stocktake.increase.create',
       'stocktake.decrease.create',
       'stocktake.approve',
+      'stocktake.reject',
       'inventory.cost.adjustment.create',
       'inventory.cost.adjustment.approve',
       'inventory.cost.adjustment.reject',
