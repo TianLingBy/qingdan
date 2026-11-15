@@ -520,4 +520,55 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
       'internal_trade.order.update',
     ]);
   });
+
+  it('发货：缺 If-Match 428、旧版本 409、无权限 403、成功 200 + 强 ETag', async () => {
+    const created = await createOne(nextRequestId('dispatch-ok'));
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch`,
+      headers: writeHeaders(ownerCookie, 'req-internal-dispatch-428'),
+      payload: { confirm: true },
+    });
+    expect(missing.statusCode).toBe(428);
+    expect(missing.json()).toMatchObject({ code: 'PRECONDITION_REQUIRED' });
+
+    const stale = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch`,
+      headers: writeHeaders(ownerCookie, 'req-internal-dispatch-409', {
+        'if-match': '"9"',
+      }),
+      payload: { confirm: true },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
+
+    const forbidden = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch`,
+      headers: writeHeaders(warehouseCookie, 'req-internal-dispatch-403', {
+        'if-match': '"1"',
+      }),
+      payload: { confirm: true },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(forbidden.json()).toMatchObject({ code: 'FORBIDDEN' });
+
+    const dispatched = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch`,
+      headers: writeHeaders(ownerCookie, 'req-internal-dispatch-ok', {
+        'if-match': '"1"',
+      }),
+      payload: { confirm: true },
+    });
+    expect(dispatched.statusCode).toBe(200);
+    expect(dispatched.headers.etag).toBe('"2"');
+    expect(dispatched.json()).toMatchObject({
+      status: '在途',
+      version: 2,
+      inTransitQty: '2',
+    });
+  });
 });

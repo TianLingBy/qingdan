@@ -76,8 +76,8 @@ const CREATE_INPUT = {
 } as const;
 
 describe('内部交易单契约（internal-trade）', () => {
-  it('6 条端点全部登记并汇总进 ROUTES，且归属 internal-trade', () => {
-    expect(INTERNAL_TRADE_ORDER_ROUTES).toHaveLength(6);
+  it('7 条端点全部登记并汇总进 ROUTES，且归属 internal-trade', () => {
+    expect(INTERNAL_TRADE_ORDER_ROUTES).toHaveLength(7);
     for (const route of INTERNAL_TRADE_ORDER_ROUTES) expect(route.module).toBe('internal-trade');
 
     const internalTradeIds = routesOfModule(ROUTES, 'internal-trade').map((r) => r.operationId);
@@ -97,6 +97,7 @@ describe('内部交易单契约（internal-trade）', () => {
         'GET /api/v1/internal-trade-orders/{id} internal_trade.order.detail.read',
         'PATCH /api/v1/internal-trade-orders/{id} internal_trade.order.update',
         'POST /api/v1/internal-trade-orders/{id}/cancel internal_trade.order.cancel',
+        'POST /api/v1/internal-trade-orders/{id}/dispatch internal_trade.order.dispatch',
         'POST /api/v1/internal-trade-orders/{id}/receive internal_trade.order.receive',
       ].sort(),
     );
@@ -107,6 +108,9 @@ describe('内部交易单契约（internal-trade）', () => {
     expect(byId.get('internal_trade.order.create')?.scope).toBe('internal_trade.create');
     expect(byId.get('internal_trade.order.update')?.scope).toBe('internal_trade.update');
     expect(byId.get('internal_trade.order.cancel')?.scope).toBe('internal_trade.delete');
+    // 发货走专属动作 ship（出），不借用 update（编）——两个权限点分开。
+    expect(byId.get('internal_trade.order.dispatch')?.scope).toBe('internal_trade.ship');
+    expect(byId.get('internal_trade.order.receive')?.scope).toBe('internal_trade.update');
 
     // 域键必须是已有的下划线键，不是模块键的连字符形式。
     for (const route of INTERNAL_TRADE_ORDER_ROUTES) expect(route.domain).toBe('internal_trade');
@@ -126,13 +130,14 @@ describe('内部交易单契约（internal-trade）', () => {
       'internal_trade.order.create',
       'internal_trade.order.update',
       'internal_trade.order.cancel',
+      'internal_trade.order.dispatch',
       'internal_trade.order.receive',
     ]) {
       expect(byId.get(id)?.audit, id).toEqual({ kind: 'write', required: true });
     }
   });
 
-  it('AI 口径：开单禁止、修改允许、取消禁止且必须给原因；update/cancel 带强 ETag；create 201', () => {
+  it('AI 口径：开单禁止、修改允许、取消/发货/到货确认禁止且必须给原因；update/cancel/dispatch/receive 带强 ETag；create 201', () => {
     const byId = new Map(INTERNAL_TRADE_ORDER_ROUTES.map((r) => [r.operationId, r]));
     expect(byId.get('internal_trade.order.create')?.ai).toEqual({
       policy: 'forbid',
@@ -146,9 +151,18 @@ describe('内部交易单契约（internal-trade）', () => {
       policy: 'forbid',
       reasonRequired: true,
     });
+    expect(byId.get('internal_trade.order.dispatch')?.ai).toEqual({
+      policy: 'forbid',
+      reasonRequired: true,
+    });
+    expect(byId.get('internal_trade.order.receive')?.ai).toEqual({
+      policy: 'forbid',
+      reasonRequired: true,
+    });
 
     expect(byId.get('internal_trade.order.update')?.requiresIfMatch).toBe(true);
     expect(byId.get('internal_trade.order.cancel')?.requiresIfMatch).toBe(true);
+    expect(byId.get('internal_trade.order.dispatch')?.requiresIfMatch).toBe(true);
     expect(byId.get('internal_trade.order.receive')?.requiresIfMatch).toBe(true);
     expect(byId.get('internal_trade.order.create')?.requiresIfMatch).toBe(false);
     expect(byId.get('internal_trade.order.create')?.response?.status).toBe(201);
@@ -375,8 +389,9 @@ describe('内部交易单契约（internal-trade）', () => {
       InternalTradeOrderCancelableSchema.safeParse({ allowed: false, reason: 'unknown' }).success,
     ).toBe(false);
 
-    // 当前仍没有「发货 / 在途」和「自动生成 C 单」端点；到货确认已登记，等待实现侧接线。
+    // 发货与到货确认均已登记；仍未登记「自动生成 C 单」/「内部定价规则」端点。
     const ids = INTERNAL_TRADE_ORDER_ROUTES.map((r) => r.operationId);
+    expect(ids).toContain('internal_trade.order.dispatch');
     expect(ids).toContain('internal_trade.order.receive');
     expect(ids.some((id) => /ship|transit|complete|settle|price-rule/.test(id))).toBe(false);
   });

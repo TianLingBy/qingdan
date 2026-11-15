@@ -102,6 +102,11 @@ interface BatchRow {
   product_id: string;
 }
 
+interface DispatchBatchRow {
+  id: string;
+  available_qty: string | number;
+}
+
 const HEADER_COLUMNS = `o.id,
   o.tenant_id,
   o.company_id,
@@ -726,6 +731,100 @@ export async function receiveInternalTradeOrder(
   );
   if (result.rows.length === 0) {
     throw new AppError('VERSION_CONFLICT', '只有在途状态的内部交易单可以确认到货');
+  }
+  return getInternalTradeOrder(ctx, id);
+}
+
+/**
+ * 发货占用（D22 / D31 / D68③）：锁定发出公司批次（FOR UPDATE）、校验可用量
+ * 并逐个累加 `in_transit_qty`。`quantities` 已按批次聚合去重，数量为正 decimal 字符串。
+ * 可用量不足抛 VERSION_CONFLICT；批次缺失 / 归属不符抛 NOT_FOUND。
+ */
+export async function occupyBatchesForDispatch(
+  ctx: InternalTradeOrderRepoContext,
+  fromCompanyId: string,
+  quantities: readonly { batchId: string; qty: string }[],
+): Promise<void> {
+  if (quantities.length === 0) {
+    throw new AppError('VALIDATION_FAILED', '内部交易单没有可发货的批次');
+  }
+  const batchIds = quantities.map((item) => item.batchId);
+  const locked = await ctx.tx.query<DispatchBatchRow>(
+    `SELECT id, trim_scale(available_qty) AS available_qty
+       FROM inventory_batch
+      WHERE tenant_id = $1
+        AND company_id = $2::uuid
+        AND id = ANY($3::uuid[])
+      FOR UPDATE`,
+    [ctx.tenantId, fromCompanyId, batchIds],
+  );
+  if (locked.rows.length !== batchIds.length) {
+    throw new AppError('NOT_FOUND', '存在不存在或不属于发出公司的库存批次', {
+      companyId: fromCompanyId,
+    });
+  }
+
+  const availableById = new Map(
+    locked.rows.map((row) => [row.id, String(row.available_qty)]),
+  );
+  for (const { batchId, qty } of quantities) {
+    const available = availableById.get(batchId);
+    const guard = await ctx.tx.query<{ enough: boolean }>(
+      `SELECT $1::amount <= $2::amount AS enough`,
+      [qty, available],
+    );
+    if (!guard.rows[0]?.enough) {
+      throw new AppError('VERSION_CONFLICT', '库存批次可用量不足，无法确认发货', {
+        batchId,
+        requestedQty: qty,
+        availableQty: available,
+      });
+    }
+  }
+
+  for (const { batchId, qty } of quantities) {
+    await ctx.tx.query(
+      `UPDATE inventory_batch
+          SET in_transit_qty = in_transit_qty + $1::amount
+        WHERE id = $2::uuid
+          AND tenant_id = $3
+          AND company_id = $4::uuid`,
+      [qty, batchId, ctx.tenantId, fromCompanyId],
+    );
+  }
+}
+
+/** 确认发货：把「进行中」N 单推进「在途」并写回在途量（D22 / D31 / D68③）。 */
+export async function dispatchInternalTradeOrder(
+  ctx: InternalTradeOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+  inTransitQty: string,
+): Promise<InternalTradeOrder | null> {
+  const current = await loadInternalTradeOrderState(ctx, id);
+  if (!current) return null;
+  if (current.version !== expectedVersion) {
+    throw new AppError(
+      'VERSION_CONFLICT',
+      '内部交易单版本与 If-Match 不一致，请重新读取后重试',
+      { expected: expectedVersion, current: current.version },
+    );
+  }
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE internal_trade_order
+        SET status = '在途',
+            in_transit_qty = $4::amount,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND from_company_id = ANY($3::uuid[])
+        AND version = $5
+        AND status = '进行中'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], inTransitQty, expectedVersion],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '内部交易单已被并发修改，请重新读取后重试');
   }
   return getInternalTradeOrder(ctx, id);
 }

@@ -10,6 +10,7 @@ import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount
 import {
   cancelInternalTradeOrder,
   createInternalTradeOrder,
+  dispatchInternalTradeOrder,
   getInternalTradeOrder,
   listInternalTradeOrders,
   receiveInternalTradeOrder,
@@ -24,7 +25,7 @@ import {
  * - 取消按四态映射后复用 `assertCancelable`（D21）：`internalTradeHeaderState(status)`；
  * - 内部价由制单人手填、系统不自动算（D68①）；一期不做内部定价规则表（D45）；
  * - 明细只能引用**发出公司**批次（D22），`batchIds` 至少 1 条；
- * - 发货 / 在途仍未登记；到货确认已接入 inventory 转司端口（D22 / D31 / D68③）；
+ * - 发货已登记（dispatch），到货确认已接入 inventory 转司端口（D22 / D31 / D68③）；
  * - 本批**不登记** N 单完成自动生成 C 单草稿（D29，等结算模块）。
  */
 
@@ -32,6 +33,7 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'internal_trade.order.create': 'internal_trade_order',
   'internal_trade.order.update': 'internal_trade_order',
   'internal_trade.order.cancel': 'internal_trade_order',
+  'internal_trade.order.dispatch': 'internal_trade_order',
   'internal_trade.order.receive': 'internal_trade_order',
 };
 
@@ -113,6 +115,19 @@ export function registerInternalTradeRoutes(app: FastifyInstance): void {
     }) => {
       assertDatabaseConfigured(instance, route);
       return await cancelInternalTradeOrder({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+    'internal_trade.order.dispatch': async ({
+      app: instance,
+      request,
+      reply,
+      route,
+    }) => {
+      assertDatabaseConfigured(instance, route);
+      return await dispatchInternalTradeOrder({
         database: instance.database,
         request,
         reply,
