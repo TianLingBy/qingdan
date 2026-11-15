@@ -18,6 +18,7 @@ import {
 import {
   cancelInternalTradeOrder,
   createInternalTradeOrder,
+  dispatchInternalTradeOrder,
   getInternalTradeOrder,
   listInternalTradeOrders,
   receiveInternalTradeOrder,
@@ -39,7 +40,7 @@ const FLOW_ID = '01900000-0000-7000-8000-000000005131';
 const FULL_SCOPE: ScopeMatrix = [
   {
     domain: 'internal_trade',
-    actions: ['read', 'create', 'update', 'delete', 'view_price'],
+    actions: ['read', 'create', 'update', 'ship', 'delete', 'view_price'],
   },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [
@@ -738,5 +739,144 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
     expect(state.statusCode).toBe(200);
     expect(updated.internalPrice).toBeNull();
     expect(updated.version).toBe(created.version + 1);
+  });
+
+  it('发货：进行中 → 在途，锁定批次在途量并记审计', async () => {
+    const created = await createOne();
+    const { ctx, state } = writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"1"' },
+    });
+    const dispatched = await dispatchInternalTradeOrder(ctx);
+
+    expect(dispatched.status).toBe('在途');
+    expect(dispatched.inTransitQty).toBe('2');
+    expect(dispatched.version).toBe(2);
+    expect(state.headers.ETag).toBe('"2"');
+
+    const batches = await test.database.query<{ in_transit_qty: string }>(
+      `SELECT trim_scale(in_transit_qty) AS in_transit_qty
+         FROM inventory_batch
+        WHERE id IN ($1::uuid, $2::uuid)
+        ORDER BY id`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+    expect(batches.rows).toEqual([{ in_transit_qty: '1' }, { in_transit_qty: '1' }]);
+
+    const audit = await test.database.query<{ action: string; result: string }>(
+      `SELECT action, result
+         FROM audit_log
+        WHERE object_id = $1
+          AND action = 'internal_trade.order.dispatch'`,
+      [created.id],
+    );
+    expect(audit.rows).toEqual([{ action: 'internal_trade.order.dispatch', result: 'success' }]);
+
+    await test.database.query(
+      `UPDATE inventory_batch SET in_transit_qty = 0 WHERE id IN ($1::uuid, $2::uuid)`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+  });
+
+  it('发货：在途 / 已完成 / 已取消 → VALIDATION_FAILED', async () => {
+    for (const status of ['在途', '已完成', '已取消'] as const) {
+      const created = await createOne();
+      await test.database.query(
+        `UPDATE internal_trade_order SET status = $1 WHERE id = $2`,
+        [status, created.id],
+      );
+      await expectAppError(
+        () =>
+          dispatchInternalTradeOrder(
+            writeCtx({}, {
+              params: { id: created.id },
+              body: { confirm: true },
+              headers: { 'if-match': '"1"' },
+            }).ctx,
+          ),
+        'VALIDATION_FAILED',
+      );
+    }
+  });
+
+  it('发货：批次可用量不足 → VERSION_CONFLICT', async () => {
+    const created = await createOne();
+    await test.database.query(
+      `UPDATE inventory_batch SET inbound_qty = 0 WHERE id = $1::uuid`,
+      [BATCH_A_ID],
+    );
+    await expectAppError(
+      () =>
+        dispatchInternalTradeOrder(
+          writeCtx({}, {
+            params: { id: created.id },
+            body: { confirm: true },
+            headers: { 'if-match': '"1"' },
+          }).ctx,
+        ),
+      'VERSION_CONFLICT',
+    );
+    await test.database.query(
+      `UPDATE inventory_batch SET inbound_qty = 1000 WHERE id = $1::uuid`,
+      [BATCH_A_ID],
+    );
+  });
+
+  it('发货：调用者不属发出公司 → FORBIDDEN', async () => {
+    const created = await createOne();
+    await expectAppError(
+      () =>
+        dispatchInternalTradeOrder(
+          writeCtx(
+            { companyIds: [TO_COMPANY_ID] },
+            {
+              params: { id: created.id },
+              body: { confirm: true },
+              headers: { 'if-match': '"1"' },
+            },
+          ).ctx,
+        ),
+      'FORBIDDEN',
+    );
+  });
+
+  it('连通：发货后到货确认成功，批次转司、在途量归零、单据已完成', async () => {
+    const created = await createOne();
+    const { ctx, state } = writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"1"' },
+    });
+    const dispatched = await dispatchInternalTradeOrder(ctx);
+    expect(dispatched.status).toBe('在途');
+    expect(state.headers.ETag).toBe('"2"');
+
+    const { ctx: receiveCtx, state: receiveState } = writeCtx({}, {
+      params: { id: created.id },
+      body: { confirm: true },
+      headers: { 'if-match': '"2"' },
+    });
+    const received = await receiveInternalTradeOrder(receiveCtx);
+    expect(received.status).toBe('已完成');
+    expect(received.inTransitQty).toBe('0');
+    expect(receiveState.headers.ETag).toBe('"3"');
+
+    const batches = await test.database.query<{ company_id: string; in_transit_qty: string }>(
+      `SELECT company_id, trim_scale(in_transit_qty) AS in_transit_qty
+         FROM inventory_batch
+        WHERE id IN ($1::uuid, $2::uuid)
+        ORDER BY id`,
+      [BATCH_A_ID, BATCH_B_ID],
+    );
+    expect(batches.rows).toEqual([
+      { company_id: TO_COMPANY_ID, in_transit_qty: '0' },
+      { company_id: TO_COMPANY_ID, in_transit_qty: '0' },
+    ]);
+
+    await test.database.query(
+      `UPDATE inventory_batch SET company_id = $1::uuid WHERE id IN ($2::uuid, $3::uuid)`,
+      [DEMO_IDS.companyId, BATCH_A_ID, BATCH_B_ID],
+    );
   });
 });
