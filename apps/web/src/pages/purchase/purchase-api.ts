@@ -1,5 +1,5 @@
 /**
- * 采购单 A 接口封装（契约第一批 §3.1，5 条端点）。
+ * 采购单 A 接口封装（契约第一批 §3.1，6 条端点）。
  *
  * 口径（别在这里发明）：
  * - 金额 / 数量一律 **decimal 字符串**（D54 `numeric(18,6)`），前端不做浮点运算，
@@ -7,8 +7,8 @@
  * - 单号服务端生成（D16），前端不传；
  * - 无 `purchase.view_price` 时服务端把金额回 `null`（D79）——**遮罩是 `null` 触发的，
  *   不是 0**：绝不能把 null 当 0 渲染，那是泄露价格；
- * - 修改 / 取消必须带强 ETag `If-Match: "<version>"`（D60）；
- * - 本批没有「入库 / 完成」端点（等 inventory）：A 单只能进行中 → 已取消。
+ * - 修改 / 取消 / 完成必须带强 ETag `If-Match: "<version>"`（D60）；
+ * - 完成（`purchase.approve`）会入库并生成库存流水：A 单可进行中 → 已完成 / 已取消。
  */
 
 import type {
@@ -58,6 +58,10 @@ export function createPurchaseApi(client: ApiClient = apiClient) {
       client.patch<PurchaseOrder>(`/purchase-orders/${id}`, input, { headers: ifMatch(version) }),
     cancel: (id: string, version: number) =>
       client.post<PurchaseOrder>(`/purchase-orders/${id}/cancel`, undefined, {
+        headers: ifMatch(version),
+      }),
+    complete: (id: string, version: number) =>
+      client.post<PurchaseOrder>(`/purchase-orders/${id}/complete`, undefined, {
         headers: ifMatch(version),
       }),
   };

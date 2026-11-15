@@ -6,7 +6,7 @@
  *
  * 与原型不同的地方，都是本批接口口径决定的：
  * - 原型里「审核」按钮本批没有对应端点（采购单没有审批状态机），不画假按钮；
- * - 「入库 / 完成」也不做（D5 锁价依赖 inventory，等它落地），所以 A 单只有「进行中 → 已取消」；
+ * - 「完成」已接入（`purchase.approve`，完成后会入库并生成库存流水），取消仍是另一个动作；
  * - 明细里只有 `productId`，商品名靠主数据映射（没有 `product.read` 时降级显示短 id）。
  */
 
@@ -512,22 +512,28 @@ function OrderForm({
   );
 }
 
-function DetailPanel({
+export function DetailPanel({
   order,
   products,
   canCancel,
   canceling,
+  canComplete,
+  completing,
   onClose,
   onEdit,
   onCancel,
+  onComplete,
 }: {
   order: PurchaseOrderDetail;
   products: readonly Product[];
   canCancel: boolean;
   canceling: boolean;
+  canComplete: boolean;
+  completing: boolean;
   onClose: () => void;
   onEdit: () => void;
   onCancel: () => void;
+  onComplete: () => void;
 }) {
   const disabledReason = cancelDisabledReason(order.cancelable.reason);
   return (
@@ -624,6 +630,14 @@ function DetailPanel({
         </button>
         <button
           type="button"
+          onClick={onComplete}
+          disabled={order.status !== '进行中' || !canComplete || completing}
+          className="rounded border border-emerald-200 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-40"
+        >
+          {completing ? '完成中…' : '完成采购单'}
+        </button>
+        <button
+          type="button"
           onClick={onCancel}
           disabled={!order.cancelable.allowed || !canCancel || canceling}
           className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-700 disabled:opacity-40"
@@ -633,6 +647,9 @@ function DetailPanel({
         {disabledReason && <span className="text-xs text-slate-500">{disabledReason}</span>}
         {!canCancel && order.cancelable.allowed && (
           <span className="text-xs text-slate-500">当前身份无取消权限（purchase.delete）</span>
+        )}
+        {!canComplete && order.status === '进行中' && (
+          <span className="text-xs text-slate-500">当前身份无完成权限（purchase.approve）</span>
         )}
       </div>
     </section>
@@ -806,6 +823,29 @@ export function PurchaseOrdersPage() {
     },
   });
 
+  const completeOrder = useMutation({
+    mutationFn: (order: PurchaseOrderDetail) => purchaseApi.complete(order.id, order.version),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+    },
+    /**
+     * 完成撞版本冲突（别人刚改过、或刚把这张单完成了）：
+     * 把最新版本同步过来并说清楚，**不自动重提**——完成会入库、生成库存流水，不可逆，
+     * 得让用户看清当前状态再点（D60）。
+     */
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, purchaseApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '完成失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(staleActionRetryText(fresh.version, '完成'));
+      await queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+    },
+  });
+
   const beginCreate = () => {
     setEditing(null);
     setFormSupplierId('');
@@ -861,6 +901,18 @@ export function PurchaseOrdersPage() {
       return;
     }
     cancelOrder.mutate(order);
+  };
+
+  const askComplete = (order: PurchaseOrderDetail) => {
+    setActionError(null);
+    if (
+      globalThis.confirm?.(
+        `确认完成采购单 ${order.orderNo} 吗？完成后会入库并生成库存流水，不可撤销。`,
+      ) === false
+    ) {
+      return;
+    }
+    completeOrder.mutate(order);
   };
 
   /**
@@ -1145,9 +1197,12 @@ export function PurchaseOrdersPage() {
               products={products}
               canCancel={can('delete')}
               canceling={cancelOrder.isPending}
+              canComplete={can('approve')}
+              completing={completeOrder.isPending}
               onClose={() => setDetailId(null)}
               onEdit={() => beginEdit(detailOrder)}
               onCancel={() => askCancel(detailOrder)}
+              onComplete={() => askComplete(detailOrder)}
             />
           )}
         </>
