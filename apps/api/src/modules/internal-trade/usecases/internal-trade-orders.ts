@@ -1,6 +1,8 @@
 import {
   AppError,
   InternalTradeOrderCreateInputSchema,
+  InternalTradeOrderDispatchInputSchema,
+  InternalTradeOrderDispatchRevokeInputSchema,
   InternalTradeOrderReceiveInputSchema,
   InternalTradeOrderListQuerySchema,
   InternalTradeOrderUpdateInputSchema,
@@ -15,6 +17,7 @@ import {
   type InternalTradeOrder,
   type InternalTradeOrderCreateInput,
   type InternalTradeOrderDetail,
+  type InternalTradeOrderDispatchRevokeInput,
   type InternalTradeOrderStatus,
   type InternalTradeOrderUpdateInput,
 } from '@qingdan/contracts';
@@ -76,6 +79,24 @@ function divideByInteger(value: string, divisor: number): string {
   return scale === 0 ? text : `${text.slice(0, -scale)}.${text.slice(-scale)}`.replace(/0+$/, '').replace(/\.$/, '');
 }
 
+/**
+ * 发货占用 / 撤销释放共用的批次量拆分（D22 / D31 / D68③）：
+ * 每行 qty 均分到其 batchIds，同一批次跨行时聚合。dispatch 与 dispatch_revoke 必须用同一份算法，
+ * 否则两处漂移会产生「撤销后批次在途量变负数」的脏数据。
+ */
+function dispatchQuantitiesByBatch(
+  source: { lines: readonly { qty: string; batchIds: readonly string[] }[] },
+): { batchId: string; qty: string }[] {
+  const quantities = source.lines.flatMap((line) =>
+    line.batchIds.map((batchId) => ({ batchId, qty: divideByInteger(line.qty, line.batchIds.length) })),
+  );
+  const byBatch = new Map<string, string>();
+  for (const { batchId, qty } of quantities) {
+    byBatch.set(batchId, addDecimals([byBatch.get(batchId) ?? '0', qty]));
+  }
+  return [...byBatch].map(([batchId, qty]) => ({ batchId, qty }));
+}
+
 type MutableAuditEvent = { -readonly [K in keyof AuditEvent]: AuditEvent[K] };
 
 export interface InternalTradeOrderContext {
@@ -130,7 +151,7 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create' | 'update' | 'delete',
+  action: 'read' | 'create' | 'update' | 'ship' | 'delete',
 ): void {
   if (!allowsScope(principal.scope, 'internal_trade', action)) {
     throw new AppError('FORBIDDEN', `缺少 internal_trade.${action} 权限`);
@@ -220,6 +241,25 @@ function parseReceiveInput(body: unknown): void {
       issues: issuesOf(parsed.error),
     });
   }
+}
+
+function parseDispatchInput(body: unknown): void {
+  const parsed = InternalTradeOrderDispatchInputSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new AppError('VALIDATION_FAILED', '请求体不合法', {
+      issues: issuesOf(parsed.error),
+    });
+  }
+}
+
+function parseDispatchRevokeInput(body: unknown): InternalTradeOrderDispatchRevokeInput {
+  const parsed = InternalTradeOrderDispatchRevokeInputSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new AppError('VALIDATION_FAILED', '请求体不合法', {
+      issues: issuesOf(parsed.error),
+    });
+  }
+  return parsed.data;
 }
 
 /** 强 ETag `"<version>"`；缺失 → 428，格式非法 → 409。 */
@@ -485,6 +525,138 @@ export async function cancelInternalTradeOrder(
       version: cancelled.version,
     };
     return cancelled;
+  });
+
+  ctx.reply.header('ETag', etagOf(order.version));
+  return maskInternalTradeAmounts(order, canViewPrice);
+}
+
+/** 确认发货：把「进行中」N 单推进「在途」，并在同一事务内占用发出公司批次在途量（D22 / D31 / D68③）。 */
+export async function dispatchInternalTradeOrder(
+  ctx: InternalTradeOrderWriteContext,
+): Promise<InternalTradeOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'internal_trade.order.dispatch');
+  requireScope(principal, 'ship');
+  assertHumanCredential(principal, '确认内部交易发货');
+  const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
+  parseDispatchInput(ctx.request.body);
+
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const state = await withTenant(database, principal.tenantId, (tx) =>
+    repo.loadInternalTradeOrderState(repoContext(tx, principal), id),
+  );
+  if (!state) throw new AppError('NOT_FOUND', '内部交易单不存在');
+  if (state.version !== expectedVersion) {
+    throw new AppError('VERSION_CONFLICT', '内部交易单版本与 If-Match 不一致，请重新读取后重试', {
+      expected: expectedVersion,
+      current: state.version,
+    });
+  }
+  if (state.status !== '进行中') {
+    throw new AppError('VALIDATION_FAILED', '只有进行中状态的内部交易单可以确认发货');
+  }
+  if (!principal.companyIds.includes(state.fromCompanyId)) {
+    throw new AppError('FORBIDDEN', '调用者对发出公司无权限', { companyId: state.fromCompanyId });
+  }
+
+  const audit = auditEventOf(
+    ctx.request,
+    principal,
+    'internal_trade.order.dispatch',
+    id,
+    { beforeStatus: state.status, afterStatus: '在途' },
+  );
+  const order = await withAudit(database, audit, async (tx) => {
+    const source = await repo.getInternalTradeOrder(repoContext(tx, principal), id);
+    if (!source) throw new AppError('NOT_FOUND', '内部交易单不存在');
+    // 与 receive / dispatch_revoke 同一算法：每行 qty 均分到其 batchIds，同一批次跨行时聚合占用。
+    const perBatch = dispatchQuantitiesByBatch(source);
+    await repo.occupyBatchesForDispatch(repoContext(tx, principal), state.fromCompanyId, perBatch);
+
+    const inTransitQty = addDecimals(source.lines.map((line) => line.qty));
+    const dispatched = await repo.dispatchInternalTradeOrder(
+      repoContext(tx, principal),
+      id,
+      expectedVersion,
+      inTransitQty,
+    );
+    if (!dispatched) throw new AppError('NOT_FOUND', '内部交易单不存在');
+    audit.companyId = dispatched.fromCompanyId;
+    audit.changeSummary = {
+      beforeStatus: '进行中',
+      afterStatus: '在途',
+      version: dispatched.version,
+      lockedBatchCount: perBatch.length,
+      inTransitQty,
+    };
+    return dispatched;
+  });
+
+  ctx.reply.header('ETag', etagOf(order.version));
+  return maskInternalTradeAmounts(order, canViewPrice);
+}
+
+/** 撤销发货：把「在途」N 单退回「进行中」，并在同一事务内释放发出公司批次在途量（D22 / D31 / D68③）。 */
+export async function revokeDispatchInternalTradeOrder(
+  ctx: InternalTradeOrderWriteContext,
+): Promise<InternalTradeOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'internal_trade.order.dispatch_revoke');
+  requireScope(principal, 'ship');
+  assertHumanCredential(principal, '撤销内部交易发货');
+  const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
+  const input = parseDispatchRevokeInput(ctx.request.body);
+
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const state = await withTenant(database, principal.tenantId, (tx) =>
+    repo.loadInternalTradeOrderState(repoContext(tx, principal), id),
+  );
+  if (!state) throw new AppError('NOT_FOUND', '内部交易单不存在');
+  if (state.version !== expectedVersion) {
+    throw new AppError('VERSION_CONFLICT', '内部交易单版本与 If-Match 不一致，请重新读取后重试', {
+      expected: expectedVersion,
+      current: state.version,
+    });
+  }
+  if (state.status !== '在途') {
+    throw new AppError('VALIDATION_FAILED', '只有在途状态的内部交易单可以撤销发货');
+  }
+  if (!principal.companyIds.includes(state.fromCompanyId)) {
+    throw new AppError('FORBIDDEN', '调用者对发出公司无权限', { companyId: state.fromCompanyId });
+  }
+
+  const audit = auditEventOf(
+    ctx.request,
+    principal,
+    'internal_trade.order.dispatch_revoke',
+    id,
+    { beforeStatus: state.status, afterStatus: '进行中' },
+  );
+  const order = await withAudit(database, audit, async (tx) => {
+    const source = await repo.getInternalTradeOrder(repoContext(tx, principal), id);
+    if (!source) throw new AppError('NOT_FOUND', '内部交易单不存在');
+    // 与 dispatch 完全同一算法：每行 qty 均分到其 batchIds，同一批次跨行时聚合释放。
+    const perBatch = dispatchQuantitiesByBatch(source);
+    await repo.releaseBatchesForRevoke(repoContext(tx, principal), state.fromCompanyId, perBatch);
+
+    const revoked = await repo.revokeDispatchInternalTradeOrder(
+      repoContext(tx, principal),
+      id,
+      expectedVersion,
+    );
+    if (!revoked) throw new AppError('NOT_FOUND', '内部交易单不存在');
+    audit.companyId = revoked.fromCompanyId;
+    audit.changeSummary = {
+      beforeStatus: '在途',
+      afterStatus: '进行中',
+      version: revoked.version,
+      releasedBatchCount: perBatch.length,
+      reason: input.reason,
+    };
+    return revoked;
   });
 
   ctx.reply.header('ETag', etagOf(order.version));

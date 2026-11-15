@@ -1,10 +1,10 @@
-import type { Product, PurchaseOrder } from '@qingdan/contracts';
+import type { Product, PurchaseOrder, PurchaseOrderDetail } from '@qingdan/contracts';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
 import { authKeys } from '../auth/auth-api';
-import { PurchaseOrdersPage, validateDraft } from './PurchaseOrdersPage';
+import { DetailPanel, PurchaseOrdersPage, validateDraft } from './PurchaseOrdersPage';
 import { MASKED_AMOUNT, purchaseQueryKeys } from './purchase-api';
 
 const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
@@ -140,6 +140,50 @@ describe('采购单 A 页面', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [] }));
     expect(html).toContain('暂无采购单');
     expect(html).toContain('新建采购单');
+  });
+});
+
+describe('采购单详情「完成」入口', () => {
+  const DETAIL: PurchaseOrderDetail = {
+    ...ORDER,
+    cancelable: { allowed: true, reason: null },
+  };
+
+  function renderDetail(order: PurchaseOrderDetail): string {
+    return renderToStaticMarkup(
+      <DetailPanel
+        order={order}
+        products={[PRODUCT]}
+        canCancel
+        canceling={false}
+        canComplete
+        completing={false}
+        onClose={() => {}}
+        onEdit={() => {}}
+        onCancel={() => {}}
+        onComplete={() => {}}
+      />,
+    );
+  }
+
+  /** 从 SSR HTML 里摘出「完成采购单」按钮的标签，用于断言它是否置灰（disabled）。 */
+  function completeButtonMarkup(html: string): string {
+    return /<button[^>]*>完成采购单<\/button>/.exec(html)?.[0] ?? '';
+  }
+
+  it('进行中的单据渲染「完成采购单」按钮，且可点', () => {
+    const html = renderDetail({ ...DETAIL, status: '进行中' });
+    expect(html).toContain('完成采购单');
+    expect(completeButtonMarkup(html)).not.toContain('disabled=""');
+  });
+
+  it('已完成 / 已取消的单据完成按钮置灰，不可点', () => {
+    expect(completeButtonMarkup(renderDetail({ ...DETAIL, status: '已完成' }))).toContain(
+      'disabled=""',
+    );
+    expect(completeButtonMarkup(renderDetail({ ...DETAIL, status: '已取消' }))).toContain(
+      'disabled=""',
+    );
   });
 });
 

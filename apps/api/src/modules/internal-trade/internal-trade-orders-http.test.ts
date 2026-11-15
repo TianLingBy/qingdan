@@ -520,4 +520,128 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
       'internal_trade.order.update',
     ]);
   });
+
+  it('发货：缺 If-Match 428、旧版本 409、无权限 403、成功 200 + 强 ETag', async () => {
+    const created = await createOne(nextRequestId('dispatch-ok'));
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch`,
+      headers: writeHeaders(ownerCookie, 'req-internal-dispatch-428'),
+      payload: { confirm: true },
+    });
+    expect(missing.statusCode).toBe(428);
+    expect(missing.json()).toMatchObject({ code: 'PRECONDITION_REQUIRED' });
+
+    const stale = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch`,
+      headers: writeHeaders(ownerCookie, 'req-internal-dispatch-409', {
+        'if-match': '"9"',
+      }),
+      payload: { confirm: true },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
+
+    const forbidden = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch`,
+      headers: writeHeaders(warehouseCookie, 'req-internal-dispatch-403', {
+        'if-match': '"1"',
+      }),
+      payload: { confirm: true },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(forbidden.json()).toMatchObject({ code: 'FORBIDDEN' });
+
+    const dispatched = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch`,
+      headers: writeHeaders(ownerCookie, 'req-internal-dispatch-ok', {
+        'if-match': '"1"',
+      }),
+      payload: { confirm: true },
+    });
+    expect(dispatched.statusCode).toBe(200);
+    expect(dispatched.headers.etag).toBe('"2"');
+    expect(dispatched.json()).toMatchObject({
+      status: '在途',
+      version: 2,
+      inTransitQty: '2',
+    });
+  });
+
+  it('撤销发货：缺 If-Match 428、旧版本 409、无权限 403、缺 reason 422、成功 200 + 强 ETag', async () => {
+    const created = await createOne(nextRequestId('revoke-ok'));
+
+    const dispatched = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch`,
+      headers: writeHeaders(ownerCookie, 'req-internal-revoke-dispatch', {
+        'if-match': '"1"',
+      }),
+      payload: { confirm: true },
+    });
+    expect(dispatched.statusCode).toBe(200);
+    expect(dispatched.headers.etag).toBe('"2"');
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch-revoke`,
+      headers: writeHeaders(ownerCookie, 'req-internal-revoke-428'),
+      payload: { confirm: true, reason: '缺 If-Match' },
+    });
+    expect(missing.statusCode).toBe(428);
+    expect(missing.json()).toMatchObject({ code: 'PRECONDITION_REQUIRED' });
+
+    const stale = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch-revoke`,
+      headers: writeHeaders(ownerCookie, 'req-internal-revoke-409', {
+        'if-match': '"9"',
+      }),
+      payload: { confirm: true, reason: '旧版本' },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
+
+    const forbidden = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch-revoke`,
+      headers: writeHeaders(warehouseCookie, 'req-internal-revoke-403', {
+        'if-match': '"2"',
+      }),
+      payload: { confirm: true, reason: '无权限' },
+    });
+    expect(forbidden.statusCode).toBe(403);
+    expect(forbidden.json()).toMatchObject({ code: 'FORBIDDEN' });
+
+    const noReason = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch-revoke`,
+      headers: writeHeaders(ownerCookie, 'req-internal-revoke-422', {
+        'if-match': '"2"',
+      }),
+      payload: { confirm: true },
+    });
+    expect(noReason.statusCode).toBe(422);
+    expect(noReason.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const revoked = await app.inject({
+      method: 'POST',
+      url: `/api/v1/internal-trade-orders/${created.id}/dispatch-revoke`,
+      headers: writeHeaders(ownerCookie, 'req-internal-revoke-ok', {
+        'if-match': '"2"',
+      }),
+      payload: { confirm: true, reason: '司机临时取消' },
+    });
+    expect(revoked.statusCode).toBe(200);
+    expect(revoked.headers.etag).toBe('"3"');
+    expect(revoked.json()).toMatchObject({
+      status: '进行中',
+      version: 3,
+      inTransitQty: '0',
+    });
+  });
 });

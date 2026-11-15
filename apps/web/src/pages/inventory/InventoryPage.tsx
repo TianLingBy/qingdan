@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { allows } from '../../lib/access';
 import { formatQty } from '../../lib/decimal';
 import { authApi, authKeys } from '../auth/auth-api';
+import { BatchCostAdjustments } from './BatchCostAdjustments';
 import { inventoryApi, inventoryQueryKeys } from './inventory-api';
 import {
   errorText,
@@ -33,6 +34,9 @@ export function InventoryPage() {
     queryFn: authApi.me,
   });
   const canViewPrice = allows(me.data?.scope, 'inventory_qty', 'view_price');
+  const canReadCostAdjustments = allows(me.data?.scope, 'inventory_qty', 'read');
+  const canUpdateCostAdjustments = allows(me.data?.scope, 'inventory_qty', 'update');
+  const canApproveCostAdjustments = allows(me.data?.scope, 'inventory_qty', 'approve');
   const filters = {
     companyId: companyId || undefined,
     keyword: keyword.trim() || undefined,
@@ -191,43 +195,54 @@ export function InventoryPage() {
           ) : detail.isError ? (
             <p className="mt-4 text-sm text-rose-600">{errorText(detail.error, '详情加载失败')}</p>
           ) : detail.data ? (
-            <div className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <div className="text-xs text-slate-400">商品</div>
-                <div className="mt-1 font-medium">{detail.data.productName}</div>
-                <div className="text-xs text-slate-500">{detail.data.productNo ?? '无商品编号'}</div>
-              </div>
-              <div>
-                <div className="text-xs text-slate-400">保管人</div>
-                <div className="mt-1 font-mono text-xs">{detail.data.custodianId}</div>
-              </div>
-              <div>
-                <div className="text-xs text-slate-400">锁定单价</div>
-                <div className="mt-1">
-                  {amountText(
-                    detail.data.lockedUnitCost as string | null | undefined,
-                    canViewPrice,
+            <div className="mt-4 space-y-4">
+              <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <div className="text-xs text-slate-400">商品</div>
+                  <div className="mt-1 font-medium">{detail.data.productName}</div>
+                  <div className="text-xs text-slate-500">
+                    {detail.data.productNo ?? '无商品编号'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400">保管人</div>
+                  <div className="mt-1 font-mono text-xs">{detail.data.custodianId}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400">锁定单价</div>
+                  <div className="mt-1">
+                    {amountText(
+                      detail.data.lockedUnitCost as string | null | undefined,
+                      canViewPrice,
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-400">更新时间</div>
+                  <div className="mt-1">{formatDateTime(detail.data.updatedAt)}</div>
+                </div>
+                <div className="sm:col-span-2 lg:col-span-4">
+                  <div className="text-xs text-slate-400">待执行占用来源</div>
+                  {detail.data.pendingOccupancies.length === 0 ? (
+                    <p className="mt-1 text-slate-500">无待执行占用。</p>
+                  ) : (
+                    <ul className="mt-2 space-y-1">
+                      {detail.data.pendingOccupancies.map((item) => (
+                        <li key={`${item.sourceDocType}-${item.sourceDocId}`}>
+                          {item.sourceDocType} · {item.sourceDocId} · {item.qty}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               </div>
-              <div>
-                <div className="text-xs text-slate-400">更新时间</div>
-                <div className="mt-1">{formatDateTime(detail.data.updatedAt)}</div>
-              </div>
-              <div className="sm:col-span-2 lg:col-span-4">
-                <div className="text-xs text-slate-400">待执行占用来源</div>
-                {detail.data.pendingOccupancies.length === 0 ? (
-                  <p className="mt-1 text-slate-500">无待执行占用。</p>
-                ) : (
-                  <ul className="mt-2 space-y-1">
-                    {detail.data.pendingOccupancies.map((item) => (
-                      <li key={`${item.sourceDocType}-${item.sourceDocId}`}>
-                        {item.sourceDocType} · {item.sourceDocId} · {item.qty}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <BatchCostAdjustments
+                batchId={detail.data.id}
+                canRead={canReadCostAdjustments}
+                canUpdate={canUpdateCostAdjustments}
+                canApprove={canApproveCostAdjustments}
+                canViewPrice={canViewPrice}
+              />
             </div>
           ) : null}
         </section>

@@ -73,7 +73,7 @@ export function validateRegistry(routes: readonly RouteDef[]): string[] {
   const ids = new Set<string>();
   const endpoints = new Set<string>();
   for (const r of routes) {
-    if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9-]*)+$/.test(r.operationId)) errors.push(`${r.operationId}: operationId 必须是小写点分串`);
+    if (!/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_-]*)+$/.test(r.operationId)) errors.push(`${r.operationId}: operationId 必须是小写点分串`);
     if (!r.path.startsWith('/api/v1/')) errors.push(`${r.operationId}: 路径必须以 /api/v1/ 开头`);
     if (!/^\/api\/v1\/[a-z0-9.-]+(\/[a-z0-9{}_.-]+)*$/i.test(r.path)) errors.push(`${r.operationId}: 路径不符合 kebab 规则`);
     if (!DOMAIN_KEYS.includes(r.domain)) errors.push(`${r.operationId}: 未登记的功能域 ${String(r.domain)}`);
