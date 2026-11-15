@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { ApiClient } from '../../api/client';
 import {
   approveBlockedText,
   batchLabelOf,
   batchOptionLabel,
+  createReversalsApi,
   needsLines,
   returnLineAmount,
   returnLinesTotal,
@@ -225,5 +227,51 @@ describe('金额与展示口径', () => {
     expect(batchLabelOf([batch], batch.id)).toBe('B-20261101-0001');
     // 不同公司的批次拉不到 → 退回 id 前 8 位，而不是显示 undefined。
     expect(batchLabelOf([batch], '01900000-0000-7000-8000-0000000009z9')).toBe('01900000');
+  });
+});
+
+describe('R / S 完成端点', () => {
+  function recorder() {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const api = createReversalsApi(
+      new ApiClient({
+        baseUrl: '/api/v1',
+        fetchImpl: async (input, init) => {
+          calls.push({ url: String(input), init: init ?? {} });
+          return new Response(JSON.stringify({}), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        },
+      }),
+    );
+    return { api, calls };
+  }
+
+  function headerOf(init: RequestInit, name: string): string | null {
+    return new Headers(init.headers).get(name);
+  }
+
+  it('客户退货完成打到 /customer-returns/{id}/complete 并带强 ETag If-Match', async () => {
+    const { api, calls } = recorder();
+
+    await api.customerReturnComplete('c1', 3);
+
+    expect(calls[0]?.url).toBe('/api/v1/customer-returns/c1/complete');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"3"');
+    // 契约 request: {} —— 不传 body，也不带 reason 字段。
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
+
+  it('供应商退货完成打到 /supplier-returns/{id}/complete 并带强 ETag If-Match', async () => {
+    const { api, calls } = recorder();
+
+    await api.supplierReturnComplete('s1', 5);
+
+    expect(calls[0]?.url).toBe('/api/v1/supplier-returns/s1/complete');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"5"');
+    expect(calls[0]?.init.body).toBeUndefined();
   });
 });
