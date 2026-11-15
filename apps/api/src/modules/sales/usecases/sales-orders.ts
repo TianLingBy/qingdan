@@ -42,7 +42,7 @@ import {
 /**
  * 销售单 E 用例（D15 / D16 / D20 / D21 / D22 / D39 / D51 / D52 / D54）。
  *
- * - 权限：sales.read|create|update|delete；
+ * - 权限：sales.read|create|update|ship|delete；
  * - 公司隔离：读改删由 repo 带可见公司集合，跨公司等同不存在；
  * - 单号：创建时在业务事务内取 E 号；
  * - 金额：decimal 字符串；商品行金额与单头合计由 SQL 计算 / 聚合；
@@ -112,7 +112,7 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create' | 'update' | 'delete' | 'export',
+  action: 'read' | 'create' | 'update' | 'ship' | 'delete' | 'export',
 ): void {
   if (!allowsScope(principal.scope, 'sales', action)) {
     throw new AppError('FORBIDDEN', `缺少 sales.${action} 权限`);
@@ -690,27 +690,29 @@ function fromMicro(micro: bigint): string {
 }
 
 /**
- * 完成销售单（D72）：扣减批次可用量 + 生成 C 单草稿，同一事务。
+ * 销售出库（D72 / D85）：扣减批次可用量 + 生成 C 单草稿，同一事务。
  *
- * - 权限 `sales.update`；AI 默认禁止（会锁定库存与结算额）；
- * - 仅「进行中」可完成；If-Match 强 ETag；
+ * - 端点 `sales.order.ship` = 原 `sales.order.complete` 改名（销售单没有「出货后再确认」这一步，
+ *   完成即出库；D85）；权限 `sales.ship`，与 `sales.update` 分离——能改单不等于能出库；
+ * - AI 默认禁止（会锁定库存与结算额）；
+ * - 仅「进行中」可出库；If-Match 强 ETag；
  * - 库存扣减粒度：**按行全量扣减，批次间均分，除不尽的余量由最后一个批次承接**（D72）；
  * - C 草稿：总售价 = 单据总金额（含费用行），总成本 = Σ(行数量 × 行加权平均批次成本)；
  *   本单相关损失与提成比例本期取 `0`（D35 损失归集、D5④ 提成配置尚未落地，见 D72 ③④）。
  */
-export async function completeSalesOrder(
+export async function shipSalesOrder(
   ctx: SalesOrderWriteContext,
 ): Promise<SalesOrder> {
   const principal = requirePrincipal(ctx.request);
-  const database = requireDatabase(ctx, 'sales.order.complete');
-  requireScope(principal, 'update');
-  assertHumanCredential(principal, '完成销售单（会锁定库存与结算额）');
+  const database = requireDatabase(ctx, 'sales.order.ship');
+  requireScope(principal, 'ship');
+  assertHumanCredential(principal, '销售出库（会锁定库存与结算额）');
 
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
   const handledBy = principal.employeeId;
 
-  const audit = auditEventOf(ctx.request, principal, 'sales.order.complete', id, {
+  const audit = auditEventOf(ctx.request, principal, 'sales.order.ship', id, {
     beforeStatus: '进行中',
     afterStatus: '已完成',
   });
@@ -722,7 +724,7 @@ export async function completeSalesOrder(
     if (source.order.status !== '进行中') {
       throw new AppError(
         'VALIDATION_FAILED',
-        '只有「进行中」的销售单可完成，已完成/已取消不可再次完成',
+        '只有「进行中」的销售单可出库，已完成/已取消不可再次出库',
         { status: source.order.status },
       );
     }

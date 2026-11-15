@@ -1,7 +1,7 @@
 /**
  * 销售单 E 接口封装（契约第一批 §3.3 / §5.1 / §5.2 / §6 / §10）。
  *
- * 端点：列表 / 详情 / 开单 / 改单 / 完成 / 取消（6 条，`sales-orders.ts`）
+ * 端点：列表 / 详情 / 开单 / 改单 / 出库 / 取消（6 条，`sales-orders.ts`）
  *      + 打印客户联 / 列表导出（`prints.ts`）
  *      + 追加收款（`sales-receipts.ts`，内嵌 E 单详情，D24）。
  * 附属只读：客户列表（`/customers`）、批次列表（`/inventory/batches`，选批次出售，D22）。
@@ -10,11 +10,11 @@
  * - 数量 / 金额一律 **decimal 字符串**（D54 `numeric(18,6)`），运算走 `lib/decimal` 定点；
  * - 单号服务端按 D16 生成，前端不传；
  * - **商品行至少引用 1 个批次**（D22，只能本公司批次）：一行可引多批次，
- *   完成时按行内批次均分扣减（D72），除不尽的余量由最后一个批次承接；
+ *   出库时按行内批次均分扣减（D72），除不尽的余量由最后一个批次承接；
  * - **E 单费用行金额必须 ≥ 0**（D39）：负数费用行会绕过破下限审批，前端先挡一道；
  * - **售价低于加权平均批次成本 → 服务端 422**（D20）：本批没有审批端点，
  *   前端只能把服务端的 `costFloor` 如实展示，**不自己编一个「提交审批」的假按钮**；
- * - 修改 / 完成 / 取消必须带强 ETag `If-Match: "<version>"`（D60③）；
+ * - 修改 / 出库 / 取消必须带强 ETag `If-Match: "<version>"`（D60③）；
  * - **无 `sales.view_price` 时金额为 null**（D79）：显示 `—`，不用 0 顶替；
  * - 收款记录**只追加不改历史行**（D34 / D40）：退款是同一台账里的负数行；
  *   块内余额 `receiptBalance` 由服务端算，客户端不传。
@@ -94,9 +94,12 @@ export function createSalesApi(client: ApiClient = apiClient) {
       client.patch<SalesOrder>(`/sales-orders/${id}`, input, {
         headers: ifMatch(version),
       }),
-    /** 完成（D72）：扣批次可用量 + 生成 C 单草稿，同事务；AI 禁止。 */
-    complete: (id: string, version: number) =>
-      client.post<SalesOrder>(`/sales-orders/${id}/complete`, undefined, {
+    /**
+     * 销售出库（D72 / D85）：扣批次可用量 + 生成 C 单草稿，同事务；AI 禁止。
+     * 原 `complete` 端点已改名为 `ship`：销售单没有「出货后再确认」这一步（D85）。
+     */
+    ship: (id: string, version: number) =>
+      client.post<SalesOrder>(`/sales-orders/${id}/ship`, undefined, {
         headers: ifMatch(version),
       }),
     cancel: (id: string, version: number) =>

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { HEADER_STATES, canCancel } from './documents.js';
 import { ENTITIES } from './entities.js';
 import { buildOpenApiDocument } from './openapi.js';
+import { isDangerousOperation } from './mcp-map.js';
 import { routesOfModule } from './registry.js';
 import { ROUTES } from './routes.js';
 import {
@@ -82,7 +83,7 @@ const CREATE_INPUT = {
 } as const;
 
 describe('销售单契约（sales）', () => {
-  it('6 条端点全部登记并汇总进 ROUTES，且归属 sales（含 D72 完成）', () => {
+  it('6 条端点全部登记并汇总进 ROUTES，且归属 sales（含 D72 / D85 出库）', () => {
     expect(SALES_ORDER_ROUTES).toHaveLength(6);
     for (const route of SALES_ORDER_ROUTES) expect(route.module).toBe('sales');
 
@@ -99,7 +100,7 @@ describe('销售单契约（sales）', () => {
         'GET /api/v1/sales-orders/{id} sales.order.detail.read',
         'PATCH /api/v1/sales-orders/{id} sales.order.update',
         'POST /api/v1/sales-orders/{id}/cancel sales.order.cancel',
-        'POST /api/v1/sales-orders/{id}/complete sales.order.complete',
+        'POST /api/v1/sales-orders/{id}/ship sales.order.ship',
       ].sort(),
     );
 
@@ -109,8 +110,8 @@ describe('销售单契约（sales）', () => {
     expect(byId.get('sales.order.create')?.scope).toBe('sales.create');
     expect(byId.get('sales.order.update')?.scope).toBe('sales.update');
     expect(byId.get('sales.order.cancel')?.scope).toBe('sales.delete');
-    // D72：完成态是「改状态 + 锁库存 + 生成结算草稿」，沿用 update 权限位，不新增动作词（D4）。
-    expect(byId.get('sales.order.complete')?.scope).toBe('sales.update');
+    // D85：出库是「锁库存 + 生成结算草稿」，走专属动作 ship，不是 update（D4 八动作之一）。
+    expect(byId.get('sales.order.ship')?.scope).toBe('sales.ship');
   });
 
   it('普通读不记审计；写操作全部 audit=write（D51）', () => {
@@ -120,14 +121,14 @@ describe('销售单契约（sales）', () => {
     for (const id of [
       'sales.order.create',
       'sales.order.update',
-      'sales.order.complete',
+      'sales.order.ship',
       'sales.order.cancel',
     ]) {
       expect(byId.get(id)?.audit, id).toEqual({ kind: 'write', required: true });
     }
   });
 
-  it('AI 口径：开单/完成/取消禁止，修改允许；update/complete/cancel 带强 ETag', () => {
+  it('AI 口径：开单/出库/取消禁止，修改允许；update/ship/cancel 带强 ETag', () => {
     const byId = new Map(SALES_ORDER_ROUTES.map((r) => [r.operationId, r]));
     expect(byId.get('sales.order.create')?.ai).toEqual({ policy: 'forbid', reasonRequired: false });
     expect(byId.get('sales.order.update')?.ai).toEqual({ policy: 'allow', reasonRequired: false });
@@ -135,15 +136,17 @@ describe('销售单契约（sales）', () => {
       policy: 'forbid',
       reasonRequired: true,
     });
-    // D72：完成会锁库存并生成结算草稿，等同危险动作——AI 禁止且必须给原因。
-    expect(byId.get('sales.order.complete')?.ai).toEqual({
+    // D72 / D85：出库会锁库存并生成结算草稿，等同危险动作——AI 禁止且必须给原因，
+    // MCP 也按危险动作给 destructiveHint（D54 ⑥）。
+    expect(byId.get('sales.order.ship')?.ai).toEqual({
       policy: 'forbid',
       reasonRequired: true,
     });
+    expect(isDangerousOperation('sales.order.ship')).toBe(true);
 
     expect(byId.get('sales.order.update')?.requiresIfMatch).toBe(true);
     expect(byId.get('sales.order.cancel')?.requiresIfMatch).toBe(true);
-    expect(byId.get('sales.order.complete')?.requiresIfMatch).toBe(true);
+    expect(byId.get('sales.order.ship')?.requiresIfMatch).toBe(true);
     expect(byId.get('sales.order.create')?.requiresIfMatch).toBe(false);
     expect(byId.get('sales.order.create')?.response?.status).toBe(201);
   });
@@ -266,10 +269,11 @@ describe('销售单契约（sales）', () => {
     ).toBe(false);
     expect(DETAIL.cancelable).toEqual(canCancel('进行中', false));
 
-    // D72 只补了「完成」；出库（ship）与 E 单收款写入仍不属本模块契约（收款在 sales.receipt.*）。
+    // D85：原来的 complete 已改名为 ship，不再保留两个端点做同一件事；
+    // E 单收款写入也不属本模块契约（收款在 sales.receipt.*）。
     const ids = SALES_ORDER_ROUTES.map((r) => r.operationId);
-    expect(ids.some((id) => /complete/.test(id))).toBe(true);
-    expect(ids.some((id) => /ship|shipment/.test(id))).toBe(false);
+    expect(ids.some((id) => /complete/.test(id))).toBe(false);
+    expect(ids.some((id) => /ship/.test(id))).toBe(true);
     expect(ids.some((id) => /receipt/.test(id))).toBe(false);
   });
 

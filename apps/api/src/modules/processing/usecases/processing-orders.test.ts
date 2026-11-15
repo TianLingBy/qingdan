@@ -379,19 +379,27 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       `UPDATE inventory_batch SET referenced_qty = inbound_qty WHERE id = $1::uuid`,
       [BATCH_ID],
     );
+    let failure: unknown;
     try {
       const { ctx } = writeCtx({}, {
         params: { id: created.id },
         headers: { 'if-match': '"1"' },
         body: { lossQty: '4' },
       });
-      await expectAppError(completeProcessingOrder(ctx), 'VERSION_CONFLICT');
+      failure = await completeProcessingOrder(ctx).catch((error: unknown) => error);
     } finally {
       await test.database.query(
         `UPDATE inventory_batch SET referenced_qty = $1::amount WHERE id = $2::uuid`,
         [before.referenced_qty, BATCH_ID],
       );
     }
+    // #269：加工领料必须说「加工领料」，并带批次标识，不能沿用盘点口吻。
+    expect(failure).toBeInstanceOf(AppError);
+    expect(failure).toMatchObject({ code: 'VERSION_CONFLICT' });
+    const failureMessage = (failure as AppError).message;
+    expect(failureMessage).toContain('加工领料');
+    expect(failureMessage).toContain('B-UNIT-001');
+    expect(failureMessage).not.toContain('盘亏');
 
     const batch = (
       await test.database.query<{ inbound_qty: string; status: string }>(

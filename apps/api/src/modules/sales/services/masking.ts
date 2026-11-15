@@ -1,4 +1,8 @@
-import type { SalesOrder, SalesOrderDetail } from '@qingdan/contracts';
+import type {
+  SalesOrder,
+  SalesOrderDetail,
+  SalesReceipt,
+} from '@qingdan/contracts';
 
 /**
  * E 单金额脱敏（D27 / D79）。
@@ -22,7 +26,10 @@ export const SALES_MASKED_FIELDS = [
   'lines[].amount',
   'fees[].unitPrice',
   'fees[].amount',
+  'receipts[].amount',
 ] as const;
+
+export type SalesReceiptAmountFields = Pick<SalesReceipt, 'amount'>;
 
 function maskLines<T extends { unitPrice: string | null; amount: string | null }>(
   lines: T[],
@@ -50,6 +57,39 @@ export function maskSalesOrderAmounts<T extends SalesOrderAmountFields>(
   };
 }
 
+/**
+ * 单张收款记录：无看价权限时 `amount` 置 null。
+ *
+ * 收款记录的写路径（追加收款）与读路径（收款记录列表）共用本函数，
+ * 避免用例里各写一份字段清单（D79「写路径返回同样脱敏」）。
+ */
+export function maskSalesReceiptAmounts<T extends SalesReceiptAmountFields>(
+  receipt: T,
+  canViewPrice: boolean,
+): T {
+  if (canViewPrice) return receipt;
+  return { ...receipt, amount: null };
+}
+
+/** 收款块：收款记录金额 + 块内余额（详情与收款记录端点共用，D34 / D79）。 */
+export interface SalesReceiptBlockAmounts {
+  readonly receipts: SalesReceipt[];
+  readonly receiptBalance: string | null;
+}
+
+export function maskSalesReceiptBlockAmounts(
+  block: SalesReceiptBlockAmounts,
+  canViewPrice: boolean,
+): SalesReceiptBlockAmounts {
+  if (canViewPrice) return block;
+  return {
+    receipts: block.receipts.map((receipt) =>
+      maskSalesReceiptAmounts(receipt, false),
+    ),
+    receiptBalance: null,
+  };
+}
+
 /** 详情实体：在列表口径上再脱敏收款记录金额与块内余额。 */
 export function maskSalesOrderDetailAmounts(
   detail: SalesOrderDetail,
@@ -58,7 +98,6 @@ export function maskSalesOrderDetailAmounts(
   if (canViewPrice) return detail;
   return {
     ...maskSalesOrderAmounts(detail, false),
-    receipts: detail.receipts.map((receipt) => ({ ...receipt, amount: null })),
-    receiptBalance: null,
+    ...maskSalesReceiptBlockAmounts(detail, false),
   };
 }

@@ -315,15 +315,18 @@ export async function getProcessingOrder(
 }
 
 /**
- * 加工单打印取数（普通读，不记审计）：详情实体 + 公司名。
- * processing 无 `view_price` 脱敏口径，金额与数量按实体原样返回。
+ * 加工单打印取数（普通读，不记审计）：详情实体 + 公司名 + 看价判定。
+ *
+ * 看价（D27）：`processing.read` 即可打印，价格列由 `processing.view_price` 决定是否脱敏；
+ * 无权限不 403、不删记录，只把单价 / 金额渲染成「—」，数量与批次号照常输出。
  */
 export async function getProcessingOrderForPrint(
   ctx: ProcessingOrderContext,
-): Promise<{ order: ProcessingOrder; companyName: string }> {
+): Promise<{ order: ProcessingOrder; companyName: string; canViewPrice: boolean }> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'processing.order.print');
   requireScope(principal, 'read');
+  const canViewPrice = allowsScope(principal.scope, 'processing', 'view_price');
   const id = parseOrderId(ctx.request);
 
   const source = await withTenant(database, principal.tenantId, async (tx) => {
@@ -343,7 +346,7 @@ export async function getProcessingOrderForPrint(
     };
   });
   if (!source) throw new AppError('NOT_FOUND', '加工单不存在');
-  return source;
+  return { ...source, canViewPrice };
 }
 
 /** 开加工单：201 + 同事务取 B 单号 / 审计（D16 / D51）。 */

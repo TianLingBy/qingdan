@@ -3,13 +3,20 @@ import type { ProcessingMaterialInput, ProcessingOrder } from '@qingdan/contract
 /**
  * 加工单发厂联 HTML（prints.ts 契约）。
  *
- * 纯函数：只接收详情实体与公司名，不发请求、不读库。
- * processing 无 `view_price` 脱敏口径，数量 / 金额按实体原样渲染；
+ * 纯函数：只接收详情实体、公司名与看价判定，不发请求、不读库。
+ * 金额按 `processing.view_price` 脱敏（D27）：无权限时费用明细的单价 / 金额渲染「—」，
+ * 序号 / 品名 / 数量 / 批次号照常输出（工厂对账需要）；有权限时输出与旧版逐字节一致。
  * 可空字段（损耗量 / 可售量 / 辅料 / 归属单）一律渲染「—」，不回落成 0 或空串。
  */
 
 /** 可空字段的占位符；不要改成 0 或空串。 */
 const NO_VALUE = '—';
+
+/**
+ * 无看价权限时的金额占位符：与结算 / 销售脱敏及前端 `MASKED_AMOUNT`
+ * （apps/web/src/lib/decimal.ts）同一个「—」字符，不要自造别的字符串。
+ */
+const MASKED_AMOUNT = NO_VALUE;
 
 function escapeHtml(value: string): string {
   return value
@@ -22,6 +29,11 @@ function escapeHtml(value: string): string {
 
 function text(value: string | null): string {
   return value === null ? NO_VALUE : escapeHtml(value);
+}
+
+/** 单价 / 金额：无看价权限一律「—」，有权限时按实体原样转义。 */
+function amount(value: string, canViewPrice: boolean): string {
+  return canViewPrice ? escapeHtml(value) : MASKED_AMOUNT;
 }
 
 /** 材料批次按契约顺序逗号分隔，每行渲染「批号 × 数量」；空数组（契约不允许）也回落「—」。 */
@@ -37,15 +49,15 @@ function formatDate(iso: string): string {
   return iso.slice(0, 10);
 }
 
-function renderFees(order: ProcessingOrder): string {
+function renderFees(order: ProcessingOrder, canViewPrice: boolean): string {
   const rows = order.fees
     .map(
       (fee) => `
         <tr>
           <td>${escapeHtml(fee.feeName)}</td>
           <td class="num">${escapeHtml(fee.qty)}</td>
-          <td class="num">${escapeHtml(fee.unitPrice)}</td>
-          <td class="num">${escapeHtml(fee.amount)}</td>
+          <td class="num">${amount(fee.unitPrice, canViewPrice)}</td>
+          <td class="num">${amount(fee.amount, canViewPrice)}</td>
         </tr>`,
     )
     .join('');
@@ -74,6 +86,7 @@ function renderFees(order: ProcessingOrder): string {
 export function renderProcessingOrderFactoryCopy(
   order: ProcessingOrder,
   companyName: string,
+  canViewPrice = true,
 ): string {
   return `<!doctype html>
 <html lang="zh-CN">
@@ -163,7 +176,7 @@ export function renderProcessingOrderFactoryCopy(
       </tbody>
     </table>
   </section>
-${renderFees(order)}
+${renderFees(order, canViewPrice)}
 
   <dl class="meta">
     <div><dt>归属单据</dt><dd>${text(order.attributionDoc)}</dd></div>
