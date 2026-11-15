@@ -3,6 +3,7 @@ import {
   INTERNAL_TRADE_STATES,
   canEdit,
   createInternalTradesApi,
+  dispatchDisabledReason,
   internalPriceGap,
   lineAmountOf,
   linesTotal,
@@ -71,6 +72,43 @@ describe('到货确认（D31 / D68③）', () => {
     expect(receiveDisabledReason('进行中')).toContain('还没发货');
     expect(receiveDisabledReason('已完成')).toContain('已到货确认');
     expect(receiveDisabledReason('已取消')).toContain('已作废');
+  });
+});
+
+describe('发货 / 撤销发货（权限点 internal_trade.ship，不是 update）', () => {
+  it('dispatch 打到 /internal-trade-orders/{id}/dispatch，body 是 { confirm: true }，带 If-Match', async () => {
+    const post = vi.fn().mockResolvedValue({});
+    const client = { post } as unknown as Parameters<typeof createInternalTradesApi>[0];
+    const api = createInternalTradesApi(client);
+
+    await api.dispatch('n1', 3);
+
+    expect(post).toHaveBeenCalledWith(
+      '/internal-trade-orders/n1/dispatch',
+      { confirm: true },
+      { headers: { 'If-Match': '"3"' } },
+    );
+  });
+
+  it('dispatchRevoke 打到 /internal-trade-orders/{id}/dispatch-revoke，body 带 reason，带 If-Match', async () => {
+    const post = vi.fn().mockResolvedValue({});
+    const client = { post } as unknown as Parameters<typeof createInternalTradesApi>[0];
+    const api = createInternalTradesApi(client);
+
+    await api.dispatchRevoke('n1', 4, '批次锁错了');
+
+    expect(post).toHaveBeenCalledWith(
+      '/internal-trade-orders/n1/dispatch-revoke',
+      { confirm: true, reason: '批次锁错了' },
+      { headers: { 'If-Match': '"4"' } },
+    );
+  });
+
+  it('发货 / 撤销发货只在进行中与在途可用，两个终态给原因', () => {
+    expect(dispatchDisabledReason('进行中')).toBeNull();
+    expect(dispatchDisabledReason('在途')).toBeNull();
+    expect(dispatchDisabledReason('已完成')).toContain('不能再发货或撤销发货');
+    expect(dispatchDisabledReason('已取消')).toContain('不能发货或撤销发货');
   });
 });
 
