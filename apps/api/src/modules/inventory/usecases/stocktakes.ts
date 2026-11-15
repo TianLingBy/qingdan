@@ -4,6 +4,7 @@ import {
   StocktakeDecreaseInputSchema,
   StocktakeIncreaseInputSchema,
   StocktakeListQuerySchema,
+  StocktakeRejectInputSchema,
   allowsScope,
   clampLimit,
   decodeCursor,
@@ -29,15 +30,17 @@ import { applyStockAdjustment } from '../services/stock-flow.js';
  * 盘点调整 I 用例（D15 / D16 / D47 / D51 / D52 / D54 / D60 / D67）。
  *
  * - 权限：读 `stocktake.read`；盘盈 `stocktake.create`；盘亏 `stocktake.delete`（仅删减）；
- *   审批 `stocktake.approve`（D71）；
+ *   审批 / 驳回 `stocktake.approve`（D71，能批才能驳）；
  * - 公司隔离：读写均由 repo 带可见公司集合，跨公司等同不存在；
  * - 单号：创建时在业务事务内取 `I` 号（D16）；
  * - 差异：客户端只传账面量 / 实盘量，`diffQty = actualQty - bookQty` 由 SQL 计算；
- * - 审计：create / approve 与业务同事务写；普通读不记（D51 / D54②）；
- * - AI：发起与审批默认禁止；审批必须人类且带 reason（D52① / D54⑥）；
+ * - 审计：create / approve / reject 与业务同事务写；普通读不记（D51 / D54②）；
+ * - AI：发起与审批 / 驳回默认禁止；审批 / 驳回必须人类且带 reason（D52① / D54⑥）；
  * - 审批：强 If-Match；非待审批 409（details.reason 取契约枚举）；通过后在同一
  *   事务内经 `services/stock-flow.ts` 调整批次并追加 `source_doc_type='stocktake'`
- *   的库存流水（D47 / D67），不物理删除任何行。
+ *   的库存流水（D47 / D67），不物理删除任何行；
+ * - 驳回：强 If-Match；只有待审批可驳回，落 reject_reason 后置已驳回；
+ *   **驳回不动库存**：不调库存服务、不写 `inventory_flow`、不改批次数量。
  */
 
 const OBJECT_TYPE = 'stocktake';
@@ -460,4 +463,87 @@ export async function approveStocktake(
   });
 
   return detail;
+}
+
+/**
+ * 驳回盘点单：人类 + stocktake.approve + If-Match + 必填原因。
+ *
+ * **驳回不动库存**：只把状态置「已驳回」并落 `reject_reason` / 审批人 / version + 1；
+ * 不调 `services/stock-flow.ts`、不写 `inventory_flow`、不改批次数量。
+ * 这是与批准最大的区别——被驳回的盘点单从未产生过库存影响（D47 / D67）。
+ */
+export async function rejectStocktake(
+  ctx: StocktakeWriteContext,
+): Promise<Stocktake> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'stocktake.reject');
+  requireScope(principal, 'approve');
+  assertHumanApproval(ctx.request, principal);
+
+  const id = parseStocktakeId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const parsed = StocktakeRejectInputSchema.safeParse(ctx.request.body);
+  if (!parsed.success) {
+    throw new AppError('VALIDATION_FAILED', '请求体不合法', {
+      issues: issuesOf(parsed.error),
+    });
+  }
+
+  const state = await withTenant(database, principal.tenantId, (tx) =>
+    repo.loadStocktakeState(repoContext(tx, principal), id),
+  );
+  if (!state) throw new AppError('NOT_FOUND', '盘点单不存在');
+  if (state.version !== expectedVersion) {
+    throw new AppError(
+      'VERSION_CONFLICT',
+      '盘点单版本与 If-Match 不一致，请重新读取后重试',
+      { expected: expectedVersion, current: state.version },
+    );
+  }
+  if (state.status !== '待审批') {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      `盘点单当前状态「${state.status}」不可驳回`,
+      { status: state.status },
+    );
+  }
+
+  const audit = auditEventOf(ctx.request, principal, 'stocktake.reject', id, {
+    beforeStatus: state.status,
+    afterStatus: '已驳回',
+    batchId: state.batchId,
+    reason: parsed.data.reason,
+  });
+  audit.companyId = state.companyId;
+
+  const rejected = await withAudit(database, audit, async (tx) => {
+    const rc = repoContext(tx, principal);
+    const updated = await repo.rejectStocktake(
+      rc,
+      id,
+      expectedVersion,
+      principal.employeeId,
+      parsed.data.reason,
+    );
+    if (!updated) {
+      throw new AppError(
+        'VERSION_CONFLICT',
+        '盘点单已被并发修改，请重新读取后重试',
+      );
+    }
+
+    const stocktake = await repo.getStocktake(rc, id);
+    if (!stocktake) {
+      throw new AppError('INTERNAL_ERROR', '盘点单驳回后读取失败', { id });
+    }
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: stocktake.status,
+      version: stocktake.version,
+      reason: parsed.data.reason,
+    };
+    return stocktake;
+  });
+
+  return rejected;
 }
