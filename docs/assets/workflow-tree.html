@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: #f4f6f9; color: #1f2937; padding: 34px 40px 40px; width: 1120px;
+  }
+  h1 { font-size: 26px; letter-spacing: .5px; }
+  h1 small { display: block; font-size: 14px; font-weight: 400; color: #6b7280; margin-top: 6px; }
+
+  .start {
+    margin: 22px 0 16px; background: #1f2937; color: #fff; border-radius: 10px;
+    padding: 14px 20px; font-size: 16px; font-weight: 600; display: inline-block;
+  }
+
+  .row { display: flex; align-items: stretch; gap: 0; margin-bottom: 0; }
+  .q {
+    flex: 0 0 470px; background: #fff; border: 1px solid #e3e8ef; border-radius: 10px;
+    padding: 13px 16px; display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 1px 2px rgba(16,24,40,.04);
+  }
+  .q .idx {
+    flex: 0 0 26px; height: 26px; border-radius: 50%; background: #eef2f7; color: #4b5563;
+    font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  .q .txt { font-size: 15px; font-weight: 600; }
+  .q .sub { font-size: 12px; color: #6b7280; font-weight: 400; margin-top: 3px; }
+
+  .yes { flex: 0 0 62px; display: flex; align-items: center; justify-content: center; color: #059669; font-size: 13px; font-weight: 700; }
+  .yes::after { content: "▶"; margin-left: 4px; font-size: 10px; }
+
+  .ans {
+    flex: 1; border-radius: 10px; padding: 13px 16px; color: #fff; display: flex; flex-direction: column; justify-content: center;
+  }
+  .ans .who { font-size: 15px; font-weight: 700; letter-spacing: .3px; }
+  .ans .why { font-size: 12.5px; opacity: .92; margin-top: 4px; line-height: 1.5; }
+
+  .c-human { background: #2563eb; }
+  .c-dsh   { background: #7c3aed; }
+  .c-sa    { background: #059669; }
+  .c-local { background: #0891b2; }
+  .c-gate  { background: #dc2626; }
+  .c-none  { background: #6b7280; }
+
+  .down { height: 24px; display: flex; align-items: center; }
+  .down .line { width: 12px; border-left: 2px dashed #c7ced8; height: 100%; margin-left: 29px; }
+  .down .lbl { font-size: 11.5px; color: #9aa3af; margin-left: 8px; }
+
+  .foot { margin-top: 24px; display: flex; gap: 14px; }
+  .card {
+    flex: 1; background: #fff; border: 1px solid #e3e8ef; border-radius: 10px; padding: 14px 16px;
+  }
+  .card b { display: block; font-size: 14px; margin-bottom: 7px; color: #111827; }
+  .card ul { list-style: none; font-size: 13px; color: #374151; line-height: 1.85; }
+  .card li::before { content: "·"; color: #9aa3af; margin-right: 7px; font-weight: 700; }
+  .card.green { border-left: 3px solid #059669; }
+  .card.red { border-left: 3px solid #dc2626; }
+  .card.blue { border-left: 3px solid #2563eb; }
+</style>
+</head>
+<body>
+  <h1>轻单 · 这活该交给谁
+    <small>从上往下问，第一个「是」就停，那个框就是说这活归谁</small>
+  </h1>
+
+  <div class="start">有件事要改</div>
+
+  <div class="down"><div class="line"></div><div class="lbl">否，继续往下问</div></div>
+  <div class="row">
+    <div class="q"><div class="idx">1</div><div><div class="txt">需求边界不清，或要拍口径？</div><div class="sub">做什么、做成什么样、和既有承诺冲不冲突</div></div></div>
+    <div class="yes">是</div>
+    <div class="ans c-human"><div class="who">人 + DSH 会话</div><div class="why">先把需求写成能验收的一句话，再往下走</div></div>
+  </div>
+
+  <div class="down"><div class="line"></div><div class="lbl">否</div></div>
+  <div class="row">
+    <div class="q"><div class="idx">2</div><div><div class="txt">要动本机 / WSL / 部署 / 密钥 / 生产数据？</div><div class="sub">这类活不在仓库里，云端够不着</div></div></div>
+    <div class="yes">是</div>
+    <div class="ans c-dsh"><div class="who">DSH 会话</div><div class="why">我能操作你的机器、面板、服务、定时任务</div></div>
+  </div>
+
+  <div class="down"><div class="line"></div><div class="lbl">否</div></div>
+  <div class="row">
+    <div class="q"><div class="idx">3</div><div><div class="txt">要跨仓库，或同时改仓库外的东西？</div><div class="sub">worker 只在一个 clone 出来的目录里工作</div></div></div>
+    <div class="yes">是</div>
+    <div class="ans c-human"><div class="who">人 + DSH 会话</div><div class="why">先拆成几件各自独立的事，再分别派</div></div>
+  </div>
+
+  <div class="down"><div class="line"></div><div class="lbl">否</div></div>
+  <div class="row">
+    <div class="q"><div class="idx">4</div><div><div class="txt">落在 critical 路径上？</div><div class="sub">契约 / platform 内核 / 数据库迁移 / decisions.md / .github</div></div></div>
+    <div class="yes">是</div>
+    <div class="ans c-gate"><div class="who">先拿你的批准，再按下面走</div><div class="why">在 issue 里 @TianLingBy 说明改什么、为什么，点头后才动手</div></div>
+  </div>
+
+  <div class="down"><div class="line"></div><div class="lbl">否</div></div>
+  <div class="row">
+    <div class="q"><div class="idx">5</div><div><div class="txt">单仓库内、能用一条命令或一张截图判断做没做对？</div><div class="sub">预计一天以内能做完</div></div></div>
+    <div class="yes">是</div>
+    <div class="ans c-sa"><div class="who">superagent（@Tylanbot）</div><div class="why">异步排队、独立目录、自己跑测试、产出 PR，最多 3 单并行</div></div>
+  </div>
+
+  <div class="down"><div class="line"></div><div class="lbl">否</div></div>
+  <div class="row">
+    <div class="q"><div class="idx">6</div><div><div class="txt">必须一边跑一边调？要看真实 UI 或真实数据库现象？</div><div class="sub">判断不了对错，要看到才知道</div></div></div>
+    <div class="yes">是</div>
+    <div class="ans c-local"><div class="who">本地 CLI agent</div><div class="why">由 DSH 会话派 Claude Code / Codex，在你机器上边跑边试</div></div>
+  </div>
+
+  <div class="down"><div class="line"></div><div class="lbl">否</div></div>
+  <div class="row">
+    <div class="q" style="opacity:.85"><div class="idx">!</div><div><div class="txt">以上都不是</div><div class="sub">这活还没成型</div></div></div>
+    <div class="yes" style="visibility:hidden">是</div>
+    <div class="ans c-none"><div class="who">先拆小，再回到第 1 问</div><div class="why">拆到一个能说清 «改完后怎么看出它对了» 为止</div></div>
+  </div>
+
+  <div class="foot">
+    <div class="card green">
+      <b>superagent 适合</b>
+      <ul>
+        <li>改代码、补测试、写文档</li>
+        <li>范围写清、验收可跑的小单</li>
+        <li>多人同时提的活，排队跑</li>
+      </ul>
+    </div>
+    <div class="card red">
+      <b>superagent 不适合</b>
+      <ul>
+        <li>需求还要讨论、要人拍板</li>
+        <li>动本机、部署、碰密钥</li>
+        <li>跨仓、或要边跑边看效果</li>
+      </ul>
+    </div>
+    <div class="card blue">
+      <b>一句话记法</b>
+      <ul>
+        <li>判断已经做完 → 交给它</li>
+        <li>还要做判断 → 留给人</li>
+        <li>说不清验收 → 先拆小</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>

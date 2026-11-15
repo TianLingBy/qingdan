@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   INTERNAL_TRADE_STATES,
   canEdit,
+  createInternalTradesApi,
   internalPriceGap,
   lineAmountOf,
   linesTotal,
+  receiveDisabledReason,
   totalLineQty,
   tradeRouteText,
   updateInputOf,
@@ -46,6 +48,29 @@ describe('N 单是独立四态，不是单据三态（D68②）', () => {
     expect(canEdit('在途')).toBe(false);
     expect(canEdit('已完成')).toBe(false);
     expect(canEdit('已取消')).toBe(false);
+  });
+});
+
+describe('到货确认（D31 / D68③）', () => {
+  it('receive 打到 /internal-trade-orders/{id}/receive，body 是 { confirm: true }，带 If-Match', async () => {
+    const post = vi.fn().mockResolvedValue({});
+    const client = { post } as unknown as Parameters<typeof createInternalTradesApi>[0];
+    const api = createInternalTradesApi(client);
+
+    await api.receive('n1', 2);
+
+    expect(post).toHaveBeenCalledWith(
+      '/internal-trade-orders/n1/receive',
+      { confirm: true },
+      { headers: { 'If-Match': '"2"' } },
+    );
+  });
+
+  it('只有「在途」能到货确认，其余三态给原因', () => {
+    expect(receiveDisabledReason('在途')).toBeNull();
+    expect(receiveDisabledReason('进行中')).toContain('还没发货');
+    expect(receiveDisabledReason('已完成')).toContain('已到货确认');
+    expect(receiveDisabledReason('已取消')).toContain('已作废');
   });
 });
 

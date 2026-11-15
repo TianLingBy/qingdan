@@ -10,13 +10,14 @@
  * - **B 单费用行金额必须 ≥ 0**（D39）：加工费 / 运杂费为负无现实意义，前端先挡一道；
  * - 修改 / 取消 / 完成必须带强 ETag `If-Match: "<version>"`（D60③）；
  * - `lossQty` **只在完成时一次填入、事后不改**（F3），开单与修改都不传；
- * - `complete` 端点（D5 锁价 + 产出批次）依赖 inventory 写能力，API 侧**尚未登记**
- *   （`mountRoutes` 未登记的 operationId 仍回 501），页面不画假按钮。
+ * - `complete` 按 D5 扣材料、生成产出批次并锁价；全损耗必须二次确认（G2）。
  */
 
 import type {
   InventoryBatch,
   ProcessingOrder,
+  ProcessingOrderCompleteBody,
+  ProcessingOrderCompleteResult,
   ProcessingOrderCreateInput,
   ProcessingOrderDetail,
   ProcessingOrderStatus,
@@ -73,6 +74,10 @@ export function createProcessingApi(client: ApiClient = apiClient) {
       }),
     cancel: (id: string, version: number) =>
       client.post<ProcessingOrder>(`/processing-orders/${id}/cancel`, undefined, {
+        headers: ifMatch(version),
+      }),
+    complete: (id: string, input: ProcessingOrderCompleteBody, version: number) =>
+      client.post<ProcessingOrderCompleteResult>(`/processing-orders/${id}/complete`, input, {
         headers: ifMatch(version),
       }),
     /** 发厂联（HTML 文本由服务端生成，前端只负责打开 / 落盘）。 */
