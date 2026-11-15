@@ -313,56 +313,51 @@ ALTER TABLE purchase_order ADD COLUMN supplier_contact_id  uuid REFERENCES suppl
 - 数据安全：回填幂等；对接人删除一律软停用（`status='停用'`），单据引用不悬空；RLS 口径与其它表一致。
 - 产品安全：`is_primary` 唯一由部分索引 + 应用层双保险；停用客户不显示其对接人下拉。
 - 服务器安全：聚合查询一次 SQL 搞定，禁止「先查列表再逐条查汇总」的 N+1；无新依赖。
-## 十二、订单的「类目」层（负责人 2026-11-16 追加：「同一个公司，不同对接人有多个订单，需要再分一级类目」）
+## 十二、档案页的三级下钻（公司 → 对接人 → 订单）
 
-### 12.1 层级关系怎么定
-负责人要的是在**对接人与订单之间再分一层**，用来把同一客户、同一对接人名下的多张单归堆。有两种放法：
+负责人 2026-11-16 追加原话：「查看客户资料时，先按公司分类展示，点开一个公司下展示不同的对接人，点开对接人后展示其所有的订单。」
 
-| 方案 | 关系 | 优点 | 代价 |
-|---|---|---|---|
-| **A（推荐）客户 → 类目 → 订单，对接人独立挂订单** | 订单同时有 `customer_contact_id` 与 `category_id`，两个维度正交 | 客户换对接人不用迁类目；能出「对接人 × 类目」交叉表；一张字典表 + 订单一个外键 | 类目不是对接人的子节点，界面上要并列展示 |
-| B 客户 → 对接人 → 类目 → 订单 | 类目挂在对接人下，严格三级 | 界面天然树形 | 换对接人时历史类目归属要迁移或挂空；两个对接人卖同一类货要各建一遍；交叉统计做不了 |
+### 12.1 先澄清上一版的误读
+上一版按「类目字典」理解，设计了 `order_category` 表 + 订单 `category_id`。负责人指的不是字典分类，而是**界面上的下钻层级**。因此：**不建 `order_category` 表、订单不加 `category_id`**，本章只描述三级下钻视图与它需要的数据。
 
-选 A 的硬理由：**类目是业务的属性，不是人的属性**。同一客户的面料单可能先后由两个对接人跟，类目还是「面料」；若绑死在对接人下，换人即产生类目漂移，历史流水按类目统计会断裂（违反 §十一 的统计口径要求）。
+### 12.2 三级视图（客户 / 供应商 / 加工厂三个档案页同构）
+```
+一级：公司（我方的 company 列表，按登录员工可访问范围）
+  └ 二级：该公司的档案列表 → 点开一条档案，看它的对接人卡片列表
+        └ 三级：点开一个对接人，看这个对接人名下的全部订单（分页）
+```
+- 一级切换沿用现有 `companyId` 筛选（`GET /customers?companyId=`，`packages/contracts/src/customers.ts:48`），不做新的公司选择器组件。
+- 二级「对接人卡片」：姓名 + 手机号后 4 位 + 是否主联系人 + 单数 + 累计金额 + 最近下单时间。最后一组数字走 `GET /customers/{id}/summary?groupBy=contact` 的 `groups[]`（见 §12.4）。
+- 三级「该对接人的订单」：单号 / 日期 / 金额 / 状态 / 商品摘要，分页 20 条，按 `created_at DESC`。
+- 兜底：没有对接人的历史单单独成一组「未指定对接人」（`contactId=none`），不许把这类单悄悄丢掉——否则三级加总不等于档案总额，对账会炸。
 
-建议给负责人拍板的问题（一句话即可）：**「类目放在客户下大家共用（A），还是每个对接人各自一套（B）？」** 本文按 A 写全，若选 B 只改 `customer_category.contact_id` 与索引，其余不变。
-
-### 12.2 数据模型
-新表 `order_category`（客户级类目字典）：
-
-| 列 | 类型 | 说明 |
+### 12.3 数据与接口
+| 层级 | 端点 | 状态 |
 |---|---|---|
-| `id` | uuid PK | |
-| `tenant_id` / `company_id` | uuid NOT NULL | 公司隔离（D15）；同一客户在两个子公司各有一套类目 |
-| `customer_id` | uuid NULL REFERENCES customer(id) ON DELETE RESTRICT | A 方案下按客户私有；`NULL` = 本公司通用类目 |
-| `parent_id` | uuid NULL REFERENCES order_category(id) | 预留两级（如「面料 → 针织」），一期只做一级，界面不给建子级 |
-| `name` | text NOT NULL CHECK (length(btrim(name)) > 0) | 类目名 |
-| `sort_no` | int NOT NULL DEFAULT 100 | 排序 |
-| `status` | text NOT NULL DEFAULT '启用' CHECK (status IN ('启用','停用')) | 停用不删，历史单照常显示 |
-| `version` / `created_at` / `updated_at` | | 与其它主数据同构 |
+| 一级 公司列表 | `GET /api/v1/companies` | 已有 |
+| 二级 档案列表 | `GET /api/v1/customers?companyId=&keyword=&status=` | 已有 |
+| 二级 对接人列表 | `GET /api/v1/customers/{id}/contacts` | #306 新增 |
+| 二级 每个对接人的数字 | `GET /api/v1/customers/{id}/summary?groupBy=contact` → `groups[{contactId,name,orderCount,totalAmount,lastOrderAt}]` | #306 新增 |
+| 三级 某对接人的订单 | `GET /api/v1/customers/{id}/orders?contactId=&page=&pageSize=` | **新增（归 #306）** |
 
-- 唯一性：`CREATE UNIQUE INDEX order_category_scope_name_key ON order_category (tenant_id, company_id, COALESCE(customer_id, '00000000-0000-0000-0000-000000000000'::uuid), lower(btrim(name)))` —— 用 `COALESCE` 让「通用类目」也不会重名。
-- 订单加一列（四个单据类型都加，全部可空、不 backfill）：`sales_order.category_id`、`purchase_order.category_id`、`processing_order.category_id`、`internal_trade_order.category_id`，均 `REFERENCES order_category(id) ON DELETE RESTRICT`。
-- 索引：`CREATE INDEX sales_order_tenant_company_customer_category_idx ON sales_order (tenant_id, company_id, customer_id, category_id)` —— 供「按类目统计」；补充到 §三 的同一个迁移文件里。
+- 第三级必须**服务端分页**并支持 `contactId=none`；`contactId` 必须是该档案下的对接人，否则 422。
+- 供应商取 `purchase_order`、加工厂取加工单，端点路径同构（`/suppliers/{id}/summary`、`/processors/{id}/summary`、`/suppliers/{id}/orders`）。
 
-### 12.3 交互
-1. **开单页**：选完客户后出现「类目」下拉（该客户私有类目 + 本公司通用类目，按 `sort_no` 排），**允许手填新类目**，保存时静默 upsert（与对接人同规则，`entity='order_category'`）。类目可选非必填——强制必填会让员工乱填，反而污染字典。
-2. **档案详情页**（#307 追加）：历史订单区上方加两个切换：「按对接人」/「按类目」，各出一张小表（对接人或类目 · 单数 · 金额 · 最近下单）。默认「按对接人」。
-3. **类目管理**：放在档案详情页的「类目」小抽屉里（增/改名/停用/排序），不在主数据页单开一屏——避免与 §二·零 不重复原则冲突；也进 `masterdata_dedupe` 的审核范围（`entity='order_category'`）。
-
-### 12.4 统计口径（与 §11.3 一致）
-- `GET /customers/{id}/summary?groupBy=contact|category` → 增加 `groups: [{id, name, orderCount, totalAmount, lastOrderAt}]`；`groupBy` 缺省 `contact`。
-- 口径同 §11.3：`status <> '已取消'`、只统计本公司、`totalAmount` 需 `view_price`（无权限则整段不返回）、一次 SQL `GROUP BY` 不建物化表。
+### 12.4 统计口径
+- 三级加总必须等于档案总额：`Σ groups[].orderCount == orderCount`、`Σ groups[].totalAmount == totalAmount`（含 `contactId=none` 组）。用例里做等式断言。
+- 口径同 §11.3：`status <> '已取消'`、只统计本公司单据、`totalAmount` 需 `view_price`（无权限则该字段整段不返回，列表金额列隐藏）。
+- 一次 `GROUP BY contact_id` 完成；三级列表分页用 `(tenant_id, company_id, customer_id, customer_contact_id, created_at DESC)` 复合索引，不做 N+1。
 
 ### 12.5 权限（不新增动作）
-类目增删改沿用 `customer.create/update/delete`（类目是客户档案的从属数据，同对接人）；读类目随档案 `customer.read`；看金额 `view_price`。
+读档案、对接人、订单列表：`customer.read`（供应商/加工厂取各自域 `read`）；金额与消费流水：`view_price`。后端 403 兜底，前端按 `allowsScope` 显隐，不写角色常量。
 
 ### 12.6 安全影响四类
-- 用户安全：类目不可删只能停用（历史单引用不悬空，`ON DELETE RESTRICT`）；跨公司/跨客户的 `categoryId` 传值一律 422。
-- 数据安全：手填类目 upsert 幂等；类目名归一化 `lower(btrim(name))` 防「面料 / 面料 」重复；进相似度队列由人审。
-- 产品安全：停用类目不在开单下拉出现，但历史单据照常显示名字；两级层级一期只开一级，避免界面表达不了。
-- 服务器安全：加一条复合索引覆盖按客户+类目聚合；无新依赖、不新增域。
+- 用户安全：手机号列表只显示后 4 位；无 `view_price` 看不到金额与流水金额列；`contactId` 跨档案传值 422（防越权遍历别人的订单）。
+- 数据安全：订单查询强制带 `tenant_id + company_id + customer_id` 三条件，不走全表；历史单无对接人时归 `none` 组而非丢弃。
+- 产品安全：三级加总有等式断言，避免「点进去看到的和总数不一致」；停用对接人仍在列表显示（灰显、可点开看历史单）。
+- 服务器安全：复合索引覆蓋三级查询；分页上限 100；无新依赖、无新域、无新表。
 
 ### 12.7 验收补充（并入 §八）
-- `node tools/check-numbering.mjs --base origin/main` 通过（一个迁移文件、一个决策号 D92 内补一句）。
-- 用例：同客户两对接人各两张单、分属两个类目 → `groupBy=category` 出两行、金额正确；跨客户传 `categoryId` → 422；停用类目后历史单仍显示其名；无 `view_price` 时 `groups` 里无金额字段；重复类目名（大小写/空格差异）→ 409。
+- 供应商/加工厂同构各一条用例。
+- 用例：一个客户 3 个对接人 + 2 张无对接人历史单 → 二级出 4 组（3 人 + 未指定），三级点每个能搜到各自单据，四组单数相加 = 档案总数。
+- 用例：`contactId` 传别的客户的对接人 → 422；`page=2&pageSize=20` 返回第二页且总数正确；无 `view_price` 时 `groups[].totalAmount` 不返回、三级列表无金额列。
