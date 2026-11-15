@@ -24,8 +24,7 @@ import * as repo from '../repo.js';
 /**
  * R 客户退货用例（D36 / D40 / D47 / D51 / D52.1 / D54）。
  *
- * - 权限：`customer_return.read|create`；
- * - D47：录入由老板、经理或财务岗位完成，服务端按当前岗位重新校验；
+ * - 权限：只认权限点不看岗位（D44 / AGENTS.md 权限铁律）——录入需 `customer_return.create`；
  * - 隔离：所有读写带 tenant_id + 可见公司集合，跨公司等同不存在；
  * - 单号：创建时在同一事务内取 `R-<公司码4>-<日期8>-<流水4>`；
  * - 金额：明细金额由 SQL 计算，应退金额按 amount 域规范化，保持 decimal 字符串；
@@ -269,7 +268,7 @@ export async function getCustomerReturn(
   return customerReturn;
 }
 
-/** 登记 R 客户退货：201 + 同事务取号 / D47 岗位校验 / 审计（D51）。 */
+/** 登记 R 客户退货：201 + 同事务取号 / 权限点校验 / 审计（D51）。 */
 export async function createCustomerReturn(
   ctx: CustomerReturnWriteContext,
 ): Promise<CustomerReturn> {
@@ -300,19 +299,6 @@ export async function createCustomerReturn(
 
   const created = await withAudit(database, audit, async (tx) => {
     const context = repoContext(tx, principal);
-    const approvalAllowed = await repo.hasCustomerReturnApprovalPosition(
-      context,
-      principal.employeeId,
-      input.companyId,
-    );
-    if (!approvalAllowed) {
-      throw new AppError(
-        'FORBIDDEN',
-        'D47：客户退货仅允许老板、经理或财务岗位录入',
-        { companyId: input.companyId },
-      );
-    }
-
     const returnNo = await takeDocumentNo(tx, 'R', input.companyId, new Date());
     const customerReturn = await repo.insertCustomerReturn(context, {
       ...input,
