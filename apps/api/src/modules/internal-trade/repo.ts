@@ -104,6 +104,7 @@ interface BatchRow {
 
 interface DispatchBatchRow {
   id: string;
+  batch_no: string;
   available_qty: string | number;
 }
 
@@ -750,7 +751,7 @@ export async function occupyBatchesForDispatch(
   }
   const batchIds = quantities.map((item) => item.batchId);
   const locked = await ctx.tx.query<DispatchBatchRow>(
-    `SELECT id, trim_scale(available_qty) AS available_qty
+    `SELECT id, batch_no, trim_scale(available_qty) AS available_qty
        FROM inventory_batch
       WHERE tenant_id = $1
         AND company_id = $2::uuid
@@ -767,6 +768,7 @@ export async function occupyBatchesForDispatch(
   const availableById = new Map(
     locked.rows.map((row) => [row.id, String(row.available_qty)]),
   );
+  const batchNoById = new Map(locked.rows.map((row) => [row.id, row.batch_no]));
   for (const { batchId, qty } of quantities) {
     const available = availableById.get(batchId);
     const guard = await ctx.tx.query<{ enough: boolean }>(
@@ -774,11 +776,19 @@ export async function occupyBatchesForDispatch(
       [qty, available],
     );
     if (!guard.rows[0]?.enough) {
-      throw new AppError('VERSION_CONFLICT', '库存批次可用量不足，无法确认发货', {
-        batchId,
-        requestedQty: qty,
-        availableQty: available,
-      });
+      // N 单发货占用在途量，走自己的入库守卫而不是 stock-flow 的盘点调整；
+      // #269 要求四类业务动作各自说清动作与批次，文案在此对齐。
+      const batchNo = batchNoById.get(batchId);
+      throw new AppError(
+        'VERSION_CONFLICT',
+        `内部交易发货后批次可用量将为负（批次 ${batchNo}）`,
+        {
+          batchId,
+          batchNo,
+          requestedQty: qty,
+          availableQty: available,
+        },
+      );
     }
   }
 

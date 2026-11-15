@@ -171,7 +171,7 @@ describe('支付回调（PGlite + seed）', () => {
 
     const completed = await app.inject({
       method: 'POST',
-      url: `/api/v1/sales-orders/${order.id}/complete`,
+      url: `/api/v1/sales-orders/${order.id}/ship`,
       headers: {
         cookie: ownerCookie,
         origin: PUBLIC_BASE_URL,
