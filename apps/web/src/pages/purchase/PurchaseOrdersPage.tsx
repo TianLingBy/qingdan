@@ -6,7 +6,7 @@
  *
  * 与原型不同的地方，都是本批接口口径决定的：
  * - 原型里「审核」按钮本批没有对应端点（采购单没有审批状态机），不画假按钮；
- * - 「完成」已接入（`purchase.approve`，完成后会入库并生成库存流水），取消仍是另一个动作；
+ * - 「完成」已接入（`purchase.approve`），但它只改单据状态，入库与库存流水尚未接入（见 #211）；取消仍是另一个动作。
  * - 明细里只有 `productId`，商品名靠主数据映射（没有 `product.read` 时降级显示短 id）。
  */
 
@@ -831,7 +831,7 @@ export function PurchaseOrdersPage() {
     },
     /**
      * 完成撞版本冲突（别人刚改过、或刚把这张单完成了）：
-     * 把最新版本同步过来并说清楚，**不自动重提**——完成会入库、生成库存流水，不可逆，
+     * 把最新版本同步过来并说清楚，**不自动重提**——完成不可逆（状态单向），
      * 得让用户看清当前状态再点（D60）。
      */
     onError: async (error, order) => {
@@ -907,7 +907,7 @@ export function PurchaseOrdersPage() {
     setActionError(null);
     if (
       globalThis.confirm?.(
-        `确认完成采购单 ${order.orderNo} 吗？完成后会入库并生成库存流水，不可撤销。`,
+        `确认完成采购单 ${order.orderNo} 吗？完成后状态变为「已完成」，不可撤销。`,
       ) === false
     ) {
       return;
