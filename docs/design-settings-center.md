@@ -10,6 +10,21 @@
 - 目标：一个统一的 `/settings` 设置中心，覆盖**个人账号**与**公司/系统**两类设置，把现在散落在「公司管理 / 员工 / 权限设置 / API 与集成」的配置收拢进来，并补上真正缺的个人设置与外观设置。
 - 边界：只画后端有能力的；后端没有的一律列为二期并写明缺什么，不画假按钮。
 
+## 二·零 不重复原则（先划清归属，再决定放哪）
+
+设置中心**只放「只跟我自己有关、且现有页面没有」的东西**。凡是已经在独立页面存在的能力，设置中心不复制第二份——复制一份就要维护两处，最后必然不一致。
+
+| 已有独立页面的能力 | 归属 | 设置中心怎么处理 |
+|---|---|---|
+| 权限设置（`/permissions`：岗位 × 域 × 动作矩阵、个人增减） | 管理别人的权限矩阵 | **不放**。设置中心只显示「我自己有哪些权限点」的只读清单（B5），且注明「改权限去 /permissions」 |
+| 成员与岗位（`/employees`：员工增改、岗位、提成比例） | 组织管理 | **不放**，也不放入口 |
+| API 令牌（`/api-integration`：列表 / 创建 / 撤销 / scope 勾选） | 集成管理 | **不放**（原 I1 删除） |
+| 操作日志（`/audit-logs`：全量筛选） | 审计 | **不放**（原 F2/I4 删除），全部筛选仍在原页 |
+| 提成率配置（`CommissionRatesPanel`） | 业务配置 | **不放**（原 I5 删除） |
+| 公司管理（`/companies`：多公司 CRUD） | 组织管理 | 只放「当前公司资料编辑」，不重复公司列表的增删 |
+
+保留的边界：设置中心里的「我的权限」是**个人视角只读**（我有哪些 `domain.action`、来自岗位还是个人增减），与 `/permissions` 的**他人矩阵管理**不是同一件事；这两者若哪天要合并，以 `/permissions` 为准，删设置里的这块。
+
 ## 二、功能总表（对标常见软件设置页，逐项标后端有无）
 
 参考对象：SaaS 后台（Recruitee/Tellent 统一设置中心、VerifyWise 组织设置）、开发者平台（GitHub、Flare 的 Profile→Account 分区）、协作工具（BuddyNext 账号/通知/隐私/外观四页）、电商卖家后台（橙联个人中心）。共同规律：**分成「个人」与「组织」两层**，个人层永远是「资料 / 安全 / 通知 / 外观 / 隐私」，组织层是「资料 / 成员 / 权限 / 集成 / 计费 / 日志」；危险操作固定收在页面最底部的独立区域（[Recruitee 统一设置](https://support.recruitee.com/fr/articles/12819873-naviguer-dans-les-parametres-unifies-de-tellent)、[VerifyWise 设置说明](https://github.com/verifywise-ai/verifywise/blob/23e4e3fa13142481132a9de1b0ab4c0e11256fae/Clients/src/presentation/helpers/settings-help.html)、[Flare 账号文档](https://github.com/flintsh/flare/blob/1e9e44ea5e4be9d41b271fdb7af6957f6ac0cbd7/docs/site/guide/account.md)）。
@@ -33,9 +48,9 @@
 | B1 | 公司资料（名称/公司码/等级/状态） | ✅ `company` 表已有，`company.read/update` | 一期做 | 公司码只读（D16 服务端发放） |
 | B2 | 公司扩展资料（地址/联系电话/税号/LOGO） | ❌ 表里没有 | 一期做 | 时间戳迁移加 4 列，全可空不 backfill |
 | B3 | 开票抬头 / 银行账户 | ❌ 无 | 二期 | 涉及财务口径，先定字段归属再建表 |
-| B4 | 成员与岗位（入口） | ✅ `/employees` 已有 | 一期做 | 设置中心只放入口，不重复实现 |
+| B4 | 成员与岗位（入口） | ✅ `/employees` 已有 | **不放** | 已有独立页面，重复入口只增加维护面（见 §二·零） |
 | B5 | 我的权限（只读查看） | 🟡 数据在 `position_permission` + `employee_permission_override`，缺只读端点 | 一期做 | 显示 `domain.action` 列表 + 来源（岗位/个人增减） |
-| B6 | 权限设置（管理员入口） | ✅ `/permissions` 已有 | 一期做 | 设置中心放入口 |
+| B6 | 权限设置（管理员入口） | ✅ `/permissions` 已有 | **不放** | 同上；改权限只在原页 |
 
 ### C. 外观与体验
 
@@ -67,8 +82,8 @@
 
 | # | 功能 | 后端现状 | 本期 | 说明 |
 |---|---|---|---|---|
-| F1 | API 令牌（入口 + 现有令牌管理） | ✅ `api_token` 表 + `/api-integration` | 一期做 | 设置中心放入口 |
-| F2 | 操作日志（我的操作） | ✅ `audit_log` 已有 | 一期做 | 入口跳 `/audit-logs`，筛自己的记录 |
+| F1 | API 令牌（入口 + 现有令牌管理） | ✅ `api_token` 表 + `/api-integration` | **不放** | 令牌增删改全在原页，设置里不复制（原 I1 一并删除） |
+| F2 | 操作日志（我的操作） | ✅ `audit_log` 已有 | **不放** | 全部筛选在 `/audit-logs`；设置里不放入口（原 I4 删除） |
 | F3 | 数据导出（导出我的数据） | 🟡 有 `export` 动作，但无「导出我的账号数据」端点 | 二期 | |
 | F4 | 危险区域（清空数据 / 重置租户 / 删除公司） | ❌ 无且不该有入口 | 不做 | 只留一句「无自助危险操作，请联系负责人」 |
 
@@ -93,18 +108,13 @@
 
 | # | 功能 | 后端依据 | 本期 | 价值 |
 |---|---|---|---|---|
-| I1 | API 令牌自助创建 / 轮换 / 吊销 | ✅ `platform.token.create` / `.read` / `.revoke` 端点已在契约里 | 一期做 | 现在只能用管理员开的令牌；本人可自助，减少一条人工流程 |
 | I2 | 下一个单号预览（每种单据类型显示「下一个号」） | ✅ `number_sequence` 表已有当前值 | 一期做 | 录入前就知道会拿到哪个号，撞号/断号一眼可见 |
 | I3 | 我的公司范围与岗位（只读列表） | ✅ `employee_company_position` + `position` | 一期做 | 常见疑问「我能看哪几家公司」自助解答 |
-| I4 | 审计日志「只看我的」（带条件直达 `/audit-logs`） | ✅ `audit_log` 有 `operator_id` | 一期做 | 免去每次进页面再手填筛选 |
-| I5 | 提成率只读展示 | ✅ `commission_rate` 表；权限 `view_price` | 一期做 | 提成规则透明度；无 `view_price` 则整块隐藏（不显示 0） |
-| I6 | 岗位预设说明（老板/财务/仓管/开发者 各自默认带哪些 scope） | ✅ `position.preset_key` + `position_permission` | 一期做 | 解决「为什么他能改我不能」，避免误以为写死了角色 |
 | I7 | 系统状态（服务是否可用 + 版本 + 构建时间） | ✅ `GET /api/v1/health` 已存在 | 一期做 | 出问题先自证是不是服务挂了，减少一次询问 |
 | I8 | 命令面板（Ctrl+K 全局跳转页面/单据） | ✅ 纯前端，路由表已有 | 一期做 | 页面已 22 个，跳转比找菜单快；不涉及后端 |
 | I9 | 常用页面置顶 / 收藏 | ✅ 纯前端 `localStorage` | 一期做 | 每人常去的就那三四页 |
-| I10 | 术语与权限词表（域×动作的中文对照，只读） | ✅ 直接读 `packages/contracts/src/domains.ts` 的 `DOMAINS`/`ACTIONS` | 一期做 | 权限页里的「internal_trade.ship」有处可查，不用问人 |
 
-**为什么这些算「有用」而不是堆功能**：I1/I2/I4/I7 各自省掉一次「找人问」；I3/I5/I6 直接回答权限与提成的常见疑问；I8/I9/I10 是纯前端零风险，且立刻降低 22 个页面的导航成本。
+**为什么剩下这几项算「有用」而不是堆功能**：I2/I7 省掉一次「找人问」；I3 直接回答「我能看哪几家公司」；I8/I9 纯前端零风险，立刻降低 22 个页面的导航成本。凡是与独立页面重复的一律不做（见 §二·零）。
 
 ### 二期候选（等 `employee_preference` 表，一次做完）
 
@@ -115,15 +125,17 @@
 `/settings` 左侧分两段，默认落在「我的资料」。
 
 ```
-个人设置                     公司设置（按权限显示，无公司权限整段隐藏）
-├─ 我的资料 A1 A2             ├─ 公司资料 B1 B2
-├─ 账号安全 A3 A6 A7          ├─ 成员与岗位 B4 B6 I3 I6
-├─ 我的权限 B5 I10            ├─ 单据编号与提成 E1 I2 I5
-├─ 外观 C1 C2 C3              ├─ API 与集成 F1 I1
-├─ 通知（二期占位，不画）      ├─ 订阅与套餐 G1
-├─ 关于 H1 H2 H3 I7           └─ 安全与日志 F2 F4 I4
-└─ 工具 I8 I9（命令面板与收藏，入口固定在右上角）
+个人设置                         公司设置（按权限显示，公司类 scope 全无则整段隐藏）
+├─ 我的资料 A1 A2 I3             ├─ 公司资料 B1 B2
+├─ 账号安全 A3 A6 A7             ├─ 单据编号与下一个号 E1 I2
+├─ 我的权限 B5（只读）           ├─ 订阅与套餐 G1
+├─ 外观 C1 C2 C3                 └─ 危险区域说明 F4（只一句话，无按钮）
+├─ 通知（二期占位，不画）
+└─ 关于 H1 H2 H3 I7
+右上角固定：命令面板 I8 / 常用页置顶 I9
 ```
+
+设置中心**不放入口**：`/permissions`、`/employees`、`/api-integration`、`/audit-logs`、`/companies` 增删、提成率配置——它们各自有页面（§二·零）。
 
 ## 四、一期改动清单
 
@@ -149,7 +161,7 @@
 ### 4.2 前端（前端池）
 
 1. `apps/web/src/pages/settings/SettingsPage.tsx`：两段式左栏（个人 / 公司），公司段按 `allowsScope` 决定是否显示。
-2. 面板：`MyProfilePanel`（A1 首字色块 + A2）、`AccountSecurityPanel`（A3 换号三步 + A6 会话列表与踢下线 + A7 说明）、`MyPermissionsPanel`（B5 + I10 词表对照）、`AppearancePanel`（C1/C2/C3）、`CompanyProfilePanel`（B1 可编辑 + B2 四字段）、`BusinessParamsPanel`（E1 规则 + I2 下一个号 + I5 提成率，无 `view_price` 则隐藏提成块）、`MembersPanel`（B4/B6 入口 + I3 我的范围 + I6 预设说明）、`TokenPanel`（F1/I1 自助令牌）、`SubscriptionPanel`（G1 只读）、`AboutPanel`（H1/H2/H3 + I7 系统状态）、`SecurityLogPanel`（F2/F4 入口 + I4 直达筛选）。
+2. 面板：`MyProfilePanel`（A1 首字色块 + A2 + I3 我的公司/岗位只读）、`AccountSecurityPanel`（A3 换号三步 + A6 会话列表与踢下线 + A7 说明）、`MyPermissionsPanel`（B5 只读清单，含「改权限去 /permissions」链接）、`AppearancePanel`（C1/C2/C3）、`CompanyProfilePanel`（B1 可编辑 + B2 四字段）、`NumberingPanel`（E1 规则 + I2 下一个号，只读）、`SubscriptionPanel`（G1 只读）、`AboutPanel`（H1/H2/H3 + I7 系统状态）、`DangerZoneNote`（F4，仅一句说明，无按钮）。
 3. 全局工具：`apps/web/src/components/CommandPalette.tsx`（I8，`Ctrl+K` 打开，路由表驱动，键盘可达）、`apps/web/src/lib/pins.ts`（I9 常用页置顶，`localStorage`）。
 4. 外观设置落 `apps/web/src/lib/preferences.ts`（`localStorage`，键名前缀 `qingdan.`），CSS 变量切换主题色。
 4. 路由 `apps/web/src/router/routes.ts` 加 `{ id: 'settings', path: '/settings', page: '设置中心', domain: '系统', title: '设置中心' }`，并注册 `/legal/terms`、`/legal/privacy`。
@@ -183,14 +195,10 @@
 | 外观 / 工具 / 关于 | 登录即可 | 本地偏好，无需后端 | —（总有） |
 | 公司资料 B1 | `company.read` | `company.update` | 只读展示，隐藏「保存」 |
 | 公司资料 B2（4 字段） | `company.read` | `company.update` | 同上 |
-| 成员与岗位 B4/B6 | `employee.read`（成员）/ `permission.read`（权限页入口） | 跳转页内自有判断 | 该入口不渲染 |
 | 我的公司范围 I3 | `employee.read` | 只读 | 不渲染 |
-| 岗位预设说明 I6 | `permission.read` | 只读 | 不渲染 |
 | 单据编号 E1 / 下一个号 I2 | `company.read` | 永远只读 | 不渲染 |
-| 提成率 I5 | `settlement.read` **且** `view_price` | 只读 | **整块隐藏**（不显示 0、不显示「无权限」） |
-| API 与集成 F1 | `api_integration.read` | 创建 `api_integration.create`；吊销 `api_integration.delete` | 只读列表，隐藏「新建/吊销」 |
 | 订阅与套餐 G1 | `billing.read` | 只读（续费不做） | 不渲染 |
-| 安全与日志 F2/I4 | `audit.read` | 只读 | 不渲染 |
+| 危险区域说明 F4 | 登录即可 | 无（不提供自助操作） | 一句话说明，无按钮 |
 | **公司设置整段** | 上面任一公司类 scope 成立 | — | 左栏「公司设置」整段隐藏，只剩个人设置 |
 
 ### 5.3 实现规则（防「隐藏了但能打」）
@@ -239,4 +247,4 @@ node tools/check-numbering.mjs --base origin/main   # 迁移号必须 [ok]
 2. **换手机号审批**：建议「新号收码 + 旧号收码」双确认（不需要管理员）；若你要求管理员审批，我就加审批态。
 3. **用户协议 / 隐私政策文本**：一期先放占位骨架标「待法务确认」，还是你直接给我定稿文本？
 4. **主题色范围**：只做「浅色/深色 + 主色 N 选 1」，还是要完整主题编辑器？（后者工量翻倍）
-5. **I 组十项要不要全做**：我的建议是**全做**——I1/I2/I4/I7 各自省一次「找人问」，I8/I9/I10 纯前端零风险；只有 I5 提成率需要你确认「让谁知道提成率」（我默认：有 `view_price` 才显示）。如果嫌多，优先留 I1 令牌自助、I7 系统状态、I8 命令面板这三项。
+5. **剩下的 I 组五项（I2 下一个单号 / I3 我的公司范围 / I7 系统状态 / I8 命令面板 / I9 常用页置顶）是否全做**：建议全做，均不与其他页面重复，且 I8/I9 是纯前端零风险。
