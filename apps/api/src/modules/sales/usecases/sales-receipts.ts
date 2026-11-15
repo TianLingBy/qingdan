@@ -13,6 +13,10 @@ import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import * as repo from '../repo.js';
+import {
+  maskSalesReceiptAmounts,
+  maskSalesReceiptBlockAmounts,
+} from '../services/masking.js';
 
 /**
  * E 单收款记录用例（D24 / D34 / D40 / D47 / D51 / D52.1 / D54）。
@@ -40,7 +44,8 @@ export interface SalesReceiptWriteContext extends SalesReceiptContext {
 
 export interface SalesReceiptBlock {
   readonly receipts: SalesReceipt[];
-  readonly receiptBalance: string;
+  /** 无 `sales.view_price` 时为 null（D79），不返回 0。 */
+  readonly receiptBalance: string | null;
 }
 
 function headerValue(
@@ -168,6 +173,7 @@ export async function getSalesReceiptBlock(
   const database = requireDatabase(ctx, 'sales.receipt.read');
   requireReadScope(principal);
   const salesOrderId = parseSalesOrderId(ctx.request);
+  const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
 
   return withTenant(database, principal.tenantId, async (tx) => {
     const context = repoContext(tx, principal);
@@ -177,7 +183,10 @@ export async function getSalesReceiptBlock(
       repo.listSalesReceipts(context, salesOrderId),
       repo.getSalesReceiptBalance(context, salesOrderId),
     ]);
-    return { receipts, receiptBalance };
+    return maskSalesReceiptBlockAmounts(
+      { receipts, receiptBalance },
+      canViewPrice,
+    );
   });
 }
 
@@ -196,6 +205,7 @@ export async function createSalesReceipt(
   const database = requireDatabase(ctx, 'sales.receipt.create');
   requireUpdateScope(principal);
   assertHumanCreation(principal, ctx.request.auditReason);
+  const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
 
   const salesOrderId = parseSalesOrderId(ctx.request);
   const input = parseCreateInput(ctx.request.body);
@@ -239,5 +249,6 @@ export async function createSalesReceipt(
   });
 
   ctx.reply.status(201);
-  return created;
+  // 写路径用真实金额落库 / 审计；只有响应按 D79 脱敏。
+  return maskSalesReceiptAmounts(created, canViewPrice);
 }
