@@ -2,14 +2,14 @@
 
 > 本文档是全产品 `D##` 编号的索引，补齐「产品真源可定位」验收项。结论**只从代码注释、测试名、断言消息里反推**，不新增任何业务规则；业务口径与接口契约仍以 `packages/contracts` 与 `docs/api/openapi.yaml` 为准。
 >
-> 覆盖统计：`git grep -oE '\bD[0-9]{2,3}\b' | sort -u` 共出现 **57 个编号**（D11–D80），另含未落入该正则的单编号 D1 / D2 / D4 / D5 / D7 / D9 共 6 个。本文档已落 **63 条**，**1 条待补（需主线确认）**。
+> 覆盖统计：`git grep -oE '\bD[0-9]{2,3}\b' | sort -u` 共出现 **58 个编号**（D11–D88），另含未落入该正则的单编号 D1 / D2 / D4 / D5 / D7 / D9 共 6 个。本文档已落 **64 条**，**1 条待补（需主线确认）**。
 >
 > 状态说明：「已落地」= 规则已存在于代码/契约并有测试覆盖；「已采纳/已冻结」= 已拍板或已冻结的架构决策；「待补（需主线确认）」= 无法从仓库反推出结论，需主线补口径。
 
 | 编号 | 一句话结论 | 依据 | 状态 |
 | --- | --- | --- | --- |
 | D1 | 对外 SaaS、云端单一形态：云端是唯一记账真相，客户本地只读备份、断网只可看不可改；一期不做买断版、在线订阅计费、记账/凭证/开票；订阅到期只提示续费、不拦请求 | `docs/adr-0001-tech-stack.md:23`、`apps/api/src/modules/platform/usecases/subscription.ts:16` | 已采纳 |
-| D2 | ① 库存流水只追加、正入负出；③ 结算单确认后不可冲正/取消，错账走 R 客户退货 | `apps/api/src/modules/inventory/usecases/flows.ts:83`、`apps/api/src/modules/settlement/routes.ts:28` | 已落地 |
+| D2 | ① 库存流水只追加、正入负出；③ 结算单确认后不可冲正/取消，错账走 R 客户退货（**撤销结算是退回「待确认」，不是冲正，见 D88**） | `apps/api/src/modules/inventory/usecases/flows.ts:83`、`apps/api/src/modules/settlement/routes.ts:28` | 已落地 |
 | D4 | 「看价」是数据可见性开关而非操作权限；权限模板 = 功能域 × 8 动作（`view_price` 不进动作勾选表）；单据仅「进行中」可改；D4.1 无看价权限时金额字段回 null（保留键、不省略） | `apps/api/src/modules/sales/services/masking.ts:6`、`apps/api/src/modules/platform/usecases/positions.ts:28`、`apps/api/src/modules/masterdata/usecases/products.ts:87` | 已落地 |
 | D5 | 毛利/毛利率由服务端计算并在确认时落库（净毛利 = 毛利 − 相关损失）；加工产出批次锁价；④ 提成按配置比例、负毛利记 0 | `apps/api/src/modules/settlement/routes.ts:29`、`apps/api/src/modules/settlement/repo.ts:430`、`apps/api/src/modules/processing/routes.ts:25` | 已落地 |
 | D7 | 一期只做业务全流程图；实时看板、集团看板与库存预警推二期 | `apps/web/src/pages/flow/FlowPage.tsx:273`、`apps/web/src/api/query.ts:8` | 已落地 |
@@ -21,7 +21,7 @@
 | D15 | 「公司×岗位」权限、数据可见范围 = 绑定公司集合；采购单创建与修改路径都必须校验明细商品属于该单公司（`assertProductsInCompany`），数据库层再用触发器兜底 | `.github/copilot-instructions.md:12`、`docs/adr-0003-purchase-products-company-d15.md:1` | 已落地 |
 | D16 | 单据号在业务事务内取号（同事务取 N / I 号），流水按「公司 + 类型 + 年月」计数、单公司月内 9999；单号格式如「E-0001-YYYYMMDD-序号」 | `apps/api/src/platform/numbering/service.ts:37`、`apps/api/src/modules/internal-trade/usecases/internal-trade-orders.ts:332` | 已落地 |
 | D18 | 加工单「归属单」只收 E / N 单号（选填），用于全损耗损失归属 | `packages/contracts/src/processing-orders.ts:92`、`apps/web/src/pages/processing/processing-api.ts:117` | 已落地 |
-| D19 | E 单三态、C 单独立两态（待确认/已结算）；一期一单一次结算，草稿由 E/N 单「已完成」自动生成、无手工建单 | `apps/api/src/modules/settlement/routes.ts:25`、`apps/api/src/modules/sales/repo.ts:888` | 已落地 |
+| D19 | E 单三态、C 单独立两态（待确认/已结算）；一单一次结算、草稿由 E/N 单「已完成」自动生成、无手工建单。**2026-11-16 起「一期一单只能结算一次」被 D88 取代：确认错了可撤销回「待确认」后再次确认** | `apps/api/src/modules/settlement/routes.ts:25`、`apps/api/src/modules/sales/repo.ts:888`、`apps/api/src/modules/settlement/usecases/settlement-orders.ts:437` | 已落地 |
 | D20 | 销售破成本下限审批走 platform（不另造审批表）；成本下限取批次锁价，低于下限前端只如实展示、不拦 | `apps/api/src/modules/sales/repo.ts:438`、`apps/api/src/modules/sales/routes.ts:42` | 已落地 |
 | D21 | 单据取消映射为「进行中」后复用 `assertCancelable`；以 N 单为来源的库存流水存在即视为下游已发生、不可取消 | `apps/api/src/modules/internal-trade/usecases/internal-trade-orders.ts:43`、`apps/api/src/modules/internal-trade/repo.ts:362` | 已落地 |
 | D22 | N 单在途批次归发出方、可用量锁定；明细分批次只能引用发出公司批次；到货确认才转司解锁 | `apps/api/src/modules/internal-trade/routes.ts:27`、`apps/web/src/pages/internal-trades/InternalTradeOrdersPage.tsx:62` | 已落地 |
@@ -78,3 +78,4 @@
 | D84 | A 单完成建批次时把费用按明细金额占比摊入锁价：`feeTotal = SUM(费用行)`，行份额四舍五入到 6 位、末行承接余数（`SUM(share) = feeTotal`）；行金额合计为 0 时退化为按数量占比；摊后单价 = (行金额 + 份额) ÷ 数量。费用最低 0（与 D39 的负数冲减口径互斥，负数费用能力另行删除），因此摊后单价只会升不会降；D5 的成本分子 = 货款 + 费用在此落到实处。审计 `changeSummary.feeAllocation` 保留 `basis` / `feeTotal` / 每行 `{lineNo, qty, unitPrice, feeShare, adjustedUnitCost}` | `apps/api/src/modules/purchase/services/fee-allocation.ts:81`、`apps/api/src/modules/purchase/usecases/purchase-orders.ts:467`、`apps/api/src/modules/purchase/usecases/purchase-orders.ts:494` | 已落地 |
 | D85 | E 单出库 = `sales.ship`，与 `sales.update` 分离：销售单没有「出货后再确认」这一步，原 `sales.order.complete`（action `update`）做的扣批次可用量 + 生成 C 单草稿就是出库本身，因此端点直接改名为 `POST /api/v1/sales-orders/{id}/ship`（operationId `sales.order.ship`），不留两个端点做同一件事。D72 的库存扣减与 C 草稿逻辑不变，只把权限点从 `sales.update` 改为 `sales.ship`：能改单不再自动能出库；审计 action、MCP 工具名、OpenAPI 路径同步改名，AI 仍默认禁止且必须给原因。依据：E 单三态只有进行中/已完成/已取消（`packages/contracts/src/documents.ts`），完成即终态，没有任何「已发货待确认」状态 | `packages/contracts/src/sales-orders.ts:261`、`apps/api/src/modules/sales/usecases/sales-orders.ts:699`、`apps/web/src/pages/sales/SalesOrdersPage.tsx:1631` | 已落地 |
 | D86 | N 单到货确认走 `internal_trade.approve`（审），与 `internal_trade.update`（编）分离：到货确认会在同一事务里把占用批次转司并生成 C 单结算草稿，属审批动作，不是普通改单——能改单不等于能把货收进自己公司。端点与 operationId 不变（`POST /api/v1/internal-trade-orders/{id}/receive`），只换权限点；发货 / 撤销发货仍走 `internal_trade.ship`（D22 / D31 / D68③）。权限点 = domain × action，`approve` 是既有动作，无需新增迁移或回填授权 | `packages/contracts/src/internal-trade-orders.ts:331`、`apps/api/src/modules/internal-trade/usecases/internal-trade-orders.ts:672`、`apps/web/src/pages/internal-trades/InternalTradeOrdersPage.tsx:1365` | 已落地 |
+| D88 | 结算可撤销：已结算 C 单可**整单退回「待确认」**，撤销与确认同用 `settlement.approve`（另需 `settlement.view_price`，D82），AI 禁止且必须给原因；撤销必须带 body `reason` 与强 If-Match，并在**同一条 UPDATE** 里改 `status` + 清 `settled_at` + 清空 `related_loss_amount` / `net_profit` / `commission_rate_snapshot` / `commission_amount`（0026 的 settled_at 双态 CHECK 要求前两者同时变）；快照原值写入审计（撤销不等于没发生过）；撤销后该单不再进期间利润聚合（D43）、可再次确认并按当时比例重快照（D77 ③）。不做部分撤销、不删单、不对物料冲正 | `packages/contracts/src/settlement-orders.ts`、`apps/api/src/modules/settlement/usecases/settlement-orders.ts`、`apps/api/src/modules/settlement/repo.ts`、`apps/api/migrations/0034_settlement_orders_unsettle.sql` | 已落地 |
