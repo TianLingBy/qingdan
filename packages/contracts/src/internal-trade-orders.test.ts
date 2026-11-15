@@ -112,7 +112,7 @@ describe('内部交易单契约（internal-trade）', () => {
     // 发货 / 撤销发货走专属动作 ship（出），不借用 update（编）——能发就能撤，同一个权限点。
     expect(byId.get('internal_trade.order.dispatch')?.scope).toBe('internal_trade.ship');
     expect(byId.get('internal_trade.order.dispatch_revoke')?.scope).toBe('internal_trade.ship');
-    expect(byId.get('internal_trade.order.receive')?.scope).toBe('internal_trade.update');
+    expect(byId.get('internal_trade.order.receive')?.scope).toBe('internal_trade.approve');
 
     // 域键必须是已有的下划线键，不是模块键的连字符形式。
     for (const route of INTERNAL_TRADE_ORDER_ROUTES) expect(route.domain).toBe('internal_trade');

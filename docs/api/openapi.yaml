@@ -3880,10 +3880,10 @@ paths:
                       - amount
                     additionalProperties: false
               additionalProperties: false
-  /api/v1/sales-orders/{id}/complete:
+  /api/v1/sales-orders/{id}/ship:
     post:
-      operationId: sales.order.complete
-      summary: 完成销售单（D72：扣减批次可用量 + 生成 C 单草稿，同事务；仅「进行中」可完成；AI 默认禁止）
+      operationId: sales.order.ship
+      summary: 销售出库（D72 扣减批次可用量 + 生成 C 单草稿，同事务；仅「进行中」可出库；权限 sales.ship，D85；AI 默认禁止）
       tags:
         - sales
       security:
@@ -3908,7 +3908,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiErrorBody"
-      x-scope: sales.update
+      x-scope: sales.ship
       x-module: sales
       x-audit:
         kind: write
@@ -3916,7 +3916,7 @@ paths:
       x-ai-policy:
         policy: forbid
         reasonRequired: true
-      x-mcp-tool: qingdan_sales_order_complete
+      x-mcp-tool: qingdan_sales_order_ship
       x-requires-if-match: true
   /api/v1/sales-orders/{id}/cancel:
     post:
@@ -5306,8 +5306,8 @@ paths:
         kind: write
         required: true
       x-ai-policy:
-        policy: allow
-        reasonRequired: false
+        policy: forbid
+        reasonRequired: true
       x-mcp-tool: qingdan_processing_order_update
       x-requires-if-match: true
       requestBody:
@@ -5995,7 +5995,7 @@ paths:
   /api/v1/internal-trade-orders/{id}/receive:
     post:
       operationId: internal_trade.order.receive
-      summary: 确认 N 单到货并将占用批次转入接收公司（D22 / D31 / D68③）
+      summary: 确认 N 单到货并将占用批次转入接收公司（审批动作；D22 / D31 / D68③ / D86）
       tags:
         - internal_trade
       security:
@@ -6020,7 +6020,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiErrorBody"
-      x-scope: internal_trade.update
+      x-scope: internal_trade.approve
       x-module: internal-trade
       x-audit:
         kind: write
@@ -6426,8 +6426,8 @@ paths:
         kind: none
         required: false
       x-ai-policy:
-        policy: allow
-        reasonRequired: false
+        policy: forbid
+        reasonRequired: true
       x-mcp-tool: qingdan_sales_order_print
   /api/v1/processing-orders/{id}/print:
     get:
@@ -6572,8 +6572,8 @@ paths:
         kind: sensitive-read
         required: true
       x-ai-policy:
-        policy: allow
-        reasonRequired: false
+        policy: forbid
+        reasonRequired: true
       x-mcp-tool: qingdan_sales_order_export
   /api/v1/payments/{channel}/callback:
     post:

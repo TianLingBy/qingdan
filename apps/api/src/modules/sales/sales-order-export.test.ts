@@ -249,4 +249,34 @@ describe('销售单列表导出 CSV', () => {
     const doc = response.json() as PrintDocument;
     expect(doc.content).toContain('"导出,客户""二"""');
   });
+
+  it('AI 凭证导出 → 403 AI_ACTION_FORBIDDEN；人类凭证同一路径仍 200', async () => {
+    const tokenResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/api-tokens',
+      headers: writeHeaders(ownerCookie, 'req-export-ai-token'),
+      payload: {
+        name: 'HTTP Sales Export AI Token',
+        employeeId: DEMO_IDS.ownerEmployeeId,
+        scope: [{ domain: 'sales', actions: ['read', 'export'] }],
+      },
+    });
+    expect(tokenResponse.statusCode).toBe(201);
+    const { secret } = tokenResponse.json() as { secret: string };
+
+    const aiExport = await app.inject({
+      method: 'GET',
+      url: '/api/v1/sales-orders/export',
+      headers: {
+        authorization: `Bearer ${secret}`,
+        'x-reason': 'AI 尝试导出销售单',
+        'x-request-id': 'req-export-ai',
+      },
+    });
+    expect(aiExport.statusCode).toBe(403);
+    expect(aiExport.json()).toMatchObject({ code: 'AI_ACTION_FORBIDDEN' });
+
+    const humanExport = await exportCsv(ownerCookie, 'req-export-human-after-ai');
+    expect(humanExport.statusCode).toBe(200);
+  });
 });

@@ -143,15 +143,15 @@ describe('加工单契约（processing）', () => {
     }
   });
 
-  it('AI 口径：开单/完成禁止、修改允许、取消禁止且必须给原因；update/cancel/complete 带强 ETag', () => {
+  it('AI 口径：开单/修改/完成禁止、取消禁止且必须给原因；update/cancel/complete 带强 ETag', () => {
     const byId = new Map(PROCESSING_ORDER_ROUTES.map((r) => [r.operationId, r]));
     expect(byId.get('processing.order.create')?.ai).toEqual({
       policy: 'forbid',
       reasonRequired: false,
     });
     expect(byId.get('processing.order.update')?.ai).toEqual({
-      policy: 'allow',
-      reasonRequired: false,
+      policy: 'forbid',
+      reasonRequired: true,
     });
     expect(byId.get('processing.order.cancel')?.ai).toEqual({
       policy: 'forbid',
@@ -216,6 +216,25 @@ describe('加工单契约（processing）', () => {
     expect(
       ProcessingMaterialBatchIdsSchema.safeParse([{ batchId: BATCH_ID, qty: 1 }]).success,
     ).toBe(false);
+
+    // 同一批次不得在同一张单据里出现两行：完成时会按行扣减，重复行会被重复扣。
+    const duplicate = ProcessingMaterialBatchIdsSchema.safeParse([
+      MATERIAL,
+      { batchId: BATCH_ID, qty: '0.5' },
+    ]);
+    expect(duplicate.success).toBe(false);
+    if (!duplicate.success) {
+      const issues = JSON.stringify(duplicate.error.issues);
+      expect(issues).toContain('材料第 2 行重复引用批次');
+      expect(issues).toContain('与第 1 行相同');
+    }
+    // 不同批次仍可多行（正常投入不受影响）。
+    expect(
+      ProcessingMaterialBatchIdsSchema.safeParse([
+        MATERIAL,
+        { batchId: BATCH_ID_2, qty: '0.5' },
+      ]).success,
+    ).toBe(true);
 
     // 实体与开单入参同样执行该口径。
     expect(ProcessingOrderSchema.safeParse({ ...ORDER, materialBatchIds: [] }).success).toBe(false);
@@ -600,6 +619,10 @@ describe('加工单契约（processing）', () => {
     expect(Object.keys(detail).sort()).toEqual(['get', 'patch']);
     expect(detail.get?.['x-mcp-tool']).toBe('qingdan_processing_order_detail_read');
     expect(detail.patch?.['x-scope']).toBe('processing.update');
+    expect(detail.patch?.['x-ai-policy']).toEqual({
+      policy: 'forbid',
+      reasonRequired: true,
+    });
     expect(detail.patch?.['x-requires-if-match']).toBe(true);
 
     const cancel = doc.paths['/api/v1/processing-orders/{id}/cancel'] as Record<

@@ -801,11 +801,12 @@ interface DetailPanelProps {
   readonly batches: readonly InventoryBatch[];
   readonly canViewPrice: boolean;
   readonly canUpdate: boolean;
+  readonly canShip: boolean;
   readonly canCancel: boolean;
   readonly busy: boolean;
   readonly onClose: () => void;
   readonly onEdit: () => void;
-  readonly onComplete: () => void;
+  readonly onShip: () => void;
   readonly onCancel: () => void;
   readonly onPrint: () => void;
   readonly onError: (message: string) => void;
@@ -817,11 +818,12 @@ function DetailPanel({
   batches,
   canViewPrice,
   canUpdate,
+  canShip,
   canCancel,
   busy,
   onClose,
   onEdit,
-  onComplete,
+  onShip,
   onCancel,
   onPrint,
   onError,
@@ -970,8 +972,15 @@ function DetailPanel({
         </button>
         <button
           type="button"
-          onClick={onComplete}
-          disabled={order.status !== '进行中' || !canUpdate || busy}
+          onClick={onShip}
+          disabled={order.status !== '进行中' || !canShip || busy}
+          title={
+            !canShip
+              ? '当前身份没有 sales.ship 权限'
+              : order.status !== '进行中'
+                ? '仅「进行中」状态的销售单可出库'
+                : undefined
+          }
           className="rounded border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-40"
         >
           完成销售单
@@ -995,8 +1004,8 @@ function DetailPanel({
         {!canCancel && order.cancelable.allowed && (
           <span className="text-xs text-slate-500">当前身份无取消权限（sales.delete）</span>
         )}
-        {!canUpdate && order.status === '进行中' && (
-          <span className="text-xs text-slate-500">完成需要 sales.update</span>
+        {!canShip && order.status === '进行中' && (
+          <span className="text-xs text-slate-500">当前身份没有 sales.ship 权限</span>
         )}
       </div>
       <p className="text-xs text-slate-500">
@@ -1201,8 +1210,8 @@ export function SalesOrdersPage() {
     },
   });
 
-  const completeOrder = useMutation({
-    mutationFn: (order: SalesOrderDetail) => salesApi.complete(order.id, order.version),
+  const shipOrder = useMutation({
+    mutationFn: (order: SalesOrderDetail) => salesApi.ship(order.id, order.version),
     onSuccess: async (order) => {
       await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
       setNotice(
@@ -1327,8 +1336,12 @@ export function SalesOrdersPage() {
     }
   };
 
-  const askComplete = (order: SalesOrderDetail) => {
+  const askShip = (order: SalesOrderDetail) => {
     /** 列表行按钮只按「进行中」判断，但列表可能是旧的（别人刚取消/完成了）。别静默失败。 */
+    if (!can('ship')) {
+      setActionError('当前身份没有 sales.ship 权限');
+      return;
+    }
     if (order.status !== '进行中') {
       setActionError(`这张单当前是「${order.status}」，不能再完成；请刷新列表查看最新状态。`);
       return;
@@ -1336,7 +1349,7 @@ export function SalesOrdersPage() {
     setActionError(null);
     const message = `确认完成销售单 ${order.orderNo} 吗？\n\n完成后会：\n· 按行内批次均分扣减库存可用量（D72）\n· 同事务生成结算单 C 草稿，财务确认后才算结算（D19）\n\n完成后不可取消，错账请走冲正。`;
     if (globalThis.confirm?.(message) === false) return;
-    completeOrder.mutate(order);
+    shipOrder.mutate(order);
   };
 
   const askCancel = (order: SalesOrderDetail) => {
@@ -1531,9 +1544,9 @@ export function SalesOrdersPage() {
           )}
         </div>
       )}
-      {completeOrder.error && (
+      {shipOrder.error && (
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-          完成失败：{errorText(completeOrder.error)}
+          完成失败：{errorText(shipOrder.error)}
         </p>
       )}
       {actionError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>}
@@ -1615,8 +1628,15 @@ export function SalesOrdersPage() {
                       </button>
                       <button
                         type="button"
-                        disabled={!can('update') || order.status !== '进行中' || completeOrder.isPending}
-                        onClick={() => void withFreshDetail(order.id, askComplete)}
+                        disabled={!can('ship') || order.status !== '进行中' || shipOrder.isPending}
+                        onClick={() => void withFreshDetail(order.id, askShip)}
+                        title={
+                          !can('ship')
+                            ? '当前身份没有 sales.ship 权限'
+                            : order.status !== '进行中'
+                              ? '仅「进行中」状态的销售单可出库'
+                              : undefined
+                        }
                         className="rounded border border-emerald-300 px-2 py-1 text-xs text-emerald-700 disabled:opacity-40"
                       >
                         完成
@@ -1681,11 +1701,12 @@ export function SalesOrdersPage() {
               batches={detailBatches}
               canViewPrice={canViewPrice}
               canUpdate={can('update')}
+              canShip={can('ship')}
               canCancel={can('delete')}
-              busy={completeOrder.isPending || cancelOrder.isPending}
+              busy={shipOrder.isPending || cancelOrder.isPending}
               onClose={() => setDetailId(null)}
               onEdit={() => beginEdit(detailOrder)}
-              onComplete={() => askComplete(detailOrder)}
+              onShip={() => askShip(detailOrder)}
               onCancel={() => askCancel(detailOrder)}
               onPrint={() => print.mutate(detailOrder.id)}
               onError={setActionError}

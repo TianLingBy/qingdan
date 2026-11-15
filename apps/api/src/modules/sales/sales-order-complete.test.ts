@@ -7,17 +7,20 @@ import { DEMO_IDS, seed } from '../../platform/db/seed.js';
 import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
 
 /**
- * E 单「完成」HTTP 层（D72 / D19 / D70）。
+ * E 单「出库 / 完成」HTTP 层（D72 / D85 / D19 / D70）。
  *
  * 验证：
- * - 完成 = 扣批次可用量（按行均分，末批承余量）+ 生成 C 单草稿 + 状态改「已完成」，同一事务；
+ * - 出库 = 扣批次可用量（按行均分，末批承余量）+ 生成 C 单草稿 + 状态改「已完成」，同一事务；
  * - 流水来源为 E 单（`inventory_flow.source_doc_type = 'E'`）；
  * - C 草稿金额：总售价 = 单据总金额，总成本 = Σ(行数量 × 行加权平均批次成本)；
- * - 仅「进行中」可完成，重复完成 422；库存不足整单回滚。
+ * - 仅「进行中」可出库，重复出库 422；库存不足整单回滚；
+ * - 权限点 `sales.ship`（D85）：只有 `sales.update` 的销售身份 403。
  */
 
 const PUBLIC_BASE_URL = 'https://qingdan.example';
 const OWNER_PHONE = '10000000001';
+/** 种子里的「销售」：有 sales.update / view_price，没有 sales.ship（D85 的对照组）。 */
+const SALES_PHONE = '10000000003';
 
 const CUSTOMER_ID = '01900000-0000-7000-8000-000000005101';
 const PRODUCT_ID = '01900000-0000-7000-8000-000000005111';
@@ -56,10 +59,11 @@ async function login(
   return String(response.headers['set-cookie']).split(';')[0]!;
 }
 
-describe('E 单完成（D72：扣库存 + C 草稿同事务）', () => {
+describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship）', () => {
   let test: TestDatabase;
   let app: FastifyInstance;
   let ownerCookie: string;
+  let salesCookie: string;
   let sequence = 0;
 
   function nextRequestId(prefix: string): string {
@@ -94,7 +98,7 @@ describe('E 单完成（D72：扣库存 + C 草稿同事务）', () => {
   ) {
     return app.inject({
       method: 'POST',
-      url: `/api/v1/sales-orders/${order.id}/complete`,
+      url: `/api/v1/sales-orders/${order.id}/ship`,
       headers: writeHeaders(ownerCookie, requestId, {
         'if-match': `"${version}"`,
       }),
@@ -154,6 +158,7 @@ describe('E 单完成（D72：扣库存 + C 草稿同事务）', () => {
     });
     await app.ready();
     ownerCookie = await login(app, OWNER_PHONE, 'req-complete-login-owner');
+    salesCookie = await login(app, SALES_PHONE, 'req-complete-login-sales');
   });
 
   afterAll(async () => {
@@ -232,10 +237,10 @@ describe('E 单完成（D72：扣库存 + C 草稿同事务）', () => {
     expect(draft.related_loss_amount).toBe('0');
     expect(draft.commission_rate_snapshot).toBe('0');
 
-    // 审计：一条 sales.order.complete，带结算草稿与流水数量。
+    // 审计：一条 sales.order.ship，带结算草稿与流水数量。
     const audit = await test.database.query<{ changes: Record<string, unknown> }>(
       `SELECT changes FROM audit_log
-        WHERE action = 'sales.order.complete' AND object_id = $1`,
+        WHERE action = 'sales.order.ship' AND object_id = $1`,
       [order.id],
     );
     expect(audit.rows).toHaveLength(1);
@@ -337,11 +342,31 @@ describe('E 单完成（D72：扣库存 + C 草稿同事务）', () => {
     expect(flows.rows[0]!.n).toBe(0);
   });
 
+  it('只有 sales.update、没有 sales.ship → 403（D85：能改单不等于能出库）', async () => {
+    const order = await createOrder(nextRequestId('forbidden'));
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/sales-orders/${order.id}/ship`,
+      headers: writeHeaders(salesCookie, nextRequestId('forbidden-ship'), {
+        'if-match': `"${order.version}"`,
+      }),
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: 'FORBIDDEN' });
+
+    // 拒绝在写入前：状态、库存与结算草稿都不动。
+    const state = await test.database.query<{ status: string }>(
+      `SELECT status FROM sales_order WHERE id = $1::uuid`,
+      [order.id],
+    );
+    expect(state.rows[0]!.status).toBe('进行中');
+  });
+
   it('缺 If-Match → 428', async () => {
     const order = await createOrder(nextRequestId('nomatch'));
     const response = await app.inject({
       method: 'POST',
-      url: `/api/v1/sales-orders/${order.id}/complete`,
+      url: `/api/v1/sales-orders/${order.id}/ship`,
       headers: writeHeaders(ownerCookie, nextRequestId('nomatch-complete')),
     });
     expect(response.statusCode).toBe(428);

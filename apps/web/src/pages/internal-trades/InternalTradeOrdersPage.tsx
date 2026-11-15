@@ -578,6 +578,7 @@ export function DetailPanel({
             type="button"
             disabled={!canReceive || receiveBusy}
             onClick={onReceive}
+            title={!canReceive ? '当前身份没有 internal_trade.approve 权限' : undefined}
             className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
           >
             到货确认
@@ -587,6 +588,9 @@ export function DetailPanel({
         ) : (
           <span className="text-xs text-slate-500">{dispatchDisabledReason(order.status)}</span>
         )}
+        {order.status === '在途' && !canReceive ? (
+          <span className="text-xs text-slate-500">当前身份没有 internal_trade.approve 权限</span>
+        ) : null}
         <button
           type="button"
           disabled={!canCancel || !order.cancelable.allowed || busy}
@@ -1358,7 +1362,7 @@ export function InternalTradeOrdersPage() {
               batches={detailBatches.data?.items ?? []}
               canUpdate={can('update')}
               canCancel={can('delete')}
-              canReceive={can('update')}
+              canReceive={can('approve')}
               canShip={can('ship')}
               busy={cancelOrder.isPending}
               receiveBusy={receiveOrder.isPending}
