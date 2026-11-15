@@ -5,10 +5,9 @@
  * 与 A / B / E 单最大的不同，是它的**状态是独立四态**（进行中 / 在途 / 已完成 / 已取消），
  * `在途` 这段时间货已经锁定但**批次仍归发出公司**，到货确认后才转司（D22 / D31 / D68③）。
  *
- * 本批接口只给了 5 条端点（列表 / 开单 / 详情 / 改单 / 取消），**没有发货与到货确认**，
- * 所以页面上不会出现这两个按钮——不是忘了画，是进入 `在途` 要锁批次可用量、
- * 转司要在同一事务里改批次 `company_id`，都等 inventory 写能力落地（契约第二批明写不做）。
- * 页面上把这件事讲清楚，比画一个点下去 501 的按钮诚实。
+ * 本批接口给了 6 条端点（列表 / 开单 / 详情 / 改单 / 取消 / 到货确认）。「到货确认」已接入
+ * （D31 / D68③）：仅「在途」可点，确认后批次在同一事务里转入接收公司、N 单置为已完成，不可撤销。
+ * 契约里没有「发货」端点，所以页面不画发货按钮——不是忘了画，是端点还没在契约里，不自己造。
  */
 
 import type {
@@ -52,6 +51,7 @@ import {
   lineAmountOf,
   linesTotal,
   productNameOf,
+  receiveDisabledReason,
   totalLineQty,
   tradeRouteText,
   updateInputOf,
@@ -416,22 +416,28 @@ interface DetailPanelProps {
   readonly batches: readonly InventoryBatch[];
   readonly canUpdate: boolean;
   readonly canCancel: boolean;
+  readonly canReceive: boolean;
   readonly busy: boolean;
+  readonly receiveBusy: boolean;
   readonly onClose: () => void;
   readonly onEdit: () => void;
   readonly onCancel: () => void;
+  readonly onReceive: () => void;
 }
 
-function DetailPanel({
+export function DetailPanel({
   order,
   products,
   batches,
   canUpdate,
   canCancel,
+  canReceive,
   busy,
+  receiveBusy,
   onClose,
   onEdit,
   onCancel,
+  onReceive,
 }: DetailPanelProps) {
   const employeeLabel = useEmployeeLabel();
   // 金额按 view_price 脱敏时是 null：整单合计只能一起显示「—」，不能把 null 当 0 累加。
@@ -520,6 +526,18 @@ function DetailPanel({
         >
           修改
         </button>
+        {order.status === '在途' ? (
+          <button
+            type="button"
+            disabled={!canReceive || receiveBusy}
+            onClick={onReceive}
+            className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+          >
+            到货确认
+          </button>
+        ) : (
+          <span className="text-xs text-slate-500">{receiveDisabledReason(order.status)}</span>
+        )}
         <button
           type="button"
           disabled={!canCancel || !order.cancelable.allowed || busy}
@@ -534,9 +552,9 @@ function DetailPanel({
       </div>
 
       <p className="text-[11px] leading-relaxed text-slate-400">
-        本批没有「发货 / 到货确认」端点：进入「在途」要按 D31 锁定批次可用量，到货确认要在同一事务里
-        把批次归属改到接收公司（D68③），两条都依赖 inventory 写能力。所以这里不画这两个按钮，
-        也不假装能点。状态推进由后端接口落地后再接。
+        本批没有「发货」端点：进入「在途」要按 D31 锁定批次可用量，依赖 inventory 写能力，落地后再接。
+        「到货确认」已接入（D31 / D68③）：仅「在途」可点，确认后批次在同一事务里转入接收公司、
+        N 单置为已完成，不可撤销。
       </p>
     </section>
   );
@@ -704,6 +722,29 @@ export function InternalTradeOrdersPage() {
     },
   });
 
+  const receiveOrder = useMutation({
+    mutationFn: (order: InternalTradeOrderDetail) =>
+      internalTradesApi.receive(order.id, order.version),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
+    },
+    /**
+     * 到货确认撞版本冲突（别人刚改过 / 刚确认了这张单）：同步最新版本并说明，
+     * 不自动重提——到货确认不可逆，让用户看清当前状态再点（D60）。
+     */
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, internalTradesApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '到货确认失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(staleActionRetryText(fresh.version, '到货确认'));
+      await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
+    },
+  });
+
   function resetForm() {
     setFormOpen(false);
     setEditing(null);
@@ -783,6 +824,24 @@ export function InternalTradeOrdersPage() {
     cancelOrder.mutate(order);
   };
 
+  const askReceive = (order: InternalTradeOrderDetail) => {
+    // 仅「在途」能确认到货；其余状态即便因旧数据点到，也要把原因说出来。
+    const reason = receiveDisabledReason(order.status);
+    if (reason !== null) {
+      setActionError(reason);
+      return;
+    }
+    setActionError(null);
+    if (
+      globalThis.confirm?.(
+        `确认到货后，批次将在同一事务内转入接收公司、N 单 ${order.orderNo} 置为已完成，不可撤销。确认继续吗？`,
+      ) === false
+    ) {
+      return;
+    }
+    receiveOrder.mutate(order);
+  };
+
   const serverIssues = save.error instanceof ApiError ? extractIssues(save.error.details) : [];
   const rows = list.data?.items ?? [];
   const nextCursor = list.data?.nextCursor ?? null;
@@ -808,8 +867,8 @@ export function InternalTradeOrdersPage() {
 
       <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
         四态：进行中 → 在途 → 已完成（或已取消，D68②）。只有「进行中」能改单；
-        <b>本批没有发货与到货确认端点</b>，所以页面不画这两个按钮——状态推进要等 inventory
-        写能力落地（D31 / D68③）。
+        <b>本批没有发货端点；到货确认已接入（D31）</b>——确认后批次在同一事务转入接收公司、
+        N 单置为已完成，不可撤销。
       </p>
 
       {meData && !can('create') ? (
@@ -1061,10 +1120,13 @@ export function InternalTradeOrdersPage() {
               batches={detailBatches.data?.items ?? []}
               canUpdate={can('update')}
               canCancel={can('delete')}
+              canReceive={can('update')}
               busy={cancelOrder.isPending}
+              receiveBusy={receiveOrder.isPending}
               onClose={() => setDetailId(null)}
               onEdit={() => beginEdit(detailOrder)}
               onCancel={() => askCancel(detailOrder)}
+              onReceive={() => askReceive(detailOrder)}
             />
           ) : null}
         </>

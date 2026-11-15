@@ -41,24 +41,42 @@ pnpm -C apps/api seed      # 写入演示租户/公司/员工/商品（账号与
 ```powershell
 # 终端 1：API（http://127.0.0.1:3000/api/v1）
 $env:DATABASE_URL = 'postgres://postgres:postgres@127.0.0.1:5432/qingdan_dev'
-$env:PUBLIC_BASE_URL = 'http://localhost:5173'      # ← 必设，见下
+$env:PUBLIC_BASE_URL = 'http://localhost:5173'      # ← dev 下可选，见下
 pnpm -C apps/api dev
 
 # 终端 2：Web（http://localhost:5173，/api/ 前缀代理到 3000）
 pnpm -C apps/web dev
 ```
 
-### 为什么必须设 `PUBLIC_BASE_URL=http://localhost:5173`
+### dev 下的 `PUBLIC_BASE_URL`：设与不设分别会怎样
 
-Cookie 认证的写操作要求「同源」（D59⑧）：服务端把请求的 `Origin` 和
-`PUBLIC_BASE_URL`（未配置时退化用请求 Host 推断）比对，不一致直接 `403 FORBIDDEN`。
+Cookie 认证的写操作要求「同源」（D59⑧）：只有「会话 Cookie 认证 + 非安全方法（POST / PUT / PATCH / DELETE）」
+才执行同源校验，Bearer 请求不受约束（`apps/api/src/platform/auth/plugin.ts:18`、`:45`、`:153-160`）。
+校验候选 = 浏览器 `Origin`（没有时退回 `Referer`）的 origin（`plugin.ts:94`）；候选缺失或与期望 origin
+不一致 → `403 FORBIDDEN`（`plugin.ts:95-99`、`:111-113`）。
 
-开发时浏览器地址是 `http://localhost:5173`，而 `apps/web/vite.config.ts` 的代理开了
-`changeOrigin: true`，API 收到的 `Host` 已被改写成 `127.0.0.1:3000`。所以：
+期望 origin 只有两个来源（`plugin.ts:104-109`）：
 
-- 不设 `PUBLIC_BASE_URL` → 服务端按 Host 期望 `http://127.0.0.1:3000` ≠ 浏览器 `http://localhost:5173` → **所有写操作 403**；
-- 设成 `http://127.0.0.1:3000` → 同样 403（2026-11-08 lozy66 踩过这个坑，查了半天）；
-- 设成 `http://localhost:5173` → 一致，正常。
+- 配了 `PUBLIC_BASE_URL` → **只认它的 origin**，请求 `Host` 完全不参与（`plugin.ts:104-106`）；
+- 没配 → 用 `request.protocol` + 请求 `Host` 拼出来（`plugin.ts:107-109`）。
+
+dev 的 Vite 代理是 `changeOrigin: false`（`apps/web/vite.config.ts:49`），即**保留浏览器发来的 `Host`**
+（同文件 `:47-48` 的注释写明这一点：改成 `true` 会转发成目标地址的 `Host`）。代理目标默认
+`http://127.0.0.1:3000`（`apps/web/vite.config.ts:24-25`），前缀 `/api/`（同文件 `:31`），
+dev server 端口 5173（同文件 `:42`）。因此浏览器开 `http://localhost:5173` 时，API 收到的 `Host`
+仍是 `localhost:5173`，按 Host 推断的期望 origin 就是 `http://localhost:5173`，与浏览器 `Origin` 相同
+（Host 推断分支的用例：`apps/api/src/platform/auth/plugin.test.ts:167-187`）。所以：
+
+- 不设 `PUBLIC_BASE_URL` → 期望 origin = `http://localhost:5173` → 写操作**正常**；
+- 设成 `http://localhost:5173` → 期望 origin 仍是 `http://localhost:5173` → 写操作**正常**（与不设等价）；
+- 设成 `http://127.0.0.1:3000` → 期望 origin 变成 `http://127.0.0.1:3000` ≠ 浏览器 `Origin` → **所有写操作 403**（`plugin.ts:104-112`）。
+
+换成 `http://127.0.0.1:5173` 打开页面则相反：`Host` / `Origin` 都是 `127.0.0.1:5173`，不设正常，
+设成 `http://localhost:5173` 反而 403（同样是 `plugin.ts:104-112` 的两个分支）。设它的价值是把期望 origin
+钉死、不再信任请求 `Host`（`plugin.ts:102-103` 的注释）。
+
+`Origin` 是否实际由浏览器发送、代理是否原样透传，属仓库代码之外的行为（`apps/web/vite.config.ts:44-49`
+只有 `target` 与 `changeOrigin`，没有 Origin / Host 改写项）：待主线确认（需人工核实）。
 
 两个补充事实：
 
