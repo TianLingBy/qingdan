@@ -1,4 +1,4 @@
--- 0035_workbench_position_domain.sql
+-- 20261116043100_workbench_position_domain.sql
 -- 新增功能域 workbench（D89 / #289）：岗位模板与个人覆盖的 domain CHECK 必须放行 'workbench'。
 --
 -- 依据：
@@ -7,7 +7,7 @@
 --   * 岗位模板（position_permission）与个人覆盖（employee_permission_override）的 domain
 --     在 0001 里是 CHECK 白名单；不改 CHECK，seed 的 workbench.read 与权限设置页写入都会失败。
 --
--- 口径：只追加 workbench，不动其它域；历史迁移（0001-0034）不改，本文件纯前向追加。
+-- 口径：只追加 workbench，不动其它域；存量迁移不改，本文件纯前向追加。
 -- 回滚说明：前向原则下不写 DROP；回滚应用即可让旧代码忽略该域（旧 CHECK 不含 workbench 时
 -- 需先清掉 workbench 行，属运维另行处理）。
 

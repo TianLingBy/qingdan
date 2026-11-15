@@ -276,7 +276,7 @@ describe('工作台待办 HTTP（PGlite + seed 演示租户）', () => {
     return items.find((item) => item.kind === kind)?.count ?? -1;
   }
 
-  it('出厂岗位预设默认带 workbench.read（D89；seed + 0033 回填同一口径）', async () => {
+  it('出厂岗位预设默认带 workbench.read（D89；seed 与迁移回填同一口径）', async () => {
     const rows = await test.database.query<{ name: string; granted: boolean }>(
       `SELECT p.name, pp.granted
          FROM position p
