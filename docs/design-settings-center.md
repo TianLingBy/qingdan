@@ -87,18 +87,42 @@
 | H2 | 版本号 / 更新日志 | ✅ 前端读 `package.json` 版本 | 一期做 | 只读展示 |
 | H3 | 帮助 / 联系负责人 | ✅ 联系方式由负责人给 | 一期做 | 只读 |
 
+### I. 贴合现有功能新增的有用项（都是「后端已有、只差入口或只读展示」）
+
+这一组是本次补充的重点：**不新增表、不新增域**，只是把已经存在的能力收进设置中心，或者用纯前端实现。
+
+| # | 功能 | 后端依据 | 本期 | 价值 |
+|---|---|---|---|---|
+| I1 | API 令牌自助创建 / 轮换 / 吊销 | ✅ `platform.token.create` / `.read` / `.revoke` 端点已在契约里 | 一期做 | 现在只能用管理员开的令牌；本人可自助，减少一条人工流程 |
+| I2 | 下一个单号预览（每种单据类型显示「下一个号」） | ✅ `number_sequence` 表已有当前值 | 一期做 | 录入前就知道会拿到哪个号，撞号/断号一眼可见 |
+| I3 | 我的公司范围与岗位（只读列表） | ✅ `employee_company_position` + `position` | 一期做 | 常见疑问「我能看哪几家公司」自助解答 |
+| I4 | 审计日志「只看我的」（带条件直达 `/audit-logs`） | ✅ `audit_log` 有 `operator_id` | 一期做 | 免去每次进页面再手填筛选 |
+| I5 | 提成率只读展示 | ✅ `commission_rate` 表；权限 `view_price` | 一期做 | 提成规则透明度；无 `view_price` 则整块隐藏（不显示 0） |
+| I6 | 岗位预设说明（老板/财务/仓管/开发者 各自默认带哪些 scope） | ✅ `position.preset_key` + `position_permission` | 一期做 | 解决「为什么他能改我不能」，避免误以为写死了角色 |
+| I7 | 系统状态（服务是否可用 + 版本 + 构建时间） | ✅ `GET /api/v1/health` 已存在 | 一期做 | 出问题先自证是不是服务挂了，减少一次询问 |
+| I8 | 命令面板（Ctrl+K 全局跳转页面/单据） | ✅ 纯前端，路由表已有 | 一期做 | 页面已 22 个，跳转比找菜单快；不涉及后端 |
+| I9 | 常用页面置顶 / 收藏 | ✅ 纯前端 `localStorage` | 一期做 | 每人常去的就那三四页 |
+| I10 | 术语与权限词表（域×动作的中文对照，只读） | ✅ 直接读 `packages/contracts/src/domains.ts` 的 `DOMAINS`/`ACTIONS` | 一期做 | 权限页里的「internal_trade.ship」有处可查，不用问人 |
+
+**为什么这些算「有用」而不是堆功能**：I1/I2/I4/I7 各自省掉一次「找人问」；I3/I5/I6 直接回答权限与提成的常见疑问；I8/I9/I10 是纯前端零风险，且立刻降低 22 个页面的导航成本。
+
+### 二期候选（等 `employee_preference` 表，一次做完）
+
+默认公司、默认单据类型、常用商品/客户置顶、列表列宽与排序记忆、通知偏好、导出我的数据、打印模板、头像上传、2FA。这些都需要落库，攒到一张偏好表一起做，比现在一项一项加表省得多。
+
 ## 三、信息架构（两段式）
 
 `/settings` 左侧分两段，默认落在「我的资料」。
 
 ```
-个人设置            公司设置（按权限显示，无公司权限整段隐藏）
-├─ 我的资料 A1 A2    ├─ 公司资料 B1 B2
-├─ 账号安全 A3 A6 A7 ├─ 成员与岗位 B4 B6
-├─ 我的权限 B5       ├─ 单据编号 E1
-├─ 外观 C1 C2 C3     ├─ API 与集成 F1
-├─ 通知（二期占位，不画） ├─ 订阅与套餐 G1
-└─ 关于 H1 H2 H3     └─ 安全与日志 F2 F4
+个人设置                     公司设置（按权限显示，无公司权限整段隐藏）
+├─ 我的资料 A1 A2             ├─ 公司资料 B1 B2
+├─ 账号安全 A3 A6 A7          ├─ 成员与岗位 B4 B6 I3 I6
+├─ 我的权限 B5 I10            ├─ 单据编号与提成 E1 I2 I5
+├─ 外观 C1 C2 C3              ├─ API 与集成 F1 I1
+├─ 通知（二期占位，不画）      ├─ 订阅与套餐 G1
+├─ 关于 H1 H2 H3 I7           └─ 安全与日志 F2 F4 I4
+└─ 工具 I8 I9（命令面板与收藏，入口固定在右上角）
 ```
 
 ## 四、一期改动清单
@@ -125,22 +149,58 @@
 ### 4.2 前端（前端池）
 
 1. `apps/web/src/pages/settings/SettingsPage.tsx`：两段式左栏（个人 / 公司），公司段按 `allowsScope` 决定是否显示。
-2. 面板：`MyProfilePanel`（A1 首字色块 + A2）、`AccountSecurityPanel`（A3 换号三步 + A6 会话列表与踢下线 + A7 说明）、`MyPermissionsPanel`（B5）、`AppearancePanel`（C1/C2/C3）、`CompanyProfilePanel`（B1 可编辑 + B2 四字段）、`NumberingPanel`（E1 只读）、`SubscriptionPanel`（G1 只读）、`AboutPanel`（H1/H2/H3）、`SecurityLogPanel`（F2/F4 入口）。
-3. 外观设置落 `apps/web/src/lib/preferences.ts`（`localStorage`，键名前缀 `qingdan.`），CSS 变量切换主题色。
+2. 面板：`MyProfilePanel`（A1 首字色块 + A2）、`AccountSecurityPanel`（A3 换号三步 + A6 会话列表与踢下线 + A7 说明）、`MyPermissionsPanel`（B5 + I10 词表对照）、`AppearancePanel`（C1/C2/C3）、`CompanyProfilePanel`（B1 可编辑 + B2 四字段）、`BusinessParamsPanel`（E1 规则 + I2 下一个号 + I5 提成率，无 `view_price` 则隐藏提成块）、`MembersPanel`（B4/B6 入口 + I3 我的范围 + I6 预设说明）、`TokenPanel`（F1/I1 自助令牌）、`SubscriptionPanel`（G1 只读）、`AboutPanel`（H1/H2/H3 + I7 系统状态）、`SecurityLogPanel`（F2/F4 入口 + I4 直达筛选）。
+3. 全局工具：`apps/web/src/components/CommandPalette.tsx`（I8，`Ctrl+K` 打开，路由表驱动，键盘可达）、`apps/web/src/lib/pins.ts`（I9 常用页置顶，`localStorage`）。
+4. 外观设置落 `apps/web/src/lib/preferences.ts`（`localStorage`，键名前缀 `qingdan.`），CSS 变量切换主题色。
 4. 路由 `apps/web/src/router/routes.ts` 加 `{ id: 'settings', path: '/settings', page: '设置中心', domain: '系统', title: '设置中心' }`，并注册 `/legal/terms`、`/legal/privacy`。
 5. 统一空/加载/错误三态（与导航改版同批）。
+6. **所有分区、字段、按钮的显隐都必须走 §五 矩阵**，不得用角色名判断；每个分区配一条测试：「无该 scope 时不渲染」+「有该 scope 时可操作」。
 
 ### 4.3 界面改版（前端池，components 归何永上）
 
 - 侧边栏按 `routes.ts` 的 `domain` 分组折叠，默认展开当前组；「设置中心」放「系统」组首位。
 - `/companies`、`/permissions`、`/employees`、`/api-integration` 路由不变，避免打断已开单据页工作。
 
-## 五、权限与审计口径
+## 五、按权限显隐：三态矩阵（本设计的核心约束）
 
-- 读概览：`company.read`；改自己资料/换号/踢会话：`employee.update` 且**服务端强制只能操作本人**（不接受前端传的 employee_id 覆盖面）。
-- **不用职位判断**：前端只按 `allowsScope` 做三态，后端 `requireScope` 兜底。
-- 手机号、`tax_no` 敏感：概览只回脱敏值；改号审计记录旧号掩码 + 新号掩码 + 操作人，不落明文。
-- 换号成功后吊销该员工全部会话（防旧号持有人继续用旧 token），属安全底线 §十一 用户安全。
+原则一句话：**能不能看由一个 `domain.action` 决定，能不能改由另一个动作决定；没权限就整块不渲染，不做「灰着但能点」。**
+
+### 5.1 为什么个人设置不需要业务 scope
+
+「改我自己的名字 / 换我自己的手机号 / 踢掉我自己的会话」这类操作，服务端判的是 `principal.employeeId === target.employeeId`（本人即授权），**不要求 `employee.update`**——否则普通员工连自己名字都改不了。但：
+
+- 端点路径固定为 `/employees/me/**`，**不接受 body/query 里传别人的 id**；管理改别人只能走 `/employees/{id}` 且必须有 `employee.update`；
+- 每项本人操作仍写审计（`employee.employee.update` 等），只是不要求业务 scope；
+- 前端不得自己判断「我是本人」，一律以接口返回为准（概览里回 `me` 段就代表你是谁）。
+
+### 5.2 分区级矩阵
+
+| 分区 | 可见条件（任一满足） | 可编辑条件 | 无权限时表现 |
+|---|---|---|---|
+| 我的资料 | 登录即可（本人） | 本人；显示名/姓名走 `/me` | —（总有） |
+| 账号安全（换号 / 会话） | 登录即可（本人） | 同上；踢会话同样只限本人 | 「会话」列表为空时给「暂无其他设备」 |
+| 我的权限 | 登录即可（本人） | 永远只读 | —（总有） |
+| 外观 / 工具 / 关于 | 登录即可 | 本地偏好，无需后端 | —（总有） |
+| 公司资料 B1 | `company.read` | `company.update` | 只读展示，隐藏「保存」 |
+| 公司资料 B2（4 字段） | `company.read` | `company.update` | 同上 |
+| 成员与岗位 B4/B6 | `employee.read`（成员）/ `permission.read`（权限页入口） | 跳转页内自有判断 | 该入口不渲染 |
+| 我的公司范围 I3 | `employee.read` | 只读 | 不渲染 |
+| 岗位预设说明 I6 | `permission.read` | 只读 | 不渲染 |
+| 单据编号 E1 / 下一个号 I2 | `company.read` | 永远只读 | 不渲染 |
+| 提成率 I5 | `settlement.read` **且** `view_price` | 只读 | **整块隐藏**（不显示 0、不显示「无权限」） |
+| API 与集成 F1 | `api_integration.read` | 创建 `api_integration.create`；吊销 `api_integration.delete` | 只读列表，隐藏「新建/吊销」 |
+| 订阅与套餐 G1 | `billing.read` | 只读（续费不做） | 不渲染 |
+| 安全与日志 F2/I4 | `audit.read` | 只读 | 不渲染 |
+| **公司设置整段** | 上面任一公司类 scope 成立 | — | 左栏「公司设置」整段隐藏，只剩个人设置 |
+
+### 5.3 实现规则（防「隐藏了但能打」）
+
+1. **隐藏 ≠ 禁用 ≠ 授权**：前端隐藏只影响观感，每个端点仍 `requireScope` 兜底；写一条测试证明「不给 scope 直接调接口得 403」，与「前端不渲染」成对存在。
+2. **不要返回空数组假装没权限**：概览端点对无 `company.read` 者返回 **403**（`FORBIDDEN`），而不是 `companies: []`——否则前端会把「没权限」显示成「没有公司」。
+3. **同一页面内混合权限**：能看不能改时，表单字段 `readOnly` + 隐藏保存按钮 + 顶部一句「你只有查看权限（需要 `company.update`）」，把缺哪个权限点直接写出来，省一次询问。
+4. **多公司**：概览只返回 `principal` 有权访问的公司（`employee_company_position` 交集），前端不自己筛；公司选择器默认本人主公司，切换后重新拉概览。
+5. **审计与脱敏**：概览只回脱敏手机号 `138****1234`；`tax_no` 对无 `company.read` 者不可见；改号审计记旧号掩码 + 新号掩码 + 操作人，不落明文。
+6. **不用职位判断**：代码里不出现 `role === 'owner'`、`isManager`；只出现 `allowsScope(principal, 'company.update')`。岗位预设只是默认 scope 集合（见 I6 说明页）。
 
 ## 六、为什么不新增 `settings` 功能域（一期）
 
@@ -179,3 +239,4 @@ node tools/check-numbering.mjs --base origin/main   # 迁移号必须 [ok]
 2. **换手机号审批**：建议「新号收码 + 旧号收码」双确认（不需要管理员）；若你要求管理员审批，我就加审批态。
 3. **用户协议 / 隐私政策文本**：一期先放占位骨架标「待法务确认」，还是你直接给我定稿文本？
 4. **主题色范围**：只做「浅色/深色 + 主色 N 选 1」，还是要完整主题编辑器？（后者工量翻倍）
+5. **I 组十项要不要全做**：我的建议是**全做**——I1/I2/I4/I7 各自省一次「找人问」，I8/I9/I10 纯前端零风险；只有 I5 提成率需要你确认「让谁知道提成率」（我默认：有 `view_price` 才显示）。如果嫌多，优先留 I1 令牌自助、I7 系统状态、I8 命令面板这三项。
