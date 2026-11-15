@@ -526,7 +526,7 @@ async function insertFees(
 
 /**
  * 汇总单头金额：全部交给 SQL 聚合，应用侧不出现浮点。
- * 货款 = 商品明细合计；费用合计可为负（D39）；总金额 = 货款 + 费用合计。
+ * 货款 = 商品明细合计；费用合计不得为负（D83）；总金额 = 货款 + 费用合计。
  */
 async function recalcTotals(ctx: PurchaseOrderRepoContext, orderId: string): Promise<void> {
   await ctx.tx.query(
