@@ -5,9 +5,11 @@
  * 与 A / B / E 单最大的不同，是它的**状态是独立四态**（进行中 / 在途 / 已完成 / 已取消），
  * `在途` 这段时间货已经锁定但**批次仍归发出公司**，到货确认后才转司（D22 / D31 / D68③）。
  *
- * 本批接口给了 6 条端点（列表 / 开单 / 详情 / 改单 / 取消 / 到货确认）。「到货确认」已接入
- * （D31 / D68③）：仅「在途」可点，确认后批次在同一事务里转入接收公司、N 单置为已完成，不可撤销。
- * 契约里没有「发货」端点，所以页面不画发货按钮——不是忘了画，是端点还没在契约里，不自己造。
+ * 接口已给全 8 条端点（列表 / 开单 / 详情 / 改单 / 取消 / 到货确认 / 发货 / 撤销发货）。
+ * 「发货」把「进行中」推进「在途」并锁住发出公司批次的可用量，权限点 `internal_trade.ship`；
+ * 「撤销发货」把「在途」退回「进行中」并释放占用，权限点同为 `internal_trade.ship`，必须填原因。
+ * 「到货确认」已接入（D31 / D68③）：仅「在途」可点，确认后批次在同一事务里转入接收公司、
+ * N 单置为已完成，不可撤销。
  */
 
 import type {
@@ -44,6 +46,7 @@ import {
   batchLabelOf,
   batchOptionLabel,
   canEdit,
+  dispatchDisabledReason,
   internalPriceGap,
   internalTradeQueryKeys,
   internalTradesApi,
@@ -416,12 +419,18 @@ interface DetailPanelProps {
   readonly canUpdate: boolean;
   readonly canCancel: boolean;
   readonly canReceive: boolean;
+  /** `internal_trade.ship`：发货与撤销发货共用这个权限点，不是 update。 */
+  readonly canShip: boolean;
   readonly busy: boolean;
   readonly receiveBusy: boolean;
+  readonly dispatchBusy: boolean;
+  readonly revokeBusy: boolean;
   readonly onClose: () => void;
   readonly onEdit: () => void;
   readonly onCancel: () => void;
   readonly onReceive: () => void;
+  readonly onDispatch: () => void;
+  readonly onRevokeDispatch: () => void;
 }
 
 export function DetailPanel({
@@ -431,12 +440,17 @@ export function DetailPanel({
   canUpdate,
   canCancel,
   canReceive,
+  canShip,
   busy,
   receiveBusy,
+  dispatchBusy,
+  revokeBusy,
   onClose,
   onEdit,
   onCancel,
   onReceive,
+  onDispatch,
+  onRevokeDispatch,
 }: DetailPanelProps) {
   const employeeLabel = useEmployeeLabel();
   // 金额按 view_price 脱敏时是 null：整单合计只能一起显示「—」，不能把 null 当 0 累加。
@@ -525,6 +539,26 @@ export function DetailPanel({
         >
           修改
         </button>
+        {canShip && order.status === '进行中' ? (
+          <button
+            type="button"
+            disabled={dispatchBusy}
+            onClick={onDispatch}
+            className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+          >
+            {dispatchBusy ? '发货中…' : '发货'}
+          </button>
+        ) : null}
+        {canShip && order.status === '在途' ? (
+          <button
+            type="button"
+            disabled={revokeBusy}
+            onClick={onRevokeDispatch}
+            className="rounded-lg border border-amber-300 px-3 py-2 text-sm text-amber-900 disabled:opacity-40"
+          >
+            {revokeBusy ? '撤销中…' : '撤销发货'}
+          </button>
+        ) : null}
         {order.status === '在途' ? (
           <button
             type="button"
@@ -534,8 +568,10 @@ export function DetailPanel({
           >
             到货确认
           </button>
-        ) : (
+        ) : order.status === '进行中' ? (
           <span className="text-xs text-slate-500">{receiveDisabledReason(order.status)}</span>
+        ) : (
+          <span className="text-xs text-slate-500">{dispatchDisabledReason(order.status)}</span>
         )}
         <button
           type="button"
@@ -551,7 +587,8 @@ export function DetailPanel({
       </div>
 
       <p className="text-[11px] leading-relaxed text-slate-400">
-        本批没有「发货」端点：进入「在途」要按 D31 锁定批次可用量，依赖 inventory 写能力，落地后再接。
+        「发货」（权限点 internal_trade.ship）把「进行中」推进「在途」，并锁住发出公司批次的可用量；
+        「撤销发货」（同为 internal_trade.ship）退回「进行中」并释放这笔在途占用，必须填原因。
         「到货确认」已接入（D31 / D68③）：仅「在途」可点，确认后批次在同一事务里转入接收公司、
         N 单置为已完成，不可撤销。
       </p>
@@ -740,6 +777,52 @@ export function InternalTradeOrdersPage() {
     },
   });
 
+  const dispatchOrder = useMutation({
+    mutationFn: (order: InternalTradeOrderDetail) =>
+      internalTradesApi.dispatch(order.id, order.version),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
+    },
+    /**
+     * 发货撞版本冲突（别人刚改过 / 刚发了货）：同步最新版本并说明，不自动重提——
+     * 状态可能已经推进到「在途」，重复发货会被服务端拒（D60）。
+     */
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, internalTradesApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '发货失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(staleActionRetryText(fresh.version, '发货'));
+      await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
+    },
+  });
+
+  const revokeDispatchOrder = useMutation({
+    mutationFn: (input: { readonly order: InternalTradeOrderDetail; readonly reason: string }) =>
+      internalTradesApi.dispatchRevoke(input.order.id, input.order.version, input.reason),
+    onSuccess: async () => {
+      setActionError(null);
+      await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
+    },
+    /**
+     * 撤销发货撞版本冲突（别人刚改过 / 刚刚到货确认）：同步最新版本并说明，不自动重提——
+     * 单子可能已经「已完成」，再撤销只会被服务端拒（D60）。
+     */
+    onError: async (error, input) => {
+      const fresh = await recoverFromStaleVersion(error, input.order.id, internalTradesApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '撤销发货失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(staleActionRetryText(fresh.version, '撤销发货'));
+      await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
+    },
+  });
+
   function resetForm() {
     setFormOpen(false);
     setEditing(null);
@@ -837,6 +920,47 @@ export function InternalTradeOrdersPage() {
     receiveOrder.mutate(order);
   };
 
+  const askDispatch = (order: InternalTradeOrderDetail) => {
+    // 只有「进行中」能发货；旧数据点到也要把原因说出来，别让按钮没反应。
+    if (order.status !== '进行中') {
+      setActionError(dispatchDisabledReason(order.status) ?? '只有「进行中」能发货');
+      return;
+    }
+    setActionError(null);
+    if (
+      globalThis.confirm?.(
+        `确认发货内部交易单 ${order.orderNo} 吗？发货后单据进入在途，批次在发出公司的可用量会被锁定，撤销发货才能释放。`,
+      ) === false
+    ) {
+      return;
+    }
+    dispatchOrder.mutate(order);
+  };
+
+  const askRevokeDispatch = (order: InternalTradeOrderDetail) => {
+    // 只有在途能撤销发货：先要原因（服务端 trim 后不能为空，最多 200 字）。
+    if (order.status !== '在途') {
+      setActionError(dispatchDisabledReason(order.status) ?? '只有「在途」能撤销发货');
+      return;
+    }
+    setActionError(null);
+    const input = globalThis.prompt?.(
+      `撤销发货会把内部交易单 ${order.orderNo} 退回「进行中」，并释放这笔在途占用（不转司）。请填写撤销原因（必填，最多 200 字）：`,
+    );
+    // null = 用户点了取消；undefined = 环境没有 prompt，都不能编一个原因继续发请求。
+    if (input === null || input === undefined) return;
+    const reason = input.trim();
+    if (reason === '') {
+      setActionError('撤销发货必须填写原因，本次未提交。');
+      return;
+    }
+    if (reason.length > 200) {
+      setActionError('撤销原因不能超过 200 字，本次未提交。');
+      return;
+    }
+    revokeDispatchOrder.mutate({ order, reason });
+  };
+
   const serverIssues = save.error instanceof ApiError ? extractIssues(save.error.details) : [];
   const rows = list.data?.items ?? [];
   const nextCursor = list.data?.nextCursor ?? null;
@@ -862,13 +986,18 @@ export function InternalTradeOrdersPage() {
 
       <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
         四态：进行中 → 在途 → 已完成（或已取消，D68②）。只有「进行中」能改单；
-        <b>本批没有发货端点；到货确认已接入（D31）</b>——确认后批次在同一事务转入接收公司、
-        N 单置为已完成，不可撤销。
+        <b>发货（internal_trade.ship）已接入</b>——发货后进入「在途」并锁住批次可用量，撤销发货才释放；
+        <b>到货确认（D31）已接入</b>——确认后批次在同一事务转入接收公司、N 单置为已完成，不可撤销。
       </p>
 
       {meData && !can('create') ? (
         <p className="text-xs text-slate-500">
           「新建」需要 internal_trade.create；当前身份只能查看（判定在服务端，前端只是不画按钮）。
+        </p>
+      ) : null}
+      {meData && !can('ship') ? (
+        <p className="text-xs text-slate-500">
+          「发货 / 撤销发货」需要 internal_trade.ship；当前身份不能发货（判定在服务端，前端只是不画按钮）。
         </p>
       ) : null}
 
@@ -1116,12 +1245,17 @@ export function InternalTradeOrdersPage() {
               canUpdate={can('update')}
               canCancel={can('delete')}
               canReceive={can('update')}
+              canShip={can('ship')}
               busy={cancelOrder.isPending}
               receiveBusy={receiveOrder.isPending}
+              dispatchBusy={dispatchOrder.isPending}
+              revokeBusy={revokeDispatchOrder.isPending}
               onClose={() => setDetailId(null)}
               onEdit={() => beginEdit(detailOrder)}
               onCancel={() => askCancel(detailOrder)}
               onReceive={() => askReceive(detailOrder)}
+              onDispatch={() => askDispatch(detailOrder)}
+              onRevokeDispatch={() => askRevokeDispatch(detailOrder)}
             />
           ) : null}
         </>

@@ -1,9 +1,11 @@
 /**
  * 内部交易单 N 接口封装（22 页 IA 第 6 页；契约第二批 §1 / §3，D22 / D31 / D68）。
  *
- * 端点有 6 条：列表 / 开单 / 详情 / 改单 / 取消 / 到货确认。**没有「发货」**
- * （契约里根本没有发货端点，不要自己造）。进「在途」要按 D31 锁批次可用量，
- * 到货确认在同一事务里改批次归属公司并解锁在途占用（D31 / D68③，已接入）。
+ * 端点有 8 条：列表 / 开单 / 详情 / 改单 / 取消 / 到货确认 / 发货 / 撤销发货。
+ * 进「在途」要按 D31 锁批次可用量（`dispatch`），撤销发货把「在途」退回「进行中」并释放占用
+ * （`dispatch-revoke`）；两者的权限点都是 `internal_trade.ship`（出），**不是 `update`**——
+ * 「能改单」与「能发货」是拆开的两个权限。到货确认在同一事务里改批次归属公司并解锁在途占用
+ * （D31 / D68③，已接入）。
  *
  * 口径（别在这里发明）：
  * - **状态是 N 单独立四态**（D68②）：进行中 / 在途 / 已完成 / 已取消，
@@ -91,6 +93,26 @@ export function createInternalTradesApi(client: ApiClient = apiClient) {
       client.post<InternalTradeOrder>(`/internal-trade-orders/${id}/receive`, { confirm: true }, {
         headers: ifMatch(version),
       }),
+    /**
+     * 发货（D22 / D31 / D68③）：把「进行中」推进「在途」，并锁住发出公司批次的可用量。
+     * 权限是 `internal_trade.ship`（与 update 拆开：能改单不等于能发货）；body `{ confirm: true }`，强 ETag。
+     */
+    dispatch: (id: string, version: number) =>
+      client.post<InternalTradeOrder>(
+        `/internal-trade-orders/${id}/dispatch`,
+        { confirm: true },
+        { headers: ifMatch(version) },
+      ),
+    /**
+     * 撤销发货（D68②）：把「在途」退回「进行中」，释放在途占用；不转司、不写库存流水。
+     * 权限同为 `internal_trade.ship`；`reason` 必填（服务端 trim 后 1–200 字），原样落审计。
+     */
+    dispatchRevoke: (id: string, version: number, reason: string) =>
+      client.post<InternalTradeOrder>(
+        `/internal-trade-orders/${id}/dispatch-revoke`,
+        { confirm: true, reason },
+        { headers: ifMatch(version) },
+      ),
 
     /* 关联下拉：公司 / 商品 / 批次（批次只会列出调用者可见公司的） */
     listCompanies: () =>
@@ -159,6 +181,22 @@ export function receiveDisabledReason(state: InternalTradeOrderStatus): string |
       return '已到货确认，批次归属已转移（D31）';
     case '已取消':
       return '已作废，不能确认到货';
+  }
+}
+
+/**
+ * 发货 / 撤销发货在状态维度的原因：进行中可发货、在途可撤销，两个终态都没有可点的动作。
+ * 权限维度（`internal_trade.ship`）不在这里判断——前端按钮按 scope 显隐，服务端再兜一次。
+ */
+export function dispatchDisabledReason(state: InternalTradeOrderStatus): string | null {
+  switch (state) {
+    case '进行中':
+    case '在途':
+      return null;
+    case '已完成':
+      return '已到货确认，批次归属已转移，不能再发货或撤销发货（D31）';
+    case '已取消':
+      return '已作废，不能发货或撤销发货';
   }
 }
 

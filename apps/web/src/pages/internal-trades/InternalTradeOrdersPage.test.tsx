@@ -62,7 +62,7 @@ interface TestMe {
   readonly companyIds: readonly string[];
   readonly scope: readonly {
     readonly domain: 'internal_trade';
-    readonly actions: readonly ('read' | 'create' | 'update' | 'delete')[];
+    readonly actions: readonly ('read' | 'create' | 'update' | 'delete' | 'ship')[];
   }[];
 }
 
@@ -71,11 +71,13 @@ const OWNER: TestMe = {
   tenantId: 't1',
   displayName: '张明',
   companyIds: [FROM, TO],
-  scope: [{ domain: 'internal_trade', actions: ['read', 'create', 'update', 'delete'] }],
+  scope: [{ domain: 'internal_trade', actions: ['read', 'create', 'update', 'delete', 'ship'] }],
 };
 
 /** 造不同权限的身份，避免把 `readonly ['read']` 这种字面量元组塞进上面的窄类型。 */
-function meWith(actions: readonly ('read' | 'create' | 'update' | 'delete')[]): TestMe {
+function meWith(
+  actions: readonly ('read' | 'create' | 'update' | 'delete' | 'ship')[],
+): TestMe {
   return { ...OWNER, scope: [{ domain: 'internal_trade', actions }] };
 }
 
@@ -120,7 +122,7 @@ const DETAIL: InternalTradeOrderDetail = {
   cancelable: { allowed: true, reason: null },
 };
 
-function renderDetail(order: InternalTradeOrderDetail): string {
+function renderDetail(order: InternalTradeOrderDetail, canShip = true): string {
   const client = createQueryClient();
   // 姓名簿空表：详情面板回显经手人走 id 前缀兜底，不触发网络。
   client.setQueryData(employeeDirectoryKey, []);
@@ -133,12 +135,17 @@ function renderDetail(order: InternalTradeOrderDetail): string {
         canUpdate
         canCancel
         canReceive
+        canShip={canShip}
         busy={false}
         receiveBusy={false}
+        dispatchBusy={false}
+        revokeBusy={false}
         onClose={() => {}}
         onEdit={() => {}}
         onCancel={() => {}}
         onReceive={() => {}}
+        onDispatch={() => {}}
+        onRevokeDispatch={() => {}}
       />
     </QueryClientProvider>,
   );
@@ -158,7 +165,8 @@ describe('内部交易单 N 页面', () => {
 
   it('「在途」单据渲染「到货确认」按钮，已完成 / 已取消不渲染（#211 口径变更）', () => {
     // #211 起契约补充了 internal_trade.order.receive 端点（D31 / D68③），
-    // 前端从「故意不画到货确认按钮」改为「仅在途可点」。发货仍无端点，所以依旧不画「发货」。
+    // 前端从「故意不画到货确认按钮」改为「仅在途可点」。发货 / 撤销发货接入后，
+    // 在途显示的是「撤销发货」，仍然不显示「发货」。
     const inTransit = renderDetail(DETAIL);
     expect(inTransit).toContain('>到货确认<');
     expect(inTransit).not.toContain('>发货<');
@@ -168,6 +176,36 @@ describe('内部交易单 N 页面', () => {
 
     const cancelled = renderDetail({ ...DETAIL, status: '已取消' });
     expect(cancelled).not.toContain('>到货确认<');
+  });
+
+  it('「进行中」渲染「发货」，「在途」渲染「撤销发货」且不渲染「发货」', () => {
+    const inProgress = renderDetail({ ...DETAIL, status: '进行中' });
+    expect(inProgress).toContain('>发货<');
+    expect(inProgress).not.toContain('>撤销发货<');
+
+    const inTransit = renderDetail(DETAIL);
+    expect(inTransit).toContain('>撤销发货<');
+    expect(inTransit).not.toContain('>发货<');
+  });
+
+  it('「已完成」「已取消」两个发货按钮都不渲染，并给一句状态原因', () => {
+    const completed = renderDetail({ ...DETAIL, status: '已完成' });
+    expect(completed).not.toContain('>发货<');
+    expect(completed).not.toContain('>撤销发货<');
+    expect(completed).toContain('不能再发货或撤销发货');
+
+    const cancelled = renderDetail({ ...DETAIL, status: '已取消' });
+    expect(cancelled).not.toContain('>发货<');
+    expect(cancelled).not.toContain('>撤销发货<');
+    expect(cancelled).toContain('不能发货或撤销发货');
+  });
+
+  it('没有 internal_trade.ship 时不渲染「发货」/「撤销发货」（权限断言）', () => {
+    const inProgress = renderDetail({ ...DETAIL, status: '进行中' }, false);
+    expect(inProgress).not.toContain('>发货<');
+
+    const inTransit = renderDetail(DETAIL, false);
+    expect(inTransit).not.toContain('>撤销发货<');
   });
 
   it('「在途」单的编辑与取消都禁用：只有进行中能改（D68②）', () => {
