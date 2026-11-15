@@ -14,10 +14,9 @@
 | 你负责的领域 | 路径 | 不要碰 |
 |---|---|---|
 | 温汇敏 `2696708617-web` | 账号 / 权限域：`apps/api/src/platform/auth/**`、`apps/api/src/platform/authz*`、`apps/web/src/pages/permissions/**`、`apps/web/src/lib/access.ts` | 单据状态机、库存数量 |
-| 李祖怡 `lozy66` | 八类单据与结算页：`apps/web/src/pages/{purchases,sales,internal-trades,processing,reversals,settlements,stocktakes}/**`、`packages/contracts/src/{customer-returns,supplier-returns,stocktakes,settlement-orders}.ts` 的**只读引用**（改契约要主线点头） | `apps/api/src/platform/**` |
+| 李祖怡 `lozy66` | 八类单据与结算页的**业务对接**（出接口口径、评审业务正确性）+ 名下已开单的收尾：`apps/web/src/pages/{purchases,sales,internal-trades,processing,reversals,settlements,stocktakes}/**`、`packages/contracts/src/{customer-returns,supplier-returns,stocktakes,settlement-orders}.ts` 的**只读引用**（改契约要主线点头） | `apps/api/src/platform/**` |
 | 梁海俊 `Vince-Leong` | 仓库 + 人员后端：`apps/api/src/modules/{masterdata,inventory,processing,internal-trade}/**` | 前端页面 |
-| 何永上 `Meow-Yay` | 设计规范 + 公共组件：`apps/web/src/components/**` | 具体页面 |
-| 赖皓妍 `karryL921` | 视觉稿：`design/**` | 代码 |
+| **前端池** 何永上 `Meow-Yay` / 赖皓妍 `karryL921` | `apps/web/src/pages/**` 页面实现（视觉落地 + 接口接线 + 组件测试）、`apps/web/src/components/**`（只有何永上改）、`design/**`（赖皓妍出稿） | 后端业务用例、`apps/api/src/platform/**` |
 | 黄锦城 `TianLingBy`（主线） | 契约、platform 内核、审计、编号、部署、`docs/decisions.md` | — |
 
 **红线路径**（只有主线能改，成员改要单独申请）：`packages/contracts/**`、`apps/api/src/platform/**`、`apps/api/migrations/**`、`docs/decisions.md`、`.github/**`。
@@ -121,8 +120,17 @@
 
 ## 六、派给谁
 
+**先认池，再认人**（2026-11-16 口径，细则见 `docs/DISPATCH-RULES.md`）：
+
+- **前端池** = 何永上 `Meow-Yay`、赖皓妍 `karryL921`。所有 `apps/web/**`、`design/**` 的活只进这个池，池内派给手上未关闭 issue 更少的人。
+- **后端池** = 主线 `TianLingBy`、superagent `@Tylanbot`、梁海俊 `Vince-Leong`、温汇敏 `2696708617-web`。红线只给主线；海俊的四模块优先给他；可判定的单优先 superagent；其余按未关闭 issue 数均摊。
+- 业务负责人（李祖怡 / 温汇敏 / 梁海俊 / 黄锦城）对页面单的角色是**业务对接人**，负责回答口径与评审，不实现页面。
+
 | 活的形状 | 派给 |
 |---|---|
+| 页面实现 / 视觉落地 / 组件 / 设计稿（`apps/web/**`、`design/**`） | 前端池：`Meow-Yay` 或 `karryL921` |
+| 后端业务用例（`apps/api/src/modules/**` 非红线） | 梁海俊 → superagent → 主线，按未关闭 issue 数均摊 |
+| 红线：契约 / platform 内核 / migrations / `docs/decisions.md` / `.github/**` | 主线 `TianLingBy` |
 | 需求边界不清、要跟用户确认口径 | 人 + DSH 会话 |
 | 要动本机 / WSL / 部署 / 密钥 / 生产数据 | DSH 会话 |
 | 跨仓库、或同时改仓库外的东西 | 人 + DSH 会话 |
