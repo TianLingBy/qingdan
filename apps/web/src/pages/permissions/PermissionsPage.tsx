@@ -4,6 +4,8 @@ import type { Position } from '@qingdan/contracts';
 import { platformAdminApi } from '../../api/platform-admin';
 import { ApiError } from '../../api/client';
 import { ACTION_WORDS, DOMAIN_WORDS } from '../employees/domain-words';
+import { authApi, authKeys } from '../auth/auth-api';
+import { allows, type ScopeAction } from '../../lib/access';
 
 /**
  * 权限设置页（22 页之第 17 页，#144）——岗位模板（D44「权限设置」= 岗位 + 个人覆盖）。
@@ -50,6 +52,13 @@ function actionsFromSelection(selection: MatrixSelection): { domain: string; act
 
 export function PermissionsPage() {
   const queryClient = useQueryClient();
+  const me = useQuery({ queryKey: authKeys.me, queryFn: () => authApi.me(), retry: false });
+  const scope = me.data?.scope;
+  const can = (action: ScopeAction) => allows(scope, 'permission', action);
+  const canCreate = can('create');
+  const canUpdate = can('update');
+  const canDelete = can('delete');
+
   const listQuery = useQuery({
     queryKey: ['admin', 'positions'],
     queryFn: platformAdminApi.listPositions,
@@ -145,13 +154,20 @@ export function PermissionsPage() {
             已接真实接口
           </span>
         </div>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700"
-        >
-          新建岗位
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            disabled={!canCreate}
+            onClick={openCreate}
+            className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            title={canCreate ? undefined : '当前身份没有 permission.create 权限'}
+          >
+            新建岗位
+          </button>
+          {!canCreate && (
+            <span className="text-xs text-slate-500">新建岗位需要 permission.create。</span>
+          )}
+        </div>
       </div>
 
       {notice && (
@@ -241,18 +257,24 @@ export function PermissionsPage() {
                       <span className="inline-flex gap-1.5">
                         <button
                           type="button"
+                          disabled={!canUpdate}
                           onClick={() => openEdit(position)}
-                          className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                          className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          title={canUpdate ? undefined : '当前身份没有 permission.update 权限'}
                         >
                           编辑模板
                         </button>
                         {position.status === '启用' && (
                           <button
                             type="button"
-                            disabled={disableMutation.isPending}
+                            disabled={disableMutation.isPending || !canDelete}
                             onClick={() => disableMutation.mutate(position)}
                             className="rounded border border-rose-200 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50 disabled:opacity-40"
-                            title="软删除；被员工占用的岗位会被拒绝"
+                            title={
+                              canDelete
+                                ? '软删除；被员工占用的岗位会被拒绝'
+                                : '当前身份没有 permission.delete 权限'
+                            }
                           >
                             停用
                           </button>
@@ -276,6 +298,7 @@ export function PermissionsPage() {
         <PositionEditor
           editor={editor}
           saving={createMutation.isPending || updateMutation.isPending}
+          readOnly={editor.position ? !canUpdate : !canCreate}
           onChange={(patch) => setEditor({ ...editor, ...patch })}
           onSave={() => (editor.position ? updateMutation.mutate() : createMutation.mutate())}
           onClose={() => setEditor(null)}
@@ -288,6 +311,7 @@ export function PermissionsPage() {
 function PositionEditor({
   editor,
   saving,
+  readOnly,
   onChange,
   onSave,
   onClose,
@@ -299,6 +323,7 @@ function PositionEditor({
     version: number;
   };
   saving: boolean;
+  readOnly: boolean;
   onChange: (patch: { name?: string; selection?: MatrixSelection }) => void;
   onSave: () => void;
   onClose: () => void;
@@ -310,6 +335,7 @@ function PositionEditor({
   }, [editor.name, editor.selection]);
 
   const toggle = (domain: string, action: string) => {
+    if (readOnly) return;
     const current = editor.selection[domain] ?? new Set<string>();
     const next = new Set(current);
     if (next.has(action)) {
@@ -356,10 +382,18 @@ function PositionEditor({
             value={editor.name}
             onChange={(e) => onChange({ name: e.target.value })}
             placeholder="岗位名称"
-            className="w-56 rounded border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-slate-400"
+            disabled={readOnly}
+            className="w-56 rounded border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-slate-400 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400"
           />
           <span className="text-xs text-slate-400">已勾选 {totalSelected} 个动作</span>
         </div>
+
+        {readOnly && (
+          <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            当前身份没有 {editor.position ? 'permission.update' : 'permission.create'}{' '}
+            权限，权限矩阵为只读，不能增删动作。
+          </p>
+        )}
 
         <div className="mt-3 max-h-[50vh] overflow-y-auto rounded border border-slate-200">
           <table className="w-full text-sm">
@@ -385,12 +419,14 @@ function PositionEditor({
                           type="button"
                           aria-pressed={checked}
                           aria-label={`${domain.label}·${action.label}`}
+                          disabled={readOnly}
                           onClick={() => toggle(domain.key, action.key)}
                           className={[
                             'h-6 w-6 rounded text-xs',
                             checked
                               ? 'bg-slate-800 text-white hover:bg-slate-700'
                               : 'border border-slate-200 text-slate-300 hover:border-slate-400',
+                            readOnly ? 'cursor-not-allowed opacity-60' : '',
                           ].join(' ')}
                         >
                           {checked ? '✓' : ''}
@@ -412,7 +448,7 @@ function PositionEditor({
           </button>
           <button
             type="button"
-            disabled={selectionError !== null || saving}
+            disabled={selectionError !== null || saving || readOnly}
             onClick={onSave}
             className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
