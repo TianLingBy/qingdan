@@ -26,7 +26,8 @@ import { maskSettlementAmounts } from '../services/masking.js';
  * C 结算单用例（D15 / D19 / D26 / D51 / D52 / D54 / D69）。
  *
  * - 查询：settlement.read；普通读不记审计。
- * - 确认：settlement.approve；AI 默认禁止且必须带 reason（D52 / D52.1）；
+ * - 确认：settlement.approve + settlement.view_price（P0-13：看不到金额的人不得签结算）；
+ *   AI 默认禁止且必须带 reason（D52 / D52.1）；
  *   强制 If-Match 强 ETag；成功后状态置「已结算」并冻结相关损失快照。
  * - 金额：服务端不接收 body 金额；确认时由 SQL 以毛利 - 相关损失计算净毛利。
  * - 一期一单一次结算：重复确认返回 422，并发版本变化返回 409。
@@ -93,7 +94,7 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'approve',
+  action: 'read' | 'approve' | 'view_price',
 ): void {
   if (!allowsScope(principal.scope, 'settlement', action)) {
     throw new AppError('FORBIDDEN', `缺少 settlement.${action} 权限`);
@@ -281,7 +282,9 @@ export async function getSettlementOrder(
 }
 
 /**
- * 确认结算：人类审批 + settlement.approve + If-Match。
+ * 确认结算：人类审批 + settlement.approve + settlement.view_price + If-Match。
+ * 看不到金额（无看价权限）的人不得签结算：读接口按 D27 / D78 脱敏而非 403，
+ * 但「确认」是必须看到毛利的审批动作，故在这里硬校验 view_price（P0-13）。
  * 成功同事务冻结相关损失快照、写审计并返回新 ETag。
  */
 export async function confirmSettlementOrder(
@@ -290,6 +293,7 @@ export async function confirmSettlementOrder(
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'settlement.order.confirm');
   requireScope(principal, 'approve');
+  requireScope(principal, 'view_price');
   assertHumanConfirmation(ctx.request, principal);
 
   const id = parseOrderId(ctx.request);
