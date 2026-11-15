@@ -35,9 +35,12 @@ export interface AuthzResult {
   readonly scope: ScopeMatrix;
   /** 是否老板（employee.is_owner）；供 /auth/me 下发身份位（Issue #227）。 */
   readonly isOwner: boolean;
-  /** 是否可看单据「负责人」字段：老板或经理岗位（preset_key ∈ owner/manager，Issue #227 第 3 点）。 */
+  /** 是否可看单据「负责人」字段：由权限点 `view_handler`（按单据域）决定，不按岗位判定（Issue #227 / 权限模型铁律）。 */
   readonly canViewHandler: boolean;
 }
+
+/** 承载「负责人 / 经手人」字段的单据域；任一域持 view_handler 即可见负责人。 */
+const HANDLER_SCOPE_DOMAINS = ['sales', 'purchase', 'processing', 'internal_trade'] as const;
 
 interface PermissionRow {
   domain: string;
@@ -48,7 +51,6 @@ interface AuthzQueryRow {
   company_ids: string[] | null;
   permissions: PermissionRow[] | null;
   is_owner: boolean;
-  can_view_handler: boolean;
 }
 
 const AUTHZ_SQL = `WITH emp AS (
@@ -97,14 +99,7 @@ SELECT
     SELECT coalesce(json_agg(json_build_object('domain', domain, 'action', action)), '[]'::json)
     FROM final_permission
   ) AS permissions,
-  (SELECT is_owner FROM emp) AS is_owner,
-  EXISTS (
-    SELECT 1
-    FROM employee_company_position ecp2
-    JOIN position p ON p.id = ecp2.position_id AND p.tenant_id = $2
-    WHERE ecp2.employee_id = $1
-      AND p.preset_key IN ('owner', 'manager')
-  ) AS can_view_handler
+  (SELECT is_owner FROM emp) AS is_owner
 FROM emp`;
 
 /**
@@ -138,7 +133,14 @@ export async function computeAuthz(db: SqlClient, input: AuthzInput): Promise<Au
         tenantId: input.tenantId,
       });
     }
-    return { companyIds, scope: parsedOwner.data, isOwner: true, canViewHandler: true };
+    return {
+      companyIds,
+      scope: parsedOwner.data,
+      isOwner: true,
+      canViewHandler: HANDLER_SCOPE_DOMAINS.some((domain) =>
+        allowsScope(parsedOwner.data, domain, 'view_handler'),
+      ),
+    };
   }
 
   const byDomain = new Map<string, string[]>();
@@ -175,5 +177,12 @@ export async function computeAuthz(db: SqlClient, input: AuthzInput): Promise<Au
     });
   }
 
-  return { companyIds, scope: parsed.data, isOwner: false, canViewHandler: row.can_view_handler };
+  return {
+    companyIds,
+    scope: parsed.data,
+    isOwner: false,
+    canViewHandler: HANDLER_SCOPE_DOMAINS.some((domain) =>
+      allowsScope(parsed.data, domain, 'view_handler'),
+    ),
+  };
 }

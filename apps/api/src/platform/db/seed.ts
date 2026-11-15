@@ -50,7 +50,7 @@ const ALL_DOMAINS = [
   'permission', 'company', 'profit_report', 'audit', 'api_integration',
 ] as const;
 
-const ALL_ACTIONS = ['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'export'] as const;
+const ALL_ACTIONS = ['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'view_handler', 'export'] as const;
 
 function perms(domain: string, actions: readonly string[]): Perm[] {
   return actions.map((action) => [domain, action] as const);
@@ -82,6 +82,10 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('employee', ['read']),
       ...perms('permission', ['read', 'update']),
       ...perms('audit', ['read']),
+      // 负责人字段可见：经理默认持 view_handler（Issue #227，可被撤销）。
+      ...['purchase', 'processing', 'sales', 'internal_trade'].flatMap((domain) =>
+        perms(domain, ['view_handler']),
+      ),
     ],
   },
   {

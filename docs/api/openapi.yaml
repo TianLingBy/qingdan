@@ -340,6 +340,7 @@ paths:
                               - ship
                               - delete
                               - view_price
+                              - view_handler
                               - export
                       required:
                         - domain
@@ -812,6 +813,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - view_handler
                             - export
                     required:
                       - domain
@@ -928,6 +930,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - view_handler
                             - export
                     required:
                       - domain
@@ -1275,6 +1278,7 @@ paths:
                             - ship
                             - delete
                             - view_price
+                            - view_handler
                             - export
                     required:
                       - domain
@@ -1470,6 +1474,7 @@ paths:
                           - ship
                           - delete
                           - view_price
+                          - view_handler
                           - export
                       granted:
                         type: boolean
@@ -7074,6 +7079,7 @@ components:
                     - ship
                     - delete
                     - view_price
+                    - view_handler
                     - export
             required:
               - domain
@@ -7187,6 +7193,7 @@ components:
                     - ship
                     - delete
                     - view_price
+                    - view_handler
                     - export
             required:
               - domain
@@ -7723,6 +7730,7 @@ components:
                     - approve
                     - ship
                     - delete
+                    - view_handler
                     - export
             required:
               - domain
