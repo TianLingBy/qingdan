@@ -101,7 +101,7 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create',
+  action: 'read' | 'create' | 'approve',
 ): void {
   if (!allowsScope(principal.scope, 'customer_return', action)) {
     throw new AppError('FORBIDDEN', `缺少 customer_return.${action} 权限`);
@@ -345,7 +345,7 @@ export async function createCustomerReturn(
 export async function completeCustomerReturn(ctx: CustomerReturnWriteContext): Promise<CustomerReturn> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'customer_return.complete');
-  requireScope(principal, 'create');
+  requireScope(principal, 'approve');
   assertHumanCreation(principal, ctx.request.auditReason);
   const id = parseCustomerReturnId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);

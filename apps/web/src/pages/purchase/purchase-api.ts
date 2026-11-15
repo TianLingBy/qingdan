@@ -8,7 +8,8 @@
  * - 无 `purchase.view_price` 时服务端把金额回 `null`（D79）——**遮罩是 `null` 触发的，
  *   不是 0**：绝不能把 null 当 0 渲染，那是泄露价格；
  * - 修改 / 取消 / 完成必须带强 ETag `If-Match: "<version>"`（D60）；
- * - 完成（`purchase.approve`）只把 A 单置为「已完成」并 +version；入库与库存流水尚未接入（见 #211），点了不动库存。
+ * - 完成（`purchase.update`）会为每行明细创建库存批次并写库存流水（服务端走 inventory 的 createBatch），
+ *   再把 A 单置为「已完成」并 +version；不生成应付、不写结算草稿。
  */
 
 import type {

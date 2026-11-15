@@ -3,7 +3,8 @@
  *
  * 这一栏有两个动作：**登记** 与 **完成**（`customer_return.complete`，把进行中的单置为「已完成」）。
  * R 单没有改 / 删 / 取消端点（D47 冲正只追加），所以错账继续追加新单，不改历史；
- * 「完成」只是把进行中的退货单置为「已完成」并 +version；入库与应收冲减尚未接入（见 #211），不是改单。
+ * 「完成」是审批动作（`customer_return.approve`）：`退货退款` 类型按批次入库并写库存流水，
+ * `仅退款` 不动库存；然后置为「已完成」并 +version。应收冲减尚未接入（见 #211），不是改单。
  *
  * 三个容易做错的地方，这里都按契约来：
  * - `退货退款` 必须填商品明细（有入库流水），`仅退款` 必须选 `纠收款 / 减成交额`；
@@ -60,6 +61,7 @@ const EMPTY_LINE: ReturnLineDraft = { productId: '', batchIds: [], qty: '1', uni
 
 export interface CustomerReturnsPanelProps {
   readonly canCreate: boolean;
+  readonly canApprove: boolean;
   /** D79：无看价权限时金额一律显示破折号，不用 0 顶替。 */
   readonly canViewPrice: boolean;
   readonly companyIds: readonly string[];
@@ -71,6 +73,7 @@ export interface CustomerReturnsPanelProps {
 
 export function CustomerReturnsPanel({
   canCreate,
+  canApprove,
   canViewPrice,
   companyIds,
   companyId,
@@ -717,10 +720,10 @@ export function CustomerReturnsPanel({
                 <button
                   type="button"
                   onClick={() => askComplete(detail.data!)}
-                  disabled={!canCreate || detail.data.status !== '进行中' || complete.isPending}
+                  disabled={!canApprove || detail.data.status !== '进行中' || complete.isPending}
                   title={
-                    !canCreate
-                      ? '当前身份没有 customer_return.create 权限'
+                    !canApprove
+                      ? '当前身份没有 customer_return.approve 权限'
                       : detail.data.status !== '进行中'
                         ? '仅「进行中」状态的单据可完成'
                         : undefined
@@ -730,7 +733,7 @@ export function CustomerReturnsPanel({
                   {complete.isPending ? '完成中…' : '完成'}
                 </button>
                 <span className="text-[11px] leading-relaxed text-slate-400">
-                  完成后只改单据状态，入库与应收冲减尚未接入（见 #211）；冲正单据只追加，不可改、不可删（D47）。
+                  完成即审批：退货退款类型会按批次入库并写库存流水，然后置为「已完成」；换货类型不动库存。应收冲减尚未接入（见 #211）；冲正单据只追加，不可改、不可删（D47）。
                   实际退款请在原销售单里追加负数收款行（D40）。
                 </span>
               </div>

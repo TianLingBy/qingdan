@@ -6,7 +6,7 @@
  *
  * 与原型不同的地方，都是本批接口口径决定的：
  * - 原型里「审核」按钮本批没有对应端点（采购单没有审批状态机），不画假按钮；
- * - 「完成」已接入（`purchase.approve`），但它只改单据状态，入库与库存流水尚未接入（见 #211）；取消仍是另一个动作。
+ * - 「完成」已接入（`purchase.update`）：服务端为每行创建库存批次并写库存流水，再把单据置为「已完成」；取消仍是另一个动作。
  * - 明细里只有 `productId`，商品名靠主数据映射（没有 `product.read` 时降级显示短 id）。
  */
 
@@ -1202,7 +1202,7 @@ export function PurchaseOrdersPage() {
               products={products}
               canCancel={can('delete')}
               canceling={cancelOrder.isPending}
-              canComplete={can('approve')}
+              canComplete={can('update')}
               completing={completeOrder.isPending}
               onClose={() => setDetailId(null)}
               onEdit={() => beginEdit(detailOrder)}

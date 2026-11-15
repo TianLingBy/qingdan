@@ -6,7 +6,8 @@
  * 加一个「抵货款」选项看起来更"完整"，但那是凭空造业务。
  *
  * 和 R 一样，只追加：没有改 / 删 / 取消端点（D47）。多一个「完成」动作
- * （`supplier_return.complete`，把进行中的单置为「已完成」），不是改单：出库与应付冲减尚未接入（见 #211）。
+ * （`supplier_return.complete`，审批动作 `supplier_return.approve`）：按批次出库并写库存流水，
+ * 然后置为「已完成」。应付冲减尚未接入（见 #211），不是改单。
  */
 
 import type { SupplierReturn, SupplierReturnStatus } from '@qingdan/contracts';
@@ -43,6 +44,7 @@ const EMPTY_LINE: ReturnLineDraft = { productId: '', batchIds: [], qty: '1', uni
 
 export interface SupplierReturnsPanelProps {
   readonly canCreate: boolean;
+  readonly canApprove: boolean;
   readonly canViewPrice: boolean;
   readonly companyIds: readonly string[];
   readonly companyId: string;
@@ -53,6 +55,7 @@ export interface SupplierReturnsPanelProps {
 
 export function SupplierReturnsPanel({
   canCreate,
+  canApprove,
   canViewPrice,
   companyIds,
   companyId,
@@ -610,10 +613,10 @@ export function SupplierReturnsPanel({
                 <button
                   type="button"
                   onClick={() => askComplete(detail.data!)}
-                  disabled={!canCreate || detail.data.status !== '进行中' || complete.isPending}
+                  disabled={!canApprove || detail.data.status !== '进行中' || complete.isPending}
                   title={
-                    !canCreate
-                      ? '当前身份没有 supplier_return.create 权限'
+                    !canApprove
+                      ? '当前身份没有 supplier_return.approve 权限'
                       : detail.data.status !== '进行中'
                         ? '仅「进行中」状态的单据可完成'
                         : undefined
@@ -623,7 +626,7 @@ export function SupplierReturnsPanel({
                   {complete.isPending ? '完成中…' : '完成'}
                 </button>
                 <span className="text-[11px] leading-relaxed text-slate-400">
-                  完成后只改单据状态，出库与应付冲减尚未接入（见 #211）；冲正单据只追加，不可改、不可删（D47）。
+                  完成即审批：会按批次出库并写库存流水，然后置为「已完成」；应付冲减尚未接入（见 #211）；冲正单据只追加，不可改、不可删（D47）。
                 </span>
               </div>
             </div>

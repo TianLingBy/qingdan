@@ -78,7 +78,7 @@ describe('供应商退货契约（supplier_return）', () => {
     expect(byId.get('supplier_return.list.read')?.scope).toBe('supplier_return.read');
     expect(byId.get('supplier_return.detail.read')?.scope).toBe('supplier_return.read');
     expect(byId.get('supplier_return.create')?.scope).toBe('supplier_return.create');
-    expect(byId.get('supplier_return.complete')?.scope).toBe('supplier_return.create');
+    expect(byId.get('supplier_return.complete')?.scope).toBe('supplier_return.approve');
   });
 
   it('普通读不记审计；登记退货 audit=write（D51 / D54 ②）', () => {

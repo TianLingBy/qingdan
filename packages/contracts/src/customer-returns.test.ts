@@ -110,7 +110,7 @@ describe('客户退货契约（customer_return）', () => {
     expect(byId.get('customer_return.list.read')?.scope).toBe('customer_return.read');
     expect(byId.get('customer_return.detail.read')?.scope).toBe('customer_return.read');
     expect(byId.get('customer_return.create')?.scope).toBe('customer_return.create');
-    expect(byId.get('customer_return.complete')?.scope).toBe('customer_return.create');
+    expect(byId.get('customer_return.complete')?.scope).toBe('customer_return.approve');
   });
 
   it('普通读不记审计；登记退货 audit=write（D51 / D54 ②）', () => {
