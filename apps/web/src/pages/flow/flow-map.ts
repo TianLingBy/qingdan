@@ -134,13 +134,13 @@ const SALES: FlowDocStep = {
   tone: 'emerald',
   summary:
     '选批次出售：成本下限取批次锁价，低于下限只如实展示、不在前端拦（D20）；收款记录内嵌本页（D24）。',
-  stock: '完成时按行内批次均分扣减可用量，并在同一事务生成 C 单草稿（D72）。',
+  stock: '出库（完成）时按行内批次均分扣减可用量，并在同一事务生成 C 单草稿（D72 / D85）。',
   done: [
     'sales.order.list.read',
     'sales.order.create',
     'sales.order.detail.read',
     'sales.order.update',
-    'sales.order.complete',
+    'sales.order.ship',
     'sales.order.cancel',
     'sales.order.print',
     'sales.order.export',

@@ -148,7 +148,7 @@ async function main(): Promise<void> {
       assert(created !== null, '前一步没建出单据');
       const response = await app.inject({
         method: 'POST',
-        url: `/api/v1/sales-orders/${created.id}/complete`,
+        url: `/api/v1/sales-orders/${created.id}/ship`,
         headers: writeHeaders({ 'if-match': `"${created.version}"` }),
       });
       assert(response.statusCode === 200, `完成返回 ${response.statusCode}：${response.body.slice(0, 300)}`);
@@ -232,7 +232,7 @@ async function main(): Promise<void> {
       const created = order;
       assert(created !== null, '前一步没建出单据');
       const completeAudit = await database.query<{ action: string }>(
-        `SELECT action FROM audit_log WHERE object_id = $1 AND action = 'sales.order.complete'`,
+        `SELECT action FROM audit_log WHERE object_id = $1 AND action = 'sales.order.ship'`,
         [created.id],
       );
       assert(completeAudit.rows.length === 1, `完成 E 单审计期望 1 条，实际 ${completeAudit.rows.length}`);

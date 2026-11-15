@@ -152,7 +152,7 @@ describe('E 单打印（客户联）', () => {
 
     const completed = await app.inject({
       method: 'POST',
-      url: `/api/v1/sales-orders/${order.id}/complete`,
+      url: `/api/v1/sales-orders/${order.id}/ship`,
       headers: writeHeaders(ownerCookie, 'req-print-complete', {
         'if-match': `"${order.version}"`,
       }),
