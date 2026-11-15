@@ -425,12 +425,19 @@ interface DetailPanelProps {
   readonly receiveBusy: boolean;
   readonly dispatchBusy: boolean;
   readonly revokeBusy: boolean;
+  /** 该单正在填撤销原因（点「撤销发货」只展开输入区，不发请求）。 */
+  readonly revoking: boolean;
+  readonly revokeReason: string;
+  readonly revokeError: string | null;
   readonly onClose: () => void;
   readonly onEdit: () => void;
   readonly onCancel: () => void;
   readonly onReceive: () => void;
   readonly onDispatch: () => void;
-  readonly onRevokeDispatch: () => void;
+  readonly onStartRevoke: () => void;
+  readonly onRevokeReasonChange: (value: string) => void;
+  readonly onSubmitRevoke: () => void;
+  readonly onCancelRevoke: () => void;
 }
 
 export function DetailPanel({
@@ -445,12 +452,18 @@ export function DetailPanel({
   receiveBusy,
   dispatchBusy,
   revokeBusy,
+  revoking,
+  revokeReason,
+  revokeError,
   onClose,
   onEdit,
   onCancel,
   onReceive,
   onDispatch,
-  onRevokeDispatch,
+  onStartRevoke,
+  onRevokeReasonChange,
+  onSubmitRevoke,
+  onCancelRevoke,
 }: DetailPanelProps) {
   const employeeLabel = useEmployeeLabel();
   // 金额按 view_price 脱敏时是 null：整单合计只能一起显示「—」，不能把 null 当 0 累加。
@@ -549,14 +562,14 @@ export function DetailPanel({
             {dispatchBusy ? '发货中…' : '发货'}
           </button>
         ) : null}
-        {canShip && order.status === '在途' ? (
+        {canShip && order.status === '在途' && !revoking ? (
           <button
             type="button"
             disabled={revokeBusy}
-            onClick={onRevokeDispatch}
+            onClick={onStartRevoke}
             className="rounded-lg border border-amber-300 px-3 py-2 text-sm text-amber-900 disabled:opacity-40"
           >
-            {revokeBusy ? '撤销中…' : '撤销发货'}
+            撤销发货
           </button>
         ) : null}
         {order.status === '在途' ? (
@@ -586,6 +599,43 @@ export function DetailPanel({
         ) : null}
       </div>
 
+      {revoking ? (
+        <div className="space-y-2 rounded-lg border border-rose-200 bg-rose-50 p-3">
+          <p className="text-sm font-medium text-rose-900">撤销发货</p>
+          <p className="text-xs text-rose-700">
+            撤销会把单据退回「进行中」并释放这笔在途占用（不转司）。
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-64 flex-1 text-sm">
+              <span className="text-slate-600">撤销原因（必填）</span>
+              <input
+                value={revokeReason}
+                onChange={(event) => onRevokeReasonChange(event.target.value)}
+                maxLength={200}
+                placeholder="例如：批次锁错，需要重新发货"
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={revokeBusy}
+              onClick={onSubmitRevoke}
+              className="rounded-lg bg-rose-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+            >
+              {revokeBusy ? '撤销中…' : '确认撤销'}
+            </button>
+            <button
+              type="button"
+              onClick={onCancelRevoke}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600"
+            >
+              取消
+            </button>
+          </div>
+          {revokeError ? <p className="text-xs text-rose-700">{revokeError}</p> : null}
+        </div>
+      ) : null}
+
       <p className="text-[11px] leading-relaxed text-slate-400">
         「发货」（权限点 internal_trade.ship）把「进行中」推进「在途」，并锁住发出公司批次的可用量；
         「撤销发货」（同为 internal_trade.ship）退回「进行中」并释放这笔在途占用，必须填原因。
@@ -594,6 +644,49 @@ export function DetailPanel({
       </p>
     </section>
   );
+}
+
+/* ------------------------------ 撤销发货草稿 ------------------------------ */
+
+/**
+ * 撤销原因校验（与服务端契约一致：trim 后 1–200 字）。
+ *
+ * 抽成纯函数是刻意的：本仓 Web 测试不带 jsdom（`renderToStaticMarkup` 做静态断言），
+ * 交互路径只能靠纯逻辑 + 静态渲染断言覆盖，不能再依赖原生 prompt 的效果。
+ */
+export function revokeReasonError(reason: string): string | null {
+  const trimmed = reason.trim();
+  if (trimmed === '') return '撤销发货必须填写原因，本次未提交。';
+  if (trimmed.length > 200) return '撤销原因不能超过 200 字，本次未提交。';
+  return null;
+}
+
+/**
+ * 「撤销发货」第一步：只打开原因输入区，**不发请求**；非「在途」时给状态原因。
+ * 返回 `orderId` 表示要锁定哪张单的草稿，由页面写进 `revokingId`。
+ */
+export function openRevokeDispatch(
+  order: InternalTradeOrderDetail,
+): { readonly orderId: string } | { readonly error: string } {
+  if (order.status !== '在途') {
+    return { error: dispatchDisabledReason(order.status) ?? '只有「在途」能撤销发货' };
+  }
+  return { orderId: order.id };
+}
+
+/**
+ * 「确认撤销」的提交入参：校验通过才把 trim 后的原因交给 mutation；
+ * 返回 `error` 时页面只展示提示，不调接口。
+ */
+export function confirmRevokeDispatch(
+  order: InternalTradeOrderDetail,
+  reason: string,
+):
+  | { readonly input: { readonly order: InternalTradeOrderDetail; readonly reason: string } }
+  | { readonly error: string } {
+  const error = revokeReasonError(reason);
+  if (error !== null) return { error };
+  return { input: { order, reason: reason.trim() } };
 }
 
 /* ------------------------------ 页面 ------------------------------ */
@@ -620,6 +713,10 @@ export function InternalTradeOrdersPage() {
   /** 版本冲突后已把最新 version 接上时的提示（与红色报错互斥）。 */
   const [staleNotice, setStaleNotice] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  /** 撤销发货的原因草稿：点「撤销发货」只展开输入区，确认为空时不发请求。 */
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [revokeReason, setRevokeReason] = useState('');
+  const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const scope = me.data?.scope;
   const can = (action: ScopeAction) => allows(scope, 'internal_trade', action);
@@ -805,6 +902,9 @@ export function InternalTradeOrdersPage() {
       internalTradesApi.dispatchRevoke(input.order.id, input.order.version, input.reason),
     onSuccess: async () => {
       setActionError(null);
+      setRevokingId(null);
+      setRevokeReason('');
+      setRevokeError(null);
       await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
     },
     /**
@@ -818,6 +918,10 @@ export function InternalTradeOrdersPage() {
         return;
       }
       setActionError(null);
+      // 状态可能已经变了：收起草稿，让用户看清最新状态后再点一次（与 staleActionRetryText 一致）。
+      setRevokingId(null);
+      setRevokeReason('');
+      setRevokeError(null);
       setStaleNotice(staleActionRetryText(fresh.version, '撤销发货'));
       await queryClient.invalidateQueries({ queryKey: ['internal-trades'] });
     },
@@ -937,28 +1041,33 @@ export function InternalTradeOrdersPage() {
     dispatchOrder.mutate(order);
   };
 
-  const askRevokeDispatch = (order: InternalTradeOrderDetail) => {
-    // 只有在途能撤销发货：先要原因（服务端 trim 后不能为空，最多 200 字）。
-    if (order.status !== '在途') {
-      setActionError(dispatchDisabledReason(order.status) ?? '只有「在途」能撤销发货');
+  const beginRevokeDispatch = (order: InternalTradeOrderDetail) => {
+    const opened = openRevokeDispatch(order);
+    if ('error' in opened) {
+      setActionError(opened.error);
       return;
     }
     setActionError(null);
-    const input = globalThis.prompt?.(
-      `撤销发货会把内部交易单 ${order.orderNo} 退回「进行中」，并释放这笔在途占用（不转司）。请填写撤销原因（必填，最多 200 字）：`,
-    );
-    // null = 用户点了取消；undefined = 环境没有 prompt，都不能编一个原因继续发请求。
-    if (input === null || input === undefined) return;
-    const reason = input.trim();
-    if (reason === '') {
-      setActionError('撤销发货必须填写原因，本次未提交。');
+    setRevokeError(null);
+    setRevokeReason('');
+    setRevokingId(opened.orderId);
+  };
+
+  const submitRevokeDispatch = (order: InternalTradeOrderDetail) => {
+    if (revokingId !== order.id) return;
+    const confirmed = confirmRevokeDispatch(order, revokeReason);
+    if ('error' in confirmed) {
+      setRevokeError(confirmed.error);
       return;
     }
-    if (reason.length > 200) {
-      setActionError('撤销原因不能超过 200 字，本次未提交。');
-      return;
-    }
-    revokeDispatchOrder.mutate({ order, reason });
+    setRevokeError(null);
+    revokeDispatchOrder.mutate(confirmed.input);
+  };
+
+  const cancelRevokeDispatch = () => {
+    setRevokingId(null);
+    setRevokeReason('');
+    setRevokeError(null);
   };
 
   const serverIssues = save.error instanceof ApiError ? extractIssues(save.error.details) : [];
@@ -1250,12 +1359,18 @@ export function InternalTradeOrdersPage() {
               receiveBusy={receiveOrder.isPending}
               dispatchBusy={dispatchOrder.isPending}
               revokeBusy={revokeDispatchOrder.isPending}
+              revoking={revokingId === detailOrder.id}
+              revokeReason={revokeReason}
+              revokeError={revokeError}
               onClose={() => setDetailId(null)}
               onEdit={() => beginEdit(detailOrder)}
               onCancel={() => askCancel(detailOrder)}
               onReceive={() => askReceive(detailOrder)}
               onDispatch={() => askDispatch(detailOrder)}
-              onRevokeDispatch={() => askRevokeDispatch(detailOrder)}
+              onStartRevoke={() => beginRevokeDispatch(detailOrder)}
+              onRevokeReasonChange={setRevokeReason}
+              onSubmitRevoke={() => submitRevokeDispatch(detailOrder)}
+              onCancelRevoke={cancelRevokeDispatch}
             />
           ) : null}
         </>

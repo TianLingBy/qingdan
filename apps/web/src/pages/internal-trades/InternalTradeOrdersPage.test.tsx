@@ -1,12 +1,18 @@
 import type { InternalTradeOrder, InternalTradeOrderDetail, Product } from '@qingdan/contracts';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../../api/query';
 import { employeeDirectoryKey } from '../../lib/employee-directory';
 import { authKeys } from '../auth/auth-api';
-import { DetailPanel, InternalTradeOrdersPage } from './InternalTradeOrdersPage';
-import { internalTradeQueryKeys } from './internal-trades-api';
+import {
+  DetailPanel,
+  InternalTradeOrdersPage,
+  confirmRevokeDispatch,
+  openRevokeDispatch,
+  revokeReasonError,
+} from './InternalTradeOrdersPage';
+import { createInternalTradesApi, internalTradeQueryKeys } from './internal-trades-api';
 
 const FROM = '00000000-0000-4000-8000-000000000001';
 const TO = '00000000-0000-4000-8000-000000000002';
@@ -122,7 +128,14 @@ const DETAIL: InternalTradeOrderDetail = {
   cancelable: { allowed: true, reason: null },
 };
 
-function renderDetail(order: InternalTradeOrderDetail, canShip = true): string {
+interface RenderDetailOptions {
+  readonly canShip?: boolean;
+  readonly revoking?: boolean;
+  readonly revokeReason?: string;
+  readonly revokeError?: string | null;
+}
+
+function renderDetail(order: InternalTradeOrderDetail, options: RenderDetailOptions = {}): string {
   const client = createQueryClient();
   // 姓名簿空表：详情面板回显经手人走 id 前缀兜底，不触发网络。
   client.setQueryData(employeeDirectoryKey, []);
@@ -135,17 +148,23 @@ function renderDetail(order: InternalTradeOrderDetail, canShip = true): string {
         canUpdate
         canCancel
         canReceive
-        canShip={canShip}
+        canShip={options.canShip ?? true}
         busy={false}
         receiveBusy={false}
         dispatchBusy={false}
         revokeBusy={false}
+        revoking={options.revoking ?? false}
+        revokeReason={options.revokeReason ?? ''}
+        revokeError={options.revokeError ?? null}
         onClose={() => {}}
         onEdit={() => {}}
         onCancel={() => {}}
         onReceive={() => {}}
         onDispatch={() => {}}
-        onRevokeDispatch={() => {}}
+        onStartRevoke={() => {}}
+        onRevokeReasonChange={() => {}}
+        onSubmitRevoke={() => {}}
+        onCancelRevoke={() => {}}
       />
     </QueryClientProvider>,
   );
@@ -201,11 +220,61 @@ describe('内部交易单 N 页面', () => {
   });
 
   it('没有 internal_trade.ship 时不渲染「发货」/「撤销发货」（权限断言）', () => {
-    const inProgress = renderDetail({ ...DETAIL, status: '进行中' }, false);
+    const inProgress = renderDetail({ ...DETAIL, status: '进行中' }, { canShip: false });
     expect(inProgress).not.toContain('>发货<');
 
-    const inTransit = renderDetail(DETAIL, false);
+    const inTransit = renderDetail(DETAIL, { canShip: false });
     expect(inTransit).not.toContain('>撤销发货<');
+  });
+
+  it('点开「撤销发货」只展开原因输入区（不发请求），确认按钮才提交', () => {
+    const closed = renderDetail(DETAIL);
+    expect(closed).toContain('>撤销发货<');
+    expect(closed).not.toContain('撤销原因（必填）');
+    expect(closed).not.toContain('>确认撤销<');
+
+    // 第一步只把单号写进草稿，不产生任何请求。
+    expect(openRevokeDispatch(DETAIL)).toEqual({ orderId: DETAIL.id });
+
+    const opened = renderDetail(DETAIL, { revoking: true });
+    expect(opened).toContain('撤销原因（必填）');
+    expect(opened).toContain('>确认撤销<');
+    expect(opened).toContain('不转司');
+  });
+
+  it('撤销原因为空 / 全是空白时提交被拦下，不发请求', () => {
+    expect(revokeReasonError('')).toContain('必须填写原因');
+    expect(revokeReasonError('   ')).toContain('必须填写原因');
+    expect(revokeReasonError('x'.repeat(201))).toContain('不能超过 200 字');
+    expect(confirmRevokeDispatch(DETAIL, '   ')).toEqual({
+      error: '撤销发货必须填写原因，本次未提交。',
+    });
+
+    // 校验失败时页面只把 revokeError 显示在输入区，不会走到 mutation。
+    const opened = renderDetail(DETAIL, { revoking: true, revokeError: revokeReasonError('') });
+    expect(opened).toContain('撤销发货必须填写原因');
+  });
+
+  it('填了原因提交时以 { confirm: true, reason } 与 If-Match 调 /dispatch-revoke', async () => {
+    const post = vi.fn().mockResolvedValue({});
+    const client = { post } as unknown as Parameters<typeof createInternalTradesApi>[0];
+    const api = createInternalTradesApi(client);
+
+    const confirmed = confirmRevokeDispatch(DETAIL, '  批次锁错  ');
+    if (!('input' in confirmed)) throw new Error('期望校验通过');
+    expect(confirmed.input.reason).toBe('批次锁错');
+
+    await api.dispatchRevoke(
+      confirmed.input.order.id,
+      confirmed.input.order.version,
+      confirmed.input.reason,
+    );
+
+    expect(post).toHaveBeenCalledWith(
+      '/internal-trade-orders/n1/dispatch-revoke',
+      { confirm: true, reason: '批次锁错' },
+      { headers: { 'If-Match': '"2"' } },
+    );
   });
 
   it('「在途」单的编辑与取消都禁用：只有进行中能改（D68②）', () => {
