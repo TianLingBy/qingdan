@@ -148,17 +148,17 @@ export function canEdit(state: InternalTradeOrderStatus): boolean {
   return state === '进行中';
 }
 
-/** 只有「在途」能到货确认；其余三态给原因（D31 / D68③）。 */
+/** 只有「在途」能到货确认；其余三态给原因。到货确认按 D31 转司并置已完成。 */
 export function receiveDisabledReason(state: InternalTradeOrderStatus): string | null {
   switch (state) {
     case '在途':
       return null;
     case '进行中':
-      return '还没发货，不能确认到货（D31：到货确认仅在「在途」可用）';
+      return '还没发货，不能确认到货（到货确认仅在「在途」可用）';
     case '已完成':
-      return '已到货确认，批次归属已转移（D68③）';
+      return '已到货确认，批次归属已转移（D31）';
     case '已取消':
-      return '已作废，不能确认到货（D47）';
+      return '已作废，不能确认到货';
   }
 }
 
