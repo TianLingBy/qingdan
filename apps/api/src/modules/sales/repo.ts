@@ -1329,40 +1329,6 @@ export async function completeCustomerReturn(ctx: SalesOrderRepoContext, id: str
   return getCustomerReturn(ctx, id);
 }
 
-/** D47：客户退货录入 / 审批人限定老板、经理、财务岗位（老板标识同时短路）。 */
-export async function hasCustomerReturnApprovalPosition(
-  ctx: SalesOrderRepoContext,
-  employeeId: string,
-  companyId: string,
-): Promise<boolean> {
-  const result = await ctx.tx.query<{ allowed: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1
-         FROM employee e
-        WHERE e.id = $1::uuid
-          AND e.tenant_id = $2
-          AND e.status = '在职'
-          AND (
-            e.is_owner
-            OR EXISTS (
-              SELECT 1
-                FROM employee_company_position ecp
-                JOIN position p
-                  ON p.id = ecp.position_id
-                 AND p.tenant_id = ecp.tenant_id
-               WHERE ecp.tenant_id = $2
-                 AND ecp.employee_id = e.id
-                 AND ecp.company_id = $3::uuid
-                 AND p.status = '启用'
-                 AND p.preset_key IN ('owner', 'manager', 'finance')
-            )
-          )
-     ) AS allowed`,
-    [employeeId, ctx.tenantId, companyId],
-  );
-  return result.rows[0]?.allowed === true;
-}
-
 async function assertOriginalSalesOrder(
   ctx: SalesOrderRepoContext,
   originalSalesOrderId: string,

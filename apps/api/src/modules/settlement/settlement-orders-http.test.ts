@@ -246,7 +246,7 @@ describe('settlement C 结算单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         name: 'Settlement AI Token',
         employeeId: DEMO_IDS.ownerEmployeeId,
-        scope: [{ domain: 'settlement', actions: ['read', 'approve'] }],
+        scope: [{ domain: 'settlement', actions: ['read', 'approve', 'view_price'] }],
       },
     });
     expect(tokenResponse.statusCode).toBe(201);
@@ -361,5 +361,42 @@ describe('settlement C 结算单 HTTP（PGlite + seed 演示租户）', () => {
       [id],
     );
     expect(Number(failures.rows[0]?.count)).toBeGreaterThanOrEqual(4);
+  });
+
+  it('确认：有 approve 但无 settlement.view_price 时 403，状态不推进（P0-13）', async () => {
+    const id = '01900000-0000-7000-8000-000000009601';
+    await insertDraft({
+      id,
+      orderNo: 'C-0001-20261107-0601',
+      sourceDocId: '01900000-0000-7000-8000-000000009602',
+    });
+
+    // 经理岗默认只有 settlement.read：这里补授 approve，但不授 view_price。
+    await test.database.query(
+      `INSERT INTO position_permission (tenant_id, position_id, domain, action, granted)
+       VALUES ($1, '01900000-0000-7000-8000-000000000012', 'settlement', 'approve', true)`,
+      [DEMO_IDS.tenantId],
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/settlement-orders/${id}/confirm`,
+      headers: writeHeaders(
+        managerCookie,
+        'req-settlement-confirm-no-view-price',
+        { 'if-match': '"1"', 'x-reason': '经理尝试确认结算' },
+      ),
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      code: 'FORBIDDEN',
+      message: '缺少 settlement.view_price 权限',
+    });
+
+    const state = await test.database.query<{ status: string }>(
+      `SELECT status FROM settlement_order WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(state.rows[0]?.status).toBe('待确认');
   });
 });
