@@ -4077,7 +4077,7 @@ paths:
   /api/v1/customer-returns/{id}/complete:
     post:
       operationId: customer_return.complete
-      summary: 确认客户退货并入库
+      summary: 确认客户退货并入库（审批动作）
       tags:
         - customer_return
       security:
@@ -4102,7 +4102,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiErrorBody"
-      x-scope: customer_return.create
+      x-scope: customer_return.approve
       x-module: sales
       x-audit:
         kind: write
@@ -4377,7 +4377,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiErrorBody"
-      x-scope: purchase.approve
+      x-scope: purchase.update
       x-module: purchase
       x-audit:
         kind: write
@@ -4771,7 +4771,7 @@ paths:
   /api/v1/supplier-returns/{id}/complete:
     post:
       operationId: supplier_return.complete
-      summary: 确认供应商退货并出库
+      summary: 确认供应商退货并出库（审批动作）
       tags:
         - supplier_return
       security:
@@ -4796,7 +4796,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiErrorBody"
-      x-scope: supplier_return.create
+      x-scope: supplier_return.approve
       x-module: purchase
       x-audit:
         kind: write

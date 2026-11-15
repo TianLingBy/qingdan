@@ -76,7 +76,7 @@ function requireDatabase(ctx: SupplierReturnContext, operationId: string): Datab
   return database;
 }
 
-function requireScope(principal: Principal, action: 'read' | 'create'): void {
+function requireScope(principal: Principal, action: 'read' | 'create' | 'approve'): void {
   if (!allowsScope(principal.scope, 'supplier_return', action)) {
     throw new AppError('FORBIDDEN', `缺少 supplier_return.${action} 权限`);
   }
@@ -277,7 +277,7 @@ export async function createSupplierReturn(
 export async function completeSupplierReturn(ctx: SupplierReturnWriteContext): Promise<SupplierReturn> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'supplier_return.complete');
-  requireScope(principal, 'create');
+  requireScope(principal, 'approve');
   assertHumanCreation(principal, ctx.request.auditReason);
   const id = parseSupplierReturnId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
