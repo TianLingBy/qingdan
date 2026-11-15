@@ -4568,7 +4568,7 @@ paths:
                         pattern: ^\d{1,12}(\.\d{1,6})?$
                       amount:
                         type: string
-                        pattern: ^-?\d{1,12}(\.\d{1,6})?$
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
                       remark:
                         anyOf:
                           - type: string
@@ -4717,7 +4717,7 @@ paths:
                         pattern: ^\d{1,12}(\.\d{1,6})?$
                       amount:
                         type: string
-                        pattern: ^-?\d{1,12}(\.\d{1,6})?$
+                        pattern: ^\d{1,12}(\.\d{1,6})?$
                       remark:
                         anyOf:
                           - type: string
@@ -8665,7 +8665,7 @@ components:
         feeAmount:
           anyOf:
             - type: string
-              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+              pattern: ^\d{1,12}(\.\d{1,6})?$
             - type: "null"
         totalAmount:
           anyOf:
@@ -8746,7 +8746,7 @@ components:
         amount:
           anyOf:
             - type: string
-              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+              pattern: ^\d{1,12}(\.\d{1,6})?$
             - type: "null"
         remark:
           anyOf:
@@ -8799,7 +8799,7 @@ components:
         feeAmount:
           anyOf:
             - type: string
-              pattern: ^-?\d{1,12}(\.\d{1,6})?$
+              pattern: ^\d{1,12}(\.\d{1,6})?$
             - type: "null"
         totalAmount:
           anyOf:
