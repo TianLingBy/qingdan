@@ -1,9 +1,9 @@
 /**
  * R 客户退货分栏（`/reversals` 第一栏；D36 / D40 / D47）。
  *
- * 这一栏有两个动作：**登记** 与 **完成**（`customer_return.complete`，确认退货并入库）。
+ * 这一栏有两个动作：**登记** 与 **完成**（`customer_return.complete`，把进行中的单置为「已完成」）。
  * R 单没有改 / 删 / 取消端点（D47 冲正只追加），所以错账继续追加新单，不改历史；
- * 「完成」只是把进行中的退货单流转到已完成并入库，不是改单。
+ * 「完成」只是把进行中的退货单置为「已完成」并 +version；入库与应收冲减尚未接入（见 #211），不是改单。
  *
  * 三个容易做错的地方，这里都按契约来：
  * - `退货退款` 必须填商品明细（有入库流水），`仅退款` 必须选 `纠收款 / 减成交额`；
@@ -200,7 +200,7 @@ export function CustomerReturnsPanel({
   const complete = useMutation({
     mutationFn: (row: CustomerReturn) => reversalsApi.customerReturnComplete(row.id, row.version),
     onSuccess: () => {
-      // 完成后状态变「已完成」并入库：列表与详情一起刷新。
+      // 完成后状态变「已完成」：列表与详情一起刷新。
       void queryClient.invalidateQueries({ queryKey: ['reversals', 'customer'] });
       setActionError(null);
     },
@@ -217,7 +217,7 @@ export function CustomerReturnsPanel({
     }
     setActionError(null);
     if (
-      globalThis.confirm?.(`确认完成客户退货 ${row.returnNo} 吗？完成后会入库并冲减客户应收。`) === false
+      globalThis.confirm?.(`确认完成客户退货 ${row.returnNo} 吗？完成后状态变为「已完成」，不可撤销。`) === false
     ) {
       return;
     }
@@ -730,7 +730,7 @@ export function CustomerReturnsPanel({
                   {complete.isPending ? '完成中…' : '完成'}
                 </button>
                 <span className="text-[11px] leading-relaxed text-slate-400">
-                  完成后会入库并冲减客户应收；冲正单据只追加，不可改、不可删（D47）。
+                  完成后只改单据状态，入库与应收冲减尚未接入（见 #211）；冲正单据只追加，不可改、不可删（D47）。
                   实际退款请在原销售单里追加负数收款行（D40）。
                 </span>
               </div>

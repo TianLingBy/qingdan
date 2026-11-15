@@ -6,7 +6,7 @@
  * 加一个「抵货款」选项看起来更"完整"，但那是凭空造业务。
  *
  * 和 R 一样，只追加：没有改 / 删 / 取消端点（D47）。多一个「完成」动作
- * （`supplier_return.complete`，确认退货并出库），同样是状态流转，不是改单。
+ * （`supplier_return.complete`，把进行中的单置为「已完成」），不是改单：出库与应付冲减尚未接入（见 #211）。
  */
 
 import type { SupplierReturn, SupplierReturnStatus } from '@qingdan/contracts';
@@ -169,7 +169,7 @@ export function SupplierReturnsPanel({
   const complete = useMutation({
     mutationFn: (row: SupplierReturn) => reversalsApi.supplierReturnComplete(row.id, row.version),
     onSuccess: () => {
-      // 完成后状态变「已完成」并出库：列表与详情一起刷新。
+      // 完成后状态变「已完成」：列表与详情一起刷新。
       void queryClient.invalidateQueries({ queryKey: ['reversals', 'supplier'] });
       setActionError(null);
     },
@@ -186,7 +186,7 @@ export function SupplierReturnsPanel({
     }
     setActionError(null);
     if (
-      globalThis.confirm?.(`确认完成供应商退货 ${row.returnNo} 吗？完成后会出库并冲减供应商应付。`) ===
+      globalThis.confirm?.(`确认完成供应商退货 ${row.returnNo} 吗？完成后状态变为「已完成」，不可撤销。`) ===
       false
     ) {
       return;
@@ -623,7 +623,7 @@ export function SupplierReturnsPanel({
                   {complete.isPending ? '完成中…' : '完成'}
                 </button>
                 <span className="text-[11px] leading-relaxed text-slate-400">
-                  完成后会出库并冲减供应商应付；冲正单据只追加，不可改、不可删（D47）。
+                  完成后只改单据状态，出库与应付冲减尚未接入（见 #211）；冲正单据只追加，不可改、不可删（D47）。
                 </span>
               </div>
             </div>
