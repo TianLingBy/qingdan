@@ -132,4 +132,33 @@ describe('profit report HTTP 编排（#97）', () => {
       ],
     });
   });
+
+  it('撤销结算后该单不再计入已结算期间聚合（D88）', async () => {
+    const unsettle = await app.inject({
+      method: 'POST',
+      url: `/api/v1/settlement-orders/${SETTLEMENT_ID}/unsettle`,
+      headers: {
+        cookie: ownerCookie,
+        origin: PUBLIC_BASE_URL,
+        'x-request-id': 'req-report-http-unsettle',
+        'if-match': '"1"',
+      },
+      payload: { confirm: true, reason: '财务复核发现错单' },
+    });
+    expect(unsettle.statusCode).toBe(200);
+    expect(unsettle.json()).toMatchObject({ id: SETTLEMENT_ID, status: '待确认' });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/reports/profit?periodStart=2026-03-01&periodEnd=2026-03-31',
+      headers: { cookie: ownerCookie, 'x-request-id': 'req-report-http-after-unsettle' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      grossProfit: '0',
+      netProfit: '-30',
+      settledOrderCount: 0,
+    });
+  });
 });

@@ -789,6 +789,17 @@ export async function shipSalesOrder(
       });
     }
 
+    // A 案（#286）：完成时先释放本单建单占用，再按原口径扣减入库量。
+    // 两步在同一事务内落地，避免 pending 占用与入库扣减对同一批货重复计算。
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: source.order.companyId,
+      sourceDocType: 'E',
+      sourceDocId: id,
+      handledBy,
+      lines: reservationLines(source.lines),
+    });
+
     for (const flow of stockFlows) {
       await stockFlowPort().applyAdjustment(tx, {
         tenantId: principal.tenantId,
@@ -827,6 +838,7 @@ export async function shipSalesOrder(
       afterStatus: completed.status,
       version: completed.version,
       stockFlowCount: stockFlows.length,
+      pendingReleases: released.lines,
       settlementOrderId: draft.id,
       settlementOrderNo: draft.orderNo,
       // 写路径读真实金额（脱敏只作用于响应，D79）；null 仅可能来自响应侧类型。

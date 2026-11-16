@@ -562,6 +562,14 @@ export async function completeProcessingOrder(
     });
     const costs = new Map(batches.map((row) => [row.batchId, row.lockedUnitCost]));
     let materialCost = 0n;
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: order.companyId,
+      sourceDocType: 'B',
+      sourceDocId: id,
+      handledBy: principal.employeeId,
+      lines: processingReservationLines(order.materialBatchIds),
+    });
     for (const material of order.materialBatchIds) {
       const cost = costs.get(material.batchId);
       if (!cost) throw new AppError('NOT_FOUND', '材料批次不存在');
@@ -610,7 +618,12 @@ export async function completeProcessingOrder(
     });
     if (!completed) throw new AppError('NOT_FOUND', '加工单不存在');
     audit.companyId = completed.companyId;
-    audit.changeSummary = { beforeStatus: '进行中', afterStatus: '已完成', outputBatchId };
+    audit.changeSummary = {
+      beforeStatus: '进行中',
+      afterStatus: '已完成',
+      outputBatchId,
+      pendingReleases: released.lines,
+    };
     return {
       id,
       status: '已完成',

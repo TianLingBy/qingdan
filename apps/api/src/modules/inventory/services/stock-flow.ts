@@ -258,6 +258,24 @@ function insufficientAvailableMessage(
   }
 }
 
+/** 完成前释放建单占用失败时，同样按来源单据给员工可执行的动作文案（#269 / #286）。 */
+function insufficientPendingMessage(
+  sourceDocType: string,
+  batchNo: string,
+): string {
+  const batch = `（批次 ${batchNo}）`;
+  switch (sourceDocType) {
+    case 'E':
+      return `销售出库前待执行占用不足${batch}`;
+    case 'B':
+      return `加工领料前待执行占用不足${batch}`;
+    case 'S':
+      return `供应商退货出库前待执行占用不足${batch}`;
+    default:
+      return `待执行占用不足，无法执行该操作${batch}`;
+  }
+}
+
 function assertUuid(value: string, field: string): void {
   if (!UUID_RE.test(value)) {
     throw new AppError('VALIDATION_FAILED', `${field} 必须是合法 uuid`, {
@@ -366,7 +384,10 @@ async function applyPendingReservationChange(
       });
     }
     if (direction === 'release' && !checks.pending_enough) {
-      throw new AppError('VERSION_CONFLICT', '库存批次待执行占用不足，无法释放', {
+      throw new AppError(
+        'VERSION_CONFLICT',
+        insufficientPendingMessage(input.sourceDocType, current.batch_no),
+        {
         reason: 'insufficient_pending_reservation',
         sourceDocType: input.sourceDocType,
         sourceDocId: input.sourceDocId,
@@ -374,7 +395,8 @@ async function applyPendingReservationChange(
         batchNo: current.batch_no,
         requestedQty: qty,
         pendingExecutionQty: String(current.pending_execution_qty),
-      });
+        },
+      );
     }
 
     const updated = await tx.query<{

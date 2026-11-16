@@ -379,6 +379,14 @@ export async function completeSupplierReturn(ctx: SupplierReturnWriteContext): P
     if (!order) throw new AppError('NOT_FOUND', '供应商退货单不存在');
     if (order.version !== expectedVersion) throw new AppError('VERSION_CONFLICT', '供应商退货单版本与 If-Match 不一致');
     if (order.status !== '进行中') throw new AppError('VALIDATION_FAILED', '只有进行中的供应商退货单可以完成');
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: order.companyId,
+      sourceDocType: 'S',
+      sourceDocId: id,
+      handledBy: principal.employeeId,
+      lines: supplierReservationLines(order.lines),
+    });
     for (const line of order.lines) {
       const count = BigInt(line.batchIds.length);
       const [whole, fraction = ''] = line.qty.split('.');
@@ -399,7 +407,12 @@ export async function completeSupplierReturn(ctx: SupplierReturnWriteContext): P
     const completed = await repo.completeSupplierReturn(context, id, expectedVersion);
     if (!completed) throw new AppError('NOT_FOUND', '供应商退货单不存在');
     audit.companyId = completed.companyId;
-    audit.changeSummary = { beforeStatus: order.status, afterStatus: completed.status, version: completed.version };
+    audit.changeSummary = {
+      beforeStatus: order.status,
+      afterStatus: completed.status,
+      version: completed.version,
+      pendingReleases: released.lines,
+    };
     ctx.reply.header('ETag', `"${completed.version}"`);
     return completed;
   });

@@ -485,10 +485,33 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
     await expectAppError(finish(order.id), 'VERSION_CONFLICT');
     await expectAppError(finish(order.id, 2), 'VALIDATION_FAILED');
     expect(await stock()).toEqual(after);
-    const audit = await test.database.query(
-      `SELECT action FROM audit_log WHERE object_id = $1 AND action = 'supplier_return.complete'`, [order.id],
+    const audit = await test.database.query<{ action: string; changes: Record<string, unknown> }>(
+      `SELECT action, changes FROM audit_log WHERE object_id = $1 AND action = 'supplier_return.complete'`, [order.id],
     );
     expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0]?.changes).toMatchObject({
+      pendingReleases: [
+        { batchId: BATCH_ID, qty: '2', pendingAfter: '0' },
+        { batchId: BATCH_2_ID, qty: '3', pendingAfter: '0' },
+      ],
+    });
+    const finishedBatches = await test.database.query<{
+      id: string;
+      pending_execution_qty: string;
+      available_qty: string;
+    }>(
+      `SELECT id::text AS id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty,
+              trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(finishedBatches.rows).toEqual([
+      { id: BATCH_ID, pending_execution_qty: '0', available_qty: '9998' },
+      { id: BATCH_2_ID, pending_execution_qty: '0', available_qty: '9997' },
+    ]);
   });
 
   it('建单即占待执行量，取消释放且只写一条取消审计', async () => {
@@ -536,11 +559,44 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
     });
   });
 
-  it('第二行库存不足：第一行扣减、流水及单据状态全部回滚', async () => {
+  it('第二行待执行占用不足：第一行释放、流水及单据状态全部回滚', async () => {
     const order = await createOne({ lines: [CREATE_BODY.lines[0], { ...CREATE_BODY.lines[1], qty: '9999' }] });
     const before = await stock();
+    const pendingBefore = await test.database.query<{
+      id: string;
+      pending_execution_qty: string;
+    }>(
+      `SELECT id::text AS id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(pendingBefore.rows.map((row) => row.pending_execution_qty)).toEqual(['2', '9999']);
+
+    // 第二行占用记录被人为压少 1；第一行已释放后第二行失败，必须整单回滚。
+    await test.database.query(
+      `UPDATE inventory_batch SET pending_execution_qty = 9998 WHERE id = $1::uuid`,
+      [BATCH_2_ID],
+    );
     await expectAppError(finish(order.id), 'VERSION_CONFLICT');
     expect(await stock()).toEqual(before);
+    const pendingAfter = await test.database.query<{
+      id: string;
+      pending_execution_qty: string;
+    }>(
+      `SELECT id::text AS id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(pendingAfter.rows).toEqual([
+      { id: BATCH_ID, pending_execution_qty: '2' },
+      { id: BATCH_2_ID, pending_execution_qty: '9998' },
+    ]);
     expect(await getSupplierReturn(readCtx({}, { params: { id: order.id } }))).toMatchObject({ status: '进行中', version: 1 });
     expect((await test.database.query(`SELECT id FROM inventory_flow WHERE source_doc_id = $1`, [order.id])).rows).toEqual([]);
   });
