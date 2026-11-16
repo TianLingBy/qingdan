@@ -21,6 +21,7 @@ import type {
 } from '@qingdan/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { allows, type ScopeAction } from '../../lib/access';
 import { MASKED_AMOUNT, formatMoney } from '../../lib/decimal';
 import { useEmployeeLabel } from '../../lib/employee-directory';
@@ -485,22 +486,13 @@ export function SettlementsPage() {
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         {list.isPending ? (
-          <p className="p-6 text-sm text-slate-500">正在加载结算单…</p>
+          <ListLoading label="正在加载结算单…" />
         ) : list.error ? (
-          <div className="p-6">
-            <p className="text-sm text-red-700">{errorText(list.error)}</p>
-            <button
-              type="button"
-              onClick={() => void list.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              重试
-            </button>
-          </div>
+          <ListError title="结算单加载失败" error={list.error} onRetry={() => void list.refetch()} />
         ) : rows.length === 0 ? (
-          <p className="p-6 text-sm text-slate-500">
-            暂无结算单。结算单不手工开：先在销售单 E / 内部交易单 N 里把单据完成，系统会自动生成草稿（D19）。
-          </p>
+          <ListEmpty
+            title="暂无结算单。结算单不手工开：先在销售单 E / 内部交易单 N 里把单据完成，系统会自动生成草稿（D19）。"
+          />
         ) : (
           <table className="w-full min-w-[1100px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">

@@ -56,6 +56,7 @@ import {
   StatusPill,
   TableSkeleton,
 } from './reversals-ui';
+import { ListError } from '../../components/ListStates';
 
 const EMPTY_LINE: ReturnLineDraft = { productId: '', batchIds: [], qty: '1', unitPrice: '' };
 
@@ -536,12 +537,11 @@ export function CustomerReturnsPanel({
         </div>
 
         {list.isError ? (
-          <div className="mt-3">
-            <ErrorBar
-              message="列表加载失败"
-              onRetry={() => void list.refetch()}
-            />
-          </div>
+          <ListError
+            title="列表加载失败"
+            error={list.error}
+            onRetry={() => void list.refetch()}
+          />
         ) : list.isPending ? (
           <TableSkeleton />
         ) : items.length === 0 ? (

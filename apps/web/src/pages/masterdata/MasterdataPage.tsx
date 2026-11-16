@@ -8,6 +8,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import {
   extractIssues,
   formatPrice,
@@ -415,11 +416,11 @@ function ProcessorQuotes({ processor }: { processor: Processor }) {
       )}
       <div className="mt-4 overflow-x-auto">
         {quotes.isPending ? (
-          <p className="text-sm text-slate-500">报价加载中…</p>
+          <ListLoading label="报价加载中…" rows={2} />
         ) : quotes.error ? (
-          <p className="text-sm text-red-700">{errorText(quotes.error)}</p>
+          <ListError title="报价加载失败" error={quotes.error} onRetry={() => void quotes.refetch()} />
         ) : quotes.data.items.length === 0 ? (
-          <p className="text-sm text-slate-500">暂无报价记录。</p>
+          <ListEmpty title="暂无报价记录。" />
         ) : (
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-xs text-slate-500">
@@ -681,20 +682,15 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         {list.isPending ? (
-          <p className="p-6 text-sm text-slate-500">正在加载{copy.title}…</p>
+          <ListLoading label={`正在加载${copy.title}…`} />
         ) : list.error ? (
-          <div className="p-6">
-            <p className="text-sm text-red-700">{errorText(list.error)}</p>
-            <button
-              type="button"
-              onClick={() => void list.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              重试
-            </button>
-          </div>
+          <ListError
+            title={`${copy.title}加载失败`}
+            error={list.error}
+            onRetry={() => void list.refetch()}
+          />
         ) : rows.length === 0 ? (
-          <p className="p-6 text-sm text-slate-500">暂无数据。可调整筛选条件或新增一条记录。</p>
+          <ListEmpty title="暂无数据。可调整筛选条件或新增一条记录。" />
         ) : (
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">

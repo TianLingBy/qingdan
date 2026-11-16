@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { platformAdminApi } from '../../api/platform-admin';
 import { ApiError } from '../../api/client';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { fetchMe } from '../../api/platform';
 import { DOMAIN_WORDS } from '../employees/domain-words';
 
@@ -122,38 +123,20 @@ export function ApiIntegrationPage() {
 
       <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white">
         {listQuery.isPending ? (
-          <div className="space-y-2 p-4" aria-busy="true">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-9 animate-pulse rounded bg-slate-100" />
-            ))}
-            <p className="pt-1 text-xs text-slate-400">Token 列表加载中…</p>
-          </div>
+          <ListLoading label="Token 列表加载中…" />
         ) : listQuery.isError ? (
-          <div className="p-6 text-center">
-            <p className="text-sm text-rose-600">
-              Token 列表加载失败：{listQuery.error instanceof ApiError
-                ? `${listQuery.error.message}（${listQuery.error.code}）`
-                : '未知错误'}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              {listQuery.error instanceof ApiError && listQuery.error.status === 403
+          <ListError
+            title="Token 列表加载失败"
+            error={listQuery.error}
+            hint={
+              listQuery.error instanceof ApiError && listQuery.error.status === 403
                 ? '查看 Token 列表需要 api_integration.read 权限（敏感读），请联系老板开通。'
-                : '请确认本地 API 已启动后重试。'}
-            </p>
-            <button
-              type="button"
-              onClick={() => listQuery.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              重试
-            </button>
-          </div>
+                : '请确认本地 API 已启动后重试。'
+            }
+            onRetry={() => void listQuery.refetch()}
+          />
         ) : tokens.length === 0 ? (
-          <div className="p-10 text-center">
-            <p className="text-sm text-slate-500">
-              还没有 API Token。外部系统（AI 助手 / 脚本 / CLI）通过 Token 调用 /api/v1。
-            </p>
-          </div>
+          <ListEmpty title="还没有 API Token。外部系统（AI 助手 / 脚本 / CLI）通过 Token 调用 /api/v1。" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[820px] text-sm">

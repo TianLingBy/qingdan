@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { platformAdminApi } from '../../api/platform-admin';
 import { ApiError } from '../../api/client';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 
 /**
  * 操作日志页（22 页之第 21 页，#144）。
@@ -78,40 +79,22 @@ export function AuditLogsPage() {
 
       <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white">
         {listQuery.isPending ? (
-          <div className="space-y-2 p-4" aria-busy="true">
-            {[0, 1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-9 animate-pulse rounded bg-slate-100" />
-            ))}
-            <p className="pt-1 text-xs text-slate-400">操作日志加载中…</p>
-          </div>
+          <ListLoading label="操作日志加载中…" rows={5} />
         ) : listQuery.isError ? (
-          <div className="p-6 text-center">
-            <p className="text-sm text-rose-600">
-              操作日志加载失败：{listQuery.error instanceof ApiError
-                ? `${listQuery.error.message}（${listQuery.error.code}）`
-                : '未知错误'}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              {listQuery.error instanceof ApiError && listQuery.error.status === 403
+          <ListError
+            title="操作日志加载失败"
+            error={listQuery.error}
+            hint={
+              listQuery.error instanceof ApiError && listQuery.error.status === 403
                 ? '查看操作日志需要 audit.read 权限（敏感读），请联系老板开通。'
-                : '请确认本地 API 已启动后重试。'}
-            </p>
-            <button
-              type="button"
-              onClick={() => listQuery.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              重试
-            </button>
-          </div>
+                : '请确认本地 API 已启动后重试。'
+            }
+            onRetry={() => listQuery.refetch()}
+          />
         ) : logs.length === 0 ? (
-          <div className="p-10 text-center">
-            <p className="text-sm text-slate-500">还没有操作记录。发生业务动作后会自动出现在这里。</p>
-          </div>
+          <ListEmpty title="还没有操作记录。发生业务动作后会自动出现在这里。" />
         ) : filtered.length === 0 ? (
-          <div className="p-10 text-center">
-            <p className="text-sm text-slate-500">没有匹配当前筛选条件的日志。</p>
-          </div>
+          <ListEmpty title="没有匹配当前筛选条件的日志。" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-sm">
