@@ -1,12 +1,17 @@
 /**
- * 冲正页的展示小组件（页面私有，不进 `src/components`）。
+ * 冲正页的展示小组件。
  *
  * 三个分栏（R / S / I）的版式是一致的：筛选条 → 列表 → 详情 / 开单。
  * 抽出来的只有「长得一样、没有业务判断」的部分；带状态的都留在各分栏里，
  * 免得一个组件既管渲染又管三种单据的规则。
+ *
+ * 列表三态（#300）已统一到 `components/ListStates`；这里保留老名字做转出，
+ * 三个分栏不用改 import，样式与其它列表页一致。
  */
 
 import type { ReactNode } from 'react';
+
+export { ListEmpty as EmptyState, ListLoading as TableSkeleton } from '../../components/ListStates';
 
 /** 输入控件统一样式（只在这里改，三个分栏一起变）。 */
 export const FIELD_CLASS =
@@ -84,31 +89,6 @@ export function ErrorList({ errors }: { readonly errors: readonly string[] }) {
         <li key={error}>· {error}</li>
       ))}
     </ul>
-  );
-}
-
-export function TableSkeleton({ rows = 3 }: { readonly rows?: number }) {
-  return (
-    <div className="mt-3 space-y-2" aria-label="列表加载中">
-      {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="h-8 animate-pulse rounded bg-slate-100" />
-      ))}
-    </div>
-  );
-}
-
-export function EmptyState({
-  title,
-  hint,
-}: {
-  readonly title: string;
-  readonly hint: string;
-}) {
-  return (
-    <div className="mt-3 rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center">
-      <p className="text-sm text-slate-600">{title}</p>
-      <p className="mt-1 text-xs text-slate-400">{hint}</p>
-    </div>
   );
 }
 

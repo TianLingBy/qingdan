@@ -1,6 +1,7 @@
 import type { InventoryFlow } from '@qingdan/contracts';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { authApi, authKeys } from '../auth/auth-api';
 import { inventoryApi, inventoryQueryKeys } from './inventory-api';
 import {
@@ -166,27 +167,15 @@ export function InventoryFlowsPage() {
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         {flows.isPending ? (
-          <div className="space-y-2 p-5" aria-busy="true">
-            {[0, 1, 2].map((item) => (
-              <div key={item} className="h-9 animate-pulse rounded bg-slate-100" />
-            ))}
-            <p className="text-xs text-slate-400">库存流水加载中…</p>
-          </div>
+          <ListLoading label="库存流水加载中…" />
         ) : flows.isError ? (
-          <div className="p-6 text-center">
-            <p className="text-sm text-rose-600">{errorText(flows.error, '流水加载失败')}</p>
-            <button
-              type="button"
-              onClick={() => void flows.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              重试
-            </button>
-          </div>
+          <ListError
+            title="流水加载失败"
+            error={flows.error}
+            onRetry={() => void flows.refetch()}
+          />
         ) : rows.length === 0 ? (
-          <p className="p-8 text-center text-sm text-slate-500">
-            暂无库存流水。单据完成入库、出库或盘点审批后会在这里留痕。
-          </p>
+          <ListEmpty title="暂无库存流水。单据完成入库、出库或盘点审批后会在这里留痕。" />
         ) : (
           <table className="w-full min-w-[920px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">

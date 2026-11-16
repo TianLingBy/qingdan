@@ -7,12 +7,13 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { Suspense, type ComponentType } from 'react';
+import { SettingsEntryPlaceholder } from '../components/SettingsEntryPlaceholder';
 import { AppLayout } from '../layouts/AppLayout';
 import { LoginPage } from '../pages/auth/LoginPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
 import { WorkbenchPage } from '../pages/workbench/WorkbenchPage';
 import type { ImplementedPageId } from './implemented';
-import { DEFAULT_ROUTE_PATH, ROUTE_TABLE, type RouteEntry } from './routes';
+import { DEFAULT_ROUTE_PATH, ROUTE_TABLE, SETTINGS_ROUTE, type RouteEntry } from './routes';
 import { readSession } from './session-guard';
 
 /**
@@ -212,10 +213,20 @@ const pageRoutes = ROUTE_TABLE.filter((entry) => entry.path !== LOGIN_PATH).map(
   }),
 );
 
+/**
+ * 设置中心（#300）：不在 22 页业务 IA 里，单独注册，复用登录后的应用外壳。
+ * 面板未实现前先渲染占位骨架；#299 落地后把 component 换成 `SettingsPage` 即可。
+ */
+const settingsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: SETTINGS_ROUTE.path,
+  component: SettingsEntryPlaceholder,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
-  appLayoutRoute.addChildren(pageRoutes),
+  appLayoutRoute.addChildren([...pageRoutes, settingsRoute]),
 ]);
 
 export const router = createRouter({

@@ -24,6 +24,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useCompanyLabel } from '../../lib/company-directory';
 import {
@@ -1465,22 +1466,11 @@ export function ProcessingOrdersPage() {
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         {list.isPending ? (
-          <p className="p-6 text-sm text-slate-500">正在加载加工单…</p>
+          <ListLoading label="正在加载加工单…" />
         ) : list.error ? (
-          <div className="p-6">
-            <p className="text-sm text-red-700">{errorText(list.error)}</p>
-            <button
-              type="button"
-              onClick={() => void list.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              重试
-            </button>
-          </div>
+          <ListError title="加工单加载失败" error={list.error} onRetry={() => void list.refetch()} />
         ) : rows.length === 0 ? (
-          <p className="p-6 text-sm text-slate-500">
-            暂无加工单。可调整筛选条件，或用右上角「新建加工单」开第一张。
-          </p>
+          <ListEmpty title="暂无加工单。可调整筛选条件，或用右上角「新建加工单」开第一张。" />
         ) : (
           <table className="w-full min-w-[960px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">

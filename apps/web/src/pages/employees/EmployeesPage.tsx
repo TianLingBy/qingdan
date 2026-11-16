@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchEmployees, fetchMe, fetchPositions } from '../../api/platform';
 import { ApiError } from '../../api/client';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { PermissionOverridePanel } from './PermissionOverridePanel';
 
 /**
@@ -71,38 +72,24 @@ export function EmployeesPage() {
 
       <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white">
         {employeesQuery.isPending ? (
-          <div className="space-y-2 p-4" aria-busy="true">
-            {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-9 animate-pulse rounded bg-slate-100" />
-            ))}
-            <p className="pt-1 text-xs text-slate-400">员工列表加载中…</p>
-          </div>
+          <ListLoading label="员工列表加载中…" rows={4} />
         ) : employeesQuery.isError ? (
-          <div className="p-6 text-center">
-            <p className="text-sm text-rose-600">
-              员工列表加载失败：{employeesQuery.error instanceof ApiError
-                ? `${employeesQuery.error.message}（${employeesQuery.error.code}）`
-                : '未知错误'}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              {employeesQuery.error instanceof ApiError && employeesQuery.error.status === 403
+          <ListError
+            title="员工列表加载失败"
+            error={employeesQuery.error}
+            hint={
+              employeesQuery.error instanceof ApiError && employeesQuery.error.status === 403
                 ? '你没有员工管理权限（employee.read），请联系老板开通。'
-                : '请确认本地 API 已启动（vite 会把 /api 代理到 127.0.0.1:3000），然后重试。'}
-            </p>
-            <button
-              type="button"
-              onClick={() => employeesQuery.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              重试
-            </button>
-          </div>
+                : '请确认本地 API 已启动（vite 会把 /api 代理到 127.0.0.1:3000），然后重试。'
+            }
+            onRetry={() => void employeesQuery.refetch()}
+          />
         ) : filtered.length === 0 ? (
-          <div className="p-10 text-center">
-            <p className="text-sm text-slate-500">
-              {employees.length === 0 ? '还没有员工。请联系老板在后台建号。' : '没有匹配的员工。'}
-            </p>
-          </div>
+          <ListEmpty
+            title={
+              employees.length === 0 ? '还没有员工。请联系老板在后台建号。' : '没有匹配的员工。'
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">

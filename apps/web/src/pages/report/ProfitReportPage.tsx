@@ -1,10 +1,10 @@
 import type { ProfitReport } from '@qingdan/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
+import { ListEmpty, ListError } from '../../components/ListStates';
 import { formatMoney } from '../../lib/decimal';
 import { authApi, authKeys } from '../auth/auth-api';
 import {
-  errorText,
   PageShell,
   shortId,
 } from '../inventory/inventory-ui';
@@ -146,9 +146,7 @@ export function ProfitReportPage() {
       </form>
 
       {!submitted ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
-          <p className="text-sm text-slate-500">选择起止日期后查询；不使用隐式默认期间。</p>
-        </div>
+        <ListEmpty title="选择起止日期后查询；不使用隐式默认期间。" />
       ) : report.isPending ? (
         <div className="grid gap-4 md:grid-cols-3" aria-busy="true">
           {[0, 1, 2].map((item) => (
@@ -156,16 +154,11 @@ export function ProfitReportPage() {
           ))}
         </div>
       ) : report.isError ? (
-        <div className="rounded-xl border border-rose-200 bg-white p-6 text-center">
-          <p className="text-sm text-rose-600">{errorText(report.error, '利润报表加载失败')}</p>
-          <button
-            type="button"
-            onClick={() => void report.refetch()}
-            className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-          >
-            重试
-          </button>
-        </div>
+        <ListError
+          title="利润报表加载失败"
+          error={report.error}
+          onRetry={() => void report.refetch()}
+        />
       ) : report.data ? (
         <ProfitReportSummary report={report.data} canViewPrice={canViewPrice} />
       ) : null}
