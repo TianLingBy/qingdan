@@ -107,3 +107,26 @@ Copy-Item D:\快捷方式\工作台\dsh\Qingdan\apps\web\dist E:\qingdan-server\
 6. **构建/拉镜像才需要代理**：宿主 `D:\tools\wsl-proxy-relay.js`（18888 → 本机 7890）。运行时不依赖它；日常跑服务不需要开着。`Dockerfile.local` 里设了 `NODE_USE_ENV_PROXY=1`，就是为了让镜像构建期能经代理出网。
 7. **Windows 侧没有 docker 命令**：`ops/backup.ps1`、`ops/restore.ps1` 在这台机器上跑不了，用上面的 WSL 等价命令。
 8. **compose override 只认根目录**：`docker-compose.override.yml` 必须放在 `E:\qingdan-server\app\` 根下才会被自动加载；仓库里它住在 `ops/local/`，由 `sync-up.ps1` 复制过去。
+
+## 升级时踩过的坑（2026-11-17 首次真实升级记录）
+
+**只 `docker compose build api` 会漏掉 migrate 的镜像。** compose 里 `migrate` 是独立 build（`target: builder`），不重建它就会拿四天前的旧镜像跑，而旧镜像里的迁移文件清单是旧的：
+
+```
+[migrate] 完成：applied=0 skipped=30     ← 看着像"都跑过了"，其实新迁移一个没跑
+```
+
+紧接着 api 启动被 `schema-guard` 拦下（这是它该做的），报：
+
+```
+SchemaOutOfDateError: 数据库结构落后于代码：缺少迁移 20261116043000_settlement_orders_unsettle.sql
+```
+
+然后 `dependency failed to start: container qingdan-api-1 is unhealthy`，整站 502。
+
+**正确顺序**：`build api migrate` → `--profile tools run --rm migrate` → `up -d`。`sync-up.ps1` 已按此修正。
+
+另外两点也记下来：
+
+- **`up -d` 报 unhealthy 不等于失败**。api 有自己的健康检查启动期，实测等 10 秒后 `docker compose ps` 就是 `Up (healthy)`。脚本现在会在 up 失败时等 60 秒再按 `ps` 判定，不把"慢"当"坏"。
+- **前端构建要先 `pnpm -r build`**。`apps/web` 依赖 `@qingdan/contracts` 的 `dist`，干净目录里直接 `pnpm -C apps/web build` 会报 `Cannot find module '@qingdan/contracts'`。
