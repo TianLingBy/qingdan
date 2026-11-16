@@ -17,6 +17,7 @@ import {
   type ProcessingOrderStatus,
   type ProcessingOrderUpdateInput,
   type ProcessingOrderCompleteResult,
+  type ProcessingMaterialInput,
 } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { v7 as uuidv7 } from 'uuid';
@@ -29,6 +30,7 @@ import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import {
   stockBatchInspectionPort,
   stockFlowPort,
+  type StockReservationLine,
 } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 
@@ -117,6 +119,15 @@ function decimal(value: bigint): string {
   const whole = value / SCALE;
   const fraction = (value % SCALE).toString().padStart(6, '0').replace(/0+$/, '');
   return fraction ? whole.toString() + '.' + fraction : whole.toString();
+}
+
+function processingReservationLines(
+  materials: readonly ProcessingMaterialInput[],
+): StockReservationLine[] {
+  return materials.map((material) => ({
+    batchId: material.batchId,
+    qty: material.qty,
+  }));
 }
 
 function assertCompanyVisible(principal: Principal, companyId: string): void {
@@ -378,6 +389,14 @@ export async function createProcessingOrder(
       id,
       orderNo,
     });
+    const reservation = await stockFlowPort().reservePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: created.companyId,
+      sourceDocType: 'B',
+      sourceDocId: created.id,
+      handledBy: principal.employeeId,
+      lines: processingReservationLines(created.materialBatchIds),
+    });
     audit.companyId = created.companyId;
     audit.changeSummary = {
       orderNo: created.orderNo,
@@ -388,6 +407,7 @@ export async function createProcessingOrder(
       lossQty: created.lossQty,
       sellableQty: created.sellableQty,
       feeCount: created.fees.length,
+      pendingReservations: reservation.lines,
     };
     return created;
   });
@@ -475,8 +495,19 @@ export async function cancelProcessingOrder(
     afterStatus: '已取消',
   });
   const order = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const current = await repo.getProcessingOrder(context, id);
+    if (!current) throw new AppError('NOT_FOUND', '加工单不存在');
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: current.companyId,
+      sourceDocType: 'B',
+      sourceDocId: current.id,
+      handledBy: principal.employeeId,
+      lines: processingReservationLines(current.materialBatchIds),
+    });
     const cancelled = await repo.cancelProcessingOrder(
-      repoContext(tx, principal),
+      context,
       id,
       expectedVersion,
     );
@@ -486,6 +517,7 @@ export async function cancelProcessingOrder(
       beforeStatus: state.status,
       afterStatus: cancelled.status,
       version: cancelled.version,
+      pendingReleases: released.lines,
     };
     return cancelled;
   });
@@ -530,6 +562,14 @@ export async function completeProcessingOrder(
     });
     const costs = new Map(batches.map((row) => [row.batchId, row.lockedUnitCost]));
     let materialCost = 0n;
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: order.companyId,
+      sourceDocType: 'B',
+      sourceDocId: id,
+      handledBy: principal.employeeId,
+      lines: processingReservationLines(order.materialBatchIds),
+    });
     for (const material of order.materialBatchIds) {
       const cost = costs.get(material.batchId);
       if (!cost) throw new AppError('NOT_FOUND', '材料批次不存在');
@@ -578,7 +618,12 @@ export async function completeProcessingOrder(
     });
     if (!completed) throw new AppError('NOT_FOUND', '加工单不存在');
     audit.companyId = completed.companyId;
-    audit.changeSummary = { beforeStatus: '进行中', afterStatus: '已完成', outputBatchId };
+    audit.changeSummary = {
+      beforeStatus: '进行中',
+      afterStatus: '已完成',
+      outputBatchId,
+      pendingReleases: released.lines,
+    };
     return {
       id,
       status: '已完成',

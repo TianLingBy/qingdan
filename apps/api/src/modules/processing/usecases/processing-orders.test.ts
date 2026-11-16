@@ -215,9 +215,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       `INSERT INTO inventory_batch
          (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost,
           inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty, custodian_id)
-       VALUES ($1, $2, $3, $4, 'B-UNIT-001', '10', '1000', '0', '0', '0', $5),
-              ($6, $2, $3, $4, 'B-UNIT-002', '11', '1000', '0', '0', '0', $5),
-              ($7, $2, $8, $9, 'B-UNIT-OTHER', '12', '1000', '0', '0', '0', $5)
+       VALUES ($1, $2, $3, $4, 'B-UNIT-001', '10', '100000', '0', '0', '0', $5),
+              ($6, $2, $3, $4, 'B-UNIT-002', '11', '100000', '0', '0', '0', $5),
+              ($7, $2, $8, $9, 'B-UNIT-OTHER', '12', '100000', '0', '0', '0', $5)
        ON CONFLICT (id) DO NOTHING`,
       [
         BATCH_ID,
@@ -235,6 +235,67 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
 
   afterAll(async () => {
     await test.database.close();
+  });
+
+  it('建单按材料行占用待执行量，取消释放', async () => {
+    const created = await createOne({
+      materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
+      inputQty: '100',
+    });
+    const pending = await test.database.query<{
+      id: string;
+      pending_execution_qty: string;
+      available_qty: string;
+    }>(
+      `SELECT id::text AS id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty,
+              trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(pending.rows).toEqual([
+      { id: BATCH_ID, pending_execution_qty: '100', available_qty: '99900' },
+      { id: BATCH_2_ID, pending_execution_qty: '0', available_qty: '100000' },
+    ]);
+
+    const { ctx } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"1"' },
+    });
+    const cancelled = await cancelProcessingOrder(ctx);
+    expect(cancelled).toMatchObject({ status: '已取消', version: 2 });
+    const released = await test.database.query<{ pending_execution_qty: string }>(
+      `SELECT trim_scale(pending_execution_qty) AS pending_execution_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(released.rows.map((row) => row.pending_execution_qty)).toEqual(['0', '0']);
+    const createAudit = await test.database.query<{ changes: Record<string, unknown> }>(
+      `SELECT changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'processing.order.create'`,
+      [created.id],
+    );
+    expect(createAudit.rows[0]?.changes).toMatchObject({
+      pendingReservations: [
+        { batchId: BATCH_ID, qty: '100', pendingAfter: '100' },
+      ],
+    });
+    const audit = await test.database.query<{ changes: Record<string, unknown> }>(
+      `SELECT changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'processing.order.cancel'`,
+      [created.id],
+    );
+    expect(audit.rows[0]?.changes).toMatchObject({
+      pendingReleases: [
+        { batchId: BATCH_ID, qty: '100', pendingAfter: '0' },
+      ],
+    });
   });
 
   it('完成：全损耗需要确认，写入快照并生成 C 草稿', async () => {
@@ -299,7 +360,8 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     expect(completed).toMatchObject({ status: '已完成', lossQty: '4', sellableQty: '96' });
     expect(completed.outputBatch).toMatchObject({ qty: '96' });
     expect(state.headers.ETag).toBe('"2"');
-    expect(await available(BATCH_ID)).toBe(before - 100);
+    // 建单占用 100 使可用量少 100；完成先释放占用再扣 100，净值不变。
+    expect(await available(BATCH_ID)).toBe(before);
 
     const flows = (
       await test.database.query(
@@ -330,11 +392,18 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     expect(Number(output.cost)).toBeCloseTo(1100 / 96, 6);
     expect(output.custodian).toBe(DEMO_IDS.ownerEmployeeId);
 
-    const audit = await test.database.query(
-      `SELECT action FROM audit_log WHERE object_id = $1 AND action = 'processing.order.complete'`,
+    const audit = await test.database.query<{ action: string; changes: Record<string, unknown> }>(
+      `SELECT action, changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'processing.order.complete'`,
       [created.id],
     );
     expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0]?.changes).toMatchObject({
+      pendingReleases: [
+        { batchId: BATCH_ID, qty: '100', pendingAfter: '0' },
+      ],
+    });
 
     const detail = await getProcessingOrder(
       readCtx({}, { params: { id: created.id } }),
@@ -363,20 +432,27 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     expect(detail.lossRecord).toBeNull();
   });
 
-  it('材料可用量不足：整单拒绝，材料未扣且不生成流水 / 产出批次（#99 B 回滚）', async () => {
+  it('待执行占用不足：整单拒绝，材料未扣且不生成流水 / 产出批次（#99 B 回滚）', async () => {
     const created = await createOne();
     const before = (
-      await test.database.query<{ inbound_qty: string; referenced_qty: string }>(
+      await test.database.query<{
+        inbound_qty: string;
+        referenced_qty: string;
+        pending_execution_qty: string;
+      }>(
         `SELECT trim_scale(inbound_qty) AS inbound_qty,
-                trim_scale(referenced_qty) AS referenced_qty
+                trim_scale(referenced_qty) AS referenced_qty,
+                trim_scale(pending_execution_qty) AS pending_execution_qty
            FROM inventory_batch WHERE id = $1::uuid`,
         [BATCH_ID],
       )
     ).rows[0]!;
 
-    // 把可用量压到 0：材料扣减必须被库存守卫拒绝，而不是扣成负数。
+    // 人为破坏本单占用记录：完成时释放 100 失败，整笔事务回滚。
     await test.database.query(
-      `UPDATE inventory_batch SET referenced_qty = inbound_qty WHERE id = $1::uuid`,
+      `UPDATE inventory_batch
+          SET pending_execution_qty = 1
+        WHERE id = $1::uuid`,
       [BATCH_ID],
     );
     let failure: unknown;
@@ -389,20 +465,23 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       failure = await completeProcessingOrder(ctx).catch((error: unknown) => error);
     } finally {
       await test.database.query(
-        `UPDATE inventory_batch SET referenced_qty = $1::amount WHERE id = $2::uuid`,
-        [before.referenced_qty, BATCH_ID],
+        `UPDATE inventory_batch
+            SET referenced_qty = $1::amount,
+                pending_execution_qty = $2::amount
+          WHERE id = $3::uuid`,
+        [before.referenced_qty, before.pending_execution_qty, BATCH_ID],
       );
     }
     // #269：加工领料必须说「加工领料」，并带批次标识，不能沿用盘点口吻。
     expect(failure).toBeInstanceOf(AppError);
     expect(failure).toMatchObject({ code: 'VERSION_CONFLICT' });
     const failureMessage = (failure as AppError).message;
-    expect(failureMessage).toContain('加工领料');
+    expect(failureMessage).toContain('加工领料前待执行占用不足');
     expect(failureMessage).toContain('B-UNIT-001');
     expect(failureMessage).not.toContain('盘亏');
 
     const batch = (
-      await test.database.query<{ inbound_qty: string; status: string }>(
+      await test.database.query<{ inbound_qty: string }>(
         `SELECT trim_scale(inbound_qty) AS inbound_qty
            FROM inventory_batch WHERE id = $1::uuid`,
         [BATCH_ID],

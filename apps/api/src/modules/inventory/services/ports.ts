@@ -3,6 +3,8 @@ import {
   applyStockAdjustment,
   createBatch as createStockBatch,
   inspectBatches,
+  releasePendingReservations,
+  reservePendingReservations,
   transferBatches,
 } from './stock-flow.js';
 
@@ -38,6 +40,24 @@ export const inventoryServices: Pick<
         sourceDocType: command.sourceDocType,
         sourceDocId: command.sourceDocId,
         handledBy: command.handledBy,
+      }),
+    reservePending: async (tx, command) =>
+      reservePendingReservations(tx, {
+        tenantId: command.tenantId,
+        companyId: command.companyId,
+        sourceDocType: command.sourceDocType,
+        sourceDocId: command.sourceDocId,
+        handledBy: command.handledBy,
+        lines: command.lines,
+      }),
+    releasePending: async (tx, command) =>
+      releasePendingReservations(tx, {
+        tenantId: command.tenantId,
+        companyId: command.companyId,
+        sourceDocType: command.sourceDocType,
+        sourceDocId: command.sourceDocId,
+        handledBy: command.handledBy,
+        lines: command.lines,
       }),
   },
   // 打印用只读查询：sales 客户联要显示批次号，但不得直读 inventory_batch。
