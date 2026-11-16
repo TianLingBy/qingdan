@@ -183,8 +183,8 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
     ] as const) {
       await test.database.query(
         `INSERT INTO supplier
-           (id, tenant_id, company_id, supplier_no, name, supplied_materials, status)
-         VALUES ($1, $2, $3, NULL, $4, '{}', '启用')
+           (id, tenant_id, company_id, supplier_no, name, supplied_materials)
+         VALUES ($1, $2, $3, NULL, $4, '{}')
          ON CONFLICT (id) DO NOTHING`,
         [id, DEMO_IDS.tenantId, companyId, name],
       );
@@ -195,8 +195,8 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
     ] as const) {
       await test.database.query(
         `INSERT INTO product
-           (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-         VALUES ($1, $2, $3, NULL, $4, '{}', '件', '启用')
+           (id, tenant_id, company_id, product_no, name, aliases, unit)
+         VALUES ($1, $2, $3, NULL, $4, '{}', '件')
          ON CONFLICT (id) DO NOTHING`,
         [id, DEMO_IDS.tenantId, DEMO_IDS.companyId, name],
       );
@@ -204,8 +204,8 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
     // D15 回归用：挂在第二公司的商品，本单公司引用它必须被拒。
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '二司商品', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '二司商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [PRODUCT_OTHER_COMPANY_ID, DEMO_IDS.tenantId, OTHER_COMPANY_ID],
     );
@@ -215,8 +215,8 @@ describe('purchase 采购单用例（PGlite + seed 演示租户）', () => {
     ]);
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '别租户商品', '{}', '件', '启用')`,
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '别租户商品', '{}', '件')`,
       [PRODUCT_OTHER_TENANT_ID, OTHER_TENANT_ID, OTHER_COMPANY_ID],
     );
   });

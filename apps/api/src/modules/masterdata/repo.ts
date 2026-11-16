@@ -7,6 +7,7 @@ import {
   type ProductUpdateInput,
 } from '@qingdan/contracts';
 import type { SqlClient } from '../../platform/db/client.js';
+import { rethrowIfReferenced } from './fk-conflict.js';
 
 /**
  * 商品数据访问层（D15 / D49 / D54）。
@@ -29,7 +30,6 @@ export interface ProductRepoContext {
 
 export interface ProductListQuery {
   readonly companyId?: string;
-  readonly status?: Product['status'];
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
   readonly limit: number;
@@ -52,7 +52,6 @@ interface ProductRow {
   aliases: string[] | null;
   specification: string | null;
   unit: string;
-  status: string;
   default_sale_price: string | number | null;
   version: number;
   created_at: Date | string;
@@ -67,7 +66,6 @@ const COLUMNS = `p.id,
   p.aliases,
   p.specification,
   p.unit,
-  p.status,
   p.default_sale_price,
   p.version,
   p.created_at,
@@ -86,7 +84,6 @@ const UPDATE_COLUMNS: ReadonlyArray<{
   { key: 'aliases', column: 'aliases' },
   { key: 'specification', column: 'specification' },
   { key: 'unit', column: 'unit' },
-  { key: 'status', column: 'status' },
   { key: 'defaultSalePrice', column: 'default_sale_price' },
 ];
 
@@ -104,7 +101,6 @@ function mapRow(row: ProductRow): Product {
     aliases: row.aliases ?? [],
     specification: row.specification,
     unit: row.unit,
-    status: row.status as Product['status'],
     // D54：金额保持 decimal 字符串；驱动对 numeric 一般已回 string，这里兜底。
     defaultSalePrice: row.default_sale_price === null ? null : String(row.default_sale_price),
     version: row.version,
@@ -134,7 +130,7 @@ async function queryRow(
 }
 
 /**
- * 商品列表：租户 + 可见公司内，按 keyword（名称/别名）与状态过滤，游标分页。
+ * 商品列表：租户 + 可见公司内，按 keyword（名称/别名）过滤，游标分页。
  * 显式点不可见公司时返回空列表（范围过滤优先，不越权也不报错），与 employees 一致。
  */
 export async function listProducts(
@@ -147,11 +143,6 @@ export async function listProducts(
   if (query.companyId !== undefined) {
     params.push(query.companyId);
     where.push(`p.company_id = $${params.length}::uuid`);
-  }
-
-  if (query.status !== undefined) {
-    params.push(query.status);
-    where.push(`p.status = $${params.length}`);
   }
 
   if (query.keyword !== undefined) {
@@ -208,8 +199,8 @@ export async function insertProduct(
   const result = await ctx.tx.query<ProductRow>(
     `INSERT INTO product
        (id, tenant_id, company_id, product_no, name, aliases, specification,
-        unit, status, default_sale_price)
-     VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10)
+        unit, default_sale_price)
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9)
      RETURNING ${RETURNING_COLUMNS}`,
     [
       input.id,
@@ -220,7 +211,6 @@ export async function insertProduct(
       input.aliases ?? [],
       input.specification ?? null,
       input.unit,
-      input.status ?? '启用',
       input.defaultSalePrice ?? null,
     ],
   );
@@ -279,10 +269,11 @@ export async function updateProduct(
 }
 
 /**
- * 停用商品（软删除，D62⑤）：只把 `status` 置「停用」并递增版本，**不物理删除**。
- * 查不到（含跨公司）→ null；版本不匹配 → `VERSION_CONFLICT`。
+ * 删除商品（物理删除）：行被真正移除。
+ * 查不到（含跨公司）→ null；版本不匹配 → `VERSION_CONFLICT`；
+ * 仍被单据引用（外键 23503）→ 409 `STATE_CONFLICT` + `reason=HAS_REFERENCES`。
  */
-export async function softDeleteProduct(
+export async function deleteProduct(
   ctx: ProductRepoContext,
   id: string,
   expectedVersion: number,
@@ -296,17 +287,17 @@ export async function softDeleteProduct(
     });
   }
 
-  const result = await ctx.tx.query<ProductRow>(
-    `UPDATE product p
-        SET status = '停用',
-            version = p.version + 1
-      WHERE p.id = $1::uuid
-        AND p.tenant_id = $2
-        AND p.company_id = ANY($3::uuid[])
-        AND p.version = $4
-      RETURNING ${COLUMNS}`,
-    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
-  );
+  const result = await ctx.tx
+    .query<ProductRow>(
+      `DELETE FROM product p
+        WHERE p.id = $1::uuid
+          AND p.tenant_id = $2
+          AND p.company_id = ANY($3::uuid[])
+          AND p.version = $4
+        RETURNING ${COLUMNS}`,
+      [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+    )
+    .catch((error: unknown) => rethrowIfReferenced(error, '商品'));
   const row = result.rows[0];
   if (!row) {
     throw new AppError('VERSION_CONFLICT', '商品已被并发修改，请重新读取后重试');

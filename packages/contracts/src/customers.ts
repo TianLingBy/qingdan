@@ -13,9 +13,6 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - 写操作必记审计（D51）；停用属危险动作，AI 默认禁止（D52① / D54 危险动作清单）。
  */
 
-/** 客户状态：停用后不出现在单据选客户弹窗（与商品同款）。 */
-export const CustomerStatusSchema = z.enum(['启用', '停用']);
-
 export const CustomerSchema = z.object({
   id: z.string(),
   tenantId: z.string(),
@@ -32,7 +29,6 @@ export const CustomerSchema = z.object({
    * 上限与「0 是否等于现结」待负责人拍板，拍板前不扩展其它字段。
    */
   creditTermDays: z.number().int().min(0).nullable(),
-  status: CustomerStatusSchema,
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
   version: z.number().int(),
   createdAt: z.string().datetime(),
@@ -46,7 +42,6 @@ export type Customer = z.infer<typeof CustomerSchema>;
  */
 export const CustomerListQuerySchema = PageQuerySchema.extend({
   companyId: z.string().uuid().optional(),
-  status: CustomerStatusSchema.optional(),
   keyword: z.string().min(1).max(64).optional(),
 });
 
@@ -56,7 +51,6 @@ const customerOptionalFields = {
   contactName: z.string().max(64).nullable().optional(),
   contactPhone: z.string().max(32).nullable().optional(),
   creditTermDays: z.number().int().min(0).nullable().optional(),
-  status: CustomerStatusSchema.optional(),
 } as const;
 
 export const CustomerCreateInputSchema = z.object({
@@ -144,11 +138,11 @@ export const CUSTOMER_ROUTES: readonly RouteDef[] = [
     path: '/api/v1/customers/{id}',
     domain: 'customer',
     action: 'delete',
-    summary: '停用客户（软删除，不做物理删除；危险动作，AI 默认禁止）',
+    summary: '删除客户（物理删除；被单据引用时 409 拒绝，危险动作，AI 默认禁止）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
-    // 回实体而不是 204：客户端要拿到新 `version` 才能继续并发写（与商品同款）。
+    // 回实体而不是 204：回被删实体快照（含 version），便于客户端确认删除结果与审计留痕。
     response: { status: 200, schema: CustomerSchema },
   }),
 ];

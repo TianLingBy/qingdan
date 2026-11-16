@@ -25,8 +25,8 @@ describe('inventory applyStockAdjustment 文案（#269）', () => {
     await seed(test.database);
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, specification, unit, status)
-       VALUES ($1, $2, $3, 'P-269', '调整文案商品', '{}', NULL, '件', '启用')`,
+         (id, tenant_id, company_id, product_no, name, aliases, specification, unit)
+       VALUES ($1, $2, $3, 'P-269', '调整文案商品', '{}', NULL, '件')`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     // 可用量 = 5 - 5 = 0：扣 1 必然触发「可用量将为负」，但入库量仍非负。

@@ -39,6 +39,7 @@ import {
   updatePosition,
 } from './usecases/positions.js';
 import { updatePermissionOverrides } from './usecases/permission-overrides.js';
+import { getSettingsOverview } from './usecases/settings-overview.js';
 import { getCompanySubscription, updateCompanySubscription } from './usecases/subscription.js';
 import { getWorkbenchTodos } from '../workbench/usecases/todos.js';
 
@@ -186,6 +187,9 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
       updatePosition({ database: instance.database, request, reply }),
     'platform.position.delete': ({ app: instance, request, reply }) =>
       disablePosition({ database: instance.database, request, reply }),
+    // 设置中心概览（D93 / #298）：只读聚合；缺 company.read 由用例返回 403。
+    'platform.settings.overview': ({ app: instance, request }) =>
+      getSettingsOverview({ database: instance.database, request }),
     // 工作台待办（D89 / #289）：归属 platform（跨模块只读聚合），用例在 modules/workbench。
     'workbench.todos.read': ({ app: instance, request, route }) => {
       requireDatabase(instance, route);

@@ -14,7 +14,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  *   - detail/create 回强 ETag `"<version>"`；update/delete 必须带 If-Match；
  *   - D49 keyword 只匹配名称/别名，不按 product_no 检索；
  *   - D27 无看价权限时 defaultSalePrice 为 null；
- *   - 软删除：status 置停用、详情仍可读；列表需显式 `status=启用` 才排除停用商品。
+ *   - 删除为物理删除：行被移除、详情 404；仍被单据引用时 409 `STATE_CONFLICT`。
  */
 
 const PUBLIC_BASE_URL = 'https://qingdan.example';
@@ -178,7 +178,6 @@ describe('masterdata 商品 HTTP（PGlite + seed 演示租户）', () => {
       aliases: ['创建别名'],
       specification: '500g/袋',
       unit: '件',
-      status: '启用',
       version: 1,
     });
     expect(typeof body.defaultSalePrice).toBe('string');
@@ -304,8 +303,8 @@ describe('masterdata 商品 HTTP（PGlite + seed 演示租户）', () => {
     expect(replay.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
   });
 
-  it('delete：软停用（status=停用、详情仍可读、启用列表排除），成功后回新 ETag', async () => {
-    const created = await createOne('HTTP软删商品');
+  it('delete：物理删除（行移除、详情 404），成功后回 ETag', async () => {
+    const created = await createOne('HTTP删除商品');
 
     const missing = await app.inject({
       method: 'DELETE',
@@ -321,33 +320,56 @@ describe('masterdata 商品 HTTP（PGlite + seed 演示租户）', () => {
       headers: writeHeaders(ownerCookie, 'req-http-delete-ok', { 'if-match': '"1"' }),
     });
     expect(deleted.statusCode).toBe(200);
-    expect(deleted.headers.etag).toBe('"2"');
-    expect(deleted.json()).toMatchObject({ status: '停用', version: 2 });
+    expect(deleted.headers.etag).toBe('"1"');
+    expect(deleted.json()).toMatchObject({ id: created.id, name: 'HTTP删除商品', version: 1 });
 
-    // 软删除：行还在，详情按 id 仍可读（调用方用 status 决定是否展示）。
+    // 物理删除：行已不在，详情按 id → 404。
     const detail = await app.inject({
       method: 'GET',
       url: `/api/v1/products/${created.id}`,
       headers: readHeaders(ownerCookie, 'req-http-delete-detail'),
     });
-    expect(detail.statusCode).toBe(200);
-    expect((detail.json() as Product).status).toBe('停用');
+    expect(detail.statusCode).toBe(404);
+    expect(detail.json()).toMatchObject({ code: 'NOT_FOUND' });
 
-    // 单据选对象场景显式带 status=启用：停用商品不再出现。
-    const enabled = await listProductsRequest(
-      ownerCookie,
-      'req-http-delete-enabled-list',
-      `?keyword=${encodeURIComponent('HTTP软删商品')}&status=${encodeURIComponent('启用')}`,
-    );
-    expect((enabled.json() as { items: Product[] }).items).toHaveLength(0);
-
-    // 不带 status 时列表仍返回该行（仓库层只按显式过滤条件筛选，不隐式排除停用）。
+    // 列表里也不再出现。
     const all = await listProductsRequest(
       ownerCookie,
       'req-http-delete-all-list',
-      `?keyword=${encodeURIComponent('HTTP软删商品')}`,
+      `?keyword=${encodeURIComponent('HTTP删除商品')}`,
     );
-    expect((all.json() as { items: Product[] }).items.map((item) => item.id)).toEqual([created.id]);
+    expect((all.json() as { items: Product[] }).items).toHaveLength(0);
+  });
+
+  it('删除被库存批次引用的商品 → 409 STATE_CONFLICT + reason=HAS_REFERENCES', async () => {
+    const created = await createOne('HTTP被引用商品');
+    await test.database.query(
+      `INSERT INTO inventory_batch
+         (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost,
+          inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty, custodian_id)
+       VALUES ('01900000-0000-7000-8000-0000000000b1', $1, $2, $3, 'HTTP-REF-PRODUCT-BATCH',
+               '0', 0, 0, 0, 0, $4)`,
+      [DEMO_IDS.tenantId, DEMO_IDS.companyId, created.id, DEMO_IDS.ownerEmployeeId],
+    );
+
+    const blocked = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/products/${created.id}`,
+      headers: writeHeaders(ownerCookie, 'req-http-delete-referenced', { 'if-match': '"1"' }),
+    });
+    expect(blocked.statusCode).toBe(409);
+    const body = blocked.json() as { code: string; message: string; details?: { reason?: string } };
+    expect(body.code).toBe('STATE_CONFLICT');
+    expect(body.details?.reason).toBe('HAS_REFERENCES');
+    expect(body.message).toContain('还有单据在用');
+
+    // 被引用时删除失败，商品仍在。
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/products/${created.id}`,
+      headers: readHeaders(ownerCookie, 'req-http-delete-referenced-detail'),
+    });
+    expect(detail.statusCode).toBe(200);
   });
 
   it('D15：跨公司不可见——详情 404、列表为空、创建到不可见公司 403', async () => {
@@ -377,7 +399,7 @@ describe('masterdata 商品 HTTP（PGlite + seed 演示租户）', () => {
     expect(createOutside.json()).toMatchObject({ code: 'FORBIDDEN' });
   });
 
-  it('D52①：AI 凭证停用商品 → 403 AI_ACTION_FORBIDDEN，商品状态不变', async () => {
+  it('D52①：AI 凭证删除商品 → 403 AI_ACTION_FORBIDDEN，商品仍在', async () => {
     const tokenResponse = await app.inject({
       method: 'POST',
       url: '/api/v1/api-tokens',
@@ -405,10 +427,10 @@ describe('masterdata 商品 HTTP（PGlite + seed 演示租户）', () => {
     expect(forbidden.statusCode).toBe(403);
     expect(forbidden.json()).toMatchObject({ code: 'AI_ACTION_FORBIDDEN' });
 
-    const row = await test.database.query<{ status: string }>(
-      'SELECT status FROM product WHERE id = $1',
+    const row = await test.database.query<{ id: string }>(
+      'SELECT id FROM product WHERE id = $1',
       [created.id],
     );
-    expect(row.rows[0]?.status).toBe('启用');
+    expect(row.rows).toHaveLength(1);
   });
 });

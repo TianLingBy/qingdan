@@ -17,6 +17,9 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   '0026_settlement_orders_settled_at.sql',
   // D88 / #288：撤销结算把结算期快照列置 NULL，20261116043000 必须已应用。
   '20261116043000_settlement_orders_unsettle.sql',
+  // D93 / #298：概览直接读 company 的 address / contact_phone / tax_no / logo_url，
+  // 缺列会在业务路径上 500，必须启动时就报出来。
+  '20261117090000_settings_center_fields.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

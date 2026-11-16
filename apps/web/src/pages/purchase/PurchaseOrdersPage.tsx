@@ -20,6 +20,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useCompanyLabel } from '../../lib/company-directory';
 import { useEmployeeLabel } from '../../lib/employee-directory';
@@ -685,12 +686,12 @@ export function PurchaseOrdersPage() {
 
   const productsQuery = useQuery({
     queryKey: purchaseQueryKeys.products,
-    queryFn: () => masterdataApi.listProducts({ limit: 200, status: '启用' }),
+    queryFn: () => masterdataApi.listProducts({ limit: 200 }),
     staleTime: 5 * 60_000,
   });
   const suppliersQuery = useQuery({
     queryKey: purchaseQueryKeys.suppliers,
-    queryFn: () => masterdataApi.listSuppliers({ limit: 200, status: '启用' }),
+    queryFn: () => masterdataApi.listSuppliers({ limit: 200 }),
     staleTime: 5 * 60_000,
   });
   const products = productsQuery.data?.items ?? [];
@@ -1068,22 +1069,11 @@ export function PurchaseOrdersPage() {
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         {list.isPending ? (
-          <p className="p-6 text-sm text-slate-500">正在加载采购单…</p>
+          <ListLoading label="正在加载采购单…" />
         ) : list.error ? (
-          <div className="p-6">
-            <p className="text-sm text-red-700">{errorText(list.error)}</p>
-            <button
-              type="button"
-              onClick={() => void list.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              重试
-            </button>
-          </div>
+          <ListError title="采购单加载失败" error={list.error} onRetry={() => void list.refetch()} />
         ) : rows.length === 0 ? (
-          <p className="p-6 text-sm text-slate-500">
-            暂无采购单。可调整筛选条件，或用右上角「新建采购单」开第一张。
-          </p>
+          <ListEmpty title="暂无采购单。可调整筛选条件，或用右上角「新建采购单」开第一张。" />
         ) : (
           <table className="w-full min-w-[880px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">

@@ -158,8 +158,8 @@ describe('盘点驳回用例（PGlite + seed 演示租户）', () => {
     await seed(test.database);
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, specification, unit, status)
-       VALUES ($1, $2, $3, 'ST-001', '盘点用例苹果', '{}', NULL, '件', '启用')`,
+         (id, tenant_id, company_id, product_no, name, aliases, specification, unit)
+       VALUES ($1, $2, $3, 'ST-001', '盘点用例苹果', '{}', NULL, '件')`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     await insertBatch(test, BATCH_ID, 'ST-BATCH-REJECT', '40');

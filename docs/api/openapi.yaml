@@ -1523,14 +1523,6 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-            enum:
-              - 启用
-              - 停用
         - name: keyword
           in: query
           required: false
@@ -1641,11 +1633,6 @@ paths:
                     - type: string
                       maxLength: 128
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
                 defaultSalePrice:
                   anyOf:
                     - type: string
@@ -1762,11 +1749,6 @@ paths:
                     - type: string
                       maxLength: 128
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
                 defaultSalePrice:
                   anyOf:
                     - type: string
@@ -1775,7 +1757,7 @@ paths:
               additionalProperties: false
     delete:
       operationId: product.delete
-      summary: 停用商品（软删除，不做物理删除；危险动作，AI 默认禁止）
+      summary: 删除商品（物理删除；被单据引用时 409 拒绝，危险动作，AI 默认禁止）
       tags:
         - product
       security:
@@ -1840,14 +1822,6 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-            enum:
-              - 启用
-              - 停用
         - name: keyword
           in: query
           required: false
@@ -1958,11 +1932,6 @@ paths:
                       minimum: 0
                       maximum: 9007199254740991
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
               required:
                 - companyId
                 - name
@@ -2073,15 +2042,10 @@ paths:
                       minimum: 0
                       maximum: 9007199254740991
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
               additionalProperties: false
     delete:
       operationId: customer.delete
-      summary: 停用客户（软删除，不做物理删除；危险动作，AI 默认禁止）
+      summary: 删除客户（物理删除；被单据引用时 409 拒绝，危险动作，AI 默认禁止）
       tags:
         - customer
       security:
@@ -2146,14 +2110,6 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-            enum:
-              - 启用
-              - 停用
         - name: keyword
           in: query
           required: false
@@ -2266,11 +2222,6 @@ paths:
                     - type: string
                       maxLength: 32
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
               required:
                 - companyId
                 - name
@@ -2383,15 +2334,10 @@ paths:
                     - type: string
                       maxLength: 32
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
               additionalProperties: false
     delete:
       operationId: supplier.delete
-      summary: 停用供应商（软删除，不做物理删除；危险动作，AI 默认禁止）
+      summary: 删除供应商（物理删除；被单据引用时 409 拒绝，危险动作，AI 默认禁止）
       tags:
         - supplier
       security:
@@ -2456,14 +2402,6 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-            enum:
-              - 启用
-              - 停用
         - name: keyword
           in: query
           required: false
@@ -2563,11 +2501,6 @@ paths:
                     - type: string
                       maxLength: 64
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
               required:
                 - companyId
                 - name
@@ -2667,15 +2600,10 @@ paths:
                     - type: string
                       maxLength: 64
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
               additionalProperties: false
     delete:
       operationId: processor.delete
-      summary: 停用加工厂（软删除，不做物理删除；危险动作，AI 默认禁止）
+      summary: 删除加工厂（物理删除；被单据引用时 409 拒绝，危险动作，AI 默认禁止）
       tags:
         - processor
       security:
@@ -7025,6 +6953,178 @@ paths:
         policy: allow
         reasonRequired: false
       x-mcp-tool: qingdan_todos_read
+  /api/v1/settings/overview:
+    get:
+      operationId: platform.settings.overview
+      summary: 设置中心概览（无 company.read → 403；手机号脱敏；只返回可访问公司）
+      tags:
+        - company
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                          - 启用
+                          - 停用
+                    required:
+                      - id
+                      - name
+                      - status
+                    additionalProperties: false
+                  companies:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Company"
+                  numbering:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                            - A
+                            - B
+                            - E
+                            - "N"
+                            - C
+                            - R
+                            - S
+                            - I
+                        rule:
+                          type: string
+                        next:
+                          type:
+                            - string
+                            - "null"
+                      required:
+                        - type
+                        - rule
+                        - next
+                      additionalProperties: false
+                  me:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      phoneMasked:
+                        type: string
+                      companies:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Company"
+                      positions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            companyId:
+                              type: string
+                            companyName:
+                              type: string
+                          required:
+                            - id
+                            - name
+                            - companyId
+                            - companyName
+                          additionalProperties: false
+                    required:
+                      - name
+                      - phoneMasked
+                      - companies
+                      - positions
+                    additionalProperties: false
+                  permissions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        domain:
+                          type: string
+                          enum:
+                            - purchase
+                            - processing
+                            - sales
+                            - internal_trade
+                            - settlement
+                            - commission
+                            - customer_return
+                            - supplier_return
+                            - stocktake
+                            - product
+                            - customer
+                            - supplier
+                            - processor
+                            - inventory_qty
+                            - inventory_flow
+                            - stocktake_page
+                            - employee
+                            - permission
+                            - company
+                            - profit_report
+                            - audit
+                            - api_integration
+                            - payment
+                            - billing
+                            - workbench
+                        action:
+                          type: string
+                          enum:
+                            - read
+                            - create
+                            - update
+                            - approve
+                            - ship
+                            - delete
+                            - view_price
+                            - export
+                      required:
+                        - domain
+                        - action
+                      additionalProperties: false
+                required:
+                  - tenant
+                  - companies
+                  - numbering
+                  - me
+                  - permissions
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: company.read
+      x-module: platform
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_platform_settings_overview
   /api/v1/reports/profit:
     get:
       operationId: profit_report.read
@@ -7628,11 +7728,6 @@ components:
             - "null"
         unit:
           type: string
-        status:
-          type: string
-          enum:
-            - 启用
-            - 停用
         defaultSalePrice:
           type:
             - string
@@ -7658,7 +7753,6 @@ components:
         - aliases
         - specification
         - unit
-        - status
         - defaultSalePrice
         - version
         - createdAt
@@ -7693,11 +7787,6 @@ components:
               minimum: 0
               maximum: 9007199254740991
             - type: "null"
-        status:
-          type: string
-          enum:
-            - 启用
-            - 停用
         version:
           type: integer
           minimum: -9007199254740991
@@ -7719,7 +7808,6 @@ components:
         - contactName
         - contactPhone
         - creditTermDays
-        - status
         - version
         - createdAt
         - updatedAt
@@ -7754,11 +7842,6 @@ components:
             type: string
             minLength: 1
             maxLength: 64
-        status:
-          type: string
-          enum:
-            - 启用
-            - 停用
         version:
           type: integer
           minimum: -9007199254740991
@@ -7780,7 +7863,6 @@ components:
         - contactName
         - contactPhone
         - suppliedMaterials
-        - status
         - version
         - createdAt
         - updatedAt
@@ -7804,11 +7886,6 @@ components:
           type:
             - string
             - "null"
-        status:
-          type: string
-          enum:
-            - 启用
-            - 停用
         version:
           type: integer
           minimum: -9007199254740991
@@ -7828,7 +7905,6 @@ components:
         - processorNo
         - name
         - contactName
-        - status
         - version
         - createdAt
         - updatedAt
@@ -7996,6 +8072,22 @@ components:
           pattern: ^[0-9]{4}$
         name:
           type: string
+        address:
+          type:
+            - string
+            - "null"
+        contactPhone:
+          type:
+            - string
+            - "null"
+        taxNo:
+          type:
+            - string
+            - "null"
+        logoUrl:
+          type:
+            - string
+            - "null"
         version:
           type: integer
           minimum: -9007199254740991

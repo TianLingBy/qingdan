@@ -133,8 +133,8 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
     ] as const) {
       await test.database.query(
         `INSERT INTO supplier
-           (id, tenant_id, company_id, supplier_no, name, supplied_materials, status)
-         VALUES ($1, $2, $3, NULL, $4, '{}', '启用')
+           (id, tenant_id, company_id, supplier_no, name, supplied_materials)
+         VALUES ($1, $2, $3, NULL, $4, '{}')
          ON CONFLICT (id) DO NOTHING`,
         [id, DEMO_IDS.tenantId, companyId, name],
       );
@@ -145,8 +145,8 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
     ] as const) {
       await test.database.query(
         `INSERT INTO product
-           (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-         VALUES ($1, $2, $3, NULL, $4, '{}', '件', '启用')
+           (id, tenant_id, company_id, product_no, name, aliases, unit)
+         VALUES ($1, $2, $3, NULL, $4, '{}', '件')
          ON CONFLICT (id) DO NOTHING`,
         [id, DEMO_IDS.tenantId, DEMO_IDS.companyId, name],
       );

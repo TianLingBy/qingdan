@@ -24,6 +24,15 @@ export const CompanySchema = z.object({
   /** D16：服务端按租户内顺序发放的 4 位定长公司码（如 `0001`）。 */
   code: CompanyCodeSchema,
   name: z.string(),
+  /**
+   * 公司扩展资料（B2 / #298）：地址、联系电话、税号、LOGO 地址。
+   * 四列均可空、不 backfill，存量公司未填写时为 `null`。
+   * `.optional()` 只用于兼容既有测试夹具；新响应一律回键（值为 `null`）。
+   */
+  address: z.string().optional().nullable(),
+  contactPhone: z.string().optional().nullable(),
+  taxNo: z.string().optional().nullable(),
+  logoUrl: z.string().optional().nullable(),
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
   version: z.number().int(),
   createdAt: z.string().datetime(),

@@ -2,8 +2,15 @@ import type { Customer, Processor, Product, Supplier } from '@qingdan/contracts'
 import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { ApiError } from '../../api/client';
 import { createQueryClient } from '../../api/query';
-import { CustomersPage, ProcessorsPage, ProductsPage, SuppliersPage } from './MasterdataPage';
+import {
+  CustomersPage,
+  ProcessorsPage,
+  ProductsPage,
+  SuppliersPage,
+  deleteErrorText,
+} from './MasterdataPage';
 import { masterdataQueryKeys } from './masterdata-api';
 
 const PRODUCT: Product = {
@@ -15,7 +22,6 @@ const PRODUCT: Product = {
   aliases: ['苹果'],
   specification: '10kg/箱',
   unit: '箱',
-  status: '启用',
   defaultSalePrice: null,
   version: 1,
   createdAt: '2026-11-08T00:00:00.000Z',
@@ -35,7 +41,6 @@ describe('商品资料页', () => {
     client.setQueryData(
       masterdataQueryKeys.list('products', {
         keyword: undefined,
-        status: undefined,
         cursor: null,
       }),
       { items: [PRODUCT], nextCursor: null },
@@ -52,6 +57,21 @@ describe('商品资料页', () => {
     expect(html).toContain('10kg/箱');
     expect(html).toContain('无看价权限或未设置');
     expect(html).toContain('新增商品');
+    // 主数据已去掉状态：不再有状态列，操作列提供「删除」而不是「停用」。
+    expect(html).not.toContain('状态');
+    expect(html).not.toContain('停用');
+    expect(html).toContain('删除');
+  });
+
+  it('删除被单据引用时直接显示后端 409 消息，不吞成通用失败', () => {
+    const conflict = new ApiError({
+      code: 'STATE_CONFLICT',
+      message: '该客户还有单据在用，不能删除',
+      status: 409,
+      details: { reason: 'HAS_REFERENCES' },
+    });
+    expect(deleteErrorText(conflict)).toBe('该客户还有单据在用，不能删除');
+    expect(deleteErrorText(new Error('网络错误'))).toBe('网络错误');
   });
 
   it('空列表提供明确空态', () => {
@@ -59,7 +79,6 @@ describe('商品资料页', () => {
     client.setQueryData(
       masterdataQueryKeys.list('products', {
         keyword: undefined,
-        status: undefined,
         cursor: null,
       }),
       { items: [], nextCursor: null },
@@ -84,7 +103,6 @@ describe('商品资料页', () => {
       contactName: '李经理',
       contactPhone: '10000000000',
       suppliedMaterials: ['纸箱'],
-      status: '启用',
       version: 1,
       createdAt: PRODUCT.createdAt,
       updatedAt: PRODUCT.updatedAt,
@@ -96,7 +114,6 @@ describe('商品资料页', () => {
       processorNo: null,
       name: '测试加工厂',
       contactName: '王师傅',
-      status: '启用',
       version: 1,
       createdAt: PRODUCT.createdAt,
       updatedAt: PRODUCT.updatedAt,
@@ -114,7 +131,6 @@ describe('商品资料页', () => {
     supplierClient.setQueryData(
       masterdataQueryKeys.list('suppliers', {
         keyword: undefined,
-        status: undefined,
         cursor: null,
       }),
       { items: [supplier], nextCursor: null },
@@ -133,7 +149,6 @@ describe('商品资料页', () => {
     processorClient.setQueryData(
       masterdataQueryKeys.list('processors', {
         keyword: undefined,
-        status: undefined,
         cursor: null,
       }),
       { items: [processor], nextCursor: null },
@@ -158,7 +173,6 @@ describe('商品资料页', () => {
       contactName: '赵老板',
       contactPhone: '13900000000',
       creditTermDays: 30,
-      status: '启用',
       version: 1,
       createdAt: PRODUCT.createdAt,
       updatedAt: PRODUCT.updatedAt,
@@ -175,7 +189,6 @@ describe('商品资料页', () => {
     client.setQueryData(
       masterdataQueryKeys.list('customers', {
         keyword: undefined,
-        status: undefined,
         cursor: null,
       }),
       { items: [customer], nextCursor: null },
