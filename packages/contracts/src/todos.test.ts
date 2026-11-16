@@ -49,7 +49,7 @@ describe('工作台待办契约（platform 模块 / workbench 功能域，D89）
       kind: 'settlement_pending',
       title: '结算单待确认',
       count: 3,
-      hint: '本公司在办',
+      hint: '可见公司内在办',
       routeId: 'settlements',
     };
     expect(TodoItemSchema.safeParse(item).success).toBe(true);

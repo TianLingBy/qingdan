@@ -11,10 +11,11 @@ import { defineRoute, type RouteDef } from './registry.js';
  * 口径：
  * - 只聚合**有明确待处理状态、且存在能推进它的端点**的单据（采购 / 销售没有
  *   `approve` 语义的中途状态，不进入本端点，见 D85 / D89）。
- * - 权限过滤：调用者没有该域 `approve` 的条目不返回（提前返回空列表，不做查询）。
+ * - 权限过滤：调用者没有该域 `approve` 的条目 `count=0` 且不查库；一个候选域
+ *   `approve` 都没有时也返回全部 `TODO_KINDS`（统一形状，前端只兼容一种）。
  * - 「本人负责」：单据有 `handler_id` / `applicant_id` / `requested_by` /
- *   `commission_owner_id` 等负责人字段的按本人过滤；没有负责人字段的按公司内全部计，
- *   并在 `hint` 里写明「本公司在办」。
+ *   `commission_owner_id` 等负责人字段的按本人过滤；没有负责人字段的按调用者
+ *   **可见公司内全部**计，并在 `hint` 里写明「可见公司内在办」。
  * - `count = 0` 的条目也返回（前端决定是否显示），方便一次拿全。
  * - 本端点只给笔数，不返回任何金额字段，避免绕过 `view_price`。
  */

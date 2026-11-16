@@ -22,8 +22,8 @@ import type { Database, SqlClient } from '../../../platform/db/client.js';
  * | settlement_pending | settlement_order | 待确认 | `settlement.order.confirm` | settlement.approve | commission_owner_id |
  * | stocktake_pending | inventory_stocktake | 待审批 | `stocktake.approve` | stocktake.approve | applicant_id |
  * | cost_adjustment_pending | inventory_cost_adjustment | pending_approval | `inventory.cost.adjustment.approve` | inventory_qty.approve | requested_by |
- * | customer_return_pending | customer_return | 进行中 | `customer_return.complete` | customer_return.approve | 无（公司内全部） |
- * | supplier_return_pending | supplier_return | 进行中 | `supplier_return.complete` | supplier_return.approve | 无（公司内全部） |
+ * | customer_return_pending | customer_return | 进行中 | `customer_return.complete` | customer_return.approve | 无（可见公司内全部） |
+ * | supplier_return_pending | supplier_return | 进行中 | `supplier_return.complete` | supplier_return.approve | 无（可见公司内全部） |
  * | processing_pending | processing_order | 进行中 | `processing.order.complete` | processing.approve | handler_id |
  *
  * 明确不返回：采购单 / 销售单。采购完成的权限点已改为 `purchase.update`（D81），
@@ -55,7 +55,8 @@ interface TodoDefinition {
  * 待办定义（顺序 = 响应顺序）。
  *
  * 所有查询都按 `tenant_id` + 调用者可见 `company_id` 收窄；禁止跨公司。
- * `count = 0` 的条目也返回，前端据此决定是否显示。
+ * `count = 0` 的条目也返回（含无权限 / 一个候选域 `approve` 都没有的调用者），
+ * 永远返回 `TODO_KINDS` 全 6 条，前端只需处理一种形状。
  */
 const TODO_DEFINITIONS: readonly TodoDefinition[] = [
   {
@@ -103,7 +104,7 @@ const TODO_DEFINITIONS: readonly TodoDefinition[] = [
   {
     kind: 'customer_return_pending',
     title: '客户退货待确认',
-    hint: '本公司在办的客户退货待确认',
+    hint: '可见公司内在办的客户退货待确认',
     routeId: 'reversals',
     domain: 'customer_return',
     ownedByCaller: false,
@@ -116,7 +117,7 @@ const TODO_DEFINITIONS: readonly TodoDefinition[] = [
   {
     kind: 'supplier_return_pending',
     title: '供应商退货待确认',
-    hint: '本公司在办的供应商退货待确认',
+    hint: '可见公司内在办的供应商退货待确认',
     routeId: 'reversals',
     domain: 'supplier_return',
     ownedByCaller: false,
@@ -169,7 +170,7 @@ function canApprove(principal: Principal, domain: DomainKey): boolean {
   return allowsScope(principal.scope, domain, 'approve');
 }
 
-/** 至少持有一个候选域的 approve 才去查库；一个都没有 → 空 items。 */
+/** 至少持有一个候选域的 approve 才去查库；一个都没有 → 全部 count=0，仍返回 6 条。 */
 function hasAnyApprove(principal: Principal): boolean {
   return TODO_DEFINITIONS.some((definition) => canApprove(principal, definition.domain));
 }
@@ -189,9 +190,14 @@ async function countPending(
  * GET /api/v1/todos：按权限点 × 动作 + 本人负责聚合待处理笔数。
  *
  * - 没有 `workbench.read` → 403；
- * - 没有任何候选域的 `approve` → 直接返回空 `items`（不查库）；
- * - 其余情况固定返回全部 kind（无权限/无数据的 count=0），顺序与 `TODO_KINDS` 一致；
+ * - 永远固定返回 `TODO_KINDS` 全部 6 条（顺序一致），无权限/无数据的 count=0，
+ *   前端不必兼容「空 items」与「6 条」两套形状；
+ * - 没有任何候选域的 `approve` → 全部 count=0，不查库；
  * - 所有计数查询在同一个 `withTenant` 事务里执行，按 `companyId` 收窄。
+ *
+ * 查询次数上限：有 n 个候选域 `approve` 时，最多 n（≤ 6）条 `count` 串行执行，
+ * 与可见公司数、单据行数无关。一期数据量小可接受；表大了改成 `Promise.all`
+ * 并发，或把 6 条合并成单条 `UNION ALL`（届时同步调整本注释与用例断言）。
  */
 export async function getWorkbenchTodos(
   ctx: WorkbenchTodoContext,
@@ -200,19 +206,21 @@ export async function getWorkbenchTodos(
   const database = requireDatabase(ctx);
   requireWorkbenchRead(principal);
 
-  if (!hasAnyApprove(principal)) return { items: [] };
+  const counts = new Map<TodoKind, number>(
+    TODO_DEFINITIONS.map((definition) => [definition.kind, 0] as const),
+  );
 
-  const counts = await withTenant(database, principal.tenantId, async (tx) => {
-    const byKind = new Map<TodoKind, number>();
-    for (const definition of TODO_DEFINITIONS) {
-      if (!canApprove(principal, definition.domain)) {
-        byKind.set(definition.kind, 0);
-        continue;
+  if (hasAnyApprove(principal)) {
+    const queried = await withTenant(database, principal.tenantId, async (tx) => {
+      const byKind = new Map<TodoKind, number>();
+      for (const definition of TODO_DEFINITIONS) {
+        if (!canApprove(principal, definition.domain)) continue;
+        byKind.set(definition.kind, await countPending(tx, principal, definition));
       }
-      byKind.set(definition.kind, await countPending(tx, principal, definition));
-    }
-    return byKind;
-  });
+      return byKind;
+    });
+    for (const [kind, count] of queried) counts.set(kind, count);
+  }
 
   const definitionsByKind = new Map(
     TODO_DEFINITIONS.map((definition) => [definition.kind, definition] as const),
