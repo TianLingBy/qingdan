@@ -3,7 +3,7 @@
 > 本文件是**「改动落在哪个目录，谁说了算」的唯一真源**。
 > `docs/TEAM-PLAN.md` 管人和板块；本文件管路径。两者冲突时，人/板块以 TEAM-PLAN 为准，路径路由以本文件为准。
 > 机器执行版是 `.github/workflows/route-review.yml`——**两者必须一致**，改一个必须同时改另一个。
-> 最近更新：2026-11-15
+> 最近更新：2026-11-16（`apps/web/`、`design/` 归前端池：何永上 `Meow-Yay` / 赖皓妍 `karryL921`，路由表 owner 记 karryL921，实际在两人间分配）
 
 ## 一、路由表
 
@@ -17,7 +17,8 @@
 | `docs/decisions.md` | TianLingBy | 全员 | `scope:decisions` | **critical（只允许追加）** |
 | `docs/轻单_接口契约*` | TianLingBy | 全员 | `scope:contracts` | **critical** |
 | `apps/api/src/modules/masterdata/`、`inventory/`、`processing/`、`internal-trade/` | Vince-Leong | TianLingBy | `scope:backend` | 普通 |
-| `apps/web/` | karryL921 | TianLingBy, lozy66 | `scope:web` | 普通 |
+| `apps/web/` | karryL921 | TianLingBy, lozy66, Meow-Yay | `scope:web` | 普通 |
+| `design/` | karryL921 | Meow-Yay | `scope:web` | 普通 |
 | `tests/` | TianLingBy | — | `scope:tests` | 普通 |
 | `tools/` | TianLingBy | — | `scope:tools` | 普通 |
 | `.github/` | TianLingBy | — | `scope:ci` | 普通 |
@@ -42,8 +43,9 @@
 
 同一个文件同一时间只有一个人改。
 
-- `apps/web/src/pages/**` —— 按页面归属，见 `docs/TEAM-PLAN.md` 第二节
+- `apps/web/src/pages/**` —— 归**前端池**（何永上 `Meow-Yay`、赖皓妍 `karryL921`），按页面组单点负责，页面组与业务对接人见 `docs/TEAM-PLAN.md` 第 2.2 节；业务负责人只给口径与评审，不提交页面代码
 - `apps/web/src/components/**` —— 归 Meow-Yay（何永上）；业务实现者提需求，不直接改组件，也不复制一份新的
+- `design/**` —— 归 karryL921（赖皓妍）出稿；实现人照稿落地，不自行改稿
 - 开工前先看 open PR 是否已经碰同一目录；碰了就先在 issue 里对齐，别并行改
 
 ## 四、改这张表的流程

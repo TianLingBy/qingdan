@@ -179,13 +179,14 @@ export function formatRate(rate: string | null): string {
   return `${negative ? '-' : ''}${integer}.${decimals}%`;
 }
 
-/** 提成比例快照同样是比例（`0.05` = 5%）；它**不随看价权限遮罩**（契约里非 null）。 */
-export function formatCommissionRate(rate: string): string {
+/** 提成比例快照同样是比例（`0.05` = 5%）；它**不随看价权限遮罩**，但撤销结算后为 null（D88）。 */
+export function formatCommissionRate(rate: string | null): string {
   return formatRate(rate);
 }
 
 /** 提成金额为 0 且比例也为 0 时，说明「本公司没配提成比例」（D77 ②），不是算错。 */
-export function commissionNote(rate: string, amount: string | null): string | null {
+export function commissionNote(rate: string | null, amount: string | null): string | null {
+  if (rate === null) return null;
   if (Number(rate) === 0 && (amount === null || Number(amount) === 0)) {
     return '提成比例为 0：确认结算时按「提成归属人 + 本公司」解析配置，没配就记 0（D77 ②）';
   }

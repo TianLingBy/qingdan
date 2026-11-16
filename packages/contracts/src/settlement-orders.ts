@@ -3,13 +3,15 @@ import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
 
 /**
- * C 结算单契约（契约第一批 §3.4；D2③ / D5 / D11 / D19 / D29 / D33 / D35 / D36 / D51 / D52 / D54）。
+ * C 结算单契约（契约第一批 §3.4；D2③ / D5 / D11 / D19 / D29 / D33 / D35 / D36 / D51 / D52 / D54 / D88）。
  *
  * 口径约束（别在这里「顺手加字段」）：
  * - **C 单状态是独立两态** `待确认 / 已结算`：**不复用** `documents.ts` 的 `HEADER_STATES`。
- *   C 单是「草稿 → 确认」，没有「进行中 / 已取消」；结算后不可冲正，错账走 R 退货（D2③）。
- * - **一期一单一次结算**（D19）：不支持部分结算 / 多次结算；E/N 单「已完成」时由系统自动
- *   生成草稿（D19 / D29），财务确认后才生效——本模块**不暴露创建端点**。
+ *   C 单是「草稿 → 确认」，没有「进行中 / 已取消」；确认错了走**撤销结算**退回「待确认」（D88），
+ *   不是冲正、也不删单（D2③）。
+ * - **一单一次结算、可撤销**（D19 / D88）：不支持部分结算；E/N 单「已完成」时由系统自动
+ *   生成草稿（D19 / D29），财务确认后才生效——本模块**不暴露创建端点**；撤销后整单退回
+ *   「待确认」，可再次确认（每次都重置结算期快照）。
  * - **毛利公式固化**（D5）：毛利 = 总售价 − 总成本；毛利率 = 毛利 ÷ 总售价。
  * - **净毛利 = 毛利 − 本单相关损失**（D26 / D33）：仅展示层聚合，不改 D5 毛利公式、不摊批次。
  * - **本单相关损失**（D35）= Σ(归属单 = 本单对应 E/N 单 的 B 单损失金额)；
@@ -21,15 +23,15 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  *   确认结算时按它在**本公司**解析比例（见 `commission-rates.ts`），无配置则比例记 0。
  * - **金额一律 decimal 字符串**（D54 `numeric(18,6)`），不用 `number`；
  *   `grossProfit` / `grossMarginRate` / `netProfit` 是**服务端计算值**，客户端不传。
- * - 写操作必记审计（D51）；普通读不记（D54 ②）；**结算确认属审批动作**，
- *   scope 用 `settlement.approve`，AI 默认禁止且必须给原因（D52① / D54 ⑥）。
+ * - 写操作必记审计（D51）；普通读不记（D54 ②）；**结算确认与撤销同属审批动作**，
+ *   scope 用 `settlement.approve`，AI 默认禁止且必须给原因（D52① / D54 ⑥ / D88）。
  *
  * 本批明确不做（写进契约，防止后续顺手加端点）：
  * - **不做 create**：C 单草稿由 E/N 单「已完成」时系统内部自动生成（D19 / D29）；
- * - **不做取消 / 冲正**：结算后不可冲正，错账走 R 退货（D2③）；
+ * - **不做取消 / 冲正**：确认错了走撤销结算（D88）退回「待确认」，不删单、不作物料冲正（D2③）；
  * - **不做提成规则配置端点与利润报表端点**：提成规则见 `commission-rates.ts`（D77，
  *   已从「后续批次」提前到本批）；利润报表是 `profit_report` 域（D43），仍未做；
- * - **不做部分结算 / 多次结算**（D19）；
+ * - **不做部分结算**（D19）：撤销只能整单退回「待确认」（D88）；
  * - **不做 R 退货触发的毛利 / 提成重算端点**：F4b 重算在退货批次落地（D30 / D40）。
  */
 
@@ -45,7 +47,8 @@ const NonNegativeDecimal = z
 
 /**
  * C 单独立两态（§3.4）：**不复用** `HEADER_STATES`。
- * 「待确认」= 系统自动生成的草稿，「已结算」= 财务确认后的终态（D19）。
+ * 「待确认」= 系统自动生成的草稿（或撤销后退回的状态），「已结算」= 财务确认后的结算态（D19）；
+ * 撤销结算把「已结算」整单退回「待确认」并清空结算期快照（D88）。
  */
 export const SETTLEMENT_ORDER_STATES = ['待确认', '已结算'] as const;
 export type SettlementOrderState = (typeof SETTLEMENT_ORDER_STATES)[number];
@@ -66,10 +69,10 @@ export const SettlementOrderSourceDocTypeSchema = z.enum(SETTLEMENT_SOURCE_DOC_T
  * - `totalSaleAmount` / `totalCostAmount`：计算值（来源单成交额与批次成本合计）；
  * - `grossProfit` = 总售价 − 总成本（D5），**可为负**；
  * - `grossMarginRate` = 毛利 ÷ 总售价（D5），**可为负**；
- * - `relatedLossAmount`：本单相关损失（D35），结算时快照（§11-5），非负；
- * - `netProfit` = 毛利 − 本单相关损失（D33），**可为负**；
- * - `commissionRateSnapshot`：**结算时快照**（D36），之后改比例不影响本单；
- * - `commissionAmount`：提成金额，负毛利记 0（D5④），非负；一期仅为报表数字（D11）。
+ * - `relatedLossAmount`：本单相关损失（D35），结算时快照（§11-5），非负；撤销后为 null（D88）；
+ * - `netProfit` = 毛利 − 本单相关损失（D33），**可为负**；撤销后为 null（D88）；
+ * - `commissionRateSnapshot`：**结算时快照**（D36），之后改比例不影响本单；撤销后为 null（D88）；
+ * - `commissionAmount`：提成金额，负毛利记 0（D5④），非负；一期仅为报表数字（D11）；撤销后为 null（D88）。
  *
  * **金额脱敏（D27 / D78）**：调用者无 `settlement.view_price` 时，下列金额字段返回 `null`
  * （字段保留、不删不出 0，也不 403）——「可见记录、金额隐藏」；普通读不记日志，
@@ -95,13 +98,13 @@ export const SettlementOrderSchema = z.object({
   grossProfit: DecimalString.nullable(),
   /** 毛利率 = 毛利 ÷ 总售价（D5）；服务端计算值，可为负；无看价权限 → null（D78）。 */
   grossMarginRate: DecimalString.nullable(),
-  /** 本单相关损失（D35）：结算时快照，非负；无看价权限 → null（D78）。 */
+  /** 本单相关损失（D35）：结算时快照，非负；无看价权限 → null（D78），撤销后 → null（D88）。 */
   relatedLossAmount: NonNegativeDecimal.nullable(),
-  /** 净毛利 = 毛利 − 本单相关损失（D33）；服务端计算值，可为负；无看价权限 → null（D78）。 */
+  /** 净毛利 = 毛利 − 本单相关损失（D33）；服务端计算值，可为负；无看价权限 → null（D78），撤销后 → null（D88）。 */
   netProfit: DecimalString.nullable(),
-  /** 提成比例快照：**结算时快照**，之后改比例不影响本单（D36 / D5④）。 */
-  commissionRateSnapshot: NonNegativeDecimal,
-  /** 提成金额：负毛利记 0（D5④），一期仅为报表数字（D11）；无看价权限 → null（D78）。 */
+  /** 提成比例快照：**结算时快照**，之后改比例不影响本单（D36 / D5④）；撤销后为 null（D88）。 */
+  commissionRateSnapshot: NonNegativeDecimal.nullable(),
+  /** 提成金额：负毛利记 0（D5④），一期仅为报表数字（D11）；无看价权限 → null（D78），撤销后 → null（D88）。 */
   commissionAmount: NonNegativeDecimal.nullable(),
   /**
    * 提成归属人：来源单负责人（D77 ②）。草稿生成时写入；确认结算时按它在**本公司**
@@ -158,14 +161,27 @@ export const SettlementOrderListQuerySchema = PageQuerySchema.extend({
 });
 
 /**
- * settlement 模块 C 结算单端点（3 条，契约第一批 §3.4）。
+ * 撤销结算入参（D88 / #288）：整单退回「待确认」。
+ *
+ * - `confirm: true`：第二次确认的护栏，防止误触把已结算单退回；
+ * - `reason`：**必填**原因（1–200 字），落审计（D51）；
+ *   AI 侧另有 `X-Reason` 闸门（`ai.reasonRequired`），body reason 是人类审计原因。
+ */
+export const SettlementUnsettleInputSchema = z.object({
+  confirm: z.literal(true, '撤销结算必须显式确认 confirm: true'),
+  reason: z.string().trim().min(1, '必须填写撤销原因').max(200),
+});
+export type SettlementUnsettleInput = z.infer<typeof SettlementUnsettleInputSchema>;
+
+/**
+ * settlement 模块 C 结算单端点（4 条，契约第一批 §3.4 / D88）。
  *
  * operationId 以 `settlement` 开头（与功能域同名，registry 校验要求）。
- * 权限：查询 `settlement.read`；**确认结算属审批动作**，scope 用 `settlement.approve`（D44）。
- * 审计：普通读不记（D54 ②）；**有看价权限的详情读取记一条 `amount.detail`（D51① / D78）**；确认结算记 write（D51）。
- * AI：**结算确认属危险动作，默认禁止且必须给原因**（D52① / D54 ⑥）。
- * 并发：confirm 强制 If-Match 强 ETag。
- * 一期一单一次结算（D19）；结算后不可冲正，走退货（D2③）。
+ * 权限：查询 `settlement.read`；**确认 / 撤销结算属审批动作**，scope 用 `settlement.approve`（D44）。
+ * 审计：普通读不记（D54 ②）；**有看价权限的详情读取记一条 `amount.detail`（D51① / D78）**；确认 / 撤销结算记 write（D51）。
+ * AI：**结算确认 / 撤销属危险动作，默认禁止且必须给原因**（D52① / D54 ⑥ / D88）。
+ * 并发：confirm / unsettle 强制 If-Match 强 ETag。
+ * 一单一次结算但可撤销（D19 / D88）：撤销后退回「待确认」可再次确认。
  */
 export const SETTLEMENT_ORDER_ROUTES: readonly RouteDef[] = [
   defineRoute({
@@ -200,10 +216,25 @@ export const SETTLEMENT_ORDER_ROUTES: readonly RouteDef[] = [
     domain: 'settlement',
     action: 'approve',
     summary:
-      '确认结算（待确认 → 已结算；一期一单一次 D19；结算后不可冲正走退货 D2③；AI 禁止审批 D52）',
+      '确认结算（待确认 → 已结算；一期一单一次 D19；AI 禁止审批 D52；确认错了可撤销 D88）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
     response: { status: 200, schema: SettlementOrderDetailSchema },
+  }),
+  defineRoute({
+    module: 'settlement',
+    operationId: 'settlement.order.unsettle',
+    method: 'POST',
+    path: '/api/v1/settlement-orders/{id}/unsettle',
+    domain: 'settlement',
+    action: 'approve',
+    summary:
+      '撤销结算（已结算 → 待确认；整单退回并清空结算期快照，必需原因且快照原值进审计；D88；AI 禁止审批 D52）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    request: { body: SettlementUnsettleInputSchema },
+    response: { status: 200, schema: SettlementOrderSchema },
   }),
 ];

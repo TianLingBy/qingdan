@@ -29,6 +29,7 @@ import { PRINT_ROUTES } from './prints.js';
 import { PAYMENT_ROUTES } from './payments.js';
 import { BILLING_ROUTES } from './billings.js';
 import { PROFIT_REPORT_ROUTES } from './profit-report.js';
+import { WORKBENCH_TODO_ROUTES } from './todos.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -280,6 +281,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...PAYMENT_ROUTES,
   // —— billing：平台订阅 2 条（读 / 运营调整，一期仅契约）——
   ...BILLING_ROUTES,
+  // —— platform：工作台待办 1 条（D89 / #289；域 = workbench，跨模块只读聚合）——
+  ...WORKBENCH_TODO_ROUTES,
   // —— report 模块：利润报表 2 条（D43 / #97，Issue #164）——
   ...PROFIT_REPORT_ROUTES,
 ];

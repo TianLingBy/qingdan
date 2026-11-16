@@ -41,7 +41,7 @@ const FLOW_ID = '01900000-0000-7000-8000-000000005131';
 const FULL_SCOPE: ScopeMatrix = [
   {
     domain: 'internal_trade',
-    actions: ['read', 'create', 'update', 'ship', 'delete', 'view_price'],
+    actions: ['read', 'create', 'update', 'ship', 'approve', 'delete', 'view_price'],
   },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [

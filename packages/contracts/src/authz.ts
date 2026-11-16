@@ -30,6 +30,7 @@ export const ScopeEntrySchema = z.object({
     'api_integration',
     'payment',
     'billing',
+    'workbench',
   ]),
   actions: z.array(
     z.enum(['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'view_handler', 'export']),

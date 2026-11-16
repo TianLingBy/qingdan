@@ -1,0 +1,35 @@
+name: numbering
+
+# 迁移号与决策号是全局单序列，多个 PR 并行必然撞号（2026-11-16 四个 PR 抢 0033、三个抢 D87）。
+# 这里把「撞号」的发现时机从「合并瞬间」提前到「一推上来就报」，并直接给出应取的号。
+# 规则全文见 docs/DISPATCH-RULES.md §十二。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: numbering-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  numbering:
+    name: numbering (迁移号与决策号唯一)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # 要跟 base 分支对比，必须拿全量历史与远端分支
+          fetch-depth: 0
+
+      - name: 安装 Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 检查编号唯一性
+        run: node tools/check-numbering.mjs --base origin/${{ github.base_ref }}

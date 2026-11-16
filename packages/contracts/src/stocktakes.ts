@@ -23,7 +23,7 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - **审批只能人类执行**：AI 默认禁止且必须给原因（D52① / D54 ⑥）。
  *
  * 本批明确不做（等后续批次）：
- * - **不做驳回端点**（`stocktake.reject`）：一期先做「批准」路径，驳回留后续批次；
+ * - **不做「已驳回后重新提交 / 重新审批」**：批准与驳回都是终态；
  * - **不做批量盘点**：一期一张盘点单对应一个批次；
  * - **不做盘点明细表**：一个批次一条差异，够一期用。
  */
@@ -40,7 +40,7 @@ const SignedDecimal = z
 
 /**
  * 盘点单状态（审批流三态）：**不复用** `HEADER_STATES`。
- * 待审批 → 已批准 / 已驳回；一期只做「批准」路径，驳回端点留后续批次。
+ * 待审批 → 已批准 / 已驳回；批准与驳回都是终态。
  */
 export const STOCKTAKE_STATUSES = ['待审批', '已批准', '已驳回'] as const;
 export type StocktakeStatus = (typeof STOCKTAKE_STATUSES)[number];
@@ -71,6 +71,7 @@ export function stocktakeApprovable(status: StocktakeStatus): StocktakeApprovabl
  * - `stocktakeNo` 服务端按 D16 取号（`I-<公司码4>-<日期8>-<流水4>`）；
  * - `diffQty = actualQty − bookQty` 是**服务端计算值**，可正可负；
  * - `approverId` 审批后落值，审批前为空；
+ * - `rejectReason` 驳回后落值，其余状态为空（驳回必须留原因）；
  * - `status` 是审批流三态，不复用单据框架的 `HEADER_STATES`。
  */
 export const StocktakeSchema = z.object({
@@ -93,6 +94,8 @@ export const StocktakeSchema = z.object({
   applicantId: z.string(),
   /** 审批人：审批前为空。 */
   approverId: z.string().nullable(),
+  /** 驳回原因：驳回后落值，其余状态为空（驳回必须留原因）。 */
+  rejectReason: z.string().nullable(),
   /** 备注可空，≤200。 */
   remark: z.string().max(200).nullable(),
   /** 乐观锁版本：审批用强 ETag `"<version>"`（D60③ 同款）。 */
@@ -175,6 +178,16 @@ export const StocktakeDecreaseInputSchema = StocktakeCreateInputSchema.refine(
 );
 
 /**
+ * 驳回盘点单入参：危险审批动作，要求显式确认 + 必填原因（≤200）。
+ * 原因原样落 `reject_reason` 与审计；驳回**不动库存**（不调库存服务、不写流水）。
+ */
+export const StocktakeRejectInputSchema = z.object({
+  confirm: z.literal(true),
+  reason: z.string().trim().min(1, '必须填写驳回原因').max(200),
+});
+export type StocktakeRejectInput = z.infer<typeof StocktakeRejectInputSchema>;
+
+/**
  * 盘点单列表查询：公司 / 状态 / 关键字（单号），游标分页。
  * 公司隔离（D15）由服务端按调用者可见公司集合再收口。
  */
@@ -185,17 +198,18 @@ export const StocktakeListQuerySchema = PageQuerySchema.extend({
 });
 
 /**
- * inventory 模块盘点调整 I 端点（5 条，契约第一批 §4 / §8；D71 拆盘盈/盘亏）。
+ * inventory 模块盘点调整 I 端点（6 条，契约第一批 §4 / §8；D71 拆盘盈/盘亏）。
  *
  * operationId 以 `stocktake` 开头（功能域 = 权限域，registry 校验要求）；
  * **不要用 `stocktake_page`**：那是页面权限域，不是本单据的功能域。
  * 权限：查询 `stocktake.read`；盘盈 `stocktake.create`；盘亏 `stocktake.delete`（仅删减）；
- * **审批 `stocktake.approve`**（D71）。
- * 审计：普通读不记（D54 ②）；发起 / 审批记 write（D51）。
- * AI：发起盘点默认禁止；**审批只能人类，禁止 AI 且必须给原因**（D52① / D54 ⑥）。
- * 并发：审批强制 If-Match 强 ETag。
+ * **审批 / 驳回 `stocktake.approve`**（D71；能批才能驳）。
+ * 审计：普通读不记（D54 ②）；发起 / 审批 / 驳回记 write（D51）。
+ * AI：发起盘点默认禁止；**审批 / 驳回只能人类，禁止 AI 且必须给原因**（D52① / D54 ⑥）。
+ * 并发：审批 / 驳回强制 If-Match 强 ETag。
  * 审批通过后追加一条库存流水（盘盈为正、盘亏为负），**不物理删除任何行**（D47）；
  * **不在此端点直接改批次数量**——库存写入只能经 inventory 服务函数（D67）。
+ * 驳回只改状态并落原因，**不动库存、不写流水**。
  */
 export const STOCKTAKE_ROUTES: readonly RouteDef[] = [
   defineRoute({
@@ -262,5 +276,20 @@ export const STOCKTAKE_ROUTES: readonly RouteDef[] = [
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
     response: { status: 200, schema: StocktakeDetailSchema },
+  }),
+  defineRoute({
+    module: 'inventory',
+    operationId: 'stocktake.reject',
+    method: 'POST',
+    path: '/api/v1/stocktakes/{id}/reject',
+    domain: 'stocktake',
+    action: 'approve',
+    summary:
+      '驳回盘点单（必须写明原因；驳回不动库存、不写流水；AI 禁止审批且必须给原因）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    request: { body: StocktakeRejectInputSchema },
+    response: { status: 200, schema: StocktakeSchema },
   }),
 ];

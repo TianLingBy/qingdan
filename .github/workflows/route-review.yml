@@ -81,9 +81,16 @@ jobs:
               {
                 prefixes: ['apps/web/'],
                 owner: 'karryL921',
-                notify: ['TianLingBy', 'lozy66'],
+                notify: ['TianLingBy', 'lozy66', 'Meow-Yay'],
                 label: 'scope:web',
-                reason: '前端页面变更',
+                reason: '前端页面变更（前端池：何永上 / 赖皓妍）',
+              },
+              {
+                prefixes: ['design/'],
+                owner: 'karryL921',
+                notify: ['Meow-Yay'],
+                label: 'scope:web',
+                reason: '视觉设计稿变更（前端池：何永上 / 赖皓妍）',
               },
               {
                 prefixes: ['docs/decisions.md'],

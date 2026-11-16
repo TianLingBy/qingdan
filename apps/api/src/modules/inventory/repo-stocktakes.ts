@@ -14,7 +14,7 @@ import type { SqlClient } from '../../platform/db/client.js';
  * - 所有查询都带 tenant_id + company_id = ANY(可见公司集合)；
  * - 数量保持 decimal 字符串，读出时由 SQL trim_scale 规范化；
  * - 差异量由 INSERT 语句按 actual_qty - book_qty 计算，应用侧不传；
- * - 审批使用 version + status 条件原子更新；本层不做任何物理删除（D47）。
+ * - 审批 / 驳回使用 version + status 条件原子更新；本层不做任何物理删除（D47）。
  */
 
 export interface StocktakeRepoContext {
@@ -50,6 +50,7 @@ export interface StocktakeState {
   readonly batchId: string;
   readonly status: StocktakeStatus;
   readonly diffQty: string;
+  readonly rejectReason: string | null;
   readonly version: number;
 }
 
@@ -65,6 +66,7 @@ interface StocktakeRow {
   status: string;
   applicant_id: string;
   approver_id: string | null;
+  reject_reason: string | null;
   remark: string | null;
   version: number;
   created_at: Date | string;
@@ -77,6 +79,7 @@ interface StocktakeStateRow {
   batch_id: string;
   status: string;
   diff_qty: string | number;
+  reject_reason: string | null;
   version: number;
 }
 
@@ -91,6 +94,7 @@ const STOCKTAKE_COLUMNS = `s.id,
   s.status,
   s.applicant_id,
   s.approver_id,
+  s.reject_reason,
   s.remark,
   s.version,
   s.created_at,
@@ -121,6 +125,7 @@ function mapStocktake(row: StocktakeRow): Stocktake {
     status: row.status as StocktakeStatus,
     applicantId: row.applicant_id,
     approverId: row.approver_id,
+    rejectReason: row.reject_reason,
     remark: row.remark,
     version: row.version,
     createdAt: toDate(row.created_at).toISOString(),
@@ -207,6 +212,7 @@ export async function loadStocktakeState(
             s.batch_id,
             s.status,
             trim_scale(s.diff_qty) AS diff_qty,
+            s.reject_reason,
             s.version
        FROM inventory_stocktake s
       WHERE s.id = $1::uuid
@@ -222,6 +228,7 @@ export async function loadStocktakeState(
     batchId: row.batch_id,
     status: row.status as StocktakeStatus,
     diffQty: decimal(row.diff_qty),
+    rejectReason: row.reject_reason,
     version: row.version,
   };
 }
@@ -309,6 +316,36 @@ export async function approveStocktake(
         AND status = '待审批'
       RETURNING id`,
     [id, ctx.tenantId, [...ctx.companyIds], approverId, expectedVersion],
+  );
+  return result.rows.length > 0;
+}
+
+/**
+ * 驳回：待审批 -> 已驳回，一次且仅一次，落驳回原因。
+ *
+ * 版本或状态已被并发修改时返回 null，由用例映射冲突；本层不物理删除。
+ * **驳回不动库存**：不调库存服务、不写 `inventory_flow`、不改批次数量（D47 / D67）。
+ */
+export async function rejectStocktake(
+  ctx: StocktakeRepoContext,
+  id: string,
+  expectedVersion: number,
+  approverId: string,
+  reason: string,
+): Promise<boolean> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE inventory_stocktake
+        SET status = '已驳回',
+            reject_reason = $6,
+            approver_id = $4::uuid,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+        AND version = $5
+        AND status = '待审批'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], approverId, expectedVersion, reason],
   );
   return result.rows.length > 0;
 }

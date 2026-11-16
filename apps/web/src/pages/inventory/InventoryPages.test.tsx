@@ -64,6 +64,7 @@ const STOCKTAKE: Stocktake = {
   status: '待审批',
   applicantId: 'employee-2',
   approverId: null,
+  rejectReason: null,
   remark: '现场复核',
   version: 1,
   createdAt: '2026-11-10T09:00:00.000Z',
