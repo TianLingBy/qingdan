@@ -2,6 +2,7 @@ import type { CommissionRate, CommissionRateCreateInput } from '@qingdan/contrac
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../api/client';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { fetchEmployees } from '../../api/platform';
 import { buildEmployeeNameMap, shortIdLabel } from '../../lib/employee-directory';
 import { useCompanyLabel } from '../../lib/company-directory';
@@ -319,24 +320,21 @@ export function CommissionRatesPanel({
 
       <div className="overflow-x-auto rounded-lg border border-slate-200">
         {companyId === '' ? (
-          <p className="p-4 text-sm text-slate-500">请先选择公司。</p>
+          <ListEmpty title="请先选择公司。" />
         ) : list.isPending ? (
-          <p className="p-4 text-sm text-slate-500">正在加载配置…</p>
+          <ListLoading label="正在加载配置…" rows={2} />
         ) : list.error ? (
-          <div className="p-4">
-            <p className="text-sm text-red-700">{describeCommissionRateError(list.error)}</p>
-            <button
-              type="button"
-              onClick={() => void list.refetch()}
-              className="mt-2 rounded border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              重试
-            </button>
-          </div>
+          <ListError
+            title="提成配置加载失败"
+            error={list.error}
+            message={describeCommissionRateError(list.error)}
+            onRetry={() => void list.refetch()}
+          />
         ) : rows.length === 0 ? (
-          <p className="p-4 text-sm text-slate-500">
-            该公司还没有提成配置。没配就按 0 记提成（D77 ②），不会用别的公司或别人的比例兜底。
-          </p>
+          <ListEmpty
+            title="该公司还没有提成配置。"
+            hint="没配就按 0 记提成（D77 ②），不会用别的公司或别人的比例兜底。"
+          />
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500">

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import type { Position } from '@qingdan/contracts';
 import { platformAdminApi } from '../../api/platform-admin';
 import { ApiError } from '../../api/client';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { ACTION_WORDS, DOMAIN_WORDS } from '../employees/domain-words';
 import { authApi, authKeys } from '../auth/auth-api';
 import { allows, type ScopeAction } from '../../lib/access';
@@ -184,36 +185,20 @@ export function PermissionsPage() {
 
       <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white">
         {listQuery.isPending ? (
-          <div className="space-y-2 p-4" aria-busy="true">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-9 animate-pulse rounded bg-slate-100" />
-            ))}
-            <p className="pt-1 text-xs text-slate-400">岗位列表加载中…</p>
-          </div>
+          <ListLoading label="岗位列表加载中…" />
         ) : listQuery.isError ? (
-          <div className="p-6 text-center">
-            <p className="text-sm text-rose-600">
-              岗位列表加载失败：{listQuery.error instanceof ApiError
-                ? `${listQuery.error.message}（${listQuery.error.code}）`
-                : '未知错误'}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              {listQuery.error instanceof ApiError && listQuery.error.status === 403
+          <ListError
+            title="岗位列表加载失败"
+            error={listQuery.error}
+            hint={
+              listQuery.error instanceof ApiError && listQuery.error.status === 403
                 ? '你没有权限设置权限（permission.read），请联系老板开通。'
-                : '请确认本地 API 已启动后重试。'}
-            </p>
-            <button
-              type="button"
-              onClick={() => listQuery.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              重试
-            </button>
-          </div>
+                : '请确认本地 API 已启动后重试。'
+            }
+            onRetry={() => void listQuery.refetch()}
+          />
         ) : positions.length === 0 ? (
-          <div className="p-10 text-center">
-            <p className="text-sm text-slate-500">还没有岗位模板。点击右上角「新建岗位」创建。</p>
-          </div>
+          <ListEmpty title="还没有岗位模板。点击右上角「新建岗位」创建。" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-sm">

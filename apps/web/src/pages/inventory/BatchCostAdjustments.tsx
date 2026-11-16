@@ -6,6 +6,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError } from '../../api/client';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { formatMoney, isPositiveDecimal } from '../../lib/decimal';
 import {
   COST_ADJUSTMENT_STATUS_LABEL,
@@ -322,29 +323,16 @@ export function BatchCostAdjustments({
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         {list.isPending ? (
-          <div className="space-y-2 p-4" aria-busy="true">
-            {[0, 1, 2].map((item) => (
-              <div key={item} className="h-8 animate-pulse rounded bg-slate-100" />
-            ))}
-            <p className="text-xs text-slate-400">成本更正历史加载中…</p>
-          </div>
+          <ListLoading label="成本更正历史加载中…" />
         ) : list.isError ? (
-          <div className="p-5 text-center">
-            <p className="text-sm text-rose-600">
-              {costAdjustmentErrorText(list.error, '成本更正历史加载失败')}
-            </p>
-            <button
-              type="button"
-              onClick={() => void list.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              重试
-            </button>
-          </div>
+          <ListError
+            title="成本更正历史加载失败"
+            error={list.error}
+            message={costAdjustmentErrorText(list.error, '成本更正历史加载失败')}
+            onRetry={() => void list.refetch()}
+          />
         ) : items.length === 0 ? (
-          <p className="p-6 text-center text-sm text-slate-500">
-            暂无成本更正记录。只有确实需要修正批次锁价时才发起。
-          </p>
+          <ListEmpty title="暂无成本更正记录。只有确实需要修正批次锁价时才发起。" />
         ) : (
           <table className="w-full min-w-[960px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">

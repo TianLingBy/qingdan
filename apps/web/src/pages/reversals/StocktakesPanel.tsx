@@ -40,6 +40,7 @@ import {
   StatusPill,
   TableSkeleton,
 } from './reversals-ui';
+import { ListError } from '../../components/ListStates';
 
 export interface StocktakesPanelProps {
   /** 盘盈：`stocktake.create`。 */
@@ -350,9 +351,11 @@ export function StocktakesPanel({
         </div>
 
         {list.isError ? (
-          <div className="mt-3">
-            <ErrorBar message="列表加载失败" onRetry={() => void list.refetch()} />
-          </div>
+          <ListError
+            title="列表加载失败"
+            error={list.error}
+            onRetry={() => void list.refetch()}
+          />
         ) : list.isPending ? (
           <TableSkeleton />
         ) : items.length === 0 ? (
