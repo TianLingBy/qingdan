@@ -1,6 +1,7 @@
 import { AppError, ROUTES, etagOf, routesOfModule, type RouteDef } from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
+import { maskHandlerId, maskHandlerIdInPage } from '../../platform/authz/handler-mask.js';
 import {
   cancelProcessingOrder,
   completeProcessingOrder,
@@ -48,7 +49,8 @@ export function registerProcessingRoutes(app: FastifyInstance): void {
   const handlers: RouteHandlers = {
     'processing.order.list.read': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);
-      return await listProcessingOrders({ database: instance.database, request });
+      const page = await listProcessingOrders({ database: instance.database, request });
+      return maskHandlerIdInPage(page, request.principal);
     },
     'processing.order.create': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
@@ -64,7 +66,7 @@ export function registerProcessingRoutes(app: FastifyInstance): void {
       assertDatabaseConfigured(instance, route);
       const detail = await getProcessingOrder({ database: instance.database, request });
       reply.header('ETag', etagOf(detail.version));
-      return detail;
+      return maskHandlerId(detail, request.principal);
     },
     'processing.order.print': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);

@@ -46,6 +46,7 @@ export const ACTION_WORDS: readonly { key: string; label: string }[] = [
   { key: 'ship', label: '出' },
   { key: 'delete', label: '删' },
   { key: 'view_price', label: '看价' },
+  { key: 'view_handler', label: '看经手人' },
   { key: 'export', label: '导' },
 ] as const;
 

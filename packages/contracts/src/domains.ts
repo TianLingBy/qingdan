@@ -37,7 +37,7 @@ export type DomainKey = keyof typeof DOMAINS;
 
 export const DOMAIN_KEYS = Object.keys(DOMAINS) as DomainKey[];
 
-/** 8 动作（D4 底层模型）：查 / 建 / 编 / 审 / 出（出库/发货）/ 删 / 看价 / 导。 */
+/** 9 动作（D4 底层模型）：查 / 建 / 编 / 审 / 出（出库/发货）/ 删 / 看价 / 看经手人 / 导。 */
 export const ACTIONS = {
   read: '查',
   create: '建',
@@ -46,6 +46,7 @@ export const ACTIONS = {
   ship: '出',
   delete: '删',
   view_price: '看价',
+  view_handler: '看经手人',
   export: '导',
 } as const;
 

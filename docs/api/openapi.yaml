@@ -292,6 +292,8 @@ paths:
                     type: string
                   displayName:
                     type: string
+                  isOwner:
+                    type: boolean
                   companyIds:
                     type: array
                     items:
@@ -341,17 +343,42 @@ paths:
                               - ship
                               - delete
                               - view_price
+                              - view_handler
                               - export
                       required:
                         - domain
                         - actions
                       additionalProperties: false
+                  entries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        path:
+                          type: string
+                        page:
+                          type: string
+                        title:
+                          type: string
+                        domain:
+                          type: string
+                      required:
+                        - id
+                        - path
+                        - page
+                        - title
+                        - domain
+                      additionalProperties: false
                 required:
                   - employeeId
                   - tenantId
                   - displayName
+                  - isOwner
                   - companyIds
                   - scope
+                  - entries
                 additionalProperties: false
         default:
           description: 错误（统一错误体）
@@ -790,6 +817,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - view_handler
                             - export
                     required:
                       - domain
@@ -907,6 +935,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - view_handler
                             - export
                     required:
                       - domain
@@ -1255,6 +1284,7 @@ paths:
                             - ship
                             - delete
                             - view_price
+                            - view_handler
                             - export
                     required:
                       - domain
@@ -1451,6 +1481,7 @@ paths:
                           - ship
                           - delete
                           - view_price
+                          - view_handler
                           - export
                       granted:
                         type: boolean
@@ -7067,6 +7098,7 @@ paths:
                             - ship
                             - delete
                             - view_price
+                            - view_handler
                             - export
                       required:
                         - domain
@@ -7366,6 +7398,7 @@ components:
                     - ship
                     - delete
                     - view_price
+                    - view_handler
                     - export
             required:
               - domain
@@ -7480,6 +7513,7 @@ components:
                     - ship
                     - delete
                     - view_price
+                    - view_handler
                     - export
             required:
               - domain
@@ -7993,6 +8027,7 @@ components:
                     - approve
                     - ship
                     - delete
+                    - view_handler
                     - export
             required:
               - domain
@@ -8567,7 +8602,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -8697,7 +8734,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -8970,7 +9009,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -9104,7 +9145,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -9287,7 +9330,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         materialBatchIds:
           type: array
           items:
@@ -9418,7 +9463,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         materialBatchIds:
           type: array
           items:
@@ -9564,7 +9611,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:
@@ -9665,7 +9714,9 @@ components:
             - 已完成
             - 已取消
         handlerId:
-          type: string
+          type:
+            - string
+            - "null"
         lines:
           type: array
           items:

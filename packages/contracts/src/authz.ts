@@ -33,7 +33,7 @@ export const ScopeEntrySchema = z.object({
     'workbench',
   ]),
   actions: z.array(
-    z.enum(['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'export']),
+    z.enum(['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'view_handler', 'export']),
   ),
 });
 

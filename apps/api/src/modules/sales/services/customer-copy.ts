@@ -181,7 +181,7 @@ export function renderSalesOrderCustomerCopy(
     <div><dt>单号</dt><dd>${escapeHtml(detail.orderNo)}</dd></div>
     <div><dt>日期</dt><dd>${escapeHtml(formatDate(detail.createdAt))}</dd></div>
     <div><dt>客户</dt><dd>${escapeHtml(detail.customerName)}</dd></div>
-    <div><dt>经办人</dt><dd>${escapeHtml(detail.handlerId)}</dd></div>
+    <div><dt>经办人</dt><dd>${escapeHtml(detail.handlerId ?? '—')}</dd></div>
   </dl>
 
   <section class="section">

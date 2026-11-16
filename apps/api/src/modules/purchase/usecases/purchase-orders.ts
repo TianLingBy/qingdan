@@ -479,7 +479,7 @@ export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Pro
       }
       await stockFlowPort().createBatch(tx, {
         tenantId: principal.tenantId, companyId: order.companyId, productId,
-        qty: line.qty, lockedUnitCost: line.adjustedUnitCost, custodianId: order.handlerId,
+        qty: line.qty, lockedUnitCost: line.adjustedUnitCost, custodianId: order.handlerId!,
         sourceDocType: 'A', sourceDocId: id, handledBy: principal.employeeId,
       });
     }

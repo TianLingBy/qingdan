@@ -126,10 +126,10 @@ describe('权限判定（D15 / D50 / D52.1，三层合并 + token 交集）', ()
   it('老板全权限免配：scope 覆盖全部功能域 × 全部动作（D15 / F8）', async () => {
     const result = await computeAuthz(test.database, { employeeId: EMP_OWNER, tenantId: TENANT });
     expect(result).not.toBeNull();
-    // 25 个功能域全部可读；每个域 8 个动作齐全（老板不依赖岗位绑定）
+    // 25 个功能域全部可读；每个域 9 个动作齐全（老板不依赖岗位绑定）
     expect(result!.scope).toHaveLength(25);
     for (const entry of result!.scope) {
-      expect(entry.actions).toHaveLength(8);
+      expect(entry.actions).toHaveLength(9);
     }
   });
 
@@ -162,5 +162,60 @@ describe('权限判定（D15 / D50 / D52.1，三层合并 + token 交集）', ()
   it('跨租户查询 → null（员工不属于该租户）', async () => {
     const result = await computeAuthz(test.database, { employeeId: EMP_SALES, tenantId: TENANT_OTHER });
     expect(result).toBeNull();
+  });
+
+  it('view_handler：自定义岗位（preset_key 为空）+ 授予权限点即可看负责人（不按岗位判定）', async () => {
+    // POSITION_SALES 的 preset_key 是 NULL（本套测试数据未设预设键），授 view_handler 后即可看。
+    await test.database.query(
+      `INSERT INTO position_permission (tenant_id, position_id, domain, action, granted)
+       VALUES ($1, $2, 'sales', 'view_handler', true)`,
+      [TENANT, POSITION_SALES],
+    );
+    const result = await computeAuthz(test.database, { employeeId: EMP_SALES, tenantId: TENANT });
+    expect(result).not.toBeNull();
+    expect(result!.canViewHandler).toBe(true);
+  });
+
+  it('view_handler：manager 岗位默认授予，撤销权限点后不可看（可被撤销）', async () => {
+    const POSITION_MANAGER = '01900000-0000-7000-8000-000000000213';
+    const EMP_MANAGER = '01900000-0000-7000-8000-000000000224';
+    await test.database.transaction(async (tx) => {
+      await tx.query(
+        `INSERT INTO position (id, tenant_id, name, kind, is_system, preset_key)
+         VALUES ($1, $2, '经理', '预设', true, 'manager')`,
+        [POSITION_MANAGER, TENANT],
+      );
+      // 模拟 seed 默认：manager 岗位授予 sales.read + sales.view_handler。
+      await tx.query(
+        `INSERT INTO position_permission (tenant_id, position_id, domain, action, granted)
+         VALUES ($1, $2, 'sales', 'read', true), ($1, $2, 'sales', 'view_handler', true)`,
+        [TENANT, POSITION_MANAGER],
+      );
+      await tx.query(
+        `INSERT INTO employee (id, tenant_id, employee_no, phone, name, status, is_owner)
+         VALUES ($1, $2, '000004', '10000000004', '经理丁', '在职', false)`,
+        [EMP_MANAGER, TENANT],
+      );
+      await tx.query(
+        `INSERT INTO employee_company_position (tenant_id, employee_id, company_id, position_id)
+         VALUES ($1, $2, $3, $4)`,
+        [TENANT, EMP_MANAGER, COMPANY_A, POSITION_MANAGER],
+      );
+    });
+
+    // 默认授予：可见（preset_key='manager' 本身不带来可见性，是权限点带来的）。
+    const before = await computeAuthz(test.database, { employeeId: EMP_MANAGER, tenantId: TENANT });
+    expect(before).not.toBeNull();
+    expect(before!.canViewHandler).toBe(true);
+
+    // 撤销权限点：从岗位模板里撤掉 view_handler。
+    await test.database.query(
+      `UPDATE position_permission SET granted = false
+        WHERE tenant_id = $1 AND position_id = $2 AND domain = 'sales' AND action = 'view_handler'`,
+      [TENANT, POSITION_MANAGER],
+    );
+    const after = await computeAuthz(test.database, { employeeId: EMP_MANAGER, tenantId: TENANT });
+    expect(after).not.toBeNull();
+    expect(after!.canViewHandler).toBe(false);
   });
 });

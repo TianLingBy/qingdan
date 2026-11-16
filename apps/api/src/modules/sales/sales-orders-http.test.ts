@@ -276,6 +276,37 @@ describe('sales 销售单 HTTP（PGlite + seed 演示租户）', () => {
     expect(reads.rows[0]?.count).toBe('0');
   });
 
+  it('负责人字段按身份脱敏：老板/经理可见 handlerId，销售返回 null（Issue #227）', async () => {
+    const order = await createOne(nextRequestId('handler-mask-seed'));
+
+    const managerCookie = await login(app, '10000000002', 'req-sales-manager-login');
+    const salesCookie = await login(app, '10000000003', 'req-sales-sales-login');
+
+    const listAs = async (cookie: string, requestId: string) =>
+      app.inject({
+        method: 'GET',
+        url: '/api/v1/sales-orders',
+        headers: readHeaders(cookie, requestId),
+      });
+
+    const handlerOf = (response: Awaited<ReturnType<typeof listAs>>): string | null => {
+      const page = response.json() as { items: Array<{ id: string; handlerId: string | null }> };
+      return page.items.find((item) => item.id === order.id)?.handlerId ?? null;
+    };
+
+    const asOwner = await listAs(ownerCookie, 'req-sales-handler-owner');
+    const asManager = await listAs(managerCookie, 'req-sales-handler-manager');
+    const asSales = await listAs(salesCookie, 'req-sales-handler-sales');
+
+    expect(asOwner.statusCode).toBe(200);
+    expect(asManager.statusCode).toBe(200);
+    expect(asSales.statusCode).toBe(200);
+
+    expect(handlerOf(asOwner)).toBe(DEMO_IDS.ownerEmployeeId);
+    expect(handlerOf(asManager)).toBe(DEMO_IDS.ownerEmployeeId);
+    expect(handlerOf(asSales)).toBeNull();
+  });
+
   it('D20 / D39：破下限、负数费用、非法商品 / 批次 → 422；失败写操作留审计', async () => {
     const belowFloor = await createOrder(nextRequestId('below-floor'), {
       lines: [{ ...LINE, unitPrice: '14.999999' }],
