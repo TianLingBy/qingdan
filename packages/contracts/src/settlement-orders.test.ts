@@ -15,6 +15,7 @@ import {
   SettlementOrderSchema,
   SettlementOrderSourceDocTypeSchema,
   SettlementOrderStatusSchema,
+  SettlementUnsettleInputSchema,
   settlementConfirmable,
 } from './settlement-orders.js';
 
@@ -71,8 +72,8 @@ const AMOUNT_FIELDS = [
 const SIGNED_AMOUNT_FIELDS = new Set(['grossProfit', 'grossMarginRate', 'netProfit']);
 
 describe('结算单契约（settlement）', () => {
-  it('3 条端点全部登记并汇总进 ROUTES，且归属 settlement', () => {
-    expect(SETTLEMENT_ORDER_ROUTES).toHaveLength(3);
+  it('4 条端点全部登记并汇总进 ROUTES，且归属 settlement', () => {
+    expect(SETTLEMENT_ORDER_ROUTES).toHaveLength(4);
     for (const route of SETTLEMENT_ORDER_ROUTES) expect(route.module).toBe('settlement');
 
     const settlementIds = routesOfModule(ROUTES, 'settlement').map((r) => r.operationId);
@@ -81,7 +82,7 @@ describe('结算单契约（settlement）', () => {
     }
   });
 
-  it('operationId / 方法 / 路径 / scope 与契约一致（confirm 用 settlement.approve）', () => {
+  it('operationId / 方法 / 路径 / scope 与契约一致（confirm / unsettle 用 settlement.approve）', () => {
     const actual = SETTLEMENT_ORDER_ROUTES.map(
       (r) => `${r.method} ${r.path} ${r.operationId}`,
     ).sort();
@@ -90,19 +91,23 @@ describe('结算单契约（settlement）', () => {
         'GET /api/v1/settlement-orders settlement.order.list.read',
         'GET /api/v1/settlement-orders/{id} settlement.order.detail.read',
         'POST /api/v1/settlement-orders/{id}/confirm settlement.order.confirm',
+        'POST /api/v1/settlement-orders/{id}/unsettle settlement.order.unsettle',
       ].sort(),
     );
 
     const byId = new Map(SETTLEMENT_ORDER_ROUTES.map((r) => [r.operationId, r]));
     expect(byId.get('settlement.order.list.read')?.scope).toBe('settlement.read');
     expect(byId.get('settlement.order.detail.read')?.scope).toBe('settlement.read');
-    // 确认结算属审批动作（D44），不是 update。
+    // 确认 / 撤销结算同属审批动作（D44 / D88），不是 update。
     expect(byId.get('settlement.order.confirm')?.scope).toBe('settlement.approve');
+    expect(byId.get('settlement.order.unsettle')?.scope).toBe('settlement.approve');
+    expect(byId.get('settlement.order.unsettle')?.module).toBe('settlement');
+    expect(byId.get('settlement.order.unsettle')?.domain).toBe('settlement');
 
     for (const route of SETTLEMENT_ORDER_ROUTES) expect(route.domain).toBe('settlement');
   });
 
-  it('普通读不记审计；确认结算 audit=write（D51）', () => {
+  it('普通读不记审计；确认 / 撤销结算 audit=write（D51）', () => {
     const byId = new Map(SETTLEMENT_ORDER_ROUTES.map((r) => [r.operationId, r]));
     expect(byId.get('settlement.order.list.read')?.audit).toEqual({
       kind: 'none',
@@ -116,15 +121,27 @@ describe('结算单契约（settlement）', () => {
       kind: 'write',
       required: true,
     });
+    expect(byId.get('settlement.order.unsettle')?.audit).toEqual({
+      kind: 'write',
+      required: true,
+    });
   });
 
-  it('确认结算：AI 禁止 + 必须给原因（D52），强 ETag，响应 200（不是创建 201）', () => {
+  it('确认 / 撤销结算：AI 禁止 + 必须给原因（D52 / D88），强 ETag，响应 200（不是创建 201）', () => {
     const confirm = SETTLEMENT_ORDER_ROUTES.find(
       (r) => r.operationId === 'settlement.order.confirm',
     );
     expect(confirm?.ai).toEqual({ policy: 'forbid', reasonRequired: true });
     expect(confirm?.requiresIfMatch).toBe(true);
     expect(confirm?.response?.status).toBe(200);
+
+    const unsettle = SETTLEMENT_ORDER_ROUTES.find(
+      (r) => r.operationId === 'settlement.order.unsettle',
+    );
+    expect(unsettle?.ai).toEqual({ policy: 'forbid', reasonRequired: true });
+    expect(unsettle?.requiresIfMatch).toBe(true);
+    expect(unsettle?.response?.status).toBe(200);
+    expect(unsettle?.request?.body).toBeDefined();
 
     const list = SETTLEMENT_ORDER_ROUTES.find(
       (r) => r.operationId === 'settlement.order.list.read',
@@ -216,6 +233,42 @@ describe('结算单契约（settlement）', () => {
     for (const field of AMOUNT_FIELDS) {
       const accepted = SettlementOrderSchema.safeParse({ ...ORDER, [field]: '-0.01' }).success;
       expect(accepted, field).toBe(SIGNED_AMOUNT_FIELDS.has(field));
+    }
+
+    // D88：撤销后结算期快照为 null（其余金额字段本来就是 D78 的脱敏可空字段）。
+    for (const field of [
+      'relatedLossAmount',
+      'netProfit',
+      'commissionRateSnapshot',
+      'commissionAmount',
+    ]) {
+      expect(
+        SettlementOrderSchema.safeParse({ ...ORDER, [field]: null }).success,
+        `${field} 撤销后可为 null`,
+      ).toBe(true);
+    }
+  });
+
+  it('撤销结算入参：confirm 必须为 true，reason 必填 1–200 字（D88）', () => {
+    expect(
+      SettlementUnsettleInputSchema.safeParse({ confirm: true, reason: '财务复核发现错单' })
+        .success,
+    ).toBe(true);
+    expect(
+      SettlementUnsettleInputSchema.parse({ confirm: true, reason: '  财务复核  ' }).reason,
+    ).toBe('财务复核');
+
+    for (const bad of [
+      {},
+      { confirm: false, reason: 'x' },
+      { confirm: true },
+      { confirm: true, reason: '' },
+      { confirm: true, reason: '   ' },
+      { confirm: true, reason: 'x'.repeat(201) },
+    ]) {
+      expect(SettlementUnsettleInputSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(
+        false,
+      );
     }
   });
 
@@ -374,5 +427,22 @@ describe('结算单契约（settlement）', () => {
     expect(confirm.post?.['x-mcp-tool']).toBe('qingdan_settlement_order_confirm');
     expect(confirm.post?.responses).toHaveProperty('200');
     expect(confirm.post?.responses).not.toHaveProperty('201');
+
+    const unsettle = doc.paths['/api/v1/settlement-orders/{id}/unsettle'] as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect(Object.keys(unsettle).sort()).toEqual(['post']);
+    expect(unsettle.post?.['x-module']).toBe('settlement');
+    expect(unsettle.post?.['x-scope']).toBe('settlement.approve');
+    expect(unsettle.post?.['x-audit']).toEqual({ kind: 'write', required: true });
+    expect(unsettle.post?.['x-ai-policy']).toEqual({
+      policy: 'forbid',
+      reasonRequired: true,
+    });
+    expect(unsettle.post?.['x-requires-if-match']).toBe(true);
+    expect(unsettle.post?.['x-mcp-tool']).toBe('qingdan_settlement_order_unsettle');
+    expect(unsettle.post?.responses).toHaveProperty('200');
+    expect(unsettle.post?.responses).not.toHaveProperty('201');
   });
 });
