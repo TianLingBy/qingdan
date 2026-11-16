@@ -92,7 +92,6 @@ describe('加工厂契约（masterdata）', () => {
         'processorNo',
         'name',
         'contactName',
-        'status',
         'version',
         'createdAt',
         'updatedAt',

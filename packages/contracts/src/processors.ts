@@ -15,9 +15,6 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - 写操作必记审计（D51）；停用属危险动作，AI 默认禁止（D52① / D54 危险动作清单）。
  */
 
-/** 加工厂状态：停用后不出现在单据选加工厂弹窗（与商品/客户/供应商同款）。 */
-export const ProcessorStatusSchema = z.enum(['启用', '停用']);
-
 export const ProcessorSchema = z.object({
   id: z.string(),
   tenantId: z.string(),
@@ -27,7 +24,6 @@ export const ProcessorSchema = z.object({
   processorNo: z.string().nullable(),
   name: z.string(),
   contactName: z.string().nullable(),
-  status: ProcessorStatusSchema,
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
   version: z.number().int(),
   createdAt: z.string().datetime(),
@@ -80,7 +76,6 @@ export type ProcessorQuote = z.infer<typeof ProcessorQuoteSchema>;
  */
 export const ProcessorListQuerySchema = PageQuerySchema.extend({
   companyId: z.string().uuid().optional(),
-  status: ProcessorStatusSchema.optional(),
   keyword: z.string().min(1).max(64).optional(),
 });
 
@@ -99,7 +94,6 @@ export const ProcessorQuoteListQuerySchema = PageQuerySchema.extend({
 const processorOptionalFields = {
   processorNo: z.string().max(64).nullable().optional(),
   contactName: z.string().max(64).nullable().optional(),
-  status: ProcessorStatusSchema.optional(),
 } as const;
 
 export const ProcessorCreateInputSchema = z.object({
@@ -204,11 +198,11 @@ export const PROCESSOR_ROUTES: readonly RouteDef[] = [
     path: '/api/v1/processors/{id}',
     domain: 'processor',
     action: 'delete',
-    summary: '停用加工厂（软删除，不做物理删除；危险动作，AI 默认禁止）',
+    summary: '删除加工厂（物理删除；被单据引用时 409 拒绝，危险动作，AI 默认禁止）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
-    // 回实体而不是 204：客户端要拿到新 `version` 才能继续并发写（与商品/客户/供应商同款）。
+    // 回实体而不是 204：回被删实体快照（含 version），便于客户端确认删除结果与审计留痕。
     response: { status: 200, schema: ProcessorSchema },
   }),
   defineRoute({

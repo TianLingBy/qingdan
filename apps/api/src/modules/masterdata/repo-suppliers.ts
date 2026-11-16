@@ -7,6 +7,7 @@ import {
   type SupplierUpdateInput,
 } from '@qingdan/contracts';
 import type { SqlClient } from '../../platform/db/client.js';
+import { rethrowIfReferenced } from './fk-conflict.js';
 
 /**
  * 供应商数据访问层（D15 / D49）。
@@ -30,7 +31,6 @@ export interface SupplierRepoContext {
 
 export interface SupplierListQuery {
   readonly companyId?: string;
-  readonly status?: Supplier['status'];
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
   readonly limit: number;
@@ -53,7 +53,6 @@ interface SupplierRow {
   contact_name: string | null;
   contact_phone: string | null;
   supplied_materials: string[] | null;
-  status: string;
   version: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -67,7 +66,6 @@ const COLUMNS = `s.id,
   s.contact_name,
   s.contact_phone,
   s.supplied_materials,
-  s.status,
   s.version,
   s.created_at,
   s.updated_at`;
@@ -85,7 +83,6 @@ const UPDATE_COLUMNS: ReadonlyArray<{
   { key: 'contactName', column: 'contact_name' },
   { key: 'contactPhone', column: 'contact_phone' },
   { key: 'suppliedMaterials', column: 'supplied_materials' },
-  { key: 'status', column: 'status' },
 ];
 
 function toDate(value: Date | string): Date {
@@ -102,7 +99,6 @@ function mapRow(row: SupplierRow): Supplier {
     contactName: row.contact_name,
     contactPhone: row.contact_phone,
     suppliedMaterials: row.supplied_materials ?? [],
-    status: row.status as Supplier['status'],
     version: row.version,
     createdAt: toDate(row.created_at).toISOString(),
     updatedAt: toDate(row.updated_at).toISOString(),
@@ -130,7 +126,7 @@ async function queryRow(
 }
 
 /**
- * 供应商列表：租户 + 可见公司内，按 keyword（名称/联系人/联系电话）与状态过滤，游标分页。
+ * 供应商列表：租户 + 可见公司内，按 keyword（名称/联系人/联系电话）过滤，游标分页。
  * 显式点不可见公司时返回空列表（范围过滤优先，不越权也不报错），与商品 / 客户一致。
  */
 export async function listSuppliers(
@@ -143,11 +139,6 @@ export async function listSuppliers(
   if (query.companyId !== undefined) {
     params.push(query.companyId);
     where.push(`s.company_id = $${params.length}::uuid`);
-  }
-
-  if (query.status !== undefined) {
-    params.push(query.status);
-    where.push(`s.status = $${params.length}`);
   }
 
   if (query.keyword !== undefined) {
@@ -201,8 +192,8 @@ export async function insertSupplier(
   const result = await ctx.tx.query<SupplierRow>(
     `INSERT INTO supplier
        (id, tenant_id, company_id, supplier_no, name, contact_name,
-        contact_phone, supplied_materials, status)
-     VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9)
+        contact_phone, supplied_materials)
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8)
      RETURNING ${RETURNING_COLUMNS}`,
     [
       input.id,
@@ -213,7 +204,6 @@ export async function insertSupplier(
       input.contactName ?? null,
       input.contactPhone ?? null,
       input.suppliedMaterials ?? [],
-      input.status ?? '启用',
     ],
   );
   return mapRow(result.rows[0]!);
@@ -271,10 +261,11 @@ export async function updateSupplier(
 }
 
 /**
- * 停用供应商（软删除）：只把 `status` 置「停用」并递增版本，**不物理删除**。
- * 查不到（含跨公司）→ null；版本不匹配 → `VERSION_CONFLICT`。
+ * 删除供应商（物理删除）：行被真正移除。
+ * 查不到（含跨公司）→ null；版本不匹配 → `VERSION_CONFLICT`；
+ * 仍被单据引用（外键 23503）→ 409 `STATE_CONFLICT` + `reason=HAS_REFERENCES`。
  */
-export async function softDeleteSupplier(
+export async function deleteSupplier(
   ctx: SupplierRepoContext,
   id: string,
   expectedVersion: number,
@@ -288,17 +279,17 @@ export async function softDeleteSupplier(
     });
   }
 
-  const result = await ctx.tx.query<SupplierRow>(
-    `UPDATE supplier s
-        SET status = '停用',
-            version = s.version + 1
-      WHERE s.id = $1::uuid
-        AND s.tenant_id = $2
-        AND s.company_id = ANY($3::uuid[])
-        AND s.version = $4
-      RETURNING ${COLUMNS}`,
-    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
-  );
+  const result = await ctx.tx
+    .query<SupplierRow>(
+      `DELETE FROM supplier s
+        WHERE s.id = $1::uuid
+          AND s.tenant_id = $2
+          AND s.company_id = ANY($3::uuid[])
+          AND s.version = $4
+        RETURNING ${COLUMNS}`,
+      [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+    )
+    .catch((error: unknown) => rethrowIfReferenced(error, '供应商'));
   const row = result.rows[0];
   if (!row) {
     throw new AppError('VERSION_CONFLICT', '供应商已被并发修改，请重新读取后重试');

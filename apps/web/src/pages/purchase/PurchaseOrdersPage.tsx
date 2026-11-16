@@ -686,12 +686,12 @@ export function PurchaseOrdersPage() {
 
   const productsQuery = useQuery({
     queryKey: purchaseQueryKeys.products,
-    queryFn: () => masterdataApi.listProducts({ limit: 200, status: '启用' }),
+    queryFn: () => masterdataApi.listProducts({ limit: 200 }),
     staleTime: 5 * 60_000,
   });
   const suppliersQuery = useQuery({
     queryKey: purchaseQueryKeys.suppliers,
-    queryFn: () => masterdataApi.listSuppliers({ limit: 200, status: '启用' }),
+    queryFn: () => masterdataApi.listSuppliers({ limit: 200 }),
     staleTime: 5 * 60_000,
   });
   const products = productsQuery.data?.items ?? [];

@@ -202,14 +202,14 @@ describe('库存成本更正 HTTP（PGlite + 0025）', () => {
     await seed(test.database);
     await test.database.query(
       `INSERT INTO customer
-         (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, 'C-163', '成本更正测试客户', '启用')`,
+         (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, 'C-163', '成本更正测试客户')`,
       [CUSTOMER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, specification, unit, status)
-       VALUES ($1, $2, $3, 'CA-001', '成本更正苹果', '{}', NULL, '件', '启用')`,
+         (id, tenant_id, company_id, product_no, name, aliases, specification, unit)
+       VALUES ($1, $2, $3, 'CA-001', '成本更正苹果', '{}', NULL, '件')`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
 

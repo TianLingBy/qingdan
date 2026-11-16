@@ -9,6 +9,7 @@ import {
   type ProcessorUpdateInput,
 } from '@qingdan/contracts';
 import type { SqlClient } from '../../platform/db/client.js';
+import { rethrowIfReferenced } from './fk-conflict.js';
 
 /**
  * 加工厂 + 加工厂报价记录数据访问层（D15 / D49 / D64）。
@@ -35,7 +36,6 @@ export interface ProcessorRepoContext {
 
 export interface ProcessorListQuery {
   readonly companyId?: string;
-  readonly status?: Processor['status'];
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
   readonly limit: number;
@@ -72,7 +72,6 @@ interface ProcessorRow {
   processor_no: string | null;
   name: string;
   contact_name: string | null;
-  status: string;
   version: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -98,7 +97,6 @@ const PROCESSOR_COLUMNS = `p.id,
   p.processor_no,
   p.name,
   p.contact_name,
-  p.status,
   p.version,
   p.created_at,
   p.updated_at`;
@@ -130,7 +128,6 @@ const UPDATE_COLUMNS: ReadonlyArray<{
   { key: 'processorNo', column: 'processor_no' },
   { key: 'name', column: 'name' },
   { key: 'contactName', column: 'contact_name' },
-  { key: 'status', column: 'status' },
 ];
 
 function toDate(value: Date | string): Date {
@@ -150,7 +147,6 @@ function mapProcessorRow(row: ProcessorRow): Processor {
     processorNo: row.processor_no,
     name: row.name,
     contactName: row.contact_name,
-    status: row.status as Processor['status'],
     version: row.version,
     createdAt: toDate(row.created_at).toISOString(),
     updatedAt: toDate(row.updated_at).toISOString(),
@@ -195,7 +191,7 @@ async function queryProcessorRow(
 }
 
 /**
- * 加工厂列表：租户 + 可见公司内，按 keyword（名称/联系人）与状态过滤，游标分页。
+ * 加工厂列表：租户 + 可见公司内，按 keyword（名称/联系人）过滤，游标分页。
  * 显式点不可见公司时返回空列表（范围过滤优先，不越权也不报错），与商品 / 客户 / 供应商一致。
  */
 export async function listProcessors(
@@ -208,11 +204,6 @@ export async function listProcessors(
   if (query.companyId !== undefined) {
     params.push(query.companyId);
     where.push(`p.company_id = $${params.length}::uuid`);
-  }
-
-  if (query.status !== undefined) {
-    params.push(query.status);
-    where.push(`p.status = $${params.length}`);
   }
 
   if (query.keyword !== undefined) {
@@ -267,8 +258,8 @@ export async function insertProcessor(
 ): Promise<Processor> {
   const result = await ctx.tx.query<ProcessorRow>(
     `INSERT INTO processor
-       (id, tenant_id, company_id, processor_no, name, contact_name, status)
-     VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7)
+       (id, tenant_id, company_id, processor_no, name, contact_name)
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6)
      RETURNING ${PROCESSOR_RETURNING_COLUMNS}`,
     [
       input.id,
@@ -277,7 +268,6 @@ export async function insertProcessor(
       input.processorNo ?? null,
       input.name,
       input.contactName ?? null,
-      input.status ?? '启用',
     ],
   );
   return mapProcessorRow(result.rows[0]!);
@@ -335,10 +325,11 @@ export async function updateProcessor(
 }
 
 /**
- * 停用加工厂（软删除）：只把 `status` 置「停用」并递增版本，**不物理删除**。
- * 查不到（含跨公司）→ null；版本不匹配 → `VERSION_CONFLICT`。
+ * 删除加工厂（物理删除）：行被真正移除。
+ * 查不到（含跨公司）→ null；版本不匹配 → `VERSION_CONFLICT`；
+ * 仍被单据引用（外键 23503）→ 409 `STATE_CONFLICT` + `reason=HAS_REFERENCES`。
  */
-export async function softDeleteProcessor(
+export async function deleteProcessor(
   ctx: ProcessorRepoContext,
   id: string,
   expectedVersion: number,
@@ -352,17 +343,17 @@ export async function softDeleteProcessor(
     });
   }
 
-  const result = await ctx.tx.query<ProcessorRow>(
-    `UPDATE processor p
-        SET status = '停用',
-            version = p.version + 1
-      WHERE p.id = $1::uuid
-        AND p.tenant_id = $2
-        AND p.company_id = ANY($3::uuid[])
-        AND p.version = $4
-      RETURNING ${PROCESSOR_COLUMNS}`,
-    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
-  );
+  const result = await ctx.tx
+    .query<ProcessorRow>(
+      `DELETE FROM processor p
+        WHERE p.id = $1::uuid
+          AND p.tenant_id = $2
+          AND p.company_id = ANY($3::uuid[])
+          AND p.version = $4
+        RETURNING ${PROCESSOR_COLUMNS}`,
+      [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+    )
+    .catch((error: unknown) => rethrowIfReferenced(error, '加工厂'));
   const row = result.rows[0];
   if (!row) {
     throw new AppError('VERSION_CONFLICT', '加工厂已被并发修改，请重新读取后重试');
