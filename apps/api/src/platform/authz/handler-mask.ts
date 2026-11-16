@@ -2,10 +2,11 @@ import type { Principal } from '../auth/principal.js';
 
 /**
  * 单据「负责人」字段脱敏（Issue #227 第 3 点）：
- * 老板 / 经理可见 `handlerId`；其余身份不下发（置 null），前端无需按角色判断。
+ * 持有任一单据域 `view_handler` 权限点的账号可见 `handlerId`；其余身份不下发（置 null）。
  *
  * 与 D79 金额脱敏同一原则：无权的数据不要发到响应体里。判定依据是 principal 上的
- * `canViewHandler`（= is_owner 或岗位 preset_key ∈ owner/manager，由权限引擎现算）。
+ * `canViewHandler`（由权限引擎按 sales / purchase / processing / internal_trade 的
+ * `view_handler` 现算）；岗位 preset_key 只负责默认授权，不参与运行时判断（D90）。
  */
 
 export function canViewHandlerOf(principal: Principal | null | undefined): boolean {
