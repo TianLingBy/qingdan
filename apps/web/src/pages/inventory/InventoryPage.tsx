@@ -1,13 +1,13 @@
 import type { InventoryBatch } from '@qingdan/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { allows } from '../../lib/access';
 import { formatQty } from '../../lib/decimal';
 import { authApi, authKeys } from '../auth/auth-api';
 import { BatchCostAdjustments } from './BatchCostAdjustments';
 import { inventoryApi, inventoryQueryKeys } from './inventory-api';
 import {
-  errorText,
   formatDateTime,
   PageShell,
   Pagination,
@@ -94,27 +94,15 @@ export function InventoryPage() {
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         {batches.isPending ? (
-          <div className="space-y-2 p-5" aria-busy="true">
-            {[0, 1, 2].map((item) => (
-              <div key={item} className="h-9 animate-pulse rounded bg-slate-100" />
-            ))}
-            <p className="text-xs text-slate-400">库存批次加载中…</p>
-          </div>
+          <ListLoading label="库存批次加载中…" />
         ) : batches.isError ? (
-          <div className="p-6 text-center">
-            <p className="text-sm text-rose-600">{errorText(batches.error, '库存加载失败')}</p>
-            <button
-              type="button"
-              onClick={() => void batches.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              重试
-            </button>
-          </div>
+          <ListError
+            title="库存加载失败"
+            error={batches.error}
+            onRetry={() => void batches.refetch()}
+          />
         ) : rows.length === 0 ? (
-          <p className="p-8 text-center text-sm text-slate-500">
-            没有符合条件的库存批次。可清空筛选或等待单据完成入库。
-          </p>
+          <ListEmpty title="没有符合条件的库存批次。可清空筛选或等待单据完成入库。" />
         ) : (
           <table className="w-full min-w-[1020px] text-left text-sm">
             <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
@@ -191,9 +179,9 @@ export function InventoryPage() {
             </button>
           </div>
           {detail.isPending ? (
-            <p className="mt-4 text-sm text-slate-500">详情加载中…</p>
+            <ListLoading label="详情加载中…" rows={2} />
           ) : detail.isError ? (
-            <p className="mt-4 text-sm text-rose-600">{errorText(detail.error, '详情加载失败')}</p>
+            <ListError title="详情加载失败" error={detail.error} />
           ) : detail.data ? (
             <div className="mt-4 space-y-4">
               <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">

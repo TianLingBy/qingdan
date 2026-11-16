@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { platformAdminApi } from '../../api/platform-admin';
 import { ApiError } from '../../api/client';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 
 /**
  * 公司管理页（22 页之第 18 页，#144）。
@@ -98,31 +99,15 @@ export function CompaniesPage() {
 
       <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white">
         {listQuery.isPending ? (
-          <div className="space-y-2 p-4" aria-busy="true">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-9 animate-pulse rounded bg-slate-100" />
-            ))}
-            <p className="pt-1 text-xs text-slate-400">公司列表加载中…</p>
-          </div>
+          <ListLoading label="公司列表加载中…" />
         ) : listQuery.isError ? (
-          <div className="p-6 text-center">
-            <p className="text-sm text-rose-600">
-              公司列表加载失败：{listQuery.error instanceof ApiError
-                ? `${listQuery.error.message}（${listQuery.error.code}）`
-                : '未知错误'}
-            </p>
-            <button
-              type="button"
-              onClick={() => listQuery.refetch()}
-              className="mt-3 rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
-            >
-              重试
-            </button>
-          </div>
+          <ListError
+            title="公司列表加载失败"
+            error={listQuery.error}
+            onRetry={() => void listQuery.refetch()}
+          />
         ) : companies.length === 0 ? (
-          <div className="p-10 text-center">
-            <p className="text-sm text-slate-500">还没有公司。在上方输入名称创建第一家。</p>
-          </div>
+          <ListEmpty title="还没有公司。在上方输入名称创建第一家。" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[560px] text-sm">

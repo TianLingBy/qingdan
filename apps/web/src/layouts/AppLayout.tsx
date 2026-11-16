@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, Outlet, useNavigate } from '@tanstack/react-router';
+import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { BROWSER_BASELINE_LABEL } from '../browser-baseline';
+import { SidebarNav } from '../components/nav/SidebarNav';
 import { visibleRoutes } from '../lib/access';
 import { authApi, authKeys } from '../pages/auth/auth-api';
-import { ROUTE_TABLE, routesByDomain, type Domain, type RouteEntry } from '../router/routes';
+import { ROUTE_TABLE, SETTINGS_ROUTE } from '../router/routes';
 import { clearSessionCache } from '../router/session-guard';
 import {
   ActiveCompanyProvider,
@@ -14,60 +15,36 @@ import {
 } from './company-switcher';
 
 /**
- * AppLayout：左侧按功能域分组的导航 + 顶栏（公司切换占位 / 当前登录人 / 退出）。
+ * AppLayout：左侧按功能域分组的导航 + 顶栏（公司切换占位 / 当前登录人 / 设置 / 退出）。
  *
- * 两件事都在 #5 一起收了这个口：
+ * 三件事都在这里收口：
  * - **导航按 `me.scope` 过滤**（D15/D27）。之前是 22 页全量铺开，工作台又按 scope 显示入口卡片，
  *   两处口径不一致会让人以为「卡片藏了但侧面还能进」。工作台和业务全流程图常显（D44）。
- *   过滤只影响显示，**改 URL 直接进仍然由接口判定**。
- * - **≤768px 走抽屉导航**：400px 宽下 240px 的固定侧栏会把内容挤没，改成顶栏「菜单」展开。
+ *   过滤只影响显示，**改 URL 直接进仍然由接口判定**；隐藏 ≠ 授权。
+ * - **按功能域分组 + 项数少的组自动折叠**（#300）：具体渲染交给 `components/nav/SidebarNav`，
+ *   分组和权限口径的纯逻辑在 `nav-model.ts`，可单测。
+ * - **≤1024px 走抽屉导航**：窄屏下 240px 的固定侧栏会把内容挤没，改成顶栏「菜单」展开；
+ *   设置入口同时放在顶栏右上角，任何宽度下都能进 `/settings`。
  *
  * 公司切换是**页面级筛选**（#213/#240）：选项 = 授权公司（`me.companyIds`），
  * 名字用既有 `GET /companies` 目录查表；选中只写 `useActiveCompany()`，不改变权限范围。
  */
 
-interface NavGroupsProps {
-  readonly groups: readonly { domain: Domain; routes: readonly RouteEntry[] }[];
-  readonly onNavigate?: () => void;
-}
-
-function NavGroups({ groups, onNavigate }: NavGroupsProps) {
-  return (
-    <nav className="space-y-4 px-2 py-3 text-sm">
-      {groups.map((group) => (
-        <div key={group.domain}>
-          <div className="px-2 pb-1 text-xs font-medium text-slate-400">{group.domain}</div>
-          <ul className="space-y-0.5">
-            {group.routes.map((route) => (
-              <li key={route.id}>
-                <Link
-                  to={route.path}
-                  onClick={onNavigate}
-                  activeProps={{ className: 'bg-slate-100 font-medium text-slate-900' }}
-                  className="block rounded px-2 py-1.5 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                >
-                  {route.title}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </nav>
-  );
-}
-
 export function AppLayout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [menuOpen, setMenuOpen] = useState(false);
+  const currentPath = useRouterState({ select: (state) => state.location.pathname });
   const me = useQuery({ queryKey: authKeys.me, queryFn: () => authApi.me() });
 
-  const groups = useMemo(() => {
-    // me 尚未就绪时先铺全量（不含登录页），避免导航先缩成两条再撑开。
-    const routes = me.data ? visibleRoutes(me.data.scope) : ROUTE_TABLE.filter((r) => r.path !== '/login');
-    return routesByDomain(routes);
-  }, [me.data]);
+  // me 尚未就绪时先铺全量（不含登录页），避免导航先缩成两条再撑开。
+  const routes = useMemo(
+    () =>
+      me.data
+        ? visibleRoutes(me.data.scope)
+        : ROUTE_TABLE.filter((route) => route.path !== '/login'),
+    [me.data],
+  );
 
   const logout = useMutation({
     mutationFn: () => authApi.logout(),
@@ -87,12 +64,12 @@ export function AppLayout() {
   return (
     <ActiveCompanyProvider>
       <div className="flex min-h-screen bg-slate-50 text-slate-900">
-        <aside className="hidden w-60 shrink-0 border-r border-slate-200 bg-white md:block">
+        <aside className="hidden w-60 shrink-0 border-r border-slate-200 bg-white lg:block">
           <div className="border-b border-slate-200 px-4 py-4">
             <div className="text-lg font-semibold tracking-tight">轻单</div>
             <div className="mt-0.5 text-xs text-slate-500">集团内部交易与成本归集</div>
           </div>
-          <NavGroups groups={groups} />
+          <SidebarNav routes={routes} currentPath={currentPath} />
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
@@ -103,7 +80,7 @@ export function AppLayout() {
                 aria-expanded={menuOpen}
                 aria-controls="mobile-nav"
                 onClick={() => setMenuOpen((open) => !open)}
-                className="shrink-0 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 md:hidden"
+                className="shrink-0 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 lg:hidden"
               >
                 {menuOpen ? '收起' : '菜单'}
               </button>
@@ -136,6 +113,12 @@ export function AppLayout() {
               <span className="hidden text-xs text-slate-400 lg:inline" title={BROWSER_BASELINE_LABEL}>
                 浏览器基线：{BROWSER_BASELINE_LABEL}
               </span>
+              <Link
+                to={SETTINGS_ROUTE.path}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+              >
+                设置
+              </Link>
               <button
                 type="button"
                 onClick={() => logout.mutate()}
@@ -149,9 +132,13 @@ export function AppLayout() {
             {menuOpen && (
               <div
                 id="mobile-nav"
-                className="absolute inset-x-0 top-full z-30 max-h-[70vh] overflow-y-auto border-b border-slate-200 bg-white shadow-lg md:hidden"
+                className="absolute inset-x-0 top-full z-30 max-h-[70vh] overflow-y-auto border-b border-slate-200 bg-white shadow-lg lg:hidden"
               >
-                <NavGroups groups={groups} onNavigate={() => setMenuOpen(false)} />
+                <SidebarNav
+                  routes={routes}
+                  currentPath={currentPath}
+                  onNavigate={() => setMenuOpen(false)}
+                />
               </div>
             )}
           </header>
