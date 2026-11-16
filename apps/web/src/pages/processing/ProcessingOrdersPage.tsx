@@ -971,12 +971,12 @@ export function ProcessingOrdersPage() {
 
   const processorsQuery = useQuery({
     queryKey: processingQueryKeys.processors,
-    queryFn: () => masterdataApi.listProcessors({ limit: 200, status: '启用' }),
+    queryFn: () => masterdataApi.listProcessors({ limit: 200 }),
     staleTime: 5 * 60_000,
   });
   const productsQuery = useQuery({
     queryKey: processingQueryKeys.products,
-    queryFn: () => masterdataApi.listProducts({ limit: 200, status: '启用' }),
+    queryFn: () => masterdataApi.listProducts({ limit: 200 }),
     staleTime: 5 * 60_000,
   });
   const processors = processorsQuery.data?.items ?? [];

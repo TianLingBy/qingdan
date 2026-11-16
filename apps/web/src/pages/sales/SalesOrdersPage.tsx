@@ -1049,7 +1049,7 @@ export function SalesOrdersPage() {
 
   const productsQuery = useQuery({
     queryKey: salesQueryKeys.products,
-    queryFn: () => masterdataApi.listProducts({ limit: 200, status: '启用' }),
+    queryFn: () => masterdataApi.listProducts({ limit: 200 }),
     staleTime: 5 * 60_000,
   });
   const products = productsQuery.data?.items ?? [];

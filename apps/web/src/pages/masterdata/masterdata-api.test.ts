@@ -12,7 +12,6 @@ const PRODUCT: Product = {
   aliases: ['红富士'],
   specification: '箱',
   unit: '件',
-  status: '启用',
   defaultSalePrice: '12.50',
   version: 1,
   createdAt: '2026-11-08T00:00:00.000Z',
@@ -41,7 +40,6 @@ describe('masterdata API', () => {
 
     const result = await api.listProducts({
       keyword: '苹果',
-      status: '启用',
       limit: 20,
     });
 
@@ -49,14 +47,14 @@ describe('masterdata API', () => {
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain('/api/v1/products?');
     expect(url).toContain('keyword=%E8%8B%B9%E6%9E%9C');
-    expect(url).toContain('status=%E5%90%AF%E7%94%A8');
+    expect(url).not.toContain('status=');
     expect(init.method).toBe('GET');
   });
 
-  it('更新与停用使用 If-Match 强 ETag', async () => {
+  it('更新与删除使用 If-Match 强 ETag', async () => {
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
       if (init?.method === 'DELETE') {
-        return jsonResponse({ ...PRODUCT, status: '停用', version: 2 });
+        return jsonResponse({ ...PRODUCT, version: 2 });
       }
       return jsonResponse({ ...PRODUCT, name: '新苹果', version: 2 });
     });
@@ -89,7 +87,6 @@ describe('masterdata API', () => {
       contactName: null,
       contactPhone: null,
       suppliedMaterials: ['纸箱'],
-      status: '启用',
       version: 1,
       createdAt: PRODUCT.createdAt,
       updatedAt: PRODUCT.updatedAt,

@@ -78,7 +78,6 @@ describe('商品契约（masterdata）', () => {
       aliases: ['三层肉'],
       specification: '20kg/箱',
       unit: '箱',
-      status: '启用',
       defaultSalePrice: null,
       version: 1,
       createdAt: '2026-11-04T00:00:00.000Z',

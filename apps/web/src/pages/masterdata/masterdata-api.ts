@@ -34,7 +34,6 @@ export interface MeResponse {
 
 export interface MasterdataListFilters {
   readonly companyId?: string;
-  readonly status?: '启用' | '停用';
   readonly keyword?: string;
   readonly cursor?: string | null;
   readonly limit?: number;
@@ -43,7 +42,6 @@ export interface MasterdataListFilters {
 function listQuery(filters: MasterdataListFilters): Record<string, string | number | undefined> {
   return {
     companyId: filters.companyId,
-    status: filters.status,
     keyword: filters.keyword,
     cursor: filters.cursor ?? undefined,
     limit: filters.limit ?? 50,
@@ -112,7 +110,6 @@ export const masterdataQueryKeys = {
     entity: 'products' | 'suppliers' | 'processors' | 'customers',
     filters: {
       keyword?: string;
-      status?: '启用' | '停用';
       cursor?: string | null;
       companyId?: string;
     },

@@ -119,15 +119,15 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
     await seed(test.database);
     await test.database.query(
       `INSERT INTO customer
-         (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, NULL, '完成态客户', '启用')
+         (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, NULL, '完成态客户')
        ON CONFLICT (id) DO NOTHING`,
       [CUSTOMER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '完成态商品', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '完成态商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
