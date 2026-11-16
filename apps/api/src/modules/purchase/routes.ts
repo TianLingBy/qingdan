@@ -10,6 +10,7 @@ import {
   updatePurchaseOrder,
 } from './usecases/purchase-orders.js';
 import {
+  cancelSupplierReturn,
   createSupplierReturn,
   completeSupplierReturn,
   getSupplierReturn,
@@ -37,6 +38,7 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'purchase.order.complete': 'purchase_order',
   'supplier_return.create': 'supplier_return',
   'supplier_return.complete': 'supplier_return',
+  'supplier_return.cancel': 'supplier_return',
 };
 
 /**
@@ -102,6 +104,10 @@ export function registerPurchaseRoutes(app: FastifyInstance): void {
     },
     'supplier_return.complete': async ({ app: instance, request, reply }) =>
       completeSupplierReturn({ database: instance.database, request, reply }),
+    'supplier_return.cancel': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await cancelSupplierReturn({ database: instance.database, request, reply });
+    },
   };
 
   mountRoutes(app, {

@@ -178,9 +178,10 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
     expect(body.version).toBe(order.version + 1);
     expect(response.headers.etag).toBe(`"${body.version}"`);
 
-    // 库存：行数量 5 均分给两个批次 → 各 2.5（末批承余量，此处恰好整除）。
-    expect(saleBefore).toBe('100');
-    expect(costBefore).toBe('100');
+    // #286 A 案：建单占用 2.5 后可用量 97.5；完成先释放占用再扣 2.5，
+    // 最终仍是 97.5，不会出现 pending 与 inbound 双扣成 95。
+    expect(saleBefore).toBe('97.5');
+    expect(costBefore).toBe('97.5');
     expect(await batchAvailable(BATCH_A_ID)).toBe('97.5');
     expect(await batchAvailable(BATCH_B_ID)).toBe('97.5');
 
@@ -248,6 +249,10 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
       beforeStatus: '进行中',
       afterStatus: '已完成',
       stockFlowCount: 2,
+      pendingReleases: [
+        { batchId: BATCH_A_ID, qty: '2.5', pendingAfter: '0' },
+        { batchId: BATCH_B_ID, qty: '2.5', pendingAfter: '0' },
+      ],
     });
   });
 
@@ -300,27 +305,33 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
     expect(cancel.statusCode).toBe(422);
   });
 
-  it('库存不足 → 409 且整单回滚（状态仍进行中、无 C 草稿、无流水）', async () => {
+  it('待执行占用不足 → 409 且整单回滚（状态仍进行中、无 C 草稿、无流水）', async () => {
     const thinBatch = '01900000-0000-7000-8000-000000005129';
-    // 入库量 10、可用量 1：销售 3 件时入库量仍非负，先撞「可用量将为负」这条
-    // 共用校验（#269 要改的正是这一句），不会提前命中入库量分支。
+    // 建单时库存足够；再把待执行占用人为压到 1，模拟本单占用记录损坏。
+    // 完成必须先释放本单 3，释放失败时整笔事务回滚，不能继续扣库存。
     await test.database.query(
       `INSERT INTO inventory_batch
          (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost,
           inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty, custodian_id)
-       VALUES ($1, $2, $3, $4, 'E-COMPLETE-THIN', '10', '10', '9', '0', '0', $5)`,
+       VALUES ($1, $2, $3, $4, 'E-COMPLETE-THIN', '10', '10', '0', '0', '0', $5)`,
       [thinBatch, DEMO_IDS.tenantId, DEMO_IDS.companyId, PRODUCT_ID, DEMO_IDS.ownerEmployeeId],
     );
     const order = await createOrder(nextRequestId('thin'), {
       lines: [{ ...LINE, batchIds: [thinBatch], qty: '3' }],
     });
+    await test.database.query(
+      `UPDATE inventory_batch
+          SET pending_execution_qty = 1
+        WHERE id = $1::uuid`,
+      [thinBatch],
+    );
 
     const response = await complete(order, nextRequestId('thin-complete'));
     expect(response.statusCode).toBe(409);
     const body = response.json() as { code: string; message: string };
     expect(body).toMatchObject({ code: 'VERSION_CONFLICT' });
-    // #269：销售完成必须说「销售出库」，且带批次标识，不能沿用盘点口吻。
-    expect(body.message).toContain('销售出库');
+    // #269 / #286：销售完成必须说「销售出库」，且带批次标识。
+    expect(body.message).toContain('销售出库前待执行占用不足');
     expect(body.message).toContain('E-COMPLETE-THIN');
     expect(body.message).not.toContain('盘亏');
 

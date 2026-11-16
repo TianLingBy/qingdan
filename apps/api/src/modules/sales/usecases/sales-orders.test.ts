@@ -8,10 +8,12 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
+import { registerServices } from '../../../platform/services/registry.js';
 import {
   createTestDatabase,
   type TestDatabase,
 } from '../../../testing/pglite.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 import {
   cancelSalesOrder,
   createSalesOrder,
@@ -181,6 +183,7 @@ describe('sales 销售单用例（PGlite + seed 演示租户）', () => {
   }
 
   beforeAll(async () => {
+    registerServices(inventoryServices);
     test = await createTestDatabase();
     await seed(test.database);
     await test.database.query(
@@ -241,6 +244,66 @@ describe('sales 销售单用例（PGlite + seed 演示租户）', () => {
 
   afterAll(async () => {
     await test.database.close();
+  });
+
+  it('建单按批次占用待执行量，取消精确释放', async () => {
+    const created = await createOne();
+    const pending = await test.database.query<{
+      id: string;
+      pending_execution_qty: string;
+      available_qty: string;
+    }>(
+      `SELECT id::text AS id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty,
+              trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_A_ID, BATCH_B_ID]],
+    );
+    expect(pending.rows).toEqual([
+      { id: BATCH_A_ID, pending_execution_qty: '1', available_qty: '999' },
+      { id: BATCH_B_ID, pending_execution_qty: '1', available_qty: '999' },
+    ]);
+
+    const { ctx } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"1"' },
+    });
+    const cancelled = await cancelSalesOrder(ctx);
+    expect(cancelled).toMatchObject({ status: '已取消', version: 2 });
+    const released = await test.database.query<{ pending_execution_qty: string }>(
+      `SELECT trim_scale(pending_execution_qty) AS pending_execution_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_A_ID, BATCH_B_ID]],
+    );
+    expect(released.rows.map((row) => row.pending_execution_qty)).toEqual(['0', '0']);
+    const createAudit = await test.database.query<{ changes: Record<string, unknown> }>(
+      `SELECT changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'sales.order.create'`,
+      [created.id],
+    );
+    expect(createAudit.rows[0]?.changes).toMatchObject({
+      pendingReservations: [
+        { batchId: BATCH_A_ID, qty: '1', pendingAfter: '1' },
+        { batchId: BATCH_B_ID, qty: '1', pendingAfter: '1' },
+      ],
+    });
+    const audit = await test.database.query<{ changes: Record<string, unknown> }>(
+      `SELECT changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'sales.order.cancel'`,
+      [created.id],
+    );
+    expect(audit.rows[0]?.changes).toMatchObject({
+      pendingReleases: [
+        { batchId: BATCH_A_ID, qty: '1', pendingAfter: '0' },
+        { batchId: BATCH_B_ID, qty: '1', pendingAfter: '0' },
+      ],
+    });
   });
 
   it('开单：E 单号、SQL 金额聚合、行成本下限、费用与审计落库', async () => {
