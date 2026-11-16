@@ -7098,6 +7098,7 @@ paths:
                             - ship
                             - delete
                             - view_price
+                            - view_handler
                             - export
                       required:
                         - domain
