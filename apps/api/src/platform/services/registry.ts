@@ -61,11 +61,49 @@ export interface CreateBatchReceipt {
   readonly custodianId: string;
 }
 
+/** 单据对库存批次的待执行占用行。 */
+export interface StockReservationLine {
+  readonly batchId: string;
+  /** 正 decimal 字符串。 */
+  readonly qty: string;
+}
+
+/** 待执行占用 / 释放命令（E / B / S 建单与取消）。 */
+export interface StockReservationCommand {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly sourceDocType: 'E' | 'B' | 'S';
+  readonly sourceDocId: string;
+  readonly handledBy: string;
+  readonly lines: readonly StockReservationLine[];
+}
+
+export interface StockReservationReceiptLine {
+  readonly batchId: string;
+  readonly qty: string;
+  readonly pendingAfter: string;
+  readonly availableAfter: string;
+}
+
+export interface StockReservationReceipt {
+  readonly lines: readonly StockReservationReceiptLine[];
+}
+
 /** 库存写入端口：由 inventory 实现，内部就是 `inventory/services/stock-flow.ts`。 */
 export interface StockFlowPort {
   applyAdjustment(tx: SqlClient, command: StockAdjustmentCommand): Promise<StockAdjustmentReceipt>;
   /** 新建入库批次（只签名；接线归 #137，A 单入库 / B 单产出调用）。 */
   createBatch(tx: SqlClient, command: CreateBatchCommand): Promise<CreateBatchReceipt>;
+  /** 建单占用待执行量；不改善物流水。 */
+  reservePending(
+    tx: SqlClient,
+    command: StockReservationCommand,
+  ): Promise<StockReservationReceipt>;
+  /** 取消时释放待执行量；不改善物流水。 */
+  releasePending(
+    tx: SqlClient,
+    command: StockReservationCommand,
+  ): Promise<StockReservationReceipt>;
 }
 
 /** C 结算单草稿命令（D19 / D70；由 E / N 单完成方发起）。 */
