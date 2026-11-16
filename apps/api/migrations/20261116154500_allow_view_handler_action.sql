@@ -1,4 +1,4 @@
--- 20261116010000_allow_view_handler_action.sql
+-- 20261116154500_allow_view_handler_action.sql
 -- 新增第 9 个权限动作 `view_handler`（看经手人），用于单据「负责人」字段可见性（D90 / #227）。
 --
 -- 0001 里 `position_permission.action` 与 `employee_permission_override.action` 的内联
