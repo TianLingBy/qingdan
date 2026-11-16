@@ -1,0 +1,25 @@
+# [local-only] 本机部署专用覆盖：
+#   1) 容器内 Node 需要 NODE_USE_ENV_PROXY=1 才能经宿主代理出网（Dockerfile.local）；
+#   2) 内网 HTTPS 用 deploy/Caddyfile.local（tls internal，自带 CA，不走 ACME）；
+#   3) 仓库的 docker-compose.yml 只编排了 api —— 没有人托管前端 SPA，
+#      所以浏览器打开根路径只会拿到 {"code":"UNAUTHENTICATED"}。
+#      这里把本机构建好的 apps/web/dist 以只读方式挂进 caddy，由 caddy 同时
+#      托管静态前端并把 /api/* 反代给 api（见 deploy/Caddyfile.local）。
+# 真实服务器直连外网 + 有域名时，前端应当做成独立镜像/服务，而不是挂宿主目录。
+services:
+  api:
+    build:
+      dockerfile: Dockerfile.local
+  migrate:
+    build:
+      dockerfile: Dockerfile.local
+  postgres:
+    # [local-only] 把数据库口子开到宿主 5433，供宿主侧跑 L3 真 PG 集成测试
+    # （tests/db-concurrency.test.ps1、tests/e2e-business-flow.test.ps1）。
+    # 生产服务器不需要这个映射。
+    ports:
+      - "5433:5432"
+  caddy:
+    volumes:
+      - ./deploy/Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - ./apps/web/dist:/srv/web:ro
