@@ -47,7 +47,7 @@ const ALL_DOMAINS = [
   'purchase', 'processing', 'sales', 'internal_trade', 'settlement', 'commission',
   'customer_return', 'supplier_return', 'stocktake', 'product', 'customer', 'supplier',
   'processor', 'inventory_qty', 'inventory_flow', 'stocktake_page', 'employee',
-  'permission', 'company', 'profit_report', 'audit', 'api_integration',
+  'permission', 'company', 'profit_report', 'audit', 'api_integration', 'workbench',
 ] as const;
 
 const ALL_ACTIONS = ['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'export'] as const;
@@ -82,6 +82,8 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('employee', ['read']),
       ...perms('permission', ['read', 'update']),
       ...perms('audit', ['read']),
+      // D89：工作台待办是公共入口，所有预设岗位默认给 read（不含审批动作本身）。
+      ...perms('workbench', ['read']),
     ],
   },
   {
@@ -96,6 +98,7 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('product', ['read']),
       ...perms('inventory_qty', ['read']),
       ...perms('settlement', ['read']),
+      ...perms('workbench', ['read']),
     ],
   },
   {
@@ -112,6 +115,7 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('inventory_flow', ['read', 'create']),
       ...perms('stocktake', ['read']),
       ...perms('processing', ['read']),
+      ...perms('workbench', ['read']),
     ],
   },
   {
@@ -125,6 +129,7 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('profit_report', ['read', 'export']),
       ...perms('audit', ['read']),
       ...perms('sales', ['read', 'view_price']),
+      ...perms('workbench', ['read']),
     ],
   },
   {
@@ -141,6 +146,7 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('stocktake', ['read', 'delete']),
       ...perms('processing', ['read', 'update']),
       ...perms('purchase', ['read']),
+      ...perms('workbench', ['read']),
     ],
   },
   {
@@ -157,6 +163,7 @@ const POSITIONS: readonly PositionSeed[] = [
       // D71：采购可录盘盈盘亏（两个方向都可发起），审批仍归老板/经理。
       ...perms('stocktake', ['read', 'create', 'delete']),
       ...perms('settlement', ['read']),
+      ...perms('workbench', ['read']),
     ],
   },
 ];

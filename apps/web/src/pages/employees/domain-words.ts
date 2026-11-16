@@ -1,7 +1,7 @@
 /**
  * 功能域 × 动作词表（页面本地副本）。
  *
- * 唯一真源是 `packages/contracts/src/domains.ts`（D44：24 个功能域 × 8 动作）；
+ * 唯一真源是 `packages/contracts/src/domains.ts`（D44：24 个功能域 × 8 动作，D89 新增 workbench = 25）；
  * web 不依赖 contracts 包（避免把 zod 全量打进浏览器 bundle），这里按值复刻。
  * **contracts 词表变更时必须同步本文件**——`domain-words.test.ts` 会抽查两边数量
  * 对不上就红（读 contracts 源码文本做断言，不引包）。
@@ -35,6 +35,7 @@ export const DOMAIN_WORDS: readonly { key: string; label: string }[] = [
   { key: 'api_integration', label: 'API 与集成' },
   { key: 'payment', label: '在线支付' },
   { key: 'billing', label: '订阅与计费' },
+  { key: 'workbench', label: '工作台' },
 ] as const;
 
 export const ACTION_WORDS: readonly { key: string; label: string }[] = [

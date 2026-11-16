@@ -283,8 +283,11 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
       displayName: '张明',
       companyIds: [DEMO_IDS.companyId],
     });
-    // 老板 = 全功能域 × 全动作（D15 / D59⑥）。
-    expect(body.scope.length).toBe(24);
+    // 老板 = 全功能域 × 全动作（D15 / D59⑥；D89 新增 workbench 后 25 个域）。
+    expect(body.scope.length).toBe(25);
+    expect(body.scope.find((entry) => entry.domain === 'workbench')?.actions).toEqual(
+      expect.arrayContaining(['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'export']),
+    );
     expect(body.scope.find((entry) => entry.domain === 'sales')?.actions).toEqual(
       expect.arrayContaining(['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'export']),
     );

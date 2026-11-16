@@ -80,6 +80,8 @@ describe('岗位契约（platform / permission 功能域，D4/D44/D60②）', ()
   it('权限模板 actions 只用 domains.ts 词表，且「看价」不进勾选表（D4）', () => {
     expect(PositionActionsSchema.safeParse(validActions).success).toBe(true);
     expect(PositionActionsSchema.safeParse([{ domain: 'permission', actions: ['read', 'delete'] }]).success).toBe(true);
+    // D89：新增 workbench 域后，岗位模板可以授权 workbench.read（词表来自 domains.ts）。
+    expect(PositionActionsSchema.safeParse([{ domain: 'workbench', actions: ['read'] }]).success).toBe(true);
 
     // 不自造词：未知功能域 / 未知动作直接失败。
     expect(PositionActionsSchema.safeParse([{ domain: 'not_a_domain', actions: ['read'] }]).success).toBe(false);
