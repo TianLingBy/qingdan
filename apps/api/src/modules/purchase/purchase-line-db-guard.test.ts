@@ -66,8 +66,8 @@ describe('采购单明细 D15 数据库级防线（0027 触发器）', () => {
     );
     await test.database.query(
       `INSERT INTO supplier
-         (id, tenant_id, company_id, supplier_no, name, supplied_materials, status)
-       VALUES ($1, $2, $3, NULL, '触发器用例供应商', '{}', '启用')`,
+         (id, tenant_id, company_id, supplier_no, name, supplied_materials)
+       VALUES ($1, $2, $3, NULL, '触发器用例供应商', '{}')`,
       [SUPPLIER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     for (const [id, tenantId, companyId, name] of [
@@ -77,8 +77,8 @@ describe('采购单明细 D15 数据库级防线（0027 触发器）', () => {
     ] as const) {
       await test.database.query(
         `INSERT INTO product
-           (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-         VALUES ($1, $2, $3, NULL, $4, '{}', '件', '启用')`,
+           (id, tenant_id, company_id, product_no, name, aliases, unit)
+         VALUES ($1, $2, $3, NULL, $4, '{}', '件')`,
         [id, tenantId, companyId, name],
       );
     }

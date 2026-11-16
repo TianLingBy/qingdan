@@ -29,7 +29,8 @@ import * as repo from '../repo-customers.js';
  * - 审计（D51 / D54②）：create / update / delete 与业务同事务写；普通读不写；
  * - 账期（D63）：整数天、>= 0、可空；契约层已校验，这里不再改口径；
  * - 客户没有金额字段，不存在看价逻辑；
- * - 停用是危险动作（D52① / D54⑥）：AI 凭证默认拒绝，走 platform 现有 `assertHumanCredential` 写法。
+ * - 删除是危险动作（D52① / D54⑥）：AI 凭证默认拒绝，走 platform 现有 `assertHumanCredential` 写法；
+ *   物理删除，仍被单据引用时由 repo 把外键 23503 翻译成 409 `STATE_CONFLICT`。
  */
 
 const OBJECT_TYPE = 'customer';
@@ -50,7 +51,6 @@ export interface CustomerWriteContext extends CustomerContext {
 
 interface ParsedListQuery {
   readonly companyId?: string;
-  readonly status?: Customer['status'];
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
   readonly limit: number;
@@ -93,7 +93,7 @@ function assertCompanyVisible(principal: Principal, companyId: string): void {
 /** AI 不得直接执行危险动作（D52① / D54⑥）；与 platform 现有危险动作处理一致。 */
 function assertHumanCredential(principal: Principal): void {
   if (principal.actorType === 'ai') {
-    throw new AppError('AI_ACTION_FORBIDDEN', 'AI 不得直接停用客户，需人类审批');
+    throw new AppError('AI_ACTION_FORBIDDEN', 'AI 不得直接删除客户，需人类审批');
   }
 }
 
@@ -118,7 +118,6 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
   }
   return {
     companyId: parsed.data.companyId,
-    status: parsed.data.status,
     keyword: parsed.data.keyword,
     cursor,
     limit: clampLimit(parsed.data.limit),
@@ -245,7 +244,6 @@ export async function createCustomer(ctx: CustomerWriteContext): Promise<Custome
     contactName: input.contactName ?? null,
     contactPhone: input.contactPhone ?? null,
     creditTermDays: input.creditTermDays ?? null,
-    status: input.status ?? '启用',
   });
   // 归属公司在写入前已确定；update / delete 则在事务里回填。
   audit.companyId = input.companyId;
@@ -285,8 +283,9 @@ export async function updateCustomer(ctx: CustomerWriteContext): Promise<Custome
 }
 
 /**
- * 停用客户（软删除）：只置 `status='停用'`，不物理删除。
- * 危险动作：AI 凭证默认拒绝（D52① / D54⑥）；If-Match 强 ETag；成功后回新 ETag。
+ * 删除客户（物理删除）：成功回被删实体 + ETag。
+ * 危险动作：AI 凭证默认拒绝（D52① / D54⑥）；If-Match 强 ETag；
+ * 仍被单据引用时 repo 抛 409 `STATE_CONFLICT`（`reason=HAS_REFERENCES`）。
  */
 export async function deleteCustomer(ctx: CustomerWriteContext): Promise<Customer> {
   const principal = requirePrincipal(ctx.request);
@@ -298,15 +297,15 @@ export async function deleteCustomer(ctx: CustomerWriteContext): Promise<Custome
   const expectedVersion = parseIfMatchVersion(ctx.request);
 
   const audit = auditEventOf(ctx.request, principal, 'customer.delete', id, {
-    afterStatus: '停用',
+    deleted: true,
   });
 
   const customer = await withAudit(database, audit, async (tx) => {
-    const updated = await repo.softDeleteCustomer(repoContext(tx, principal), id, expectedVersion);
-    if (!updated) throw new AppError('NOT_FOUND', '客户不存在');
-    audit.companyId = updated.companyId;
-    audit.changeSummary = { afterStatus: updated.status };
-    return updated;
+    const deleted = await repo.deleteCustomer(repoContext(tx, principal), id, expectedVersion);
+    if (!deleted) throw new AppError('NOT_FOUND', '客户不存在');
+    audit.companyId = deleted.companyId;
+    audit.changeSummary = { deleted: true, name: deleted.name };
+    return deleted;
   });
 
   ctx.reply.header('ETag', etagOf(customer.version));

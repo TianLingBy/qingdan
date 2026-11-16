@@ -153,7 +153,6 @@ describe('masterdata 供应商用例（PGlite + seed 演示租户）', () => {
     expect(created.companyId).toBe(DEMO_IDS.companyId);
     expect(created.supplierNo).toBe('S-001');
     expect(created.suppliedMaterials).toEqual(['化肥', '种子']);
-    expect(created.status).toBe('启用');
     expect(created.version).toBe(1);
 
     const detail = await getSupplier(readCtx({}, { params: { id: created.id } }));
@@ -252,14 +251,8 @@ describe('masterdata 供应商用例（PGlite + seed 演示租户）', () => {
     expect(wildcard.items).toHaveLength(0);
   });
 
-  it('状态过滤与游标分页：两页无重叠', async () => {
+  it('游标分页：两页无重叠', async () => {
     for (const name of ['分页甲供应商', '分页乙供应商', '分页丙供应商']) await createOne({ name });
-    await createOne({ name: '分页停用供应商', status: '停用' });
-
-    const enabled = await listSuppliers(readCtx({}, { query: { status: '启用' } }));
-    expect(enabled.items.every((item) => item.status === '启用')).toBe(true);
-    const disabled = await listSuppliers(readCtx({}, { query: { status: '停用' } }));
-    expect(disabled.items.every((item) => item.status === '停用')).toBe(true);
 
     const first = await listSuppliers(readCtx({}, { query: { limit: 2 } }));
     expect(first.items).toHaveLength(2);
@@ -399,39 +392,40 @@ describe('masterdata 供应商用例（PGlite + seed 演示租户）', () => {
     );
   });
 
-  it('软删除：status 置「停用」、版本 +1，行仍在（不物理删除）', async () => {
-    const created = await createOne({ name: '待停用供应商' });
+  it('物理删除：行被移除，之后按 id 读 → 404', async () => {
+    const created = await createOne({ name: '待删除供应商' });
     const { ctx, state } = writeCtx(
       {},
       { params: { id: created.id }, headers: { 'if-match': '"1"' } },
     );
     const deleted = await deleteSupplier(ctx);
 
-    expect(deleted.status).toBe('停用');
-    expect(deleted.version).toBe(2);
-    expect(state.headers.ETag).toBe('"2"');
+    expect(deleted.id).toBe(created.id);
+    expect(deleted.version).toBe(1);
+    expect(state.headers.ETag).toBe('"1"');
 
-    const row = await test.database.query<{ status: string; version: number }>(
-      'SELECT status, version FROM supplier WHERE id = $1',
+    const row = await test.database.query<{ id: string }>(
+      'SELECT id FROM supplier WHERE id = $1',
       [created.id],
     );
-    expect(row.rows).toHaveLength(1);
-    expect(row.rows[0]).toMatchObject({ status: '停用', version: 2 });
+    expect(row.rows).toHaveLength(0);
 
-    // 停用后仍可按 id 读取（是否出现在选供应商弹窗由调用方按 status 过滤）。
-    const detail = await getSupplier(readCtx({}, { params: { id: created.id } }));
-    expect(detail.status).toBe('停用');
+    // 删除后按 id 读取 → 404。
+    await expectAppError(
+      getSupplier(readCtx({}, { params: { id: created.id } })),
+      'NOT_FOUND',
+    );
 
-    // 用旧版本再删 → 409。
+    // 行已不存在，再删同一个 id → 404（不是版本冲突）。
     await expectAppError(
       deleteSupplier(
         writeCtx({}, { params: { id: created.id }, headers: { 'if-match': '"1"' } }).ctx,
       ),
-      'VERSION_CONFLICT',
+      'NOT_FOUND',
     );
   });
 
-  it('D52①/D54⑥：AI 直接停用 → AI_ACTION_FORBIDDEN，供应商状态不变', async () => {
+  it('D52①/D54⑥：AI 直接删除 → AI_ACTION_FORBIDDEN，供应商仍在', async () => {
     const created = await createOne({ name: 'AI 停用供应商' });
     const aiPrincipal = principal({
       actorType: 'ai',
@@ -447,11 +441,11 @@ describe('masterdata 供应商用例（PGlite + seed 演示租户）', () => {
       'AI_ACTION_FORBIDDEN',
     );
 
-    const row = await test.database.query<{ status: string }>(
-      'SELECT status FROM supplier WHERE id = $1',
+    const row = await test.database.query<{ id: string }>(
+      'SELECT id FROM supplier WHERE id = $1',
       [created.id],
     );
-    expect(row.rows[0]?.status).toBe('启用');
+    expect(row.rows).toHaveLength(1);
   });
 
   it('D51/D54②：create/update/delete 写审计；普通列表/详情不写', async () => {
@@ -464,6 +458,20 @@ describe('masterdata 供应商用例（PGlite + seed 演示租户）', () => {
     await updateSupplier(
       writeCtx({}, { params: { id: created.id }, headers: { 'if-match': '"1"' }, body: { contactName: '新联系人' } }).ctx,
     );
+
+    // 普通读不记审计（物理删除后行已不存在，因此读检查放在删除之前）。
+    const beforeReads = await test.database.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM audit_log WHERE tenant_id = $1 AND object_type = 'supplier'",
+      [DEMO_IDS.tenantId],
+    );
+    await listSuppliers(readCtx());
+    await getSupplier(readCtx({}, { params: { id: created.id } }));
+    const afterReads = await test.database.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM audit_log WHERE tenant_id = $1 AND object_type = 'supplier'",
+      [DEMO_IDS.tenantId],
+    );
+    expect(afterReads.rows[0]!.count).toBe(beforeReads.rows[0]!.count);
+
     await deleteSupplier(
       writeCtx({}, { params: { id: created.id }, headers: { 'if-match': '"2"' } }).ctx,
     );
@@ -493,15 +501,5 @@ describe('masterdata 供应商用例（PGlite + seed 演示租户）', () => {
     ]);
     expect(events.rows.every((row) => row.result === 'success')).toBe(true);
     expect(events.rows.every((row) => row.company_id === DEMO_IDS.companyId)).toBe(true);
-
-    // 普通读不记审计。
-    await listSuppliers(readCtx());
-    await getSupplier(readCtx({}, { params: { id: created.id } }));
-
-    const afterReads = await test.database.query<{ count: number }>(
-      "SELECT count(*)::int AS count FROM audit_log WHERE tenant_id = $1 AND object_type = 'supplier'",
-      [DEMO_IDS.tenantId],
-    );
-    expect(afterReads.rows[0]!.count).toBe(afterWrites.rows[0]!.count);
   });
 });

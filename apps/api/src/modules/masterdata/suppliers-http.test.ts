@@ -14,7 +14,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  *   - create 201、detail 200，均回强 ETag `"<version>"`；update/delete 必须带 If-Match；
  *   - D49 keyword 只匹配名称/联系人/联系电话，不按 supplier_no 检索；
  *   - 供货物料条目上限 20、单项 1-64 字：21 项 / 65 字 → 422；
- *   - D52① 停用属危险动作：AI 凭证 403 AI_ACTION_FORBIDDEN 且状态不变。
+ *   - D52① 删除属危险动作：AI 凭证 403 AI_ACTION_FORBIDDEN 且实体仍在。
  */
 
 const PUBLIC_BASE_URL = 'https://qingdan.example';
@@ -178,7 +178,6 @@ describe('masterdata 供应商 HTTP（PGlite + seed 演示租户）', () => {
       contactName: 'HTTP联系人',
       contactPhone: '13500002222',
       suppliedMaterials: ['面粉', '白糖'],
-      status: '启用',
       version: 1,
     });
 
@@ -307,8 +306,8 @@ describe('masterdata 供应商 HTTP（PGlite + seed 演示租户）', () => {
     expect(replay.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
   });
 
-  it('delete：缺 If-Match → 428；软停用成功回新 ETag，详情仍可读', async () => {
-    const created = await createOne('HTTP软删供应商');
+  it('delete：缺 If-Match → 428；物理删除成功回 ETag，详情 404', async () => {
+    const created = await createOne('HTTP删除供应商');
 
     const missing = await app.inject({
       method: 'DELETE',
@@ -324,16 +323,44 @@ describe('masterdata 供应商 HTTP（PGlite + seed 演示租户）', () => {
       headers: writeHeaders(ownerCookie, 'req-sup-delete-ok', { 'if-match': '"1"' }),
     });
     expect(deleted.statusCode).toBe(200);
-    expect(deleted.headers.etag).toBe('"2"');
-    expect(deleted.json()).toMatchObject({ status: '停用', version: 2 });
+    expect(deleted.headers.etag).toBe('"1"');
+    expect(deleted.json()).toMatchObject({ id: created.id, name: 'HTTP删除供应商', version: 1 });
 
     const detail = await app.inject({
       method: 'GET',
       url: `/api/v1/suppliers/${created.id}`,
       headers: readHeaders(ownerCookie, 'req-sup-delete-detail'),
     });
+    expect(detail.statusCode).toBe(404);
+    expect(detail.json()).toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('删除被采购单引用的供应商 → 409 STATE_CONFLICT + reason=HAS_REFERENCES', async () => {
+    const created = await createOne('HTTP被引用供应商');
+    await test.database.query(
+      `INSERT INTO purchase_order (id, tenant_id, company_id, order_no, supplier_id, handler_id)
+       VALUES ('01900000-0000-7000-8000-0000000000d1', $1, $2, 'HTTP-REF-PO-001', $3, $4)`,
+      [DEMO_IDS.tenantId, DEMO_IDS.companyId, created.id, DEMO_IDS.ownerEmployeeId],
+    );
+
+    const blocked = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/suppliers/${created.id}`,
+      headers: writeHeaders(ownerCookie, 'req-sup-delete-referenced', { 'if-match': '"1"' }),
+    });
+    expect(blocked.statusCode).toBe(409);
+    const body = blocked.json() as { code: string; message: string; details?: { reason?: string } };
+    expect(body.code).toBe('STATE_CONFLICT');
+    expect(body.details?.reason).toBe('HAS_REFERENCES');
+    expect(body.message).toContain('还有单据在用');
+
+    // 被引用时删除失败，供应商仍在。
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/suppliers/${created.id}`,
+      headers: readHeaders(ownerCookie, 'req-sup-delete-referenced-detail'),
+    });
     expect(detail.statusCode).toBe(200);
-    expect((detail.json() as Supplier).status).toBe('停用');
   });
 
   it('D15：跨公司不可见——详情 404、列表为空、创建到不可见公司 403', async () => {
@@ -385,7 +412,7 @@ describe('masterdata 供应商 HTTP（PGlite + seed 演示租户）', () => {
     expect((managerList.json() as { items: Supplier[] }).items).toHaveLength(0);
   });
 
-  it('D52①：AI 凭证停用供应商 → 403 AI_ACTION_FORBIDDEN，供应商状态不变', async () => {
+  it('D52①：AI 凭证删除供应商 → 403 AI_ACTION_FORBIDDEN，供应商仍在', async () => {
     const tokenResponse = await app.inject({
       method: 'POST',
       url: '/api/v1/api-tokens',
@@ -413,10 +440,10 @@ describe('masterdata 供应商 HTTP（PGlite + seed 演示租户）', () => {
     expect(forbidden.statusCode).toBe(403);
     expect(forbidden.json()).toMatchObject({ code: 'AI_ACTION_FORBIDDEN' });
 
-    const row = await test.database.query<{ status: string }>(
-      'SELECT status FROM supplier WHERE id = $1',
+    const row = await test.database.query<{ id: string }>(
+      'SELECT id FROM supplier WHERE id = $1',
       [created.id],
     );
-    expect(row.rows[0]?.status).toBe('启用');
+    expect(row.rows).toHaveLength(1);
   });
 });

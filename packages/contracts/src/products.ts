@@ -14,9 +14,6 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  *   服务端把 `defaultSalePrice` 返回为 `null`，而不是省略字段（前端不必猜键是否存在）。
  */
 
-/** 商品状态：停用后不出现在单据选对象弹窗（模块验收标准）。 */
-export const ProductStatusSchema = z.enum(['启用', '停用']);
-
 export const ProductSchema = z.object({
   id: z.string(),
   tenantId: z.string(),
@@ -29,7 +26,6 @@ export const ProductSchema = z.object({
   aliases: z.array(z.string()),
   specification: z.string().nullable(),
   unit: z.string(),
-  status: ProductStatusSchema,
   /** decimal 字符串（D54）；无看价权限时为 null（D27）。 */
   defaultSalePrice: z.string().nullable(),
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
@@ -45,7 +41,6 @@ export type Product = z.infer<typeof ProductSchema>;
  */
 export const ProductListQuerySchema = PageQuerySchema.extend({
   companyId: z.string().uuid().optional(),
-  status: ProductStatusSchema.optional(),
   keyword: z.string().min(1).max(64).optional(),
 });
 
@@ -59,7 +54,6 @@ const productOptionalFields = {
   productNo: z.string().max(64).nullable().optional(),
   aliases: z.array(z.string().min(1).max(64)).max(20).optional(),
   specification: z.string().max(128).nullable().optional(),
-  status: ProductStatusSchema.optional(),
   defaultSalePrice: DecimalInput.nullable().optional(),
 } as const;
 
@@ -150,12 +144,12 @@ export const PRODUCT_ROUTES: readonly RouteDef[] = [
     path: '/api/v1/products/{id}',
     domain: 'product',
     action: 'delete',
-    summary: '停用商品（软删除，不做物理删除；危险动作，AI 默认禁止）',
+    summary: '删除商品（物理删除；被单据引用时 409 拒绝，危险动作，AI 默认禁止）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
-    // 回实体而不是 204：客户端要拿到新 `version` 才能继续并发写（与 token.revoke 的 204 不同，
-    // 因为商品停用后仍会被列表/详情读取，回读实体更贴近实际用法）。
+    // 回实体而不是 204：回被删实体快照（含 version），便于客户端确认删除结果与审计留痕。
+    // 物理删除后行不再存在，不能再按 id 回读（与 token.revoke 的 204 不同）。
     response: { status: 200, schema: ProductSchema },
   }),
 ];

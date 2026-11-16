@@ -13,9 +13,6 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - 写操作必记审计（D51）；停用属危险动作，AI 默认禁止（D52① / D54 危险动作清单）。
  */
 
-/** 供应商状态：停用后不出现在单据选供应商弹窗（与商品/客户同款）。 */
-export const SupplierStatusSchema = z.enum(['启用', '停用']);
-
 /**
  * 供货物料：自由文本清单（最多 20 项、每项 1-64 字）。
  * 契约第一批 §2 只写「供货物料」未给结构；按任务口径先实现「自由文本清单」，
@@ -35,7 +32,6 @@ export const SupplierSchema = z.object({
   contactPhone: z.string().nullable(),
   /** 供货物料自由文本清单，默认空数组（口径见 `SuppliedMaterialsSchema`）。 */
   suppliedMaterials: SuppliedMaterialsSchema,
-  status: SupplierStatusSchema,
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
   version: z.number().int(),
   createdAt: z.string().datetime(),
@@ -49,7 +45,6 @@ export type Supplier = z.infer<typeof SupplierSchema>;
  */
 export const SupplierListQuerySchema = PageQuerySchema.extend({
   companyId: z.string().uuid().optional(),
-  status: SupplierStatusSchema.optional(),
   keyword: z.string().min(1).max(64).optional(),
 });
 
@@ -58,7 +53,6 @@ const supplierOptionalFields = {
   supplierNo: z.string().max(64).nullable().optional(),
   contactName: z.string().max(64).nullable().optional(),
   contactPhone: z.string().max(32).nullable().optional(),
-  status: SupplierStatusSchema.optional(),
 } as const;
 
 export const SupplierCreateInputSchema = z.object({
@@ -149,11 +143,11 @@ export const SUPPLIER_ROUTES: readonly RouteDef[] = [
     path: '/api/v1/suppliers/{id}',
     domain: 'supplier',
     action: 'delete',
-    summary: '停用供应商（软删除，不做物理删除；危险动作，AI 默认禁止）',
+    summary: '删除供应商（物理删除；被单据引用时 409 拒绝，危险动作，AI 默认禁止）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
-    // 回实体而不是 204：客户端要拿到新 `version` 才能继续并发写（与商品/客户同款）。
+    // 回实体而不是 204：回被删实体快照（含 version），便于客户端确认删除结果与审计留痕。
     response: { status: 200, schema: SupplierSchema },
   }),
 ];

@@ -7,6 +7,7 @@ import {
   type CustomerUpdateInput,
 } from '@qingdan/contracts';
 import type { SqlClient } from '../../platform/db/client.js';
+import { rethrowIfReferenced } from './fk-conflict.js';
 
 /**
  * 客户数据访问层（D15 / D49 / D63）。
@@ -30,7 +31,6 @@ export interface CustomerRepoContext {
 
 export interface CustomerListQuery {
   readonly companyId?: string;
-  readonly status?: Customer['status'];
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
   readonly limit: number;
@@ -53,7 +53,6 @@ interface CustomerRow {
   contact_name: string | null;
   contact_phone: string | null;
   credit_term_days: number | null;
-  status: string;
   version: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -67,7 +66,6 @@ const COLUMNS = `c.id,
   c.contact_name,
   c.contact_phone,
   c.credit_term_days,
-  c.status,
   c.version,
   c.created_at,
   c.updated_at`;
@@ -85,7 +83,6 @@ const UPDATE_COLUMNS: ReadonlyArray<{
   { key: 'contactName', column: 'contact_name' },
   { key: 'contactPhone', column: 'contact_phone' },
   { key: 'creditTermDays', column: 'credit_term_days' },
-  { key: 'status', column: 'status' },
 ];
 
 function toDate(value: Date | string): Date {
@@ -102,7 +99,6 @@ function mapRow(row: CustomerRow): Customer {
     contactName: row.contact_name,
     contactPhone: row.contact_phone,
     creditTermDays: row.credit_term_days,
-    status: row.status as Customer['status'],
     version: row.version,
     createdAt: toDate(row.created_at).toISOString(),
     updatedAt: toDate(row.updated_at).toISOString(),
@@ -130,7 +126,7 @@ async function queryRow(
 }
 
 /**
- * 客户列表：租户 + 可见公司内，按 keyword（名称/联系人/联系电话）与状态过滤，游标分页。
+ * 客户列表：租户 + 可见公司内，按 keyword（名称/联系人/联系电话）过滤，游标分页。
  * 显式点不可见公司时返回空列表（范围过滤优先，不越权也不报错），与商品一致。
  */
 export async function listCustomers(
@@ -143,11 +139,6 @@ export async function listCustomers(
   if (query.companyId !== undefined) {
     params.push(query.companyId);
     where.push(`c.company_id = $${params.length}::uuid`);
-  }
-
-  if (query.status !== undefined) {
-    params.push(query.status);
-    where.push(`c.status = $${params.length}`);
   }
 
   if (query.keyword !== undefined) {
@@ -201,8 +192,8 @@ export async function insertCustomer(
   const result = await ctx.tx.query<CustomerRow>(
     `INSERT INTO customer
        (id, tenant_id, company_id, customer_no, name, contact_name,
-        contact_phone, credit_term_days, status)
-     VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8, $9)
+        contact_phone, credit_term_days)
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7, $8)
      RETURNING ${RETURNING_COLUMNS}`,
     [
       input.id,
@@ -213,7 +204,6 @@ export async function insertCustomer(
       input.contactName ?? null,
       input.contactPhone ?? null,
       input.creditTermDays ?? null,
-      input.status ?? '启用',
     ],
   );
   return mapRow(result.rows[0]!);
@@ -271,10 +261,11 @@ export async function updateCustomer(
 }
 
 /**
- * 停用客户（软删除）：只把 `status` 置「停用」并递增版本，**不物理删除**。
- * 查不到（含跨公司）→ null；版本不匹配 → `VERSION_CONFLICT`。
+ * 删除客户（物理删除）：行被真正移除。
+ * 查不到（含跨公司）→ null；版本不匹配 → `VERSION_CONFLICT`；
+ * 仍被单据引用（外键 23503）→ 409 `STATE_CONFLICT` + `reason=HAS_REFERENCES`。
  */
-export async function softDeleteCustomer(
+export async function deleteCustomer(
   ctx: CustomerRepoContext,
   id: string,
   expectedVersion: number,
@@ -288,17 +279,17 @@ export async function softDeleteCustomer(
     });
   }
 
-  const result = await ctx.tx.query<CustomerRow>(
-    `UPDATE customer c
-        SET status = '停用',
-            version = c.version + 1
-      WHERE c.id = $1::uuid
-        AND c.tenant_id = $2
-        AND c.company_id = ANY($3::uuid[])
-        AND c.version = $4
-      RETURNING ${COLUMNS}`,
-    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
-  );
+  const result = await ctx.tx
+    .query<CustomerRow>(
+      `DELETE FROM customer c
+        WHERE c.id = $1::uuid
+          AND c.tenant_id = $2
+          AND c.company_id = ANY($3::uuid[])
+          AND c.version = $4
+        RETURNING ${COLUMNS}`,
+      [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+    )
+    .catch((error: unknown) => rethrowIfReferenced(error, '客户'));
   const row = result.rows[0];
   if (!row) {
     throw new AppError('VERSION_CONFLICT', '客户已被并发修改，请重新读取后重试');

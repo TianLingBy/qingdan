@@ -185,9 +185,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     );
     await test.database.query(
       `INSERT INTO processor
-         (id, tenant_id, company_id, processor_no, name, contact_name, status)
-       VALUES ($1, $2, $3, NULL, '用例加工厂', '王五', '启用'),
-              ($4, $2, $5, NULL, '二司加工厂', '赵六', '启用')
+         (id, tenant_id, company_id, processor_no, name, contact_name)
+       VALUES ($1, $2, $3, NULL, '用例加工厂', '王五'),
+              ($4, $2, $5, NULL, '二司加工厂', '赵六')
        ON CONFLICT (id) DO NOTHING`,
       [
         PROCESSOR_ID,
@@ -199,9 +199,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '用例材料', '{}', '件', '启用'),
-              ($4, $2, $5, NULL, '二司材料', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '用例材料', '{}', '件'),
+              ($4, $2, $5, NULL, '二司材料', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [
         PRODUCT_ID,
