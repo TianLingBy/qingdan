@@ -6,6 +6,8 @@ import type {
   CreateBatchCommand,
   CreateBatchReceipt,
   StockBatchConsumptionSnapshot,
+  StockReservationCommand,
+  StockReservationReceipt,
 } from '../../../platform/services/registry.js';
 
 export type { CreateBatchCommand, CreateBatchReceipt };
@@ -220,6 +222,13 @@ interface NewBatchRow {
   custodian_id: string;
 }
 
+interface ReservationBatchRow {
+  id: string;
+  batch_no: string;
+  pending_execution_qty: string | number;
+  available_qty: string | number;
+}
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NON_NEGATIVE_DECIMAL_RE = /^\d{1,12}(\.\d{1,6})?$/;
@@ -255,6 +264,176 @@ function assertUuid(value: string, field: string): void {
       field,
     });
   }
+}
+
+async function applyPendingReservationChange(
+  tx: SqlClient,
+  input: StockReservationCommand,
+  direction: 'reserve' | 'release',
+): Promise<StockReservationReceipt> {
+  assertUuid(input.tenantId, 'tenantId');
+  assertUuid(input.companyId, 'companyId');
+  assertUuid(input.sourceDocId, 'sourceDocId');
+  assertUuid(input.handledBy, 'handledBy');
+  if (input.lines.length === 0) {
+    throw new AppError('VALIDATION_FAILED', '库存占用至少需要一条批次明细', {
+      sourceDocType: input.sourceDocType,
+      sourceDocId: input.sourceDocId,
+    });
+  }
+
+  const totals = new Map<string, string>();
+  for (const line of input.lines) {
+    assertUuid(line.batchId, 'batchId');
+    if (!NON_NEGATIVE_DECIMAL_RE.test(line.qty)) {
+      throw new AppError('VALIDATION_FAILED', '占用数量必须是非负 decimal 字符串', {
+        batchId: line.batchId,
+        qty: line.qty,
+      });
+    }
+    const added = await tx.query<{ qty: string | number; positive: boolean }>(
+      `SELECT trim_scale($1::amount + $2::amount) AS qty,
+              ($1::amount + $2::amount > 0) AS positive`,
+      [totals.get(line.batchId) ?? '0', line.qty],
+    );
+    const row = added.rows[0];
+    if (!row?.positive) {
+      throw new AppError('VALIDATION_FAILED', '占用数量必须大于 0', {
+        batchId: line.batchId,
+        qty: line.qty,
+      });
+    }
+    totals.set(line.batchId, String(row.qty));
+  }
+
+  const entries = [...totals.entries()].sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  const locked = await tx.query<ReservationBatchRow>(
+    `SELECT id::text AS id,
+            batch_no,
+            trim_scale(pending_execution_qty) AS pending_execution_qty,
+            trim_scale(available_qty) AS available_qty
+       FROM inventory_batch
+      WHERE tenant_id = $1
+        AND company_id = $2::uuid
+        AND id = ANY($3::uuid[])
+      ORDER BY id
+      FOR UPDATE`,
+    [input.tenantId, input.companyId, entries.map(([batchId]) => batchId)],
+  );
+  if (locked.rows.length !== entries.length) {
+    const found = new Set(locked.rows.map((row) => row.id));
+    throw new AppError('NOT_FOUND', '存在不存在或不属于该公司的库存批次', {
+      batchIds: entries.map(([batchId]) => batchId).filter((id) => !found.has(id)),
+      companyId: input.companyId,
+    });
+  }
+
+  const rowsById = new Map(locked.rows.map((row) => [row.id, row]));
+  const receipt: StockReservationReceipt['lines'][number][] = [];
+  for (const [batchId, qty] of entries) {
+    const current = rowsById.get(batchId);
+    if (!current) {
+      throw new AppError('NOT_FOUND', '库存批次不存在', { batchId });
+    }
+    const guard = await tx.query<{
+      qty_positive: boolean;
+      available_enough: boolean;
+      pending_enough: boolean;
+    }>(
+      `SELECT ($1::amount > 0) AS qty_positive,
+              ($1::amount <= $2::amount) AS available_enough,
+              ($1::amount <= $3::amount) AS pending_enough`,
+      [qty, current.available_qty, current.pending_execution_qty],
+    );
+    const checks = guard.rows[0];
+    if (!checks?.qty_positive) {
+      throw new AppError('VALIDATION_FAILED', '占用数量必须大于 0', {
+        batchId,
+        qty,
+      });
+    }
+    if (direction === 'reserve' && !checks.available_enough) {
+      throw new AppError('VERSION_CONFLICT', '库存批次可用量不足，无法建单占用', {
+        reason: 'insufficient_available_qty',
+        sourceDocType: input.sourceDocType,
+        sourceDocId: input.sourceDocId,
+        batchId,
+        batchNo: current.batch_no,
+        requestedQty: qty,
+        availableQty: String(current.available_qty),
+      });
+    }
+    if (direction === 'release' && !checks.pending_enough) {
+      throw new AppError('VERSION_CONFLICT', '库存批次待执行占用不足，无法释放', {
+        reason: 'insufficient_pending_reservation',
+        sourceDocType: input.sourceDocType,
+        sourceDocId: input.sourceDocId,
+        batchId,
+        batchNo: current.batch_no,
+        requestedQty: qty,
+        pendingExecutionQty: String(current.pending_execution_qty),
+      });
+    }
+
+    const updated = await tx.query<{
+      pending_execution_qty: string | number;
+      available_qty: string | number;
+    }>(
+      direction === 'reserve'
+        ? `UPDATE inventory_batch
+              SET pending_execution_qty = pending_execution_qty + $1::amount,
+                  version = version + 1
+            WHERE id = $2::uuid
+              AND tenant_id = $3
+              AND company_id = $4::uuid
+            RETURNING trim_scale(pending_execution_qty) AS pending_execution_qty,
+                      trim_scale(available_qty) AS available_qty`
+        : `UPDATE inventory_batch
+              SET pending_execution_qty = pending_execution_qty - $1::amount,
+                  version = version + 1
+            WHERE id = $2::uuid
+              AND tenant_id = $3
+              AND company_id = $4::uuid
+              AND pending_execution_qty >= $1::amount
+            RETURNING trim_scale(pending_execution_qty) AS pending_execution_qty,
+                      trim_scale(available_qty) AS available_qty`,
+      [qty, batchId, input.tenantId, input.companyId],
+    );
+    const next = updated.rows[0];
+    if (!next) {
+      throw new AppError('VERSION_CONFLICT', '库存待执行占用并发更新失败', {
+        reason: 'concurrent_pending_change',
+        sourceDocType: input.sourceDocType,
+        sourceDocId: input.sourceDocId,
+        batchId,
+        requestedQty: qty,
+      });
+    }
+    receipt.push({
+      batchId,
+      qty,
+      pendingAfter: String(next.pending_execution_qty),
+      availableAfter: String(next.available_qty),
+    });
+  }
+
+  return { lines: receipt };
+}
+
+export function reservePendingReservations(
+  tx: SqlClient,
+  input: StockReservationCommand,
+): Promise<StockReservationReceipt> {
+  return applyPendingReservationChange(tx, input, 'reserve');
+}
+
+export function releasePendingReservations(
+  tx: SqlClient,
+  input: StockReservationCommand,
+): Promise<StockReservationReceipt> {
+  return applyPendingReservationChange(tx, input, 'release');
 }
 
 /**

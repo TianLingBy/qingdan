@@ -31,6 +31,7 @@ import {
   productDirectoryPort,
   settlementDraftPort,
   stockFlowPort,
+  type StockReservationLine,
 } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 import type { SalesOrderPrintLabels } from '../services/customer-copy.js';
@@ -547,6 +548,14 @@ export async function createSalesOrder(
       id,
       orderNo,
     });
+    const reservation = await stockFlowPort().reservePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: created.companyId,
+      sourceDocType: 'E',
+      sourceDocId: created.id,
+      handledBy: principal.employeeId,
+      lines: reservationLines(created.lines),
+    });
     audit.companyId = created.companyId;
     audit.changeSummary = {
       orderNo: created.orderNo,
@@ -555,6 +564,7 @@ export async function createSalesOrder(
       totalAmount: created.totalAmount,
       lineCount: created.lines.length,
       feeCount: created.fees.length,
+      pendingReservations: reservation.lines,
     };
     return created;
   });
@@ -646,8 +656,19 @@ export async function cancelSalesOrder(
     afterStatus: '已取消',
   });
   const order = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const current = await repo.getSalesOrder(context, id);
+    if (!current) throw new AppError('NOT_FOUND', '销售单不存在');
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: current.companyId,
+      sourceDocType: 'E',
+      sourceDocId: current.id,
+      handledBy: principal.employeeId,
+      lines: reservationLines(current.lines),
+    });
     const cancelled = await repo.cancelSalesOrder(
-      repoContext(tx, principal),
+      context,
       id,
       expectedVersion,
     );
@@ -657,6 +678,7 @@ export async function cancelSalesOrder(
       beforeStatus: state.status,
       afterStatus: cancelled.status,
       version: cancelled.version,
+      pendingReleases: released.lines,
     };
     return cancelled;
   });
@@ -687,6 +709,21 @@ function fromMicro(micro: bigint): string {
   const fracPart = (abs % SCALE).toString().padStart(6, '0').replace(/0+$/, '');
   const body = fracPart === '' ? `${intPart}` : `${intPart}.${fracPart}`;
   return negative ? `-${body}` : body;
+}
+
+function reservationLines(
+  lines: readonly { readonly batchIds: readonly string[]; readonly qty: string }[],
+): StockReservationLine[] {
+  return lines.flatMap((line) => {
+    const qty = toMicro(line.qty);
+    const count = BigInt(line.batchIds.length);
+    const base = qty / count;
+    const remainder = qty - base * count;
+    return line.batchIds.map((batchId, index) => ({
+      batchId,
+      qty: fromMicro(index === line.batchIds.length - 1 ? base + remainder : base),
+    }));
+  });
 }
 
 /**

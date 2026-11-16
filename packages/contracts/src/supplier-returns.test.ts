@@ -55,8 +55,8 @@ const CREATE_INPUT = {
 const byId = new Map(SUPPLIER_RETURN_ROUTES.map((route) => [route.operationId, route]));
 
 describe('供应商退货契约（supplier_return）', () => {
-  it('4 条端点全部登记并汇总进 ROUTES，且归属 purchase', () => {
-    expect(SUPPLIER_RETURN_ROUTES).toHaveLength(4);
+  it('5 条端点全部登记并汇总进 ROUTES，且归属 purchase', () => {
+    expect(SUPPLIER_RETURN_ROUTES).toHaveLength(5);
     for (const route of SUPPLIER_RETURN_ROUTES) expect(route.module).toBe('purchase');
 
     const purchaseIds = routesOfModule(ROUTES, 'purchase').map((r) => r.operationId);
@@ -72,6 +72,7 @@ describe('供应商退货契约（supplier_return）', () => {
         'POST /api/v1/supplier-returns supplier_return.create',
         'GET /api/v1/supplier-returns/{id} supplier_return.detail.read',
         'POST /api/v1/supplier-returns/{id}/complete supplier_return.complete',
+        'POST /api/v1/supplier-returns/{id}/cancel supplier_return.cancel',
       ].sort(),
     );
 
@@ -79,6 +80,7 @@ describe('供应商退货契约（supplier_return）', () => {
     expect(byId.get('supplier_return.detail.read')?.scope).toBe('supplier_return.read');
     expect(byId.get('supplier_return.create')?.scope).toBe('supplier_return.create');
     expect(byId.get('supplier_return.complete')?.scope).toBe('supplier_return.approve');
+    expect(byId.get('supplier_return.cancel')?.scope).toBe('supplier_return.delete');
   });
 
   it('普通读不记审计；登记退货 audit=write（D51 / D54 ②）', () => {
@@ -88,6 +90,8 @@ describe('供应商退货契约（supplier_return）', () => {
       required: false,
     });
     expect(byId.get('supplier_return.create')?.audit).toEqual({ kind: 'write', required: true });
+    expect(byId.get('supplier_return.complete')?.audit).toEqual({ kind: 'write', required: true });
+    expect(byId.get('supplier_return.cancel')?.audit).toEqual({ kind: 'write', required: true });
   });
 
   it('登记退货是冲正危险动作：AI 禁止且必须给原因；201 返回实体', () => {
@@ -96,6 +100,11 @@ describe('供应商退货契约（supplier_return）', () => {
       reasonRequired: true,
     });
     expect(byId.get('supplier_return.create')?.response?.status).toBe(201);
+    expect(byId.get('supplier_return.cancel')?.ai).toEqual({
+      policy: 'forbid',
+      reasonRequired: true,
+    });
+    expect(byId.get('supplier_return.cancel')?.requiresIfMatch).toBe(true);
     expect(byId.get('supplier_return.list.read')?.response?.status).toBe(200);
     expect(byId.get('supplier_return.detail.read')?.response?.status).toBe(200);
   });

@@ -8,6 +8,7 @@ import {
   type CursorPayload,
   type SupplierReturn,
   type SupplierReturnCreateInput,
+  type SupplierReturnLine,
   type SupplierReturnStatus,
 } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -17,7 +18,10 @@ import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
-import { stockFlowPort } from '../../../platform/services/registry.js';
+import {
+  stockFlowPort,
+  type StockReservationLine,
+} from '../../../platform/services/registry.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import * as repo from '../repo.js';
 
@@ -76,7 +80,10 @@ function requireDatabase(ctx: SupplierReturnContext, operationId: string): Datab
   return database;
 }
 
-function requireScope(principal: Principal, action: 'read' | 'create' | 'approve'): void {
+function requireScope(
+  principal: Principal,
+  action: 'read' | 'create' | 'approve' | 'delete',
+): void {
   if (!allowsScope(principal.scope, 'supplier_return', action)) {
     throw new AppError('FORBIDDEN', `缺少 supplier_return.${action} 权限`);
   }
@@ -157,7 +164,10 @@ function auditEventOf(
   principal: Principal,
   objectId: string,
   changeSummary: Record<string, unknown>,
-  action: 'supplier_return.create' | 'supplier_return.complete' = 'supplier_return.create',
+  action:
+    | 'supplier_return.create'
+    | 'supplier_return.complete'
+    | 'supplier_return.cancel' = 'supplier_return.create',
 ): MutableAuditEvent {
   return {
     tenantId: principal.tenantId,
@@ -255,6 +265,14 @@ export async function createSupplierReturn(
       id,
       returnNo,
     });
+    const reservation = await stockFlowPort().reservePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: supplierReturn.companyId,
+      sourceDocType: 'S',
+      sourceDocId: supplierReturn.id,
+      handledBy: principal.employeeId,
+      lines: supplierReservationLines(supplierReturn.lines),
+    });
     audit.companyId = supplierReturn.companyId;
     audit.changeSummary = {
       returnNo: supplierReturn.returnNo,
@@ -266,12 +284,85 @@ export async function createSupplierReturn(
         (count, line) => count + line.batchIds.length,
         0,
       ),
+      pendingReservations: reservation.lines,
     };
     return supplierReturn;
   });
 
   ctx.reply.status(201);
   return created;
+}
+
+export async function cancelSupplierReturn(
+  ctx: SupplierReturnWriteContext,
+): Promise<SupplierReturn> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'supplier_return.cancel');
+  requireScope(principal, 'delete');
+  assertHumanCreation(principal, ctx.request.auditReason);
+  const id = parseSupplierReturnId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const audit = auditEventOf(
+    ctx.request,
+    principal,
+    id,
+    { beforeStatus: '进行中', afterStatus: '已取消' },
+    'supplier_return.cancel',
+  );
+
+  return withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const order = await repo.getSupplierReturn(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '供应商退货单不存在');
+    if (order.version !== expectedVersion) {
+      throw new AppError('VERSION_CONFLICT', '供应商退货单版本与 If-Match 不一致', {
+        expected: expectedVersion,
+        current: order.version,
+      });
+    }
+    if (order.status !== '进行中') {
+      throw new AppError('VALIDATION_FAILED', '只有进行中的供应商退货单可以取消', {
+        status: order.status,
+      });
+    }
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: order.companyId,
+      sourceDocType: 'S',
+      sourceDocId: order.id,
+      handledBy: principal.employeeId,
+      lines: supplierReservationLines(order.lines),
+    });
+    const cancelled = await repo.cancelSupplierReturn(context, id, expectedVersion);
+    if (!cancelled) throw new AppError('NOT_FOUND', '供应商退货单不存在');
+    audit.companyId = cancelled.companyId;
+    audit.changeSummary = {
+      beforeStatus: order.status,
+      afterStatus: cancelled.status,
+      version: cancelled.version,
+      pendingReleases: released.lines,
+    };
+    ctx.reply.header('ETag', `"${cancelled.version}"`);
+    return cancelled;
+  });
+}
+
+function supplierReservationLines(lines: readonly SupplierReturnLine[]): StockReservationLine[] {
+  return lines.flatMap((line) => {
+    const [whole, fraction = ''] = line.qty.split('.');
+    const qty = BigInt(whole ?? '0') * 1_000_000n + BigInt(fraction.padEnd(6, '0'));
+    const count = BigInt(line.batchIds.length);
+    const base = qty / count;
+    const remainder = qty - base * count;
+    return line.batchIds.map((batchId, index) => {
+      const share = index === line.batchIds.length - 1 ? base + remainder : base;
+      const text = share.toString().padStart(7, '0');
+      return {
+        batchId,
+        qty: `${text.slice(0, -6)}.${text.slice(-6)}`.replace(/0+$/, '').replace(/\.$/, ''),
+      };
+    });
+  });
 }
 
 export async function completeSupplierReturn(ctx: SupplierReturnWriteContext): Promise<SupplierReturn> {

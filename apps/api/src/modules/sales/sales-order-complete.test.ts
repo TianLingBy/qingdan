@@ -178,11 +178,12 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
     expect(body.version).toBe(order.version + 1);
     expect(response.headers.etag).toBe(`"${body.version}"`);
 
-    // 库存：行数量 5 均分给两个批次 → 各 2.5（末批承余量，此处恰好整除）。
-    expect(saleBefore).toBe('100');
-    expect(costBefore).toBe('100');
-    expect(await batchAvailable(BATCH_A_ID)).toBe('97.5');
-    expect(await batchAvailable(BATCH_B_ID)).toBe('97.5');
+    // #286：建单先把行数量 5 均分占用到两个批次，因此出库前可用量已是 97.5。
+    // 本步按 #286 约定暂不改变完成逻辑，完成仍按旧口径扣 inbound_qty。
+    expect(saleBefore).toBe('97.5');
+    expect(costBefore).toBe('97.5');
+    expect(await batchAvailable(BATCH_A_ID)).toBe('95');
+    expect(await batchAvailable(BATCH_B_ID)).toBe('95');
 
     // 库存流水：来源是 E 单，两行，数量为负。
     const flows = await test.database.query<{
@@ -302,18 +303,24 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
 
   it('库存不足 → 409 且整单回滚（状态仍进行中、无 C 草稿、无流水）', async () => {
     const thinBatch = '01900000-0000-7000-8000-000000005129';
-    // 入库量 10、可用量 1：销售 3 件时入库量仍非负，先撞「可用量将为负」这条
-    // 共用校验（#269 要改的正是这一句），不会提前命中入库量分支。
+    // 建单时库存足够；建单成功占用 3 后，再模拟实物库存被外部压到 0，
+    // 完成时必须命中「可用量将为负」，而不是掩盖成入库量为负。
     await test.database.query(
       `INSERT INTO inventory_batch
          (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost,
           inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty, custodian_id)
-       VALUES ($1, $2, $3, $4, 'E-COMPLETE-THIN', '10', '10', '9', '0', '0', $5)`,
+       VALUES ($1, $2, $3, $4, 'E-COMPLETE-THIN', '10', '10', '0', '0', '0', $5)`,
       [thinBatch, DEMO_IDS.tenantId, DEMO_IDS.companyId, PRODUCT_ID, DEMO_IDS.ownerEmployeeId],
     );
     const order = await createOrder(nextRequestId('thin'), {
       lines: [{ ...LINE, batchIds: [thinBatch], qty: '3' }],
     });
+    await test.database.query(
+      `UPDATE inventory_batch
+          SET referenced_qty = inbound_qty - pending_execution_qty
+        WHERE id = $1::uuid`,
+      [thinBatch],
+    );
 
     const response = await complete(order, nextRequestId('thin-complete'));
     expect(response.statusCode).toBe(409);

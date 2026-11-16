@@ -7,10 +7,12 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
+import { registerServices } from '../../../platform/services/registry.js';
 import {
   createTestDatabase,
   type TestDatabase,
 } from '../../../testing/pglite.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 import { createSalesOrder } from './sales-orders.js';
 import {
   createSalesReceipt,
@@ -151,6 +153,7 @@ describe('sales 收款记录用例（PGlite + seed 演示租户）', () => {
   }
 
   beforeAll(async () => {
+    registerServices(inventoryServices);
     test = await createTestDatabase();
     await seed(test.database);
     await test.database.query(
