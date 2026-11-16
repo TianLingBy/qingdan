@@ -6,6 +6,7 @@ import { ApiError } from '../../api/client';
 import { ACTION_WORDS, DOMAIN_WORDS } from '../employees/domain-words';
 import { authApi, authKeys } from '../auth/auth-api';
 import { allows, type ScopeAction } from '../../lib/access';
+import { actionSupport } from './action-support';
 
 /**
  * 权限设置页（22 页之第 17 页，#144）——岗位模板（D44「权限设置」= 岗位 + 个人覆盖）。
@@ -308,7 +309,8 @@ export function PermissionsPage() {
   );
 }
 
-function PositionEditor({
+/** 导出仅为 #255 测试能直接渲染矩阵本体（弹窗要点击才出现，静态渲染打不开）。 */
+export function PositionEditor({
   editor,
   saving,
   readOnly,
@@ -395,6 +397,10 @@ function PositionEditor({
           </p>
         )}
 
+        <p className="mt-3 rounded bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          部分动作当前没有端点支撑，勾了只是预授权，等功能上线才生效。悬停格子可看该动作在本域的说明。
+        </p>
+
         <div className="mt-3 max-h-[50vh] overflow-y-auto rounded border border-slate-200">
           <table className="w-full text-sm">
             <thead>
@@ -413,19 +419,37 @@ function PositionEditor({
                   <td className="px-3 py-1.5 text-xs text-slate-600">{domain.label}</td>
                   {TEMPLATE_ACTIONS.map((action) => {
                     const checked = editor.selection[domain.key]?.has(action.key) ?? false;
+                    const support = actionSupport(domain.key, action.key);
+                    const preauthOnly = support === 'preauth-only';
                     return (
                       <td key={action.key} className="px-3 py-1.5 text-center">
                         <button
                           type="button"
                           aria-pressed={checked}
                           aria-label={`${domain.label}·${action.label}`}
+                          data-domain={domain.key}
+                          data-action={action.key}
+                          data-support={support}
+                          title={`${domain.label}·${action.label}：${
+                            preauthOnly
+                              ? '后端暂无该动作端点，勾选只是预授权，等功能上线才生效。'
+                              : '后端已有该动作端点，勾选后立即生效。'
+                          }`}
                           disabled={readOnly}
                           onClick={() => toggle(domain.key, action.key)}
                           className={[
                             'h-6 w-6 rounded text-xs',
                             checked
                               ? 'bg-slate-800 text-white hover:bg-slate-700'
-                              : 'border border-slate-200 text-slate-300 hover:border-slate-400',
+                              : 'text-slate-300 hover:border-slate-400',
+                            checked
+                              ? preauthOnly
+                                ? 'border border-dashed border-slate-400'
+                                : ''
+                              : preauthOnly
+                                ? 'border border-dashed border-slate-300'
+                                : 'border border-slate-200',
+                            preauthOnly ? 'opacity-70' : '',
                             readOnly ? 'cursor-not-allowed opacity-60' : '',
                           ].join(' ')}
                         >
