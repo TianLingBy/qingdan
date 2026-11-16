@@ -59,6 +59,10 @@ describe('毛利率是比例，不是百分比数字', () => {
     expect(formatCommissionRate('0.05')).toBe('5.00%');
     expect(formatCommissionRate('0')).toBe('0.00%');
   });
+
+  it('撤销结算后提成比例快照为 null，显示破折号而不是 0%（D88）', () => {
+    expect(formatCommissionRate(null)).toBe('—');
+  });
 });
 
 describe('脱敏与不可确认的原因（D78 / D19）', () => {
@@ -132,6 +136,8 @@ describe('提成与损失的口径说明', () => {
     expect(commissionNote('0.05', '10')).toBeNull();
     // 金额被遮罩（null）但比例不为 0 时也不该说「没配比例」
     expect(commissionNote('0.05', null)).toBeNull();
+    // 撤销结算后比例快照为 null（D88）：不解释「没配比例」。
+    expect(commissionNote(null, null)).toBeNull();
   });
 
   it('相关损失为 0 时不解释净毛利差在哪', () => {
