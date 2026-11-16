@@ -36,7 +36,8 @@ import * as repo from '../repo-processors.js';
  * - 比价（D64③）：listQuotes 按 processName + 日期区间过滤，repo 按 unitPrice 升序返回；
  *   契约没有 sort 字段，排序由过滤条件（带 processName）自动启用，不额外加契约参数；
  * - 单价（D54）：decimal 字符串原样进出，不转 number；
- * - 停用是危险动作（D52① / D54⑥）：AI 凭证默认拒绝，照 platform 现有 `assertHumanCredential` 写法。
+ * - 删除是危险动作（D52① / D54⑥）：AI 凭证默认拒绝，照 platform 现有 `assertHumanCredential` 写法；
+ *   物理删除，仍被单据引用时由 repo 把外键 23503 翻译成 409 `STATE_CONFLICT`。
  */
 
 const PROCESSOR_OBJECT_TYPE = 'processor';
@@ -58,7 +59,6 @@ export interface ProcessorWriteContext extends ProcessorContext {
 
 interface ParsedListQuery {
   readonly companyId?: string;
-  readonly status?: Processor['status'];
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
   readonly limit: number;
@@ -113,7 +113,7 @@ function assertCompanyVisible(principal: Principal, companyId: string): void {
 /** AI 不得直接执行危险动作（D52① / D54⑥）；与 platform 现有危险动作处理一致。 */
 function assertHumanCredential(principal: Principal): void {
   if (principal.actorType === 'ai') {
-    throw new AppError('AI_ACTION_FORBIDDEN', 'AI 不得直接停用加工厂，需人类审批');
+    throw new AppError('AI_ACTION_FORBIDDEN', 'AI 不得直接删除加工厂，需人类审批');
   }
 }
 
@@ -140,7 +140,6 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
   }
   return {
     companyId: parsed.data.companyId,
-    status: parsed.data.status,
     keyword: parsed.data.keyword,
     cursor: decodePageCursor(parsed.data.cursor),
     limit: clampLimit(parsed.data.limit),
@@ -300,7 +299,6 @@ export async function createProcessor(ctx: ProcessorWriteContext): Promise<Proce
       name: input.name,
       processorNo: input.processorNo ?? null,
       contactName: input.contactName ?? null,
-      status: input.status ?? '启用',
     },
   );
   // 归属公司在写入前已确定；update / delete 则在事务里回填。
@@ -351,8 +349,9 @@ export async function updateProcessor(ctx: ProcessorWriteContext): Promise<Proce
 }
 
 /**
- * 停用加工厂（软删除）：只置 `status='停用'`，不物理删除。
- * 危险动作：AI 凭证默认拒绝（D52① / D54⑥）；If-Match 强 ETag；成功后回新 ETag。
+ * 删除加工厂（物理删除）：成功回被删实体 + ETag。
+ * 危险动作：AI 凭证默认拒绝（D52① / D54⑥）；If-Match 强 ETag；
+ * 仍被单据引用时 repo 抛 409 `STATE_CONFLICT`（`reason=HAS_REFERENCES`）。
  */
 export async function deleteProcessor(ctx: ProcessorWriteContext): Promise<Processor> {
   const principal = requirePrincipal(ctx.request);
@@ -369,19 +368,19 @@ export async function deleteProcessor(ctx: ProcessorWriteContext): Promise<Proce
     'processor.delete',
     PROCESSOR_OBJECT_TYPE,
     id,
-    { afterStatus: '停用' },
+    { deleted: true },
   );
 
   const processor = await withAudit(database, audit, async (tx) => {
-    const updated = await repo.softDeleteProcessor(
+    const deleted = await repo.deleteProcessor(
       repoContext(tx, principal),
       id,
       expectedVersion,
     );
-    if (!updated) throw new AppError('NOT_FOUND', '加工厂不存在');
-    audit.companyId = updated.companyId;
-    audit.changeSummary = { afterStatus: updated.status };
-    return updated;
+    if (!deleted) throw new AppError('NOT_FOUND', '加工厂不存在');
+    audit.companyId = deleted.companyId;
+    audit.changeSummary = { deleted: true, name: deleted.name };
+    return deleted;
   });
 
   ctx.reply.header('ETag', etagOf(processor.version));

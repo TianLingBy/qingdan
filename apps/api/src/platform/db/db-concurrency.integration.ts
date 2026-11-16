@@ -85,9 +85,9 @@ async function main(): Promise<void> {
         [employeeA, tenantA],
       );
       await tx.query(
-        `INSERT INTO product (id, tenant_id, company_id, name, specification, unit, status)
-         VALUES ($1, $2, $3, 'L3 商品', '标准', '个', '启用'),
-                ($4, $2, $5, 'L3 他司商品', '标准', '个', '启用')`,
+        `INSERT INTO product (id, tenant_id, company_id, name, specification, unit)
+         VALUES ($1, $2, $3, 'L3 商品', '标准', '个'),
+                ($4, $2, $5, 'L3 他司商品', '标准', '个')`,
         [productA, tenantA, companyA, productB, companyB],
       );
     });
@@ -233,8 +233,8 @@ async function main(): Promise<void> {
       const supplierId = randomUUID();
       const orderId = randomUUID();
       await database.query(
-        `INSERT INTO supplier (id, tenant_id, company_id, supplier_no, name, supplied_materials, status)
-         VALUES ($1, $2, $3, NULL, 'L3 供应商', '{}', '启用')`,
+        `INSERT INTO supplier (id, tenant_id, company_id, supplier_no, name, supplied_materials)
+         VALUES ($1, $2, $3, NULL, 'L3 供应商', '{}')`,
         [supplierId, tenantA, companyA],
       );
       await database.query(

@@ -101,9 +101,9 @@ describe('销售单列表导出 CSV', () => {
     await seed(test.database);
     await test.database.query(
       `INSERT INTO customer
-         (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, NULL, '导出客户一', '启用'),
-              ($4, $2, $3, NULL, $5, '启用')
+         (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, NULL, '导出客户一'),
+              ($4, $2, $3, NULL, $5)
        ON CONFLICT (id) DO NOTHING`,
       [
         CUSTOMER_A_ID,
@@ -115,8 +115,8 @@ describe('销售单列表导出 CSV', () => {
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '导出测试商品', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '导出测试商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );

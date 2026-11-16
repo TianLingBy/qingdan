@@ -78,8 +78,8 @@ async function insertProduct(
 ): Promise<void> {
   await test.database.query(
     `INSERT INTO product
-       (id, tenant_id, company_id, product_no, name, aliases, specification, unit, status)
-     VALUES ($1, $2, $3, $4, $5, '{}', NULL, '件', '启用')`,
+       (id, tenant_id, company_id, product_no, name, aliases, specification, unit)
+     VALUES ($1, $2, $3, $4, $5, '{}', NULL, '件')`,
     [id, DEMO_IDS.tenantId, companyId, productNo, name],
   );
 }

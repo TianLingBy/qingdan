@@ -29,7 +29,8 @@ import * as repo from '../repo.js';
  * - 审计（D51 / D54②）：create / update / delete 与业务同事务写；普通读不写；
  * - 看价（D27）：无 `product.view_price` 时 `defaultSalePrice` 返回 `null`（保留字段）；
  *   写默认售价同样要求看价权限（契约 `product.update` 摘要）；
- * - 停用是危险动作（D52① / D54⑥）：AI 凭证默认拒绝，照 platform 现有 `assertHumanCredential` 写法；
+ * - 删除是危险动作（D52① / D54⑥）：AI 凭证默认拒绝，照 platform 现有 `assertHumanCredential` 写法；
+ *   物理删除，仍被单据引用时由 repo 把外键 23503 翻译成 409 `STATE_CONFLICT`；
  * - 金额一律 decimal 字符串，repo 侧不转 number（D54）。
  */
 
@@ -51,7 +52,6 @@ export interface ProductWriteContext extends ProductContext {
 
 interface ParsedListQuery {
   readonly companyId?: string;
-  readonly status?: Product['status'];
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
   readonly limit: number;
@@ -112,7 +112,7 @@ function assertCompanyVisible(principal: Principal, companyId: string): void {
 /** AI 不得直接执行危险动作（D52① / D54⑥）；与 platform 现有危险动作处理一致。 */
 function assertHumanCredential(principal: Principal): void {
   if (principal.actorType === 'ai') {
-    throw new AppError('AI_ACTION_FORBIDDEN', 'AI 不得直接停用商品，需人类审批');
+    throw new AppError('AI_ACTION_FORBIDDEN', 'AI 不得直接删除商品，需人类审批');
   }
 }
 
@@ -137,7 +137,6 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
   }
   return {
     companyId: parsed.data.companyId,
-    status: parsed.data.status,
     keyword: parsed.data.keyword,
     cursor,
     limit: clampLimit(parsed.data.limit),
@@ -266,7 +265,6 @@ export async function createProduct(ctx: ProductWriteContext): Promise<Product> 
     name: input.name,
     productNo: input.productNo ?? null,
     unit: input.unit,
-    status: input.status ?? '启用',
     aliases: input.aliases ?? [],
     hasDefaultSalePrice: input.defaultSalePrice !== undefined && input.defaultSalePrice !== null,
   });
@@ -309,8 +307,9 @@ export async function updateProduct(ctx: ProductWriteContext): Promise<Product> 
 }
 
 /**
- * 停用商品（软删除，D62⑤）：只置 `status='停用'`，不物理删除。
- * 危险动作：AI 凭证默认拒绝（D52① / D54⑥）；If-Match 强 ETag；成功后回新 ETag。
+ * 删除商品（物理删除）：成功回被删实体 + ETag。
+ * 危险动作：AI 凭证默认拒绝（D52① / D54⑥）；If-Match 强 ETag；
+ * 仍被单据引用时 repo 抛 409 `STATE_CONFLICT`（`reason=HAS_REFERENCES`）。
  */
 export async function deleteProduct(ctx: ProductWriteContext): Promise<Product> {
   const principal = requirePrincipal(ctx.request);
@@ -322,15 +321,15 @@ export async function deleteProduct(ctx: ProductWriteContext): Promise<Product> 
   const expectedVersion = parseIfMatchVersion(ctx.request);
 
   const audit = auditEventOf(ctx.request, principal, 'product.delete', id, {
-    afterStatus: '停用',
+    deleted: true,
   });
 
   const product = await withAudit(database, audit, async (tx) => {
-    const updated = await repo.softDeleteProduct(repoContext(tx, principal), id, expectedVersion);
-    if (!updated) throw new AppError('NOT_FOUND', '商品不存在');
-    audit.companyId = updated.companyId;
-    audit.changeSummary = { afterStatus: updated.status };
-    return updated;
+    const deleted = await repo.deleteProduct(repoContext(tx, principal), id, expectedVersion);
+    if (!deleted) throw new AppError('NOT_FOUND', '商品不存在');
+    audit.companyId = deleted.companyId;
+    audit.changeSummary = { deleted: true, name: deleted.name };
+    return deleted;
   });
 
   ctx.reply.header('ETag', etagOf(product.version));

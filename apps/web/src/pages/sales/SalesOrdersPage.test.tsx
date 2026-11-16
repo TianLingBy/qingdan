@@ -22,7 +22,6 @@ const PRODUCT: Product = {
   aliases: [],
   specification: '50/箱',
   unit: '箱',
-  status: '启用',
   defaultSalePrice: '12.5',
   version: 1,
   createdAt: '2026-11-08T00:00:00.000Z',

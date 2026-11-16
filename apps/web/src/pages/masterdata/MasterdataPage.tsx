@@ -26,7 +26,6 @@ interface FormState {
   companyId: string;
   number: string;
   name: string;
-  status: '启用' | '停用';
   unit: string;
   aliases: string;
   specification: string;
@@ -41,7 +40,6 @@ const EMPTY_FORM: FormState = {
   companyId: '',
   number: '',
   name: '',
-  status: '启用',
   unit: '件',
   aliases: '',
   specification: '',
@@ -113,13 +111,29 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : '操作失败，请稍后重试';
 }
 
+/**
+ * 删除失败提示：被单据引用时后端返回 409 `STATE_CONFLICT` + `details.reason = HAS_REFERENCES`，
+ * 直接显示后端的 message（如「该客户还有单据在用，不能删除」），不要吞成通用「操作失败」。
+ */
+export function deleteErrorText(error: unknown): string {
+  if (
+    error instanceof ApiError &&
+    error.code === 'STATE_CONFLICT' &&
+    typeof error.details === 'object' &&
+    error.details !== null &&
+    (error.details as { reason?: unknown }).reason === 'HAS_REFERENCES'
+  ) {
+    return error.message;
+  }
+  return errorText(error);
+}
+
 function formFromItem(item: MasterdataItem, kind: MasterdataKind): FormState {
   return {
     ...EMPTY_FORM,
     companyId: item.companyId,
     number: readNumber(item, kind) ?? '',
     name: item.name,
-    status: item.status,
     contactName: readContactName(item) ?? '',
     contactPhone:
       (kind === 'suppliers' || kind === 'customers') && 'contactPhone' in item
@@ -207,17 +221,6 @@ function EntityForm({
             onChange={(event) => onChange('number', event.target.value)}
             className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
           />
-        </label>
-        <label className="text-sm">
-          <span className="text-slate-600">状态</span>
-          <select
-            value={form.status}
-            onChange={(event) => onChange('status', event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-          >
-            <option value="启用">启用</option>
-            <option value="停用">停用</option>
-          </select>
         </label>
 
         {kind === 'products' && (
@@ -452,7 +455,6 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   const copy = PAGE_COPY[kind];
   const queryClient = useQueryClient();
   const [keyword, setKeyword] = useState('');
-  const [status, setStatus] = useState<'' | '启用' | '停用'>('');
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [pageIndex, setPageIndex] = useState(0);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -476,17 +478,15 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   useEffect(() => {
     setCursors([null]);
     setPageIndex(0);
-  }, [keyword, status]);
+  }, [keyword]);
 
   const filters: MasterdataListFilters = {
     keyword: optionalText(keyword),
-    status: status || undefined,
     cursor: cursors[pageIndex] ?? null,
   };
   const list = useQuery({
     queryKey: masterdataQueryKeys.list(kind, {
       keyword: filters.keyword,
-      status: filters.status,
       cursor: filters.cursor,
     }),
     queryFn: async () => {
@@ -503,7 +503,6 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
       if (kind === 'products') {
         const common = {
           name: form.name.trim(),
-          status: form.status,
           productNo: optionalText(form.number) ?? null,
           aliases: splitList(form.aliases),
           specification: optionalText(form.specification) ?? null,
@@ -534,7 +533,6 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
       if (kind === 'suppliers') {
         const common = {
           name: form.name.trim(),
-          status: form.status,
           supplierNo: optionalText(form.number) ?? null,
           contactName: optionalText(form.contactName) ?? null,
           contactPhone: optionalText(form.contactPhone) ?? null,
@@ -553,7 +551,6 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
         }
         const common = {
           name: form.name.trim(),
-          status: form.status,
           customerNo: optionalText(form.number) ?? null,
           contactName: optionalText(form.contactName) ?? null,
           contactPhone: optionalText(form.contactPhone) ?? null,
@@ -566,7 +563,6 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
 
       const common = {
         name: form.name.trim(),
-        status: form.status,
         processorNo: optionalText(form.number) ?? null,
         contactName: optionalText(form.contactName) ?? null,
       };
@@ -606,8 +602,7 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
     setSelectedProcessor(null);
   };
   const askDisable = (item: MasterdataItem) => {
-    if (item.status === '停用') return;
-    if (globalThis.confirm?.(`确认停用“${item.name}”吗？停用后不会出现在新单据选择中。`) === false) {
+    if (globalThis.confirm?.(`确认删除“${item.name}”吗？删除后不能恢复。`) === false) {
       return;
     }
     disable.mutate(item);
@@ -640,15 +635,6 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
           placeholder={kind === 'products' ? '按名称或别名搜索（不按编号）' : '按名称或联系人搜索'}
           className="min-w-64 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
         />
-        <select
-          value={status}
-          onChange={(event) => setStatus(event.target.value as typeof status)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">全部状态</option>
-          <option value="启用">启用</option>
-          <option value="停用">停用</option>
-        </select>
       </div>
 
       {formOpen && (
@@ -677,7 +663,9 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorText(save.error)}</p>
       )}
       {disable.error && (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorText(disable.error)}</p>
+        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+          {deleteErrorText(disable.error)}
+        </p>
       )}
 
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
@@ -699,7 +687,6 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                 <th className="px-4 py-3">名称</th>
                 <th className="px-4 py-3">补充信息</th>
                 {kind === 'products' && <th className="px-4 py-3">默认售价</th>}
-                <th className="px-4 py-3">状态</th>
                 <th className="px-4 py-3 text-right">操作</th>
               </tr>
             </thead>
@@ -712,17 +699,6 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                   {kind === 'products' && (
                     <td className="px-4 py-3">{formatPrice(readPrice(item, kind))}</td>
                   )}
-                  <td className="px-4 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        item.status === '启用'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'bg-slate-100 text-slate-500'
-                      }`}
-                    >
-                      {item.status}
-                    </span>
-                  </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
                       {kind === 'processors' && (
@@ -743,11 +719,11 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                       </button>
                       <button
                         type="button"
-                        disabled={item.status === '停用' || disable.isPending}
+                        disabled={disable.isPending}
                         onClick={() => askDisable(item)}
                         className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 disabled:opacity-40"
                       >
-                        停用
+                        删除
                       </button>
                     </div>
                   </td>
