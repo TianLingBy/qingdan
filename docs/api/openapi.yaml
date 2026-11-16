@@ -6994,6 +6994,178 @@ paths:
         policy: allow
         reasonRequired: false
       x-mcp-tool: qingdan_todos_read
+  /api/v1/settings/overview:
+    get:
+      operationId: platform.settings.overview
+      summary: 设置中心概览（无 company.read → 403；手机号脱敏；只返回可访问公司）
+      tags:
+        - company
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tenant:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      status:
+                        type: string
+                        enum:
+                          - 启用
+                          - 停用
+                    required:
+                      - id
+                      - name
+                      - status
+                    additionalProperties: false
+                  companies:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Company"
+                  numbering:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                            - A
+                            - B
+                            - E
+                            - "N"
+                            - C
+                            - R
+                            - S
+                            - I
+                        rule:
+                          type: string
+                        next:
+                          type:
+                            - string
+                            - "null"
+                      required:
+                        - type
+                        - rule
+                        - next
+                      additionalProperties: false
+                  me:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      phoneMasked:
+                        type: string
+                      companies:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Company"
+                      positions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            companyId:
+                              type: string
+                            companyName:
+                              type: string
+                          required:
+                            - id
+                            - name
+                            - companyId
+                            - companyName
+                          additionalProperties: false
+                    required:
+                      - name
+                      - phoneMasked
+                      - companies
+                      - positions
+                    additionalProperties: false
+                  permissions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        domain:
+                          type: string
+                          enum:
+                            - purchase
+                            - processing
+                            - sales
+                            - internal_trade
+                            - settlement
+                            - commission
+                            - customer_return
+                            - supplier_return
+                            - stocktake
+                            - product
+                            - customer
+                            - supplier
+                            - processor
+                            - inventory_qty
+                            - inventory_flow
+                            - stocktake_page
+                            - employee
+                            - permission
+                            - company
+                            - profit_report
+                            - audit
+                            - api_integration
+                            - payment
+                            - billing
+                            - workbench
+                        action:
+                          type: string
+                          enum:
+                            - read
+                            - create
+                            - update
+                            - approve
+                            - ship
+                            - delete
+                            - view_price
+                            - export
+                      required:
+                        - domain
+                        - action
+                      additionalProperties: false
+                required:
+                  - tenant
+                  - companies
+                  - numbering
+                  - me
+                  - permissions
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: company.read
+      x-module: platform
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_platform_settings_overview
   /api/v1/reports/profit:
     get:
       operationId: profit_report.read
@@ -7962,6 +8134,22 @@ components:
           pattern: ^[0-9]{4}$
         name:
           type: string
+        address:
+          type:
+            - string
+            - "null"
+        contactPhone:
+          type:
+            - string
+            - "null"
+        taxNo:
+          type:
+            - string
+            - "null"
+        logoUrl:
+          type:
+            - string
+            - "null"
         version:
           type: integer
           minimum: -9007199254740991

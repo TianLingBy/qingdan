@@ -7,6 +7,7 @@ export * from './processors.js';
 export * from './employees.js';
 export * from './positions.js';
 export * from './companies.js';
+export * from './settings.js';
 export * from './inventory.js';
 export * from './stocktakes.js';
 export * from './cost-adjustments.js';
