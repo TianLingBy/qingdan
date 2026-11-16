@@ -1,6 +1,7 @@
 import {
   AppError,
   SettlementOrderListQuerySchema,
+  SettlementUnsettleInputSchema,
   allowsScope,
   clampLimit,
   decodeCursor,
@@ -23,14 +24,16 @@ import * as repo from '../repo.js';
 import { maskSettlementAmounts } from '../services/masking.js';
 
 /**
- * C 结算单用例（D15 / D19 / D26 / D51 / D52 / D54 / D69）。
+ * C 结算单用例（D15 / D19 / D26 / D51 / D52 / D54 / D69 / D88）。
  *
  * - 查询：settlement.read；普通读不记审计。
  * - 确认：settlement.approve + settlement.view_price（P0-13：看不到金额的人不得签结算）；
  *   AI 默认禁止且必须带 reason（D52 / D52.1）；
  *   强制 If-Match 强 ETag；成功后状态置「已结算」并冻结相关损失快照。
+ * - 撤销：与确认同权限点（能确认才能撤销），AI 同样禁止；必须带原因与强 If-Match；
+ *   同一条 UPDATE 退回「待确认」并清空结算期快照，快照原值进审计（D88 / #288）。
  * - 金额：服务端不接收 body 金额；确认时由 SQL 以毛利 - 相关损失计算净毛利。
- * - 一期一单一次结算：重复确认返回 422，并发版本变化返回 409。
+ * - 一单一次结算但可撤销：重复确认返回 422，并发版本变化返回 409（D88）。
  *
  * D19 现状：E 单完成态已由 sales 模块经 D70 通道（settlementDraftPort →
  * services/drafts.ts）自动生成 C 单草稿；N 单完成态尚未接线，属 internal-trade 模块。
@@ -102,25 +105,26 @@ function requireScope(
 }
 
 /**
- * 结算确认是危险审批动作（D52① / D52.1）。
+ * 结算确认 / 撤销都是危险审批动作（D52① / D52.1 / D88）。
  * 路由 preHandler 会先对 AI 写请求执行 X-Reason 闸门；这里再兜底用例直调用，
  * 并在有 reason 时仍明确拒绝 AI 审批。
  */
 function assertHumanConfirmation(
   request: FastifyRequest,
   principal: Principal,
+  actionLabel = '确认结算',
 ): void {
   if (principal.actorType !== 'ai') return;
   if (!request.auditReason) {
     throw new AppError(
       'VALIDATION_FAILED',
-      'AI 调用确认结算必须提供 X-Reason',
+      `AI 调用${actionLabel}必须提供 X-Reason`,
       { header: 'X-Reason' },
     );
   }
   throw new AppError(
     'AI_ACTION_FORBIDDEN',
-    'AI 不得确认结算，必须由人类审批',
+    `AI 不得${actionLabel}，必须由人类审批`,
   );
 }
 
@@ -204,6 +208,7 @@ function repoContext(
 function auditEventOf(
   request: FastifyRequest,
   principal: Principal,
+  action: 'settlement.order.confirm' | 'settlement.order.unsettle',
   objectId: string,
   changeSummary: Record<string, unknown>,
 ): MutableAuditEvent {
@@ -214,7 +219,7 @@ function auditEventOf(
     actorId: principal.actorId,
     credentialId: principal.credentialId,
     source: request.auditSource,
-    action: 'settlement.order.confirm',
+    action,
     objectType: OBJECT_TYPE,
     objectId,
     changeSummary,
@@ -313,12 +318,12 @@ export async function confirmSettlementOrder(
   if (state.status === '已结算') {
     throw new AppError(
       'VALIDATION_FAILED',
-      '结算单已结算；一期一单只能结算一次（D19）',
+      '结算单已结算；一期一单一次，确认错了请先撤销结算（D19 / D88）',
       { status: state.status },
     );
   }
 
-  const audit = auditEventOf(ctx.request, principal, id, {
+  const audit = auditEventOf(ctx.request, principal, 'settlement.order.confirm', id, {
     beforeStatus: state.status,
     afterStatus: '已结算',
   });
@@ -364,4 +369,93 @@ export async function confirmSettlementOrder(
   // D27 / D78：写路径的计算永远用真实金额，但**响应**同样按看价脱敏。
   const canViewPrice = allowsScope(principal.scope, 'settlement', 'view_price');
   return maskSettlementAmounts(detailOf(order), canViewPrice);
+}
+
+/**
+ * 撤销结算（D88 / #288）：已结算 → 待确认，整单退回，清空结算期快照。
+ *
+ * 与确认完全对称：
+ * - 权限同 `settlement.approve` + `settlement.view_price`（能确认才能撤销）；
+ * - AI 禁止（`assertHumanConfirmation`），必须给原因；
+ * - 强 If-Match（缺 428、格式非法 / 版本不符 409）；
+ * - 状态必须是「已结算」，否则 422「结算单尚未结算，无需撤销」。
+ *
+ * 审计必须留下**被清掉的快照原值**（D51）：撤销不等于没发生过，错数仍可追溯。
+ * 撤销与确认都只写 `settlement_order` 一行，不碰来源单 / 库存 / 退货（不做部分撤销）。
+ */
+export async function unsettleSettlementOrder(
+  ctx: SettlementOrderWriteContext,
+): Promise<SettlementOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'settlement.order.unsettle');
+  requireScope(principal, 'approve');
+  requireScope(principal, 'view_price');
+  assertHumanConfirmation(ctx.request, principal, '撤销结算');
+
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+
+  const parsed = SettlementUnsettleInputSchema.safeParse(ctx.request.body);
+  if (!parsed.success) {
+    throw new AppError('VALIDATION_FAILED', '撤销结算请求体不合法', {
+      issues: issuesOf(parsed.error),
+    });
+  }
+
+  const state = await withTenant(database, principal.tenantId, (tx) =>
+    repo.loadSettlementOrderState(repoContext(tx, principal), id),
+  );
+  if (!state) throw new AppError('NOT_FOUND', '结算单不存在');
+  if (state.version !== expectedVersion) {
+    throw new AppError(
+      'VERSION_CONFLICT',
+      '结算单版本与 If-Match 不一致，请重新读取后重试',
+      { expected: expectedVersion, current: state.version },
+    );
+  }
+  if (state.status !== '已结算') {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      '结算单尚未结算，无需撤销',
+      { status: state.status },
+    );
+  }
+
+  const audit = auditEventOf(ctx.request, principal, 'settlement.order.unsettle', id, {
+    beforeStatus: state.status,
+    afterStatus: '待确认',
+    reason: parsed.data.reason,
+  });
+  audit.companyId = state.companyId;
+
+  const order = await withAudit(database, audit, async (tx) => {
+    const unsettled = await repo.unsettleSettlementOrder(
+      repoContext(tx, principal),
+      id,
+      expectedVersion,
+    );
+    if (!unsettled) {
+      throw new AppError(
+        'VERSION_CONFLICT',
+        '结算单已被并发修改，请重新读取后重试',
+      );
+    }
+    // 快照原值来自撤销前的状态读取（UPDATE 的 RETURNING 只有新值）。
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: unsettled.status,
+      version: unsettled.version,
+      reason: parsed.data.reason,
+      relatedLossAmount: state.relatedLossAmount,
+      netProfit: state.netProfit,
+      commissionRateSnapshot: state.commissionRateSnapshot,
+      commissionAmount: state.commissionAmount,
+    };
+    return unsettled;
+  });
+
+  ctx.reply.header('ETag', etagOf(order.version));
+  // D27 / D78：写完同样按看价脱敏响应（此时金额快照已清空）。
+  const canViewPrice = allowsScope(principal.scope, 'settlement', 'view_price');
+  return maskSettlementAmounts(order, canViewPrice);
 }
