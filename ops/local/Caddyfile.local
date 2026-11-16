@@ -1,0 +1,39 @@
+# [local-only] 本机内网 HTTPS 版 Caddyfile。
+# 与仓库 deploy/Caddyfile 的区别有三处，都是「本机当服务器」专有：
+#   1. `tls internal`：用 Caddy 自带 CA 签证书，不向 Let's Encrypt 申请
+#      （内网名没有公网 A 记录，ACME 必然失败）；
+#   2. 同时托管前端 SPA（/srv/web，来自 apps/web/dist），/api/* 才反代给 api。
+#      仓库版只反代 api，根路径会返回 401 JSON，浏览器看起来就是「打不开」；
+#   3. 第二个站点块只监听 80：TLS 客户端不会为「IP 地址」发 SNI（RFC 6066 禁止），
+#      Caddy 选不到证书 → 握手报 internal error，浏览器表现为「点不开」。
+#      所以 IP / localhost 一律在 80 端口 301 跳到唯一正统地址 https://qingdan.internal。
+# 统一跳过去还有个好处：写操作的 Origin 校验要求与 PUBLIC_BASE_URL 同源，
+# 只有 qingdan.internal 这个源能通过。
+# 真实域名上线时不要用这个文件，直接用仓库版 Caddyfile（自动 HTTPS）+ 独立前端服务。
+
+{
+	auto_https disable_redirects
+}
+
+qingdan.internal {
+	tls internal
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output stdout
+	}
+}
+
+http://qingdan.internal, http://127.0.0.1, http://localhost, http://10.12.2.75 {
+	redir https://qingdan.internal{uri} permanent
+}
