@@ -96,11 +96,15 @@ if (-not $DryRun) {
 }
 
 # ---------- 4. 重建镜像 ----------
+# 2026-11-17 踩过的坑：只 `build api` 会漏掉 migrate 自己的镜像。
+# compose 里 migrate 是独立 build（target: builder），不重建它就会拿四天前的旧镜像跑，
+# 旧镜像里的迁移文件列表是旧的，于是输出 `applied=0 skipped=30` 假装「都跑过了」，
+# 结果库里缺 6 个迁移、api 启动被 schema-guard 拦下、整站 502。
 if ($SkipBuild) {
   Say '跳过镜像重建（-SkipBuild）'
 } else {
-  Say '重建 api 镜像（这一步最慢，依赖层有缓存）...'
-  Compose 'build api' | Out-Null
+  Say '重建 api 与 migrate 镜像（这一步最慢，依赖层有缓存）...'
+  Compose 'build api migrate' | Out-Null
   Say '镜像已重建'
 }
 
@@ -110,8 +114,19 @@ $migrate = Compose '--profile tools run --rm migrate'
 if ($migrate) { $migrate -split "`n" | Where-Object { $_ -match 'applied|已应用|skip|error|FAIL' } | Select-Object -Last 12 | ForEach-Object { Say "  $_" } }
 
 # ---------- 6. 起服务 ----------
+# `up -d` 等 api 过健康检查，启动慢时会先报 unhealthy 再自己转好（实测 10 秒后 ps 就是 healthy）。
+# 所以这里失败不直接退出，等一轮再按 ps 判，避免把「慢」当「坏」。
 Say '重启服务 ...'
-Compose 'up -d' | Out-Null
+try {
+  Compose 'up -d' | Out-Null
+} catch {
+  Say 'up -d 报 unhealthy，等 60 秒后按实际状态判定 ...'
+  if (-not $DryRun) { Start-Sleep -Seconds 60 }
+  $ps = Compose 'ps --format "{{.Service}} {{.State}} {{.Status}}"'
+  if ($ps) { $ps -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { Say "  $_" } }
+  if ($ps -notmatch 'api +running') { Die 'api 没有起来，查 docker compose logs api' }
+  Say 'api 已就绪（启动慢，不是失败）'
+}
 
 # ---------- 7. 前端构建并发布（Caddy 直接挂 apps/web/dist，不重建镜像） ----------
 if ($SkipFrontend) {
@@ -119,7 +134,13 @@ if ($SkipFrontend) {
 } else {
   Say '构建前端 ...'
   if (-not $DryRun) {
-    & pnpm -C (Join-Path $RepoRoot 'apps/web') build 2>&1 | Select-Object -Last 3 | ForEach-Object { Say "  $_" }
+    # apps/web 依赖 @qingdan/contracts 等 workspace 包的 dist，
+    # 干净 worktree 里直接 `pnpm -C apps/web build` 会报 Cannot find module '@qingdan/contracts'。
+    if (-not (Test-Path (Join-Path $RepoRoot 'node_modules'))) {
+      Say '  首次运行，安装依赖 ...'
+      & pnpm -C $RepoRoot install --frozen-lockfile 2>&1 | Select-Object -Last 2 | ForEach-Object { Say "  $_" }
+    }
+    & pnpm -C $RepoRoot -r build 2>&1 | Select-Object -Last 3 | ForEach-Object { Say "  $_" }
     $src = Join-Path $RepoRoot 'apps\web\dist'
     $dst = Join-Path $AppDir 'apps\web\dist'
     if (-not (Test-Path $src)) { Die "前端产物不存在：$src" }
