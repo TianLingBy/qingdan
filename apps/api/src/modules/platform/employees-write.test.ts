@@ -14,7 +14,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  *   公司×岗位按两数组的全组合落 `employee_company_position`（契约只有两个数组，见用例头注释）；
  * - update：If-Match 强制（缺失 428 / 格式坏或不匹配 409）；不可改 id / 工号；
  *   改 isOwner 仅限人类且仅老板（D59⑥）；AI 普通编辑放行（契约 ai.policy=allow）；
- * - disable：软停用回实体 + 新 ETag；已停用幂等成功；最后一个在职老板不可停；
+ * - disable：软停用回实体 + 新 ETag；已停用再停用 → 409 STATE_CONFLICT；最后一个在职老板不可停；
  *   **停用后该员工的会话与 API Token 下一次请求立即 401（D52.1②，由
  *   computeAuthz 的 `e.status='在职'` 每请求现判保证，不引入缓存、不改内核函数）**；
  * - 全部写操作 100% 审计（D51）；失败审计由 mountRoutes 统一补 `fail`。
@@ -359,7 +359,7 @@ describe('platform 员工管理写端点（PGlite + seed 演示租户）', () =>
     expect(byManager.statusCode).toBe(403);
   });
 
-  it('disable：软停用 → 200 + status 停用 + 新 ETag；重复停用幂等；AI 停用 → 403', async () => {
+  it('disable：软停用 → 200 + status 停用 + 新 ETag；重复停用 → 409；失败审计不冒充成功', async () => {
     const created = await createEmployee(ownerCookie, 'req-employee-disable-seed', {
       ...CREATE_BODY,
       phone: '10000000017',
@@ -382,27 +382,32 @@ describe('platform 员工管理写端点（PGlite + seed 演示租户）', () =>
     expect(disabled.status).toBe('停用');
     expect(disabled.version).toBe(employee.version + 1);
 
-    // 幂等：已停用再次停用（同一 If-Match）仍成功，版本不再变。
+    // 已停用再次停用（当前 If-Match）必须报状态冲突，版本不再变。
     const again = await app.inject({
       method: 'DELETE',
       url: `/api/v1/employees/${employee.id}`,
       headers: {
         cookie: ownerCookie,
         origin: PUBLIC_BASE_URL,
-        'if-match': `"${employee.version}"`,
+        'if-match': `"${employee.version + 1}"`,
         'x-request-id': 'req-employee-disable-again',
       },
     });
-    expect(again.statusCode).toBe(200);
-    expect((again.json() as EmployeeBody).version).toBe(employee.version + 1);
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({
+      code: 'STATE_CONFLICT',
+      details: { reason: 'ALREADY_DISABLED', status: '停用' },
+    });
 
-    // D51：两次请求都有审计（第二次走幂等成功路径也要留痕）。
+    // D51：第一次成功；第二次失败留 fail 审计，但不能出现第二条成功审计。
     const audits = await test.database.query<AuditRow>(
       `SELECT action, object_type, result FROM audit_log
         WHERE request_id IN ($1, $2) ORDER BY action, result`,
       ['req-employee-disable-ok', 'req-employee-disable-again'],
     );
     expect(audits.rows.length).toBe(2);
+    expect(audits.rows.filter((row) => row.result === 'success')).toHaveLength(1);
+    expect(audits.rows.filter((row) => row.result === 'fail')).toHaveLength(1);
   });
 
   it('disable：缺 If-Match → 428；最后一个在职老板不可停（403 LAST_ACTIVE_OWNER）', async () => {

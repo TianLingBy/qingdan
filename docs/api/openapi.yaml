@@ -1724,11 +1724,6 @@ paths:
                     - type: string
                       maxLength: 128
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
                 defaultSalePrice:
                   anyOf:
                     - type: string
@@ -2035,11 +2030,6 @@ paths:
                       minimum: 0
                       maximum: 9007199254740991
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
               additionalProperties: false
     delete:
       operationId: customer.delete
@@ -2345,11 +2335,6 @@ paths:
                     - type: string
                       maxLength: 32
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
               additionalProperties: false
     delete:
       operationId: supplier.delete
@@ -2629,11 +2614,6 @@ paths:
                     - type: string
                       maxLength: 64
                     - type: "null"
-                status:
-                  type: string
-                  enum:
-                    - 启用
-                    - 停用
               additionalProperties: false
     delete:
       operationId: processor.delete

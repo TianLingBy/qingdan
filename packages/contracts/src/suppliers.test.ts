@@ -146,6 +146,8 @@ describe('供应商契约（masterdata）', () => {
     expect(SupplierUpdateInputSchema.safeParse({ name: '改名' }).success).toBe(true);
     // companyId 不在更新入参里：换公司 = 新供应商。
     expect(Object.keys(SupplierUpdateInputSchema.shape)).not.toContain('companyId');
+    expect(Object.keys(SupplierUpdateInputSchema.shape)).not.toContain('status');
+    expect(SupplierUpdateInputSchema.safeParse({ status: '停用' }).success).toBe(false);
   });
 
   it('OpenAPI 发射出供应商端点与 x-module / x-scope / x-mcp-tool 标记', () => {

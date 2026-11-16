@@ -85,7 +85,6 @@ const UPDATE_COLUMNS: ReadonlyArray<{
   { key: 'contactName', column: 'contact_name' },
   { key: 'contactPhone', column: 'contact_phone' },
   { key: 'creditTermDays', column: 'credit_term_days' },
-  { key: 'status', column: 'status' },
 ];
 
 function toDate(value: Date | string): Date {
@@ -281,6 +280,12 @@ export async function softDeleteCustomer(
 ): Promise<Customer | null> {
   const current = await queryRow(ctx, id);
   if (!current) return null;
+  if (current.status === '停用') {
+    throw new AppError('STATE_CONFLICT', '客户已停用，不能重复停用', {
+      reason: 'ALREADY_DISABLED',
+      status: current.status,
+    });
+  }
   if (current.version !== expectedVersion) {
     throw new AppError('VERSION_CONFLICT', '客户版本与 If-Match 不一致，请重新读取后重试', {
       expected: expectedVersion,
@@ -296,6 +301,7 @@ export async function softDeleteCustomer(
         AND c.tenant_id = $2
         AND c.company_id = ANY($3::uuid[])
         AND c.version = $4
+        AND c.status = '启用'
       RETURNING ${COLUMNS}`,
     [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
   );

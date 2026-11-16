@@ -134,6 +134,8 @@ describe('客户契约（masterdata）', () => {
     expect(CustomerUpdateInputSchema.safeParse({ name: '改名' }).success).toBe(true);
     // companyId 不在更新入参里：换公司 = 新客户。
     expect(Object.keys(CustomerUpdateInputSchema.shape)).not.toContain('companyId');
+    expect(Object.keys(CustomerUpdateInputSchema.shape)).not.toContain('status');
+    expect(CustomerUpdateInputSchema.safeParse({ status: '停用' }).success).toBe(false);
   });
 
   it('OpenAPI 发射出客户端点与 x-module / x-scope / x-mcp-tool 标记', () => {

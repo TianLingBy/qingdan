@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ROUTES } from './routes.js';
-import { PRODUCT_ROUTES, ProductSchema } from './products.js';
+import { PRODUCT_ROUTES, ProductSchema, ProductUpdateInputSchema } from './products.js';
 import { ENTITIES } from './entities.js';
 import { buildOpenApiDocument } from './openapi.js';
 import { routesOfModule } from './registry.js';
@@ -88,6 +88,11 @@ describe('商品契约（masterdata）', () => {
     const product = parsed.success ? parsed.data : undefined;
     // number 不是合法金额：金额一律 decimal 字符串（D54），防止前端把 12.5 直接塞进来。
     expect(ProductSchema.safeParse({ ...product, defaultSalePrice: 12.5 }).success).toBe(false);
+  });
+
+  it('修改入参不接受 status：状态只走停用/启用动作', () => {
+    expect(Object.keys(ProductUpdateInputSchema.shape)).not.toContain('status');
+    expect(ProductUpdateInputSchema.safeParse({ status: '停用' }).success).toBe(false);
   });
 
   it('OpenAPI 发射出商品端点与 x-module / x-scope 标记', () => {

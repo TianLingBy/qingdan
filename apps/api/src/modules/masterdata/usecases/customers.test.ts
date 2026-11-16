@@ -378,6 +378,30 @@ describe('masterdata 客户用例（PGlite + seed 演示租户）', () => {
     );
   });
 
+  it('update 不接受 status：纯状态入参被拒，混入合法字段也不能改状态', async () => {
+    const created = await createOne({ name: '状态守卫客户' });
+
+    await expectAppError(
+      updateCustomer(
+        writeCtx({}, {
+          params: { id: created.id },
+          headers: { 'if-match': '"1"' },
+          body: { status: '停用' },
+        }).ctx,
+      ),
+      'VALIDATION_FAILED',
+    );
+
+    const updated = await updateCustomer(
+      writeCtx({}, {
+        params: { id: created.id },
+        headers: { 'if-match': '"1"' },
+        body: { name: '状态守卫客户改名', status: '停用' },
+      }).ctx,
+    );
+    expect(updated).toMatchObject({ name: '状态守卫客户改名', status: '启用', version: 2 });
+  });
+
   it('软删除：status 置「停用」、版本 +1，行仍在（不物理删除）', async () => {
     const created = await createOne({ name: '待停用客户' });
     const { ctx, state } = writeCtx(
@@ -401,13 +425,19 @@ describe('masterdata 客户用例（PGlite + seed 演示租户）', () => {
     const detail = await getCustomer(readCtx({}, { params: { id: created.id } }));
     expect(detail.status).toBe('停用');
 
-    // 用旧版本再删 → 409。
+    // 已停用再停用 → 409 STATE_CONFLICT，版本和成功审计都不再变化。
     await expectAppError(
       deleteCustomer(
-        writeCtx({}, { params: { id: created.id }, headers: { 'if-match': '"1"' } }).ctx,
+        writeCtx({}, { params: { id: created.id }, headers: { 'if-match': '"2"' } }).ctx,
       ),
-      'VERSION_CONFLICT',
+      'STATE_CONFLICT',
     );
+    const audits = await test.database.query<{ result: string }>(
+      `SELECT result FROM audit_log
+        WHERE object_id = $1 AND action = 'customer.delete'`,
+      [created.id],
+    );
+    expect(audits.rows).toEqual([{ result: 'success' }]);
   });
 
   it('D52①/D54⑥：AI 直接停用 → AI_ACTION_FORBIDDEN，客户状态不变', async () => {

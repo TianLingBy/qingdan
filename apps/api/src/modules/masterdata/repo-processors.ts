@@ -130,7 +130,6 @@ const UPDATE_COLUMNS: ReadonlyArray<{
   { key: 'processorNo', column: 'processor_no' },
   { key: 'name', column: 'name' },
   { key: 'contactName', column: 'contact_name' },
-  { key: 'status', column: 'status' },
 ];
 
 function toDate(value: Date | string): Date {
@@ -345,6 +344,12 @@ export async function softDeleteProcessor(
 ): Promise<Processor | null> {
   const current = await queryProcessorRow(ctx, id);
   if (!current) return null;
+  if (current.status === '停用') {
+    throw new AppError('STATE_CONFLICT', '加工厂已停用，不能重复停用', {
+      reason: 'ALREADY_DISABLED',
+      status: current.status,
+    });
+  }
   if (current.version !== expectedVersion) {
     throw new AppError('VERSION_CONFLICT', '加工厂版本与 If-Match 不一致，请重新读取后重试', {
       expected: expectedVersion,
@@ -360,6 +365,7 @@ export async function softDeleteProcessor(
         AND p.tenant_id = $2
         AND p.company_id = ANY($3::uuid[])
         AND p.version = $4
+        AND p.status = '启用'
       RETURNING ${PROCESSOR_COLUMNS}`,
     [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
   );

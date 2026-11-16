@@ -113,7 +113,8 @@ export const ProcessorCreateInputSchema = z.object({
 export const ProcessorUpdateInputSchema = z
   .object({
     name: z.string().min(1).max(64).optional(),
-    ...processorOptionalFields,
+    processorNo: z.string().max(64).nullable().optional(),
+    contactName: z.string().max(64).nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: '至少修改一个字段' });
 

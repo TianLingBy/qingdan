@@ -755,7 +755,7 @@ export async function updateEmployee(ctx: EmployeeWriteContext): Promise<Employe
 
 /**
  * 停用员工（platform.employee.disable）：软删除回实体；危险动作，AI 默认禁止。
- * 幂等：已停用再次停用直接成功（不再校验版本、不再自增，与 token.revoke 同口径）。
+ * 已停用再次停用返回 `STATE_CONFLICT`，不写成功审计。
  * 最后一个在职老板不可停（防租户锁死）。
  */
 export async function disableEmployee(ctx: EmployeeWriteContext): Promise<Employee> {
@@ -779,9 +779,10 @@ export async function disableEmployee(ctx: EmployeeWriteContext): Promise<Employ
       const target = await loadTargetRow(tx, id, principal.tenantId);
 
       if (target.status === '停用') {
-        // 幂等：已停用直接成功，不校验版本、不自增（客户端重试不应报冲突）。
-        summary.idempotent = true;
-        return loadEmployeeEntity(tx, id, principal.tenantId);
+        throw new AppError('STATE_CONFLICT', '员工已停用，不能重复停用', {
+          reason: 'ALREADY_DISABLED',
+          status: target.status,
+        });
       }
 
       if (target.is_owner) {
@@ -800,7 +801,7 @@ export async function disableEmployee(ctx: EmployeeWriteContext): Promise<Employ
       const updated = await tx.query<{ version: number }>(
         `UPDATE employee
             SET status = '停用', disabled_at = now(), version = version + 1
-          WHERE id = $1 AND tenant_id = $2 AND version = $3
+          WHERE id = $1 AND tenant_id = $2 AND version = $3 AND status = '在职'
           RETURNING version`,
         [id, principal.tenantId, expectedVersion],
       );

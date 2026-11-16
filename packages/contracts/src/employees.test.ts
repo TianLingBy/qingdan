@@ -97,8 +97,10 @@ describe('员工管理契约（platform）', () => {
     expect(EmployeeUpdateInputSchema.safeParse({ isOwner: true }).success).toBe(true);
     expect(EmployeeUpdateInputSchema.safeParse({ employeeNo: '000002' }).success).toBe(false);
     expect(EmployeeUpdateInputSchema.safeParse({ id: COMPANY_ID }).success).toBe(false);
+    expect(EmployeeUpdateInputSchema.safeParse({ status: '停用' }).success).toBe(false);
     expect(Object.keys(EmployeeUpdateInputSchema.shape)).not.toContain('employeeNo');
     expect(Object.keys(EmployeeUpdateInputSchema.shape)).not.toContain('id');
+    expect(Object.keys(EmployeeUpdateInputSchema.shape)).not.toContain('status');
   });
 
   it('Employee 实体已登记且脱敏：只回 phoneMasked + version，不出现完整 phone', () => {

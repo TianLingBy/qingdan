@@ -86,7 +86,6 @@ const UPDATE_COLUMNS: ReadonlyArray<{
   { key: 'aliases', column: 'aliases' },
   { key: 'specification', column: 'specification' },
   { key: 'unit', column: 'unit' },
-  { key: 'status', column: 'status' },
   { key: 'defaultSalePrice', column: 'default_sale_price' },
 ];
 
@@ -289,6 +288,12 @@ export async function softDeleteProduct(
 ): Promise<Product | null> {
   const current = await queryRow(ctx, id);
   if (!current) return null;
+  if (current.status === '停用') {
+    throw new AppError('STATE_CONFLICT', '商品已停用，不能重复停用', {
+      reason: 'ALREADY_DISABLED',
+      status: current.status,
+    });
+  }
   if (current.version !== expectedVersion) {
     throw new AppError('VERSION_CONFLICT', '商品版本与 If-Match 不一致，请重新读取后重试', {
       expected: expectedVersion,
@@ -304,6 +309,7 @@ export async function softDeleteProduct(
         AND p.tenant_id = $2
         AND p.company_id = ANY($3::uuid[])
         AND p.version = $4
+        AND p.status = '启用'
       RETURNING ${COLUMNS}`,
     [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
   );

@@ -178,6 +178,8 @@ describe('加工厂契约（masterdata）', () => {
     expect(ProcessorUpdateInputSchema.safeParse({ name: '改名' }).success).toBe(true);
     // companyId 不在更新入参里：换公司 = 新加工厂。
     expect(Object.keys(ProcessorUpdateInputSchema.shape)).not.toContain('companyId');
+    expect(Object.keys(ProcessorUpdateInputSchema.shape)).not.toContain('status');
+    expect(ProcessorUpdateInputSchema.safeParse({ status: '停用' }).success).toBe(false);
 
     const quote = {
       companyId,

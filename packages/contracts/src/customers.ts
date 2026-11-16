@@ -70,7 +70,10 @@ export const CustomerCreateInputSchema = z.object({
 export const CustomerUpdateInputSchema = z
   .object({
     name: z.string().min(1).max(64).optional(),
-    ...customerOptionalFields,
+    customerNo: z.string().max(64).nullable().optional(),
+    contactName: z.string().max(64).nullable().optional(),
+    contactPhone: z.string().max(32).nullable().optional(),
+    creditTermDays: z.number().int().min(0).nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: '至少修改一个字段' });
 

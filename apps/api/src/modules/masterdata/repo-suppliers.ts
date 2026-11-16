@@ -85,7 +85,6 @@ const UPDATE_COLUMNS: ReadonlyArray<{
   { key: 'contactName', column: 'contact_name' },
   { key: 'contactPhone', column: 'contact_phone' },
   { key: 'suppliedMaterials', column: 'supplied_materials' },
-  { key: 'status', column: 'status' },
 ];
 
 function toDate(value: Date | string): Date {
@@ -281,6 +280,12 @@ export async function softDeleteSupplier(
 ): Promise<Supplier | null> {
   const current = await queryRow(ctx, id);
   if (!current) return null;
+  if (current.status === '停用') {
+    throw new AppError('STATE_CONFLICT', '供应商已停用，不能重复停用', {
+      reason: 'ALREADY_DISABLED',
+      status: current.status,
+    });
+  }
   if (current.version !== expectedVersion) {
     throw new AppError('VERSION_CONFLICT', '供应商版本与 If-Match 不一致，请重新读取后重试', {
       expected: expectedVersion,
@@ -296,6 +301,7 @@ export async function softDeleteSupplier(
         AND s.tenant_id = $2
         AND s.company_id = ANY($3::uuid[])
         AND s.version = $4
+        AND s.status = '启用'
       RETURNING ${COLUMNS}`,
     [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
   );

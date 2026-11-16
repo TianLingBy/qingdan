@@ -76,7 +76,10 @@ export const ProductUpdateInputSchema = z
   .object({
     name: z.string().min(1).max(64).optional(),
     unit: z.string().min(1).max(16).optional(),
-    ...productOptionalFields,
+    productNo: z.string().max(64).nullable().optional(),
+    aliases: z.array(z.string().min(1).max(64)).max(20).optional(),
+    specification: z.string().max(128).nullable().optional(),
+    defaultSalePrice: DecimalInput.nullable().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: '至少修改一个字段' });
 
