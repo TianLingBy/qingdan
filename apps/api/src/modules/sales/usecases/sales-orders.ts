@@ -84,6 +84,7 @@ export interface SalesOrderWriteContext extends SalesOrderContext {
 interface ParsedListQuery {
   readonly companyId?: string;
   readonly customerId?: string;
+  readonly customerContactId?: string;
   readonly status?: SalesOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
@@ -181,6 +182,7 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
   return {
     companyId: parsed.data.companyId,
     customerId: parsed.data.customerId,
+    customerContactId: parsed.data.customerContactId,
     status: parsed.data.status,
     keyword: parsed.data.keyword,
     cursor,
@@ -375,6 +377,7 @@ export async function exportSalesOrders(
     repo.exportSalesOrders(repoContext(tx, principal), {
       companyId: query.companyId,
       customerId: query.customerId,
+      customerContactId: query.customerContactId,
       status: query.status,
       keyword: query.keyword,
       maxRows: EXPORT_MAX_ROWS,

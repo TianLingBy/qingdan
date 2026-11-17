@@ -496,6 +496,39 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(page.nextCursor).toBeNull();
   });
 
+  /**
+   * #368 第三半：按对接人筛。
+   *
+   * 断言选「传一个真实存在但没人引用的对接人 → 0 条」，因为这条最容易暴露
+   * 「参数被解析了却没拼进 WHERE」——那种情况下会照旧返回全部单据。
+   */
+  it('按对接人筛：传一个没有任何单据引用的对接人 → 0 条；不传 → 照常有单', async () => {
+    await createOne(nextRequestId('contact-filter'), { lossQty: '2' });
+    const contactId = '01900000-0000-7000-8000-0000000005c1';
+    await test.database.query(
+      `INSERT INTO processor_contact (id, tenant_id, company_id, processor_id, name)
+       VALUES ($1, $2, $3, $4, '陈师傅')
+       ON CONFLICT (id) DO NOTHING`,
+      [contactId, DEMO_IDS.tenantId, DEMO_IDS.companyId, PROCESSOR_ID],
+    );
+
+    const none = await app.inject({
+      method: 'GET',
+      url: `/api/v1/processing-orders?processorContactId=${contactId}`,
+      headers: readHeaders(ownerCookie, 'req-processing-contact-none'),
+    });
+    expect(none.statusCode).toBe(200);
+    expect((none.json() as { items: ProcessingOrder[] }).items).toHaveLength(0);
+
+    const all = await app.inject({
+      method: 'GET',
+      url: `/api/v1/processing-orders?processorId=${PROCESSOR_ID}`,
+      headers: readHeaders(ownerCookie, 'req-processing-contact-all'),
+    });
+    expect(all.statusCode).toBe(200);
+    expect((all.json() as { items: ProcessingOrder[] }).items.length).toBeGreaterThan(0);
+  });
+
   it('修改：缺 If-Match 428、旧版本 / 弱 ETag 409、成功回新 ETag；已完成 422', async () => {
     const created = await createOne(nextRequestId('update'), { lossQty: '2' });
 

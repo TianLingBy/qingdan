@@ -324,6 +324,8 @@ describe('销售单契约（sales）', () => {
     expect(queryNames).toEqual([
       'companyId',
       'cursor',
+      // #368：按对接人筛（须排在 `customerId` 前，`sort()` 是字典序）。
+      'customerContactId',
       'customerId',
       'keyword',
       'limit',

@@ -173,6 +173,14 @@ export type SalesOrderDetail = z.infer<typeof SalesOrderDetailSchema>;
 const SalesOrderFilterFields = {
   companyId: z.string().uuid().optional(),
   customerId: z.string().uuid().optional(),
+  /**
+   * 按下单时记的对接人筛（#368）。
+   *
+   * 老单据（2026-11 之前）的 `customer_contact_id` 是 NULL，`= $n` 不会命中它们 ——
+   * 这是要的：用户点「王经理」时，不该看到当年根本没记对接人的单。
+   * 想看「所有单」就不传这个参数，别用「空对接人」去表达「全部」。
+   */
+  customerContactId: z.string().uuid().optional(),
   status: SalesOrderStatusSchema.optional(),
   keyword: z.string().min(1).max(64).optional(),
 };

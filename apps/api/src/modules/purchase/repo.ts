@@ -42,6 +42,8 @@ export interface PurchaseOrderRepoContext {
 export interface PurchaseOrderListQuery {
   readonly companyId?: string;
   readonly supplierId?: string;
+  /** 按对接人筛（#368）。 */
+  readonly supplierContactId?: string;
   readonly status?: PurchaseOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
@@ -339,6 +341,11 @@ export async function listPurchaseOrders(
   if (query.supplierId !== undefined) {
     params.push(query.supplierId);
     where.push(`o.supplier_id = $${params.length}::uuid`);
+  }
+  // 按对接人筛（#368）：老单据的 supplier_contact_id 是 NULL，等值比较不命中。
+  if (query.supplierContactId !== undefined) {
+    params.push(query.supplierContactId);
+    where.push(`o.supplier_contact_id = $${params.length}::uuid`);
   }
   if (query.status !== undefined) {
     params.push(query.status);
@@ -1535,6 +1542,8 @@ export async function insertSupplierReturn(
 export interface PurchaseOrderExportQuery {
   readonly companyId?: string;
   readonly supplierId?: string;
+  /** 按对接人筛（#368）：与列表同口径。 */
+  readonly supplierContactId?: string;
   readonly status?: PurchaseOrderStatus;
   readonly keyword?: string;
   /** 行数上限：内部统一按 `maxRows + 1` 取，多出一行即判定超限（不静默截断）。 */
@@ -1580,6 +1589,11 @@ export async function exportPurchaseOrders(
   if (query.supplierId !== undefined) {
     params.push(query.supplierId);
     where.push(`o.supplier_id = $${params.length}::uuid`);
+  }
+  // 按对接人筛（#368）：老单据的 supplier_contact_id 是 NULL，等值比较不命中。
+  if (query.supplierContactId !== undefined) {
+    params.push(query.supplierContactId);
+    where.push(`o.supplier_contact_id = $${params.length}::uuid`);
   }
   if (query.status !== undefined) {
     params.push(query.status);
