@@ -46,6 +46,7 @@ import {
   updateContact,
 } from './usecases/contacts.js';
 import { CONTACT_KINDS } from './repo-contacts.js';
+import { mergeDedupe } from './usecases/dedupe-merge.js';
 
 /**
  * masterdata 端点挂载（Issue #15 首切：商品资料）。
@@ -76,6 +77,8 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   // 去重审核台的判定对象是队列行本身，不是被判的两条档案（D102）。
   'customer.dedupe.keep_separate': 'masterdata_dedupe',
   'customer.dedupe.reopen': 'masterdata_dedupe',
+  // 合并的失败审计同样记在队列行上（D103）：档案是被引用的对象，真正的判定主体是对子。
+  'customer.dedupe.merge': 'masterdata_dedupe',
 };
 
 /**
@@ -249,6 +252,11 @@ export function registerMasterdataRoutes(app: FastifyInstance): void {
     'customer.dedupe.reopen': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await reopenDedupe({ database: instance.database, request, reply });
+    },
+    // 合并（D103）：不可撤销的写操作，权限 / 公司隔离 / 事务 / 审计 / AI 拦截都在用例内。
+    'customer.dedupe.merge': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await mergeDedupe({ database: instance.database, request, reply });
     },
   };
 
