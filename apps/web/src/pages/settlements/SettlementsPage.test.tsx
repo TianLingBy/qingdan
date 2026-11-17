@@ -169,4 +169,41 @@ describe('结算单 C 页面', () => {
     // 收起态不该把面板内容渲染出来
     expect(html).not.toContain('一期只按人');
   });
+
+  /** 四态（#337 v0.13）：三个状态行常驻，靠 `data-state` 让 CSS 决定谁显示。 */
+  it('有数据时容器与 tbody 都是 filled，三个状态行仍常驻（交给 CSS 显隐）', () => {
+    const html = renderPage(seedClient({ me: FULL, orders: [ORDER] }));
+
+    expect(html).toContain('data-state="filled"');
+    expect(html).toContain('st-tr st-loading');
+    expect(html).toContain('st-tr st-error');
+    expect(html).toContain('st-tr st-empty');
+    // 数据行只带 r-row：带上 st-tr 会被 `tbody > tr.st-tr{display:none}` 整行吃掉（只有表头可见）
+    expect(html).toContain('class="r-row"');
+    expect(html).not.toContain('st-tr r-row');
+  });
+
+  it('空列表时 data-state 切到 empty，状态行 colSpan 等于表头列数（9 列不塌）', () => {
+    const html = renderPage(seedClient({ me: FULL, orders: [] }));
+
+    expect(html).toContain('data-state="empty"');
+    expect(html).toContain('colSpan="9"');
+  });
+
+  it('状态徽标走 v0.13 语义档：待确认=bad、已结算=ok，不再是各页自拼的 Tailwind 底色', () => {
+    const pending = renderPage(seedClient({ me: FULL, orders: [ORDER] }));
+    const settled = renderPage(
+      seedClient({ me: FULL, orders: [{ ...ORDER, status: '已结算' }] }),
+    );
+
+    expect(pending).toContain('st bad');
+    expect(settled).toContain('st ok');
+  });
+
+  it('游标分页只给「上一批 / 下一批」，不画页码（C 单 ListQuery 没有 page/sort）', () => {
+    const html = renderPage(seedClient({ me: FULL, orders: [ORDER] }));
+
+    expect(html).not.toContain('下一批');
+    expect(html).not.toContain('data-sort');
+  });
 });

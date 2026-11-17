@@ -87,6 +87,67 @@ function renderPage(client: ReturnType<typeof createQueryClient>): string {
   );
 }
 
+const DETAIL_BASE: PurchaseOrderDetail = {
+  ...ORDER,
+  cancelable: { allowed: true, reason: null },
+};
+
+interface DetailOpts {
+  readonly status?: PurchaseOrderStatus;
+  readonly canUpdate?: boolean;
+  readonly canViewPrice?: boolean;
+  /** 到货确认 / 完成：都是 `purchase.approve`。 */
+  readonly canApprove?: boolean;
+  /** 发货 / 撤销发货：`purchase.ship`。 */
+  readonly canShip?: boolean;
+  readonly revoking?: boolean;
+  readonly revokeError?: string | null;
+  readonly cancelable?: PurchaseOrderDetail['cancelable'];
+}
+
+/** 详情面板的静态渲染（本仓 Web 测试不带 jsdom，只能断言 SSR HTML）。 */
+function renderDetail(opts: DetailOpts = {}): string {
+  return renderToStaticMarkup(
+    <DetailPanel
+      order={{
+        ...DETAIL_BASE,
+        status: opts.status ?? '进行中',
+        cancelable: opts.cancelable ?? DETAIL_BASE.cancelable,
+      }}
+      products={[PRODUCT]}
+      canCancel
+      canceling={false}
+      canComplete={opts.canApprove ?? true}
+      completing={false}
+      canUpdate={opts.canUpdate ?? true}
+      canViewPrice={opts.canViewPrice ?? true}
+      canShip={opts.canShip ?? true}
+      canApprove={opts.canApprove ?? true}
+      shipping={false}
+      receiving={false}
+      revoking={opts.revoking ?? false}
+      revokeBusy={false}
+      revokeReason=""
+      revokeError={opts.revokeError ?? null}
+      onClose={() => {}}
+      onEdit={() => {}}
+      onCancel={() => {}}
+      onComplete={() => {}}
+      onShip={() => {}}
+      onReceive={() => {}}
+      onStartRevoke={() => {}}
+      onRevokeReasonChange={() => {}}
+      onCancelRevoke={() => {}}
+      onSubmitRevoke={() => {}}
+    />,
+  );
+}
+
+/** 取某个按钮的标签，用于断言它是否置灰（只能认 `disabled` 属性，class 里也有 `disabled:`）。 */
+function buttonMarkup(html: string, label: string): string {
+  return new RegExp(`<button[^>]*>${label}</button>`).exec(html)?.[0] ?? '';
+}
+
 describe('采购单 A 页面', () => {
   it('列表渲染单号、供应商、物料名、货款、状态与经手人', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
@@ -147,118 +208,108 @@ describe('采购单 A 页面', () => {
   });
 });
 
-describe('采购单详情「完成」入口', () => {
-  const DETAIL: PurchaseOrderDetail = {
-    ...ORDER,
-    cancelable: { allowed: true, reason: null },
-  };
-
-  function renderDetail(
-    order: PurchaseOrderDetail,
-    opts: { canUpdate?: boolean; canViewPrice?: boolean } = {},
-  ): string {
-    return renderToStaticMarkup(
-      <DetailPanel
-        order={order}
-        products={[PRODUCT]}
-        canCancel
-        canceling={false}
-        canComplete={opts.canUpdate ?? true}
-        completing={false}
-        canUpdate={opts.canUpdate ?? true}
-        canViewPrice={opts.canViewPrice ?? true}
-        onClose={() => {}}
-        onEdit={() => {}}
-        onCancel={() => {}}
-        onComplete={() => {}}
-      />,
-    );
-  }
-
-  /** 从 SSR HTML 里摘出「完成采购单」按钮的标签，用于断言它是否置灰（disabled）。 */
-  function completeButtonMarkup(html: string): string {
-    return /<button[^>]*>完成采购单<\/button>/.exec(html)?.[0] ?? '';
-  }
-
+describe('采购单详情「完成」入口（D94 起权限是 purchase.approve）', () => {
   it('进行中的单据渲染「完成采购单」按钮，且可点', () => {
-    const html = renderDetail({ ...DETAIL, status: '进行中' });
+    const html = renderDetail({ status: '进行中' });
     expect(html).toContain('完成采购单');
-    expect(completeButtonMarkup(html)).not.toContain('disabled=""');
+    expect(buttonMarkup(html, '完成采购单')).not.toContain('disabled=""');
   });
 
-  it('已完成 / 已取消的单据完成按钮置灰，不可点', () => {
-    expect(completeButtonMarkup(renderDetail({ ...DETAIL, status: '已完成' }))).toContain(
-      'disabled=""',
-    );
-    expect(completeButtonMarkup(renderDetail({ ...DETAIL, status: '已取消' }))).toContain(
-      'disabled=""',
-    );
+  it('已完成 / 已取消 / 在途的单据完成按钮置灰，不可点', () => {
+    for (const status of ['已完成', '已取消', '在途'] as const) {
+      expect(buttonMarkup(renderDetail({ status }), '完成采购单')).toContain('disabled=""');
+    }
+  });
+
+  it('缺 purchase.approve：「完成」置灰并说清是审批动作，不再写 purchase.update', () => {
+    // D94 把 `purchase.order.complete` 从 `update` 摘到了 `approve`：
+    // 能改单不再自动能入库。提示必须跟着改，否则别人照着去配 `purchase.update`。
+    const html = renderDetail({ canApprove: false, canUpdate: true });
+    expect(buttonMarkup(html, '完成采购单')).toContain('disabled=""');
+    expect(html).toContain('当前身份没有 purchase.approve 权限');
+  });
+
+  it('在途时「完成」给出下一步（去点到货确认），不是一句「状态不对」', () => {
+    const html = renderDetail({ status: '在途' });
+    expect(html).toContain('请点「到货确认」入库');
   });
 });
 
 describe('采购单详情「编辑」入口的三态（#261 同型缺陷）', () => {
-  const DETAIL: PurchaseOrderDetail = {
-    ...ORDER,
-    status: '进行中',
-    cancelable: { allowed: true, reason: null },
-  };
-
-  function renderDetail(
-    opts: { canUpdate?: boolean; canViewPrice?: boolean; status?: PurchaseOrderStatus } = {},
-  ): string {
-    return renderToStaticMarkup(
-      <DetailPanel
-        order={{ ...DETAIL, status: opts.status ?? DETAIL.status }}
-        products={[PRODUCT]}
-        canCancel
-        canceling={false}
-        canComplete={opts.canUpdate ?? true}
-        completing={false}
-        canUpdate={opts.canUpdate ?? true}
-        canViewPrice={opts.canViewPrice ?? true}
-        onClose={() => {}}
-        onEdit={() => {}}
-        onCancel={() => {}}
-        onComplete={() => {}}
-      />,
-    );
-  }
-
-  function editButton(html: string): string {
-    return /<button[^>]*>编辑<\/button>/.exec(html)?.[0] ?? '';
-  }
-
   it('有 update + 看价 + 进行中：编辑可点，无置灰理由文案', () => {
     const html = renderDetail();
-    expect(editButton(html)).not.toContain('disabled=""');
+    expect(buttonMarkup(html, '编辑')).not.toContain('disabled=""');
     expect(html).not.toContain('purchase.update 权限');
   });
 
   it('缺 purchase.update：编辑置灰，并说明缺哪个权限点', () => {
     const html = renderDetail({ canUpdate: false });
-    expect(editButton(html)).toContain('disabled=""');
+    expect(buttonMarkup(html, '编辑')).toContain('disabled=""');
     expect(html).toContain('当前身份没有 purchase.update 权限');
   });
 
   it('有 update 但无看价：编辑置灰，并说明看不到单价没法改单', () => {
     const html = renderDetail({ canViewPrice: false });
-    expect(editButton(html)).toContain('disabled=""');
+    expect(buttonMarkup(html, '编辑')).toContain('disabled=""');
     expect(html).toContain('无看价权限');
     expect(html).toContain('purchase.view_price');
   });
 
   it('权限都够但单据已完成：编辑置灰，理由是状态而不是权限', () => {
     const html = renderDetail({ status: '已完成' });
-    expect(editButton(html)).toContain('disabled=""');
+    expect(buttonMarkup(html, '编辑')).toContain('disabled=""');
     expect(html).toContain('只有「进行中」的采购单能编辑，当前是「已完成」');
     expect(html).not.toContain('当前身份没有 purchase.update 权限');
   });
+});
 
-  it('「完成采购单」的提示给的是真实权限点 purchase.update，不是 purchase.approve', () => {
-    // 契约里 `purchase.order.complete` 的 action 是 update；写成 approve 会让人去配错权限。
-    const html = renderDetail({ canUpdate: false });
-    expect(html).toContain('purchase.update');
-    expect(html).not.toContain('purchase.approve');
+describe('采购单详情 D94 在途三态（#332）', () => {
+  it('进行中且无 purchase.ship：发货按钮置灰，文案与 title 都点名权限', () => {
+    const html = renderDetail({ status: '进行中', canShip: false });
+    const button = buttonMarkup(html, '发货');
+    expect(button).toContain('disabled=""');
+    expect(button).toContain('purchase.ship');
+    expect(html).toContain('当前身份没有 purchase.ship 权限');
+  });
+
+  it('进行中且有 purchase.ship：发货可点，且此时没有到货确认 / 撤销发货', () => {
+    const html = renderDetail({ status: '进行中', canShip: true });
+    expect(buttonMarkup(html, '发货')).not.toContain('disabled=""');
+    expect(html).not.toContain('到货确认');
+    expect(html).not.toContain('撤销发货');
+  });
+
+  it('在途：发货消失，到货确认与撤销发货出现', () => {
+    const html = renderDetail({ status: '在途' });
+    expect(buttonMarkup(html, '发货')).toBe('');
+    expect(html).toContain('到货确认');
+    expect(html).toContain('撤销发货');
+  });
+
+  it('在途且无 purchase.approve：到货确认置灰，说清是审批动作', () => {
+    const html = renderDetail({ status: '在途', canApprove: false });
+    const button = buttonMarkup(html, '到货确认');
+    expect(button).toContain('disabled=""');
+    expect(button).toContain('purchase.approve');
+    expect(html).toContain('到货确认是审批动作');
+  });
+
+  it('在途且无 purchase.ship：撤销发货置灰（与发货同权限点）', () => {
+    const html = renderDetail({ status: '在途', canShip: false, canApprove: true });
+    const button = buttonMarkup(html, '撤销发货');
+    expect(button).toContain('disabled=""');
+    expect(button).toContain('purchase.ship');
+  });
+
+  it('撤销输入区展开后：原因框在，且服务端没给原因前不发请求（提示文字在）', () => {
+    const html = renderDetail({ status: '在途', revoking: true });
+    expect(html).toContain('撤销原因（必填，会记审计）');
+    expect(html).toContain('确认撤销');
+  });
+
+  it('撤销原因为空时的提示由 revokeReasonError 给出（纯函数，见 ship-flow 测试）', () => {
+    const html = renderDetail({ status: '在途', revoking: true, revokeError: '撤销发货必须填写原因，本次未提交。' });
+    expect(html).toContain('撤销发货必须填写原因');
   });
 });
 

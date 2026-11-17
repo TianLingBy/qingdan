@@ -133,6 +133,83 @@ describe('采购单接口封装', () => {
     );
     expect(purchaseQueryKeys.detail('o1')).toEqual(['purchase-orders', 'detail', 'o1']);
   });
+
+  it('发货带 If-Match 与逐行去向（D94 ①），行号从 1 起', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const api = createPurchaseApi(
+      new ApiClient({
+        baseUrl: '/api/v1',
+        fetchImpl: async (input, init) => {
+          calls.push({ url: String(input), init: init ?? {} });
+          return jsonResponse({ id: 'o1' }, 200);
+        },
+      }),
+    );
+
+    await api.ship(
+      'o1',
+      {
+        lines: [
+          { lineNo: 1, transitTo: 'warehouse' },
+          { lineNo: 2, transitTo: 'processor', processorId: 'proc-1' },
+        ],
+      },
+      5,
+    );
+
+    expect(calls[0]?.url).toBe('/api/v1/purchase-orders/o1/ship');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"5"');
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      lines: [
+        { lineNo: 1, transitTo: 'warehouse' },
+        { lineNo: 2, transitTo: 'processor', processorId: 'proc-1' },
+      ],
+    });
+  });
+
+  it('撤销发货把原因放 X-Reason 头，不发 body（服务端读的是 auditReason）', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const api = createPurchaseApi(
+      new ApiClient({
+        baseUrl: '/api/v1',
+        fetchImpl: async (input, init) => {
+          calls.push({ url: String(input), init: init ?? {} });
+          return jsonResponse({ id: 'o1' }, 200);
+        },
+      }),
+    );
+
+    await api.revokeShip('o1', 6, '供应商发错货');
+
+    expect(calls[0]?.url).toBe('/api/v1/purchase-orders/o1/ship/revoke');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"6"');
+    // 中文原因由 ApiClient 统一 percent-encode（HTTP 头只吃 ByteString，见 client.test）
+    expect(headerOf(calls[0]!.init, 'X-Reason')).toBe(encodeURIComponent('供应商发错货'));
+    // 路由没有 body schema：塞一个 { reason } 会让人误以为那是契约
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
+
+  it('到货确认走 POST /purchase-orders/{id}/receive，带 If-Match 且无请求体', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const api = createPurchaseApi(
+      new ApiClient({
+        baseUrl: '/api/v1',
+        fetchImpl: async (input, init) => {
+          calls.push({ url: String(input), init: init ?? {} });
+          return jsonResponse({ id: 'o1' }, 200);
+        },
+      }),
+    );
+
+    await api.receive('o1', 8);
+
+    expect(calls[0]?.url).toBe('/api/v1/purchase-orders/o1/receive');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"8"');
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
 });
 
 describe('decimal 定点运算（D54 numeric(18,6)）', () => {

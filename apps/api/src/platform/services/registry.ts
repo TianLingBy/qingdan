@@ -228,6 +228,18 @@ export interface FindSalesOrderByNoInput {
   readonly orderNo: string;
 }
 
+/**
+ * 发起收款查单入参：发起侧手里只有销售单 id（路径参数），没有单号。
+ *
+ * `companyIds` 而不是单个 companyId：调用者只知道自己可见的公司集合，
+ * 由 sales 侧把「这张单是否在我可访问的公司内」一并判掉——支付模块不该为了
+ * 猜公司去读 `company` 表之外的销售数据。
+ */
+export interface FindSalesOrderByIdInput {
+  readonly companyIds: readonly string[];
+  readonly orderId: string;
+}
+
 /** 支付回调可用的销售单快照：金额均为 decimal 字符串（D54）。 */
 export interface SalesOrderForPayment {
   readonly id: string;
@@ -263,6 +275,11 @@ export interface SalesReceiptPort {
   findOrderByNo(
     tx: SqlClient,
     input: FindSalesOrderByNoInput,
+  ): Promise<SalesOrderForPayment | null>;
+  /** 发起收款用：按销售单 id 定位（同样由 sales 侧校验公司可见性）。 */
+  findOrderById(
+    tx: SqlClient,
+    input: FindSalesOrderByIdInput,
   ): Promise<SalesOrderForPayment | null>;
   /** 写收款行 + 审计（同事务）；收款写入复用 sales 既有 path。 */
   createReceiptFromPayment(

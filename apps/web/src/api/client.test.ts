@@ -192,6 +192,39 @@ describe('ApiClient 请求行为', () => {
     expect(headers.get('x-reason')).toBe('manual');
   });
 
+  it('中文 X-Reason 不炸：percent-encode 后仍能发出（HTTP 头只吃 ByteString）', async () => {
+    let captured: HeadersInit | undefined;
+    const client = new ApiClient({
+      baseUrl: '/api/v1',
+      fetchImpl: async (_input, init) => {
+        captured = init?.headers;
+        return jsonResponse({ ok: true }, 200);
+      },
+    });
+
+    // 未编码的话 `Headers.set` 会抛 TypeError（字符 > 0xFF），请求根本发不出去
+    await client.post('/purchase-orders/o1/ship/revoke', undefined, {
+      reason: '供应商发错货',
+    });
+
+    expect(new Headers(captured).get('x-reason')).toBe(encodeURIComponent('供应商发错货'));
+  });
+
+  it('纯 ASCII 的 X-Reason 原样送，不无谓转义', async () => {
+    let captured: HeadersInit | undefined;
+    const client = new ApiClient({
+      baseUrl: '/api/v1',
+      fetchImpl: async (_input, init) => {
+        captured = init?.headers;
+        return jsonResponse({ ok: true }, 200);
+      },
+    });
+
+    await client.post('/purchase-orders/o1/cancel', undefined, { reason: 'manual fix' });
+
+    expect(new Headers(captured).get('x-reason')).toBe('manual fix');
+  });
+
   it('超时抛出统一 ApiError，不漏出原生错误', async () => {
     const client = new ApiClient({
       baseUrl: '/api/v1',

@@ -36,6 +36,11 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // D94 / #328：在途可占用要求 available_qty 用“占用优先抵在途”的生成公式；
   // 缺这条会让在途批次一旦被占用就违反非负约束。
   '20261118000000_d94_transit_occupancy.sql',
+  // D101 / #101 发起侧：payment_request 表是「发起收款 → 待支付 → 入账」的载体，
+  // 发起 / 查单 / mock 确认三个端点都读写它；缺表 → 三条端点全 500。
+  '20261118010000_payment_requests.sql',
+  // D101 / #101：payment 落进两处 domain 白名单，缺了非老板授不了支付权限（写库会被 CHECK 拦）。
+  '20261118020000_payment_permission_domain.sql',
   // D102 / #302 块 C 后半段：审核台直接读 masterdata_dedupe.matched_by，缺列 → 500；
   // 同时带的排序索引缺了不会 500，但按公司+类型+状态排队会退化成 Sort（不是索引级顺序）。
   '20261118030000_masterdata_dedupe_matched_by.sql',
