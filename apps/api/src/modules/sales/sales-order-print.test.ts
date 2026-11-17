@@ -159,7 +159,8 @@ describe('E 单打印（客户联）', () => {
     });
     expect(completed.statusCode).toBe(200);
     order = completed.json() as SalesOrder;
-    expect(order.status).toBe('已完成');
+    // D94 ③：出库只到「已发货」，签收后才「已完成」；打印不依赖完成态。
+    expect(order.status).toBe('已发货');
   });
 
   afterAll(async () => {

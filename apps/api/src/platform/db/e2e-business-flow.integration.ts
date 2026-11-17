@@ -9,7 +9,7 @@ import { DEMO_IDS, seed } from './seed.js';
  *
  * 只在真实 PostgreSQL 上跑：`QINGDAN_TEST_DB`（或 `DATABASE_URL`）指向一个**可清空**的测试库。
  * 与 `db-concurrency.integration.ts` 的区别：那个验库语义（锁/RLS/生成列），这个走完整 HTTP 链路，
- * 验「登录 → 建 E 单 → 完成扣库存 → 生成 C 草稿 → 确认结算」在真库上串得通。
+ * 验「登录 → 建 E 单 → 出库扣库存 → 签收完成 → 生成 C 草稿 → 确认结算」在真库上串得通。
  *
  * 缺口（#99 未接，故意跳过而不是假装通过）：`登录 → 建 A 单 → 完成入库` 这一段没有端点，
  * 所以库存来自直接造数；等 #99 落地后把这一段补进这里。
@@ -143,7 +143,7 @@ async function main(): Promise<void> {
       assert(order.status === '进行中', `新单状态期望「进行中」，实际「${order.status}」`);
     });
 
-    await check('完成 E 单 → 扣库存（流水 2 条，每批 -2.5）', async () => {
+    await check('出库 E 单 → 扣库存（流水 2 条，每批 -2.5），状态「已发货」', async () => {
       const created = order;
       assert(created !== null, '前一步没建出单据');
       const response = await app.inject({
@@ -151,9 +151,9 @@ async function main(): Promise<void> {
         url: `/api/v1/sales-orders/${created.id}/ship`,
         headers: writeHeaders({ 'if-match': `"${created.version}"` }),
       });
-      assert(response.statusCode === 200, `完成返回 ${response.statusCode}：${response.body.slice(0, 300)}`);
-      const completed = response.json() as SalesOrder;
-      assert(completed.status === '已完成', `完成状态期望「已完成」，实际「${completed.status}」`);
+      assert(response.statusCode === 200, `出库返回 ${response.statusCode}：${response.body.slice(0, 300)}`);
+      const shipped = response.json() as SalesOrder;
+      assert(shipped.status === '已发货', `出库状态期望「已发货」，实际「${shipped.status}」`);
 
       const flows = await database.query<{ batch_id: string; delta: string; source_doc_type: string }>(
         `SELECT batch_id, trim_scale(delta) AS delta, source_doc_type
@@ -174,6 +174,16 @@ async function main(): Promise<void> {
       for (const row of batches.rows) {
         assert(row.available_qty === '97.5', `批次 ${row.batch_no} 可用量期望 97.5，实际 ${row.available_qty}`);
       }
+
+      // D94 ③：签收是独立一步，走 sales.approve；造数批次没有来源单，来源校验跳过。
+      const committed = await app.inject({
+        method: 'POST',
+        url: `/api/v1/sales-orders/${created.id}/complete`,
+        headers: writeHeaders({ 'if-match': `"${shipped.version}"` }),
+      });
+      assert(committed.statusCode === 200, `签收返回 ${committed.statusCode}：${committed.body.slice(0, 300)}`);
+      const completed = committed.json() as SalesOrder;
+      assert(completed.status === '已完成', `签收状态期望「已完成」，实际「${completed.status}」`);
     });
 
     let settlementId = '';
@@ -250,7 +260,7 @@ async function main(): Promise<void> {
     console.log('FAIL e2e-business-flow：存在未通过的断言（见上）。');
     process.exit(1);
   }
-  console.log('OK e2e-business-flow：真 PostgreSQL 业务流（登录→E单→扣库存→C草稿→确认结算）通过。');
+  console.log('OK e2e-business-flow：真 PostgreSQL 业务流（登录→E单→出库扣库存→签收→C草稿→确认结算）通过。');
 }
 
 main().catch((error: unknown) => {
