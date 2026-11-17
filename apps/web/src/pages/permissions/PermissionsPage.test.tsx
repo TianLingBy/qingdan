@@ -97,12 +97,13 @@ describe('权限矩阵的端点支撑标注（#255）', () => {
 
   it('无端点支撑的动作格显示预授权态，但仍可勾选', () => {
     const html = renderEditor();
-    const tag = cellTag(html, 'sales', 'approve');
+    // D94（#330）之后 E 单的「审」已有端点（客户签收完成），预授权样本改用供应商·审。
+    const tag = cellTag(html, 'supplier', 'approve');
 
     expect(tag).toContain('data-support="preauth-only"');
     expect(tag).toContain('border-dashed');
     expect(tag).not.toContain('disabled');
-    expect(html).toContain('E 销售单·审：后端暂无该动作端点，勾选只是预授权，等功能上线才生效。');
+    expect(html).toContain('供应商·审：后端暂无该动作端点，勾选只是预授权，等功能上线才生效。');
   });
 
   it('7 个模板动作全部渲染，且不含看价', () => {

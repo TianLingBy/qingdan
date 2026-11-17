@@ -20,6 +20,10 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // D93 / #298：概览直接读 company 的 address / contact_phone / tax_no / logo_url，
   // 缺列会在业务路径上 500，必须启动时就报出来。
   '20261117090000_settings_center_fields.sql',
+  // D94 / #330：在途状态依赖 purchase_order_line.transit_to / processor_id、
+  // processing_order.transit_stage / transit_to、inventory_batch.held_by_processor_id，
+  // 缺列会让发货 / 到货确认直接 500，必须在启动时就报出来。
+  '20261117181000_d94_transit_states.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {
