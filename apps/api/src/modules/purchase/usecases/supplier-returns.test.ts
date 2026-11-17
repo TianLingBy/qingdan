@@ -34,6 +34,9 @@ const PRODUCT_ID = '01900000-0000-7000-8000-000000000511';
 const PRODUCT_2_ID = '01900000-0000-7000-8000-000000000512';
 const BATCH_ID = '01900000-0000-7000-8000-000000000521';
 const BATCH_2_ID = '01900000-0000-7000-8000-000000000522';
+/** 与 BATCH_ID 同商品、锁价不同：用来验证「一行跨多批次按各自锁价分别算」。 */
+const BATCH_3_ID = '01900000-0000-7000-8000-000000000523';
+const BATCH_4_ID = '01900000-0000-7000-8000-000000000524';
 const SECOND_COMPANY_ID = '01900000-0000-7000-8000-000000000503';
 const PURCHASE_ORDER_ID = '01900000-0000-7000-8000-000000000531';
 const SECOND_PURCHASE_ORDER_ID = '01900000-0000-7000-8000-000000000532';
@@ -130,19 +133,20 @@ const CREATE_BODY = {
       productId: PRODUCT_ID,
       batchIds: [BATCH_ID],
       qty: '2',
-      unitPrice: '12.5',
-      // 客户端金额故意错误：落库与响应必须使用服务端 qty × unit_price。
+      // 前端故意写 1 元：退款单价必须取批次锁价 11（D105），客户端价只作预估。
+      unitPrice: '1',
       amount: '999',
     },
     {
       productId: PRODUCT_2_ID,
       batchIds: [BATCH_2_ID],
       qty: '3',
-      unitPrice: '1.5',
+      // 前端与服务端锁价一致：金额不应因此变化。
+      unitPrice: '22',
       amount: '0',
     },
   ],
-  // 客户端应退金额同样故意错误：必须由 SQL 聚合覆盖为 29.5。
+  // 客户端应退金额同样故意错误：必须由服务端按批次锁价覆盖为 2×11 + 3×22 = 88。
   refundAmount: '999',
 };
 
@@ -240,21 +244,24 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
       ],
     );
 
-    for (const [id, productId, batchNo] of [
-      [BATCH_ID, PRODUCT_ID, 'SR-BATCH-0001'],
-      [BATCH_2_ID, PRODUCT_2_ID, 'SR-BATCH-0002'],
+    for (const [id, productId, batchNo, lockedUnitCost] of [
+      [BATCH_ID, PRODUCT_ID, 'SR-BATCH-0001', '11'],
+      [BATCH_2_ID, PRODUCT_2_ID, 'SR-BATCH-0002', '22'],
+      [BATCH_3_ID, PRODUCT_ID, 'SR-BATCH-0003', '22'],
+      [BATCH_4_ID, PRODUCT_ID, 'SR-BATCH-0004', '22'],
     ] as const) {
       await test.database.query(
         `INSERT INTO inventory_batch
            (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost,
             inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty, custodian_id)
-         VALUES ($1, $2, $3, $4, $5, '10', '10000', '0', '0', '0', $6)`,
+         VALUES ($1, $2, $3, $4, $5, $6::amount, '10000', '0', '0', '0', $7)`,
         [
           id,
           DEMO_IDS.tenantId,
           DEMO_IDS.companyId,
           productId,
           batchNo,
+          lockedUnitCost,
           DEMO_IDS.ownerEmployeeId,
         ],
       );
@@ -272,11 +279,16 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
           SET inbound_qty = 10000,
               pending_execution_qty = 0,
               referenced_qty = 0,
-              in_transit_qty = 0`,
+              in_transit_qty = 0,
+              locked_unit_cost = (CASE id
+                WHEN $1::uuid THEN '11'
+                ELSE '22'
+              END)::amount`,
+      [BATCH_ID],
     );
   });
 
-  it('登记退货：201、S 单号、金额由 SQL 计算 / 聚合、审计落库', async () => {
+  it('登记退货：201、S 单号、金额按批次锁价由服务端算、审计落库', async () => {
     const created = await createOne();
 
     expect(created.id).toMatch(/^[0-9a-f-]{36}$/i);
@@ -287,21 +299,22 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
     expect(created.status).toBe('进行中');
     expect(created.version).toBe(1);
     expect(created.remark).toBeNull();
-    expect(created.refundAmount).toBe('29.5');
+    // 2 × 锁价 11 + 3 × 锁价 22；客户端传的 1 元与 999 都不参与。
+    expect(created.refundAmount).toBe('88');
     expect(created.lines).toHaveLength(2);
     expect(created.lines[0]).toMatchObject({
       productId: PRODUCT_ID,
       batchIds: [BATCH_ID],
       qty: '2',
-      unitPrice: '12.5',
-      amount: '25',
+      unitPrice: '11',
+      amount: '22',
     });
     expect(created.lines[1]).toMatchObject({
       productId: PRODUCT_2_ID,
       batchIds: [BATCH_2_ID],
       qty: '3',
-      unitPrice: '1.5',
-      amount: '4.5',
+      unitPrice: '22',
+      amount: '66',
     });
 
     const audit = await test.database.query<{
@@ -321,7 +334,7 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
       object_type: 'supplier_return',
       result: 'success',
     });
-    expect(audit.rows[0]?.changes.refundAmount).toBe('29.5');
+    expect(audit.rows[0]?.changes.refundAmount).toBe('88');
     expect(audit.rows[0]?.changes.pendingReservations).toEqual([
       { batchId: BATCH_ID, qty: '2', pendingAfter: '2', availableAfter: '9998' },
       { batchId: BATCH_2_ID, qty: '3', pendingAfter: '3', availableAfter: '9997' },
@@ -599,6 +612,129 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
     ]);
     expect(await getSupplierReturn(readCtx({}, { params: { id: order.id } }))).toMatchObject({ status: '进行中', version: 1 });
     expect((await test.database.query(`SELECT id FROM inventory_flow WHERE source_doc_id = $1`, [order.id])).rows).toEqual([]);
+  });
+
+  it('前端单价不参与计算：传 1 元仍按批次锁价 11 元算，响应与落库都回显 11', async () => {
+    const created = await createOne({
+      lines: [
+        { productId: PRODUCT_ID, batchIds: [BATCH_ID], qty: '2', unitPrice: '1', amount: '2' },
+      ],
+      refundAmount: '2',
+    });
+
+    expect(created.refundAmount).toBe('22');
+    expect(created.lines[0]).toMatchObject({ unitPrice: '11', amount: '22' });
+    // 不能只在响应层改：明细行落库的单价/金额必须是服务端值。
+    const stored = await test.database.query<{ unit_price: string; amount: string }>(
+      `SELECT trim_scale(unit_price) AS unit_price, trim_scale(amount) AS amount
+         FROM supplier_return_line
+        WHERE return_id = $1::uuid`,
+      [created.id],
+    );
+    expect(stored.rows[0]).toEqual({ unit_price: '11', amount: '22' });
+  });
+
+  it('前端单价与服务端一致：金额不变（3 × 锁价 22 = 66）', async () => {
+    const created = await createOne({
+      lines: [
+        { productId: PRODUCT_2_ID, batchIds: [BATCH_2_ID], qty: '3', unitPrice: '22', amount: '66' },
+      ],
+      refundAmount: '66',
+    });
+
+    expect(created.refundAmount).toBe('66');
+    expect(created.lines[0]).toMatchObject({ unitPrice: '22', amount: '66' });
+  });
+
+  it('一行跨多批（锁价 11 / 22）：按各批分摊数量 × 该批锁价分别算再求和', async () => {
+    // 两批、数量 2 → 1 × 11 + 1 × 22 = 33；回显单价只是「金额 ÷ 数量」的展示值 16.5。
+    const halves = await createOne({
+      lines: [
+        {
+          productId: PRODUCT_ID,
+          batchIds: [BATCH_ID, BATCH_3_ID],
+          qty: '2',
+          unitPrice: '16.5',
+          amount: '33',
+        },
+      ],
+      refundAmount: '33',
+    });
+    expect(halves.refundAmount).toBe('33');
+    expect(halves.lines[0]).toMatchObject({ amount: '33', unitPrice: '16.5' });
+
+    // 三批、数量 1：均分到 6 位后余量末批承接 → 0.333333 × 11 + 0.333333 × 22 + 0.333334 × 22
+    // = 18.333337。**平均锁价口径**会得 18.333333（(11+22+22)/3 × 1），两位小数之后的差异正是
+    // 「哪一批吃掉余量」的分叉，所以这里断言到第 6 位，而不是只看个位。
+    const thirds = await createOne({
+      lines: [
+        {
+          productId: PRODUCT_ID,
+          batchIds: [BATCH_ID, BATCH_3_ID, BATCH_4_ID],
+          qty: '1',
+          unitPrice: '18.333333',
+          amount: '18.333333',
+        },
+      ],
+      refundAmount: '18.333333',
+    });
+    expect(thirds.refundAmount).toBe('18.333337');
+    expect(thirds.lines[0]).toMatchObject({ amount: '18.333337', unitPrice: '18.333337' });
+  });
+
+  it('批次锁价为空：422 指到行，不兜底成 0 或客户端价', async () => {
+    // 现行库结构 locked_unit_cost 是 NOT NULL（0009），这里临时放开以验证「锁价缺失必须报错」
+    // 的防线：将来约束若是放宽，这条路径也不会静默写出错账。
+    await test.database.query(
+      `ALTER TABLE inventory_batch ALTER COLUMN locked_unit_cost DROP NOT NULL`,
+    );
+    const before = await test.database.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM supplier_return`,
+    );
+    try {
+      await test.database.query(
+        `UPDATE inventory_batch SET locked_unit_cost = NULL WHERE id = $1::uuid`,
+        [BATCH_2_ID],
+      );
+      const { ctx } = writeCtx({}, {
+        body: {
+          ...CREATE_BODY,
+          lines: [CREATE_BODY.lines[0], CREATE_BODY.lines[1]],
+        },
+      });
+      await expect(createSupplierReturn(ctx)).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: { field: 'lines.1.batchIds', lineNo: 2 },
+      });
+      const after = await test.database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM supplier_return`,
+      );
+      expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
+    } finally {
+      await test.database.query(
+        `UPDATE inventory_batch SET locked_unit_cost = '22'::amount WHERE id = $1::uuid`,
+        [BATCH_2_ID],
+      );
+      await test.database.query(
+        `ALTER TABLE inventory_batch ALTER COLUMN locked_unit_cost SET NOT NULL`,
+      );
+    }
+  });
+
+  it('批次不存在：422 指到行', async () => {
+    const { ctx } = writeCtx({}, {
+      body: {
+        ...CREATE_BODY,
+        lines: [
+          { ...CREATE_BODY.lines[0], batchIds: ['01900000-0000-7000-8000-0000000005ff'] },
+          CREATE_BODY.lines[1],
+        ],
+      },
+    });
+    await expect(createSupplierReturn(ctx)).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { field: 'lines.0.batchIds' },
+    });
   });
 
   it.each([
