@@ -1,4 +1,12 @@
-import { AppError, ROUTES, etagOf, routesOfModule, type RouteDef } from '@qingdan/contracts';
+import {
+  AppError,
+  EXPORT_CONTENT_TYPE,
+  ROUTES,
+  etagOf,
+  exportContentDisposition,
+  routesOfModule,
+  type RouteDef,
+} from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
 import { maskHandlerId, maskHandlerIdInPage } from '../../platform/authz/handler-mask.js';
@@ -13,6 +21,7 @@ import {
   shipPurchaseOrder,
   updatePurchaseOrder,
 } from './usecases/purchase-orders.js';
+import { exportPurchaseOrders } from './usecases/export-purchase-orders.js';
 import {
   cancelSupplierReturn,
   createSupplierReturn,
@@ -40,6 +49,7 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'purchase.order.update': 'purchase_order',
   'purchase.order.cancel': 'purchase_order',
   'purchase.order.complete': 'purchase_order',
+  'purchase.order.export': 'purchase_order',
   'purchase.order.ship': 'purchase_order',
   'purchase.order.ship.revoke': 'purchase_order',
   'purchase.order.receive': 'purchase_order',
@@ -89,6 +99,15 @@ export function registerPurchaseRoutes(app: FastifyInstance): void {
     'purchase.order.complete': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await completePurchaseOrder({ database: instance.database, request, reply });
+    },
+    'purchase.order.export': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      // 原生 CSV（不是 JSON 信封）：设好响应头直接返回文本，点开即下载（D96）。
+      const file = await exportPurchaseOrders({ database: instance.database, request });
+      reply
+        .type(EXPORT_CONTENT_TYPE)
+        .header('content-disposition', exportContentDisposition(file.filename));
+      return file.content;
     },
     'purchase.order.ship': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);

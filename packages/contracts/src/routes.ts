@@ -26,6 +26,7 @@ import { INTERNAL_TRADE_ORDER_ROUTES } from './internal-trade-orders.js';
 import { SETTLEMENT_ORDER_ROUTES } from './settlement-orders.js';
 import { COMMISSION_RATE_ROUTES } from './commission-rates.js';
 import { PRINT_ROUTES } from './prints.js';
+import { EXPORT_ROUTES } from './exports.js';
 import { PAYMENT_ROUTES } from './payments.js';
 import { BILLING_ROUTES } from './billings.js';
 import { PROFIT_REPORT_ROUTES } from './profit-report.js';
@@ -276,8 +277,10 @@ export const ROUTES: readonly RouteDef[] = [
   ...SETTLEMENT_ORDER_ROUTES,
   // —— settlement 模块：提成比例配置 3 条（list/create/delete，D77）——
   ...COMMISSION_RATE_ROUTES,
-  // —— 打印 / 导出 3 条（销售单打印、加工单打印、销售单列表导出）——
+  // —— 打印 2 条（销售单打印、加工单打印）——
   ...PRINT_ROUTES,
+  // —— 列表导出 3 条（销售单 / 采购单 / 库存批次，CSV 原生响应，D96 / #342）——
+  ...EXPORT_ROUTES,
   // —— payment 模块：在线支付回调 1 条（#101，匿名可达 / 幂等）——
   ...PAYMENT_ROUTES,
   // —— billing：平台订阅 2 条（读 / 运营调整，一期仅契约）——

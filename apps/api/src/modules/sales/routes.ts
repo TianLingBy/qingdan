@@ -1,8 +1,10 @@
 import {
   AppError,
+  EXPORT_CONTENT_TYPE,
   ROUTES,
   allowsScope,
   etagOf,
+  exportContentDisposition,
   routesOfModule,
   type RouteDef,
 } from '@qingdan/contracts';
@@ -120,12 +122,18 @@ export function registerSalesRoutes(app: FastifyInstance): void {
         request.principal,
       );
     },
-    'sales.order.export': async ({ app: instance, request, route }) => {
+    'sales.order.export': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
-      return await exportSalesOrders({
+      // 导出返回原生 CSV（不是 JSON 信封）：直接设响应头返回文本，
+      // 浏览器 / Excel 点开即下载，前端不用再转一手落盘（D96）。
+      const file = await exportSalesOrders({
         database: instance.database,
         request,
       });
+      reply
+        .type(EXPORT_CONTENT_TYPE)
+        .header('content-disposition', exportContentDisposition(file.filename));
+      return file.content;
     },
     'sales.order.print': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);

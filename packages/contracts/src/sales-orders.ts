@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { CancelDecision } from './documents.js';
 import { defineRoute, type RouteDef } from './registry.js';
-import { PageQuerySchema, pageSchema } from './pagination.js';
+import { PageQuerySchema, PageableSchema, pagedResultSchema } from './pagination.js';
 import { SalesReceiptSchema } from './sales-receipts.js';
 
 /**
@@ -158,14 +158,32 @@ export const SalesOrderDetailSchema = SalesOrderSchema.extend({
 export type SalesOrderDetail = z.infer<typeof SalesOrderDetailSchema>;
 
 /**
- * 销售单列表查询：公司 / 客户 / 状态 / 关键字（单号或客户名），游标分页。
- * 公司隔离（D15）由服务端按调用者可见公司集合再收口。
+ * 销售单列表与导出的公共筛选条件。
+ * 单独抽出来是因为导出**不能**带页码参数：导出一次取全量（上限 5000 行），
+ * 接受 `pageSize` 会被静默截断成一小段 CSV，比报错更难查。
  */
-export const SalesOrderListQuerySchema = PageQuerySchema.extend({
+const SalesOrderFilterFields = {
   companyId: z.string().uuid().optional(),
   customerId: z.string().uuid().optional(),
   status: SalesOrderStatusSchema.optional(),
   keyword: z.string().min(1).max(64).optional(),
+};
+
+/**
+ * 销售单列表查询：公司 / 客户 / 状态 / 关键字（单号或客户名），游标分页。
+ * 公司隔离（D15）由服务端按调用者可见公司集合再收口。
+ */
+export const SalesOrderListQuerySchema = PageQuerySchema.extend({
+  ...SalesOrderFilterFields,
+  /** 页码模式（D95）：三个列表试点之一，故这四个参数在这里而不是基类上。 */
+  ...PageableSchema,
+  /** 排序白名单（D95）：只收单头真实存在的列，未登记的一律 422，绝不拼进 SQL。 */
+  sort: z.enum(['orderNo', 'totalAmount', 'createdAt']).optional(),
+});
+
+/** 销售单导出查询：与列表同一套筛选，但**不含** page/pageSize/sort/order（见上）。 */
+export const SalesOrderExportQuerySchema = PageQuerySchema.extend({
+  ...SalesOrderFilterFields,
 });
 
 /**
@@ -221,7 +239,7 @@ export const SALES_ORDER_ROUTES: readonly RouteDef[] = [
     summary: '销售单列表（按公司/客户/状态/单号或客户名检索；普通读不记审计，D15；无看价权限时金额字段为 null，D79）',
     audit: { kind: 'none' },
     request: { query: SalesOrderListQuerySchema },
-    response: { status: 200, schema: pageSchema(SalesOrderSchema) },
+    response: { status: 200, schema: pagedResultSchema(SalesOrderSchema) },
   }),
   defineRoute({
     module: 'sales',

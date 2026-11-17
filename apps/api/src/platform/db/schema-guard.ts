@@ -8,8 +8,9 @@ import { SCHEMA_MIGRATIONS_TABLE } from './migrate.js';
  * 却又连上一个只跑到旧迁移的库，查询会在**运行时**炸在业务路径上（用户看到一个 500），
  * 而不是在启动时炸出来。这里把「库落后于代码」变成启动失败，部署顺序错了立刻可见。
  *
- * 只要求「代码真正依赖的那几条」，不要求是最新迁移：只加索引/触发器的迁移
- * （如 0027）缺了最多是少一层防线，不该挡住启动。
+ * 只要求「代码真正依赖的那几条」，不要求是最新迁移：**纯加索引的迁移通常不挡启动**，
+ * 除非缺了会让关键查询退化到不可接受的程度，或新查询路径直接依赖它——这类仍要登记，
+ * 登记时把「缺了会怎样」写清楚（见 D95 的排序索引）。
  */
 
 /** 代码硬依赖的迁移：缺一条就拒绝启动。新增依赖时在这里登记。 */
@@ -24,13 +25,13 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // processing_order.transit_stage / transit_to、inventory_batch.held_by_processor_id，
   // 缺列会让发货 / 到货确认直接 500，必须在启动时就报出来。
   '20261117181000_d94_transit_states.sql',
+  // D95 / #341：三个列表的排序复合索引。缺了不会 500，但高频翻页会退化成 Seq Scan + Sort。
+  '20261117213000_paging_sort_indexes.sql',
+  // D98 / #302：主数据静默建档与去重审核依赖的新列与 masterdata_dedupe 表。
+  '20261117223000_masterdata_autocreate.sql',
   // D94 / #328：在途可占用要求 available_qty 用“占用优先抵在途”的生成公式；
   // 缺这条会让在途批次一旦被占用就违反非负约束。
   '20261118000000_d94_transit_occupancy.sql',
-  // D98 / #302：主数据静默建档与去重审核依赖 customer/supplier/processor/product 的
-  // origin / dedupe_state、company.source、customer 的五个财务列与 masterdata_dedupe 表；
-  // 缺它们，审核台与开单选档案会直接 500，必须在启动时就报出来。
-  '20261117223000_masterdata_autocreate.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

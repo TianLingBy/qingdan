@@ -1,16 +1,18 @@
 import {
   AppError,
+  EXPORT_MAX_ROWS,
+  SalesExportQuerySchema,
   SalesOrderCreateInputSchema,
   SalesOrderListQuerySchema,
   SalesOrderUpdateInputSchema,
   allowsScope,
   assertCancelable,
+  assertNoPagingParams,
   canCancel,
-  clampLimit,
   decodeCursor,
   etagOf,
   type CursorPayload,
-  type PrintDocument,
+  type SalesExportQuery,
   type SalesOrder,
   type SalesOrderCreateInput,
   type SalesOrderDetail,
@@ -24,6 +26,7 @@ import { recordAudit, withAudit, type AuditEvent } from '../../../platform/audit
 import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
+import { toCsv } from '../../../platform/http/csv.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import {
@@ -80,7 +83,11 @@ interface ParsedListQuery {
   readonly status?: SalesOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
-  readonly limit: number;
+  readonly limit?: number;
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly sort?: 'orderNo' | 'totalAmount' | 'createdAt';
+  readonly order?: 'asc' | 'desc';
 }
 
 function headerValue(
@@ -173,7 +180,13 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
     status: parsed.data.status,
     keyword: parsed.data.keyword,
     cursor,
-    limit: clampLimit(parsed.data.limit),
+    // 不在这里 clamp：留 undefined 给 resolvePaging 区分「没传 limit」与「传了 limit」，
+    // 前者是页码模式默认 20，后者是游标模式默认 50（老调用方行为）。
+    limit: parsed.data.limit,
+    page: parsed.data.page,
+    pageSize: parsed.data.pageSize,
+    sort: parsed.data.sort,
+    order: parsed.data.order,
   };
 }
 
@@ -208,9 +221,23 @@ function parseUpdateInput(body: unknown): SalesOrderUpdateInput {
   return parsed.data;
 }
 
+/**
+ * 导出查询解析：用 `SalesExportQuerySchema`（列表 schema 去掉 cursor/limit）。
+ * 刻意不复用 `parseListQuery`——它会兜底一个默认 limit，而导出根本不该有分页概念，
+ * 复用等于给「导出其实会分页」留了个后门。
+ */
+function parseExportQuery(request: FastifyRequest): SalesExportQuery {
+  const parsed = SalesExportQuerySchema.safeParse(request.query);
+  if (!parsed.success) {
+    throw new AppError('VALIDATION_FAILED', '查询参数不合法', {
+      issues: issuesOf(parsed.error),
+    });
+  }
+  return parsed.data;
+}
+
 /** 强 ETag `"<version>"`；缺失 → 428，格式非法 → 409。 */
-function parseIfMatchVersion(request: FastifyRequest): number {
-  const raw = headerValue(request, 'if-match');
+function parseIfMatchVersion(request: FastifyRequest): number {  const raw = headerValue(request, 'if-match');
   if (raw === undefined || raw.trim() === '') {
     throw new AppError(
       'PRECONDITION_REQUIRED',
@@ -262,9 +289,13 @@ function auditEventOf(
 }
 
 /** 销售单列表（普通读，不记审计）。 */
-export async function listSalesOrders(
-  ctx: SalesOrderContext,
-): Promise<{ items: SalesOrder[]; nextCursor: string | null }> {
+export async function listSalesOrders(ctx: SalesOrderContext): Promise<{
+  items: SalesOrder[];
+  total: number | null;
+  page: number | null;
+  pageSize: number | null;
+  nextCursor: string | null;
+}> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.list.read');
   requireScope(principal, 'read');
@@ -276,24 +307,26 @@ export async function listSalesOrders(
   );
   return {
     items: page.items.map((order) => maskSalesOrderAmounts(order, canViewPrice)),
+    total: page.total,
+    page: page.page,
+    pageSize: page.pageSize,
     nextCursor: page.nextCursor,
   };
 }
 
-/** 导出上限：超过直接 400，避免一次查询把进程内存打满（D54 ② 未规定上限）。 */
-const EXPORT_MAX_ROWS = 5000;
-
-/** UTF-8 BOM（U+FEFF）：让 Excel 按 UTF-8 识别中文。 */
-const UTF8_BOM = String.fromCharCode(0xfeff);
-
-/** RFC4180：含逗号 / 引号 / CRLF 的字段用双引号包裹，内部引号双写。 */
-function escapeCsvField(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-}
-
-function csvLine(fields: readonly string[]): string {
-  return fields.map(escapeCsvField).join(',');
-}
+/**
+ * 导出列头。CSV 拼装（BOM / CRLF / 公式注入防护）统一走 platform/http/csv.ts，
+ * 不再在本文件维护第二份转义逻辑——#342 把三个导出端点收口到同一处。
+ */
+const EXPORT_HEADERS = [
+  '单号',
+  '日期',
+  '客户',
+  '状态',
+  '经办人',
+  '数量合计',
+  '金额合计',
+] as const;
 
 /** 金额统一两位小数（四舍五入），用定点整数避免浮点误差。 */
 function formatAmount2(value: string): string {
@@ -306,10 +339,6 @@ function formatAmount2(value: string): string {
     .padStart(2, '0')}`;
 }
 
-function sumQty(lines: readonly { readonly qty: string }[]): string {
-  return fromMicro(lines.reduce((total, line) => total + toMicro(line.qty), 0n));
-}
-
 function exportDateStamp(now: Date): string {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
@@ -317,34 +346,37 @@ function exportDateStamp(now: Date): string {
 }
 
 /**
- * 销售单列表导出 CSV（`sales.order.export`，敏感读，D54 ②）。
+ * 销售单列表导出 CSV（`sales.order.export`，敏感读，D54 ② / D96）。
  *
  * - 权限：`sales.export`；数据范围仍走列表同款租户 + 可见公司过滤；
- * - 不分页：一次取全部符合条件行，超过 5000 行报 400（不静默截断）；
- * - 金额按 `sales.view_price` 脱敏：无权限时金额列留空，并加一行 CSV 注释说明；
+ * - 不分页、不接受分页参数：一次取全部符合条件行，超过 `EXPORT_MAX_ROWS` 直接 422
+ *   （**不静默截断**：截断的导出会被用户当成全量对账依据，比报错危险得多）；
+ * - 金额按 `sales.view_price` 脱敏：无权限时金额列留空，并在首行加一行 CSV 注释说明；
+ * - 公式注入防护在 `toCsv` 里统一处理：客户名等字段可用 `=` 开头，不加前缀 Excel 会执行；
  * - AI 凭证禁止直接导出（契约 `sales.order.export` 为 `ai.policy=forbid`，D52①）；
- * - 成功必记 `action='export'` 审计；失败由 route-mount 统一补 fail 审计。
+ * - 成功必记 `action='export'` 审计（只记筛选条件摘要与行数，不记行数据）；失败由 route-mount 补 fail 审计。
  */
 export async function exportSalesOrders(
   ctx: SalesOrderContext,
-): Promise<PrintDocument> {
+): Promise<{ content: string; filename: string }> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.export');
   requireScope(principal, 'export');
   assertHumanCredential(principal, '导出销售单列表');
-  const query = parseListQuery(ctx.request);
+  assertNoPagingParams(ctx.request.query);
+  const query = parseExportQuery(ctx.request);
   const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
 
-  const page = await withTenant(database, principal.tenantId, (tx) =>
-    repo.listSalesOrders(repoContext(tx, principal), {
+  const result = await withTenant(database, principal.tenantId, (tx) =>
+    repo.exportSalesOrders(repoContext(tx, principal), {
       companyId: query.companyId,
       customerId: query.customerId,
       status: query.status,
       keyword: query.keyword,
-      limit: EXPORT_MAX_ROWS,
+      maxRows: EXPORT_MAX_ROWS,
     }),
   );
-  if (page.nextCursor !== null) {
+  if (result.exceedsMaxRows) {
     throw new AppError(
       'VALIDATION_FAILED',
       `导出结果超过 ${EXPORT_MAX_ROWS} 行，请缩小筛选条件`,
@@ -352,25 +384,21 @@ export async function exportSalesOrders(
     );
   }
 
-  const rows = page.items.map((order) => [
+  const rows = result.rows.map((order) => [
     order.orderNo,
     order.createdAt.slice(0, 10),
     order.customerName,
     order.status,
     order.handlerId ?? '',
-    sumQty(order.lines),
-    canViewPrice && order.totalAmount !== null
-      ? formatAmount2(order.totalAmount)
-      : '',
+    order.qtySum,
+    canViewPrice ? formatAmount2(order.totalAmount) : '',
   ]);
-  const body: string[] = [];
-  if (!canViewPrice) body.push('# 当前账号无看价权限，金额列已留空');
-  body.push(
-    csvLine(['单号', '日期', '客户', '状态', '经办人', '数量合计', '金额合计']),
-    ...rows.map(csvLine),
-  );
-  // RFC4180 使用 CRLF。
-  const content = UTF8_BOM + body.join('\r\n') + '\r\n';
+  const csv = toCsv(EXPORT_HEADERS, rows);
+  // toCsv 的第 0 个字符就是 BOM。无看价权限时要把注释行插在 BOM 之后、表头之前，
+  // 所以拆开拼：BOM + 注释 + CRLF + 其余内容。
+  const content = canViewPrice
+    ? csv
+    : `${csv.slice(0, 1)}# 当前账号无看价权限，金额列已留空\r\n${csv.slice(1)}`;
 
   const audit = auditEventOf(ctx.request, principal, 'export', null, {
     operationId: 'sales.order.export',
@@ -385,7 +413,6 @@ export async function exportSalesOrders(
   await recordAudit(database, audit);
 
   return {
-    contentType: 'text/csv',
     content,
     filename: `销售单-${exportDateStamp(new Date())}.csv`,
   };
