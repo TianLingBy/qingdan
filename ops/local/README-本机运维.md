@@ -40,18 +40,21 @@
 pwsh -File ops\local\sync-up.ps1
 ```
 
-它按顺序做八件事，每步失败都会停下并说明原因：
+它按顺序做九件事，每步失败都会停下并说明原因：
 
+0. **升级前验证**：在仓库里跑 `pnpm -r build` → `pnpm -r test` → `tests/run.ps1`，任一不过就停在这里，**线上一个字节都不动、连备份都不做**。负责人口径（2026-11-17）：「系统升级都先准备好，测试好才更新」。日志落在 `%TEMP%\qingdan-verify-<时间>.log`。
 1. 触发一次数据库备份，并核对最新 `.dump` 不超过 10 分钟（**删列类迁移不可逆，没备份就不允许继续**）
 2. `robocopy` 把仓库代码同步到 `E:\qingdan-server\app`，排除 `.env` / `.git` / `node_modules` / `dist` / `ops\backups`
 3. 把 `ops/local/` 下的三个本机覆盖文件摆到 compose 会读的位置
-4. `docker compose build api` 重建镜像
+4. `docker compose build api migrate` 重建镜像（**两个都要重建**，理由见下面「升级时踩过的坑」）
 5. `docker compose --profile tools run --rm migrate` 跑迁移（**迁移从不随应用自启**）
 6. `docker compose up -d`
-7. `pnpm -C apps/web build` 并发布 `dist`（Caddy 直接挂这个目录，前端改动不重建镜像）
+7. `pnpm -r build` 并发布 `apps/web/dist`（Caddy 直接挂这个目录，前端改动不重建镜像）
 8. 自检 `https://qingdan.internal/api/v1/health` 必须是 200
 
-常用开关：`-SkipBackup`（已手动备过）、`-SkipBuild`（只改了前端或文档）、`-SkipFrontend`、`-DryRun`（只看会做什么）。
+常用开关：`-SkipVerify`（跳过第 0 步，只在急着回滚时用）、`-SkipBackup`（已手动备过）、`-SkipBuild`（只改了前端或文档）、`-SkipFrontend`、`-DryRun`（只看会做什么）。
+
+> 第 0 步是要挡住「代码刚合进 main 就直接铺到唯一能点开的环境」这件事。这一步约 4 分钟；不想等就说明这次升级是回滚，不是发布。
 
 ## 日常操作
 
