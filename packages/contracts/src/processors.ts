@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
+import { MasterdataSuggestQuerySchema, MasterdataSuggestResultSchema } from './suggest.js';
 
 /**
  * 加工厂资料契约（masterdata 第四切，契约第一批 §2）。
@@ -152,6 +153,20 @@ export const PROCESSOR_ROUTES: readonly RouteDef[] = [
     audit: { kind: 'none' },
     request: { query: ProcessorListQuerySchema },
     response: { status: 200, schema: pageSchema(ProcessorSchema) },
+  }),
+  defineRoute({
+    module: 'masterdata',
+    operationId: 'processor.suggest',
+    method: 'GET',
+    path: '/api/v1/processors/suggest',
+    domain: 'processor',
+    action: 'read',
+    summary: '建档防重：按名称提示已有相似加工厂（只回 id/名称/相似度，D99）',
+    // 只读、无副作用、打字过程中高频调用 → 不刷审计表（D54② 普通读不记）。
+    audit: { kind: 'none' },
+    ai: { policy: 'allow' },
+    request: { query: MasterdataSuggestQuerySchema },
+    response: { status: 200, schema: MasterdataSuggestResultSchema },
   }),
   defineRoute({
     module: 'masterdata',

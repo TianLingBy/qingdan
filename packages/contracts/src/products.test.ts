@@ -12,8 +12,9 @@ import { routesOfModule } from './registry.js';
  * 由 masterdata 负责人按本文件落地，改签名必须先改这里并过评审。
  */
 describe('商品契约（masterdata）', () => {
-  it('5 条端点全部登记，且归属 masterdata', () => {
-    expect(PRODUCT_ROUTES).toHaveLength(5);
+  it('6 条端点全部登记，且归属 masterdata', () => {
+    // 5 条 CRUD + #302 块 B 的 suggest（只读相似档案提示）
+    expect(PRODUCT_ROUTES).toHaveLength(6);
     for (const route of PRODUCT_ROUTES) expect(route.module).toBe('masterdata');
     // masterdata 会陆续挂客户/供应商等切片，这里只锁「商品都归 masterdata」，不锁总数。
     const masterdataIds = routesOfModule(ROUTES, 'masterdata').map((r) => r.operationId);
@@ -25,6 +26,7 @@ describe('商品契约（masterdata）', () => {
     expect(actual).toEqual(
       [
         'GET /api/v1/products product.list.read',
+        'GET /api/v1/products/suggest product.suggest',
         'POST /api/v1/products product.create',
         'GET /api/v1/products/{id} product.detail.read',
         'PATCH /api/v1/products/{id} product.update',
@@ -37,12 +39,16 @@ describe('商品契约（masterdata）', () => {
     const byId = new Map(PRODUCT_ROUTES.map((r) => [r.operationId, r]));
     expect(byId.get('product.list.read')?.scope).toBe('product.read');
     expect(byId.get('product.detail.read')?.scope).toBe('product.read');
+    // suggest 是只读提示，权限落在 read 上（无 read 就 403，见 D99⑧）
+    expect(byId.get('product.suggest')?.scope).toBe('product.read');
     expect(byId.get('product.create')?.scope).toBe('product.create');
     expect(byId.get('product.update')?.scope).toBe('product.update');
     expect(byId.get('product.delete')?.scope).toBe('product.delete');
 
     expect(byId.get('product.list.read')?.audit.kind).toBe('none');
     expect(byId.get('product.detail.read')?.audit.kind).toBe('none');
+    // 输入框边打边问的高频只读接口不刷审计表（D99⑥）
+    expect(byId.get('product.suggest')?.audit.kind).toBe('none');
     for (const id of ['product.create', 'product.update', 'product.delete']) {
       expect(byId.get(id)?.audit).toEqual({ kind: 'write', required: true });
     }
