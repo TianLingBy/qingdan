@@ -58,7 +58,12 @@ export interface PurchaseOrderListQuery {
 export type PurchaseOrderSortKey = 'orderNo' | 'totalAmount' | 'createdAt';
 
 /** 创建输入 = 契约创建体 + 用例生成的 uuid / 单号（审计需要提前知道 objectId）。 */
-export type PurchaseOrderInsertInput = PurchaseOrderCreateInput & {
+/** `supplierId` 由用例解析后必填（D100，同 E 单的 `customerId`）。 */
+export type PurchaseOrderInsertInput = Omit<
+  PurchaseOrderCreateInput,
+  'supplierId' | 'supplierDraft'
+> & {
+  readonly supplierId: string;
   readonly id: string;
   readonly orderNo: string;
 };

@@ -39,6 +39,10 @@ import {
   type StockReservationReceiptLine,
 } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
+import {
+  assertIdOrDraft,
+  resolveMasterdataDraft,
+} from '../../masterdata/usecases/autocreate.js';
 import type { SalesOrderPrintLabels } from '../services/customer-copy.js';
 import {
   maskSalesOrderAmounts,
@@ -561,6 +565,9 @@ export async function createSalesOrder(
 
   const input = parseCreateInput(ctx.request.body);
   assertCompanyVisible(principal, input.companyId);
+  // 客户二选一（D100）：选已有客户 or 现场报个名字。两个都给 / 都不给 → 422 且指回 customerId。
+  assertIdOrDraft('customerId', input.customerId, input.customerDraft, '客户');
+  const { customerDraft, ...orderInput } = input;
 
   const id = uuidv7();
   const audit = auditEventOf(ctx.request, principal, 'sales.order.create', id, {
@@ -573,9 +580,21 @@ export async function createSalesOrder(
   audit.companyId = input.companyId;
 
   const order = await withAudit(database, audit, async (tx) => {
+    // 静默建档（D100）：同事务先建客户再写单，单据引用的就是新客户 id；
+    // 归属公司取**本单的** companyId（上面已校验可见），不看请求体里别处的公司。
+    const customerId =
+      input.customerId ??
+      (
+        await resolveMasterdataDraft(tx, principal, {
+          kind: 'customer',
+          companyId: input.companyId,
+          draft: customerDraft!,
+        })
+      ).id;
     const orderNo = await takeDocumentNo(tx, 'E', input.companyId, new Date());
     const created = await repo.insertSalesOrder(repoContext(tx, principal), {
-      ...input,
+      ...orderInput,
+      customerId,
       id,
       orderNo,
     });

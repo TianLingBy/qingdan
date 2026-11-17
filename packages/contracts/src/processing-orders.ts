@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CancelDecision } from './documents.js';
 import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
+import { ProcessorDraftSchema } from './masterdata-draft.js';
 
 /**
  * 加工单 B 契约（契约第一批 §3.2 / §5.2 / §9 / §10，第一批第三切）。
@@ -292,12 +293,15 @@ export const ProcessingOrderListQuerySchema = PageQuerySchema.extend({
  * - **不接收单号**（服务端按 D16 生成）；
  * - 材料投入至少 1 行（F2b），且各行 `qty` 合计必须等于 `inputQty`；
  * - 费用明细至少 1 行、金额 ≥ 0（§3.2 加工费/运杂费必填；D39）；
- * - 损耗量创建时可空（验收时一次填入，F3）；可售量由实现侧计算，不由入参传入。
+ * - 损耗量创建时可空（验收时一次填入，F3）；可售量由实现侧计算，不由入参传入；
+ * - `processorId` 与 `processorDraft` 二选一（D100，口径同 E 单的 `customerDraft`）。
  */
 export const ProcessingOrderCreateInputSchema = z
   .object({
     companyId: z.string().uuid(),
-    processorId: z.string().uuid(),
+    processorId: z.string().uuid().optional(),
+    /** 新加工厂草档（D100）：不传 `processorId` 时必填；公司取本单 `companyId`。 */
+    processorDraft: ProcessorDraftSchema.optional(),
     /** 成品商品：开单必填，完成时据此确定产出批次的商品（#150 决策 A）。 */
     outputProductId: z.string().uuid(),
     handlerId: z.string().uuid(),

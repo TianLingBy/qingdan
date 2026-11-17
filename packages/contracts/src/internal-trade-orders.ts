@@ -6,6 +6,7 @@ import {
 } from './documents.js';
 import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
+import { CompanyDraftSchema } from './masterdata-draft.js';
 
 /**
  * 内部交易单 N 契约（契约第二批 §1 / §3，第一批切）。
@@ -168,9 +169,13 @@ export const InternalTradeOrderListQuerySchema = PageQuerySchema.extend({
  * 开单入参（§1）：
  * - **不接收单号**（服务端按 D16 生成）、不接收状态 / 在途量；
  * - 商品明细至少 1 行、每行 `batchIds` 至少 1 条（D22）；
- * - 内部价必填且由制单人手填（D68①），系统不自动算。
+ * - 内部价必填且由制单人手填（D68①），系统不自动算；
+ * - **不接受 `companyDraft`**（D100 / 设计 §六「N 单只能选不能建」）：字段留在契约上只为
+ *   让越界请求拿到明确的 422「公司只能选不能建」，而不是被 zod 静默丢弃。
  */
 export const InternalTradeOrderCreateInputSchema = z.object({
+  /** 越界字段：收到即 422（用例层拒绝），永远不建档。 */
+  companyDraft: CompanyDraftSchema.optional(),
   fromCompanyId: z.string().uuid(),
   toCompanyId: z.string().uuid(),
   handlerId: z.string().uuid(),

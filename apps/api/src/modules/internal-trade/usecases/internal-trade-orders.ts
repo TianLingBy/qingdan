@@ -32,6 +32,7 @@ import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import { stockBatchInspectionPort, stockBatchTransferPort } from '../../../platform/services/registry.js';
 import { settlementDraftPort } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
+import { assertNoCompanyDraft } from '../../masterdata/usecases/autocreate.js';
 import { maskInternalTradeAmounts, maskInternalTradeDetailAmounts } from '../services/masking.js';
 
 /**
@@ -380,6 +381,10 @@ export async function createInternalTradeOrder(
   const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
 
   const input = parseCreateInput(ctx.request.body);
+  // N 单只能选公司不能建公司（D100 / 设计 §六）：收到 companyDraft 直接 422，
+  // 且在建任何单据之前拒掉——不能让「以为建了公司」的请求落到库里。
+  assertNoCompanyDraft(input.companyDraft);
+  const { companyDraft: _companyDraft, ...orderInput } = input;
   const id = uuidv7();
   const audit = auditEventOf(
     ctx.request,
@@ -400,7 +405,7 @@ export async function createInternalTradeOrder(
     const created = await repo.insertInternalTradeOrder(
       repoContext(tx, principal),
       {
-        ...input,
+        ...orderInput,
         id,
         orderNo,
       },
