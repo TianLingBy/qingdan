@@ -149,6 +149,44 @@ describe('加工单接口封装', () => {
     expect(calls[0]?.init.method).toBe('GET');
   });
 
+  it('发货走 /processing-orders/{id}/ship，带 If-Match 与按段裁剪的 body（D94 ②）', async () => {
+    const { api, calls } = recorder();
+
+    await api.ship('o1', { transitStage: 'finished', transitTo: 'customer', lossQty: '12' }, 7);
+
+    expect(calls[0]?.url).toBe('/api/v1/processing-orders/o1/ship');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"7"');
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      transitStage: 'finished',
+      transitTo: 'customer',
+      lossQty: '12',
+    });
+  });
+
+  it('撤销发货：无 body，原因走 X-Reason 头，中文先 percent-encode（否则 ByteString 抛错）', async () => {
+    const { api, calls } = recorder();
+
+    await api.shipRevoke('o1', '仓库报错，货被退回', 8);
+
+    expect(calls[0]?.url).toBe('/api/v1/processing-orders/o1/ship/revoke');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(calls[0]?.init.body).toBeUndefined();
+    expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"8"');
+    expect(headerOf(calls[0]!.init, 'X-Reason')).toBe(encodeURIComponent('仓库报错，货被退回'));
+  });
+
+  it('到货确认走 /processing-orders/{id}/receive，无 body + If-Match', async () => {
+    const { api, calls } = recorder();
+
+    await api.receive('o1', 9);
+
+    expect(calls[0]?.url).toBe('/api/v1/processing-orders/o1/receive');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(calls[0]?.init.body).toBeUndefined();
+    expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"9"');
+  });
+
   it('查询键按筛选条件区分，明细键带 id', () => {
     expect(processingQueryKeys.list({ status: '进行中' })).not.toEqual(
       processingQueryKeys.list({ status: '已取消' }),
