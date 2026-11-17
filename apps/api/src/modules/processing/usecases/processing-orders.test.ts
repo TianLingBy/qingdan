@@ -5,7 +5,7 @@ import {
   type ScopeMatrix,
 } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
 import { createTestDatabase, type TestDatabase } from '../../../testing/pglite.js';
@@ -15,6 +15,9 @@ import {
   createProcessingOrder,
   getProcessingOrder,
   listProcessingOrders,
+  receiveProcessingOrder,
+  revokeProcessingOrderShip,
+  shipProcessingOrder,
   updateProcessingOrder,
 } from './processing-orders.js';
 import { registerServices } from '../../../platform/services/registry.js';
@@ -37,9 +40,12 @@ const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000001103';
 const FLOW_ID = '01900000-0000-7000-8000-000000001131';
 
 const FULL_SCOPE: ScopeMatrix = [
-  { domain: 'processing', actions: ['read', 'create', 'update', 'delete', 'approve'] },
+  { domain: 'processing', actions: ['read', 'create', 'update', 'ship', 'delete', 'approve'] },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'processing', actions: ['read'] }];
+const UPDATE_ONLY_SCOPE: ScopeMatrix = [
+  { domain: 'processing', actions: ['read', 'create', 'update'] },
+];
 
 const FEE = {
   feeName: '加工费',
@@ -173,6 +179,35 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     return created;
   }
 
+  async function ship(
+    id: string,
+    body: Record<string, unknown>,
+    version = 1,
+  ): Promise<ProcessingOrder> {
+    const { ctx } = writeCtx({}, {
+      params: { id },
+      headers: { 'if-match': `"${version}"` },
+      body,
+    });
+    return shipProcessingOrder(ctx);
+  }
+
+  async function receive(id: string, version = 2): Promise<ProcessingOrder> {
+    const { ctx } = writeCtx({}, {
+      params: { id },
+      headers: { 'if-match': `"${version}"` },
+    });
+    return receiveProcessingOrder(ctx);
+  }
+
+  async function revoke(id: string, version = 2): Promise<ProcessingOrder> {
+    const { ctx } = writeCtx({}, {
+      params: { id },
+      headers: { 'if-match': `"${version}"` },
+    });
+    return revokeProcessingOrderShip(ctx);
+  }
+
   beforeAll(async () => {
     registerServices({ ...inventoryServices });
     test = await createTestDatabase();
@@ -237,6 +272,16 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     await test.database.close();
   });
 
+  beforeEach(async () => {
+    await test.database.query(
+      `UPDATE inventory_batch
+          SET inbound_qty = 100000,
+              referenced_qty = 0,
+              in_transit_qty = 0,
+              pending_execution_qty = 0`,
+    );
+  });
+
   it('建单按材料行占用待执行量，取消释放', async () => {
     const created = await createOne({
       materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
@@ -296,6 +341,180 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
         { batchId: BATCH_ID, qty: '100', pendingAfter: '0' },
       ],
     });
+  });
+
+  it('materials 发货把占用转在途；到货恢复占用并回到进行中，随后仍可完成', async () => {
+    const created = await createOne();
+    const shipped = await ship(created.id, {
+      transitStage: 'materials',
+      transitTo: 'warehouse',
+    });
+    expect(shipped).toMatchObject({
+      status: '在途',
+      transitStage: 'materials',
+      transitTo: 'warehouse',
+      version: 2,
+    });
+    const transit = await test.database.query<{
+      pending_execution_qty: string;
+      in_transit_qty: string;
+      available_qty: string;
+      held_by_processor_id: string | null;
+    }>(
+      `SELECT trim_scale(pending_execution_qty) AS pending_execution_qty,
+              trim_scale(in_transit_qty) AS in_transit_qty,
+              trim_scale(available_qty) AS available_qty,
+              held_by_processor_id::text AS held_by_processor_id
+         FROM inventory_batch
+        WHERE id = $1::uuid`,
+      [BATCH_ID],
+    );
+    expect(transit.rows[0]).toMatchObject({
+      pending_execution_qty: '0',
+      in_transit_qty: '100',
+      available_qty: '99900',
+      held_by_processor_id: PROCESSOR_ID,
+    });
+
+    const received = await receive(created.id, 2);
+    expect(received).toMatchObject({ status: '进行中', version: 3 });
+    const restored = await test.database.query<{
+      pending_execution_qty: string;
+      in_transit_qty: string;
+      held_by_processor_id: string | null;
+    }>(
+      `SELECT trim_scale(pending_execution_qty) AS pending_execution_qty,
+              trim_scale(in_transit_qty) AS in_transit_qty,
+              held_by_processor_id::text AS held_by_processor_id
+         FROM inventory_batch
+        WHERE id = $1::uuid`,
+      [BATCH_ID],
+    );
+    expect(restored.rows[0]).toMatchObject({
+      pending_execution_qty: '100',
+      in_transit_qty: '0',
+      held_by_processor_id: PROCESSOR_ID,
+    });
+
+    const { ctx } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"3"' },
+      body: { lossQty: '4' },
+    });
+    const completed = await completeProcessingOrder(ctx);
+    expect(completed).toMatchObject({ status: '已完成' });
+  });
+
+  it('撤销 materials 发货：在途转回占用并清掉加工厂持有人', async () => {
+    const created = await createOne();
+    await ship(created.id, {
+      transitStage: 'materials',
+      transitTo: 'warehouse',
+    });
+    const revoked = await revoke(created.id, 2);
+    expect(revoked).toMatchObject({ status: '进行中', version: 3 });
+    const batch = await test.database.query<{
+      pending_execution_qty: string;
+      in_transit_qty: string;
+      held_by_processor_id: string | null;
+    }>(
+      `SELECT trim_scale(pending_execution_qty) AS pending_execution_qty,
+              trim_scale(in_transit_qty) AS in_transit_qty,
+              held_by_processor_id::text AS held_by_processor_id
+         FROM inventory_batch
+        WHERE id = $1::uuid`,
+      [BATCH_ID],
+    );
+    expect(batch.rows[0]).toMatchObject({
+      pending_execution_qty: '100',
+      in_transit_qty: '0',
+      held_by_processor_id: null,
+    });
+  });
+
+  it('finished 发货生成在途产出批次；到货后转可用并完成', async () => {
+    const created = await createOne();
+    const shipped = await ship(created.id, {
+      transitStage: 'finished',
+      transitTo: 'warehouse',
+      lossQty: '4',
+      custodianId: DEMO_IDS.ownerEmployeeId,
+    });
+    expect(shipped).toMatchObject({ status: '在途', transitStage: 'finished', version: 2 });
+    const detail = (await getProcessingOrder(
+      readCtx({}, { params: { id: created.id } }),
+    )) as ProcessingOrderDetail;
+    expect(detail.outputBatchId).not.toBeNull();
+    expect(detail.sellableQty).toBe('96');
+
+    const output = await test.database.query<{
+      in_transit_qty: string;
+      available_qty: string;
+    }>(
+      `SELECT trim_scale(in_transit_qty) AS in_transit_qty,
+              trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id = $1::uuid`,
+      [detail.outputBatchId],
+    );
+    expect(output.rows[0]).toMatchObject({ in_transit_qty: '96', available_qty: '0' });
+
+    const received = await receive(created.id, 2);
+    expect(received).toMatchObject({ status: '已完成', version: 3 });
+    const arrived = await test.database.query<{
+      in_transit_qty: string;
+      available_qty: string;
+    }>(
+      `SELECT trim_scale(in_transit_qty) AS in_transit_qty,
+              trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id = $1::uuid`,
+      [detail.outputBatchId],
+    );
+    expect(arrived.rows[0]).toMatchObject({ in_transit_qty: '0', available_qty: '96' });
+  });
+
+  it('发货只认 ship，到货只认 approve；只有 update → 403', async () => {
+    const created = await createOne();
+    await expectAppError(
+      shipProcessingOrder(
+        writeCtx(
+          { scope: UPDATE_ONLY_SCOPE },
+          {
+            params: { id: created.id },
+            headers: { 'if-match': '"1"' },
+            body: { transitStage: 'materials', transitTo: 'warehouse' },
+          },
+        ).ctx,
+      ),
+      'FORBIDDEN',
+    );
+
+    await ship(created.id, { transitStage: 'materials', transitTo: 'warehouse' });
+    await expectAppError(
+      receiveProcessingOrder(
+        writeCtx(
+          { scope: UPDATE_ONLY_SCOPE },
+          { params: { id: created.id }, headers: { 'if-match': '"2"' } },
+        ).ctx,
+      ),
+      'FORBIDDEN',
+    );
+
+    const completeDenied = await createOne();
+    await expectAppError(
+      completeProcessingOrder(
+        writeCtx(
+          { scope: UPDATE_ONLY_SCOPE },
+          {
+            params: { id: completeDenied.id },
+            headers: { 'if-match': '"1"' },
+            body: { lossQty: '4' },
+          },
+        ).ctx,
+      ),
+      'FORBIDDEN',
+    );
   });
 
   it('完成：全损耗需要确认，写入快照并生成 C 草稿', async () => {

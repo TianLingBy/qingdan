@@ -8,6 +8,7 @@ import { routesOfModule } from './registry.js';
 import { ROUTES } from './routes.js';
 import {
   SALES_ORDER_ROUTES,
+  SALES_ORDER_STATES,
   SalesOrderCancelableSchema,
   SalesOrderCreateInputSchema,
   SalesOrderDetailSchema,
@@ -83,8 +84,8 @@ const CREATE_INPUT = {
 } as const;
 
 describe('销售单契约（sales）', () => {
-  it('6 条端点全部登记并汇总进 ROUTES，且归属 sales（含 D72 / D85 出库）', () => {
-    expect(SALES_ORDER_ROUTES).toHaveLength(6);
+  it('7 条端点全部登记并汇总进 ROUTES，且归属 sales（含 D72 / D85 出库、D94 签收完成）', () => {
+    expect(SALES_ORDER_ROUTES).toHaveLength(7);
     for (const route of SALES_ORDER_ROUTES) expect(route.module).toBe('sales');
 
     const salesIds = routesOfModule(ROUTES, 'sales').map((r) => r.operationId);
@@ -101,6 +102,8 @@ describe('销售单契约（sales）', () => {
         'PATCH /api/v1/sales-orders/{id} sales.order.update',
         'POST /api/v1/sales-orders/{id}/cancel sales.order.cancel',
         'POST /api/v1/sales-orders/{id}/ship sales.order.ship',
+        // D94：客户签收完成（走 approve，不是 ship）。
+        'POST /api/v1/sales-orders/{id}/complete sales.order.complete',
       ].sort(),
     );
 
@@ -112,6 +115,9 @@ describe('销售单契约（sales）', () => {
     expect(byId.get('sales.order.cancel')?.scope).toBe('sales.delete');
     // D85：出库是「锁库存 + 生成结算草稿」，走专属动作 ship，不是 update（D4 八动作之一）。
     expect(byId.get('sales.order.ship')?.scope).toBe('sales.ship');
+    // D94 ④：签收完成确认「货已到客户手里」，是审批动作 approve，不是 ship 也不是 update。
+    expect(byId.get('sales.order.complete')?.scope).toBe('sales.approve');
+    expect(byId.get('sales.order.complete')?.requiresIfMatch).toBe(true);
   });
 
   it('普通读不记审计；写操作全部 audit=write（D51）', () => {
@@ -151,9 +157,13 @@ describe('销售单契约（sales）', () => {
     expect(byId.get('sales.order.create')?.response?.status).toBe(201);
   });
 
-  it('状态只复用 documents.ts 的 HEADER_STATES，不另造枚举（§10）', () => {
-    expect([...SalesOrderStatusSchema.options]).toEqual([...HEADER_STATES]);
+  it('状态在 HEADER_STATES 基础上本地扩「已发货」（D94），不引入英文枚举（§10）', () => {
+    expect([...SalesOrderStatusSchema.options]).toEqual([...SALES_ORDER_STATES]);
+    expect([...SalesOrderStatusSchema.options]).toEqual(['进行中', '已发货', '已完成', '已取消']);
+    // HEADER_STATES 是十几个模块共用的三态，不能被这条改动带跑偏。
+    expect([...HEADER_STATES]).toEqual(['进行中', '已完成', '已取消']);
     expect(SalesOrderStatusSchema.safeParse('进行中').success).toBe(true);
+    expect(SalesOrderStatusSchema.safeParse('已发货').success).toBe(true);
     expect(SalesOrderStatusSchema.safeParse('已完成').success).toBe(true);
     expect(SalesOrderStatusSchema.safeParse('已取消').success).toBe(true);
     for (const invalid of ['pending', 'completed', '取消', '待出库']) {
@@ -272,7 +282,8 @@ describe('销售单契约（sales）', () => {
     // D85：原来的 complete 已改名为 ship，不再保留两个端点做同一件事；
     // E 单收款写入也不属本模块契约（收款在 sales.receipt.*）。
     const ids = SALES_ORDER_ROUTES.map((r) => r.operationId);
-    expect(ids.some((id) => /complete/.test(id))).toBe(false);
+    // D94 起 E 单有了签收完成端点，这里改为断言「完成端点存在且走 approve」。
+    expect(ids).toContain('sales.order.complete');
     expect(ids.some((id) => /ship/.test(id))).toBe(true);
     expect(ids.some((id) => /receipt/.test(id))).toBe(false);
   });

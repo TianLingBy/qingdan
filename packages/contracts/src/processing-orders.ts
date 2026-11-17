@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HEADER_STATES, type CancelDecision } from './documents.js';
+import type { CancelDecision } from './documents.js';
 import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
 
@@ -45,9 +45,15 @@ const NonNegativeDecimal = z
   .string()
   .regex(/^\d{1,12}(\.\d{1,6})?$/, '必须是 decimal 字符串（非负、最多 6 位小数）');
 
-/** 单头三态（契约第一批 §10）：直接复用单据框架的 `HEADER_STATES`，不另造枚举。 */
-export const ProcessingOrderStatusSchema = z.enum(HEADER_STATES);
-export type ProcessingOrderStatus = z.infer<typeof ProcessingOrderStatusSchema>;
+/**
+ * 单头状态（D94 ②）：进行中 → 在途 → 已完成，另有已取消，「在途」可跳过。
+ *
+ * **不再复用 `documents.ts` 的 `HEADER_STATES`**：那个三态还被退货单（R/S）、盘点等共用，
+ * 把「在途」塞进去会波及所有单据；B 单只在本地扩一态。
+ */
+export const PROCESSING_ORDER_STATES = ['进行中', '在途', '已完成', '已取消'] as const;
+export type ProcessingOrderStatus = (typeof PROCESSING_ORDER_STATES)[number];
+export const ProcessingOrderStatusSchema = z.enum(PROCESSING_ORDER_STATES);
 
 /**
  * 材料投入行（§3.2 / F2b）：按行记录「批次 + 投入数量」。
@@ -185,6 +191,16 @@ export const ProcessingOrderSchema = z.object({
   sellableQty: NonNegativeDecimal.nullable(),
   /** 归属单（E 或 N 单号，选填；D18 / D35）。 */
   attributionDoc: AttributionDocSchema.nullable(),
+  /**
+   * 在途分段（D94 ②）：`materials` 料在去加工厂路上 / `finished` 成品在路上。
+   * 只在「在途」时有值；发货端点写入，撤销发货时清空。
+   */
+  transitStage: z.enum(['materials', 'finished']).optional(),
+  /**
+   * 在途去向（D94 ②）：`warehouse` 回仓 / `customer` 直发客户。
+   * 只在「在途」时有值；与 `transitStage` 同时写入、同时清空。
+   */
+  transitTo: z.enum(['warehouse', 'customer']).optional(),
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
   version: z.number().int(),
   createdAt: z.string().datetime(),
@@ -330,7 +346,54 @@ export const ProcessingOrderUpdateInputSchema = z
 export type ProcessingOrderUpdateInput = z.infer<typeof ProcessingOrderUpdateInputSchema>;
 
 /**
- * processing 模块 B 加工单端点（6 条，共第一批 + 完成）。
+ * 发货入参（D94 ②/④）：B 单在途按**单头**决定，不按明细行。
+ *
+ * 两段在途用同一个端点上报：`transitStage` 说货在哪一段（料在路上 / 成品在路上），
+ * `transitTo` 说最终去哪（回仓 / 直发客户）。两个字段都是发货时必填——
+ * 少一个就说不清「多少东西压在哪」，在途量统计会失真。
+ */
+export const ProcessingOrderShipInputSchema = z
+  .object({
+    transitStage: z.enum(['materials', 'finished']),
+    transitTo: z.enum(['warehouse', 'customer']),
+    /**
+     * finished 段发货必须给出验收损耗：产出批次数量与成本要在发货事务内锁定。
+     * materials 段不接收这两个字段，避免把验收口径提前写进运输阶段。
+     */
+    lossQty: NonNegativeDecimal.optional(),
+    custodianId: z.string().uuid().optional(),
+    confirmFullLoss: z.boolean().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.transitStage === 'finished' && value.lossQty === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['lossQty'],
+        message: 'finished 段发货必须填写 lossQty',
+      });
+    }
+    if (value.transitStage === 'materials' && value.lossQty !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['lossQty'],
+        message: 'lossQty 只能用于 finished 段发货',
+      });
+    }
+    if (
+      value.transitStage === 'materials' &&
+      (value.custodianId !== undefined || value.confirmFullLoss !== undefined)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['custodianId'],
+        message: '验收字段只能用于 finished 段发货',
+      });
+    }
+  });
+export type ProcessingOrderShipInput = z.infer<typeof ProcessingOrderShipInputSchema>;
+
+/**
+ * processing 模块 B 加工单端点（9 条：6 条第一批 + 完成 + D94 发货/撤销/到货三条）。
  *
  * 权限：`processing.read` / `.create` / `.update` / `.approve` / `.delete`
  *      （scope = domain.action，D44）。
@@ -400,6 +463,47 @@ export const PROCESSING_ORDER_ROUTES: readonly RouteDef[] = [
     domain: 'processing',
     action: 'delete',
     summary: '取消加工单（复用 assertCancelable：有下游不可取消、先取消下游；危险动作 AI 默认禁止）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    response: { status: 200, schema: ProcessingOrderSchema },
+  }),
+  defineRoute({
+    module: 'processing',
+    operationId: 'processing.order.ship',
+    method: 'POST',
+    path: '/api/v1/processing-orders/{id}/ship',
+    domain: 'processing',
+    action: 'ship',
+    summary:
+      '加工发货：进行中 → 在途，带 transitStage（料/成品在路上）+ transitTo（回仓/直发客户，D94 ②）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    request: { body: ProcessingOrderShipInputSchema },
+    response: { status: 200, schema: ProcessingOrderSchema },
+  }),
+  defineRoute({
+    module: 'processing',
+    operationId: 'processing.order.ship.revoke',
+    method: 'POST',
+    path: '/api/v1/processing-orders/{id}/ship/revoke',
+    domain: 'processing',
+    action: 'ship',
+    summary: '撤销加工发货：在途 → 进行中，必须给原因（D94 ⑤）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    response: { status: 200, schema: ProcessingOrderSchema },
+  }),
+  defineRoute({
+    module: 'processing',
+    operationId: 'processing.order.receive',
+    method: 'POST',
+    path: '/api/v1/processing-orders/{id}/receive',
+    domain: 'processing',
+    action: 'approve',
+    summary: '加工到货确认：在途 → 已完成（D94 ②/④：到货确认走 approve，与改单 update 分离）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,

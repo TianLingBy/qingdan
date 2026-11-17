@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HEADER_STATES, type CancelDecision } from './documents.js';
+import type { CancelDecision } from './documents.js';
 import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, PageableSchema, pagedResultSchema } from './pagination.js';
 
@@ -39,9 +39,16 @@ const NonNegativeDecimal = z
   .string()
   .regex(/^\d{1,12}(\.\d{1,6})?$/, '必须是 decimal 字符串（非负、最多 6 位小数）');
 
-/** 单头三态（契约第一批 §10）：直接复用单据框架的 `HEADER_STATES`，不另造枚举。 */
-export const PurchaseOrderStatusSchema = z.enum(HEADER_STATES);
-export type PurchaseOrderStatus = z.infer<typeof PurchaseOrderStatusSchema>;
+/**
+ * 单头状态（D94 ①）：进行中 → 在途 → 已完成，另有已取消。
+ *
+ * **不再复用 `documents.ts` 的 `HEADER_STATES`**：那个三态还被退货单（R/S）、盘点等
+ * 十几个模块共用，把「在途」塞进去会波及所有单据；A 单只在本地扩一态。
+ * 「在途可跳过」由状态机实现侧负责（进行中可直接完成走老路径）。
+ */
+export const PURCHASE_ORDER_STATES = ['进行中', '在途', '已完成', '已取消'] as const;
+export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATES)[number];
+export const PurchaseOrderStatusSchema = z.enum(PURCHASE_ORDER_STATES);
 
 /**
  * 商品明细（§5.1）：A 单单价为**成本**（入库后按 D5 摊成批次单价）。
@@ -50,19 +57,58 @@ export type PurchaseOrderStatus = z.infer<typeof PurchaseOrderStatusSchema>;
  * 引用批次的是 B / E 单（D22），两者明细结构不能混用。
  * `amount = qty × unitPrice` 由实现侧计算并落库，契约层只校验类型。
  */
-export const PurchaseOrderLineSchema = z.object({
+const purchaseOrderLineShape = {
   productId: z.string().uuid(),
   qty: NonNegativeDecimal,
   unitPrice: NonNegativeDecimal,
   amount: NonNegativeDecimal,
-});
+  /**
+   * 到货去向（D94 ①）：按**明细行**决定，`warehouse` 回仓库 / `processor` 直发加工厂。
+   * 不填按「回仓库」处理（「在途可跳过」，老路径不受影响）。
+   */
+  transitTo: z.enum(['warehouse', 'processor']).optional(),
+  /** 直发加工厂时的加工厂 id；`transitTo === 'processor'` 时必填（下方 refinement）。 */
+  processorId: z.string().uuid().optional(),
+};
+
+/**
+ * 「去向是加工厂就必须带加工厂 id」的校验（D94 ①）。
+ *
+ * 为什么放 refinement 而不放两个字段各自的校验：单看 `processorId` 无从判断该不该填，
+ * 只有把两列放在一起看才知道要报错，所以挂在整个对象上。
+ * 抽成具名函数是为了让视图 schema 与入参 schema 用同一份规则，避免两处漂移。
+ */
+function checkProcessorPair(
+  line: { transitTo?: 'warehouse' | 'processor'; processorId?: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (line.transitTo === 'processor' && line.processorId === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['processorId'],
+      message: 'transitTo 为 processor 时必须填 processorId',
+    });
+  }
+}
+
+export const PurchaseOrderLineSchema = z.object(purchaseOrderLineShape).superRefine(checkProcessorPair);
 export type PurchaseOrderLine = z.infer<typeof PurchaseOrderLineSchema>;
 
-/** 实体视图：无 `purchase.view_price` 时金额为 null（D79）；入参仍用上面的非空 schema。 */
-export const PurchaseOrderLineViewSchema = PurchaseOrderLineSchema.extend({
-  unitPrice: NonNegativeDecimal.nullable(),
-  amount: NonNegativeDecimal.nullable(),
-});
+/**
+ * 实体视图：无 `purchase.view_price` 时金额为 null（D79）；入参仍用上面的非空 schema。
+ *
+ * 为什么要重建对象而不是 `PurchaseOrderLineSchema.extend(...)`：zod v4 禁止在带
+ * refinement 的对象上覆写已有键（`.safeExtend()` 要求新值类型是原值的子类型，
+ * 可空金额不是非空字符串的子类型），所以这里从同一份 shape 起一个新区间对象，
+ * 再挂同一份 refinement —— 字段与校验都只有一处定义。
+ */
+export const PurchaseOrderLineViewSchema = z
+  .object({
+    ...purchaseOrderLineShape,
+    unitPrice: NonNegativeDecimal.nullable(),
+    amount: NonNegativeDecimal.nullable(),
+  })
+  .superRefine(checkProcessorPair);
 
 /** 费用行公共字段（响应实体与创建入参共用，备注可空性不同）。 */
 const feeShape = {
@@ -201,7 +247,29 @@ export const PurchaseOrderUpdateInputSchema = z
 export type PurchaseOrderUpdateInput = z.infer<typeof PurchaseOrderUpdateInputSchema>;
 
 /**
- * purchase 模块 A 采购单端点（5 条，共第一批）。
+ * 发货入参（D94 ①/④）：按**明细行**指定去向。
+ *
+ * 行用 `lineNo` 定位——`purchase_order_line` 的行号是该单内的稳定标识，
+ * 用数组下标会在并发改单后错位，指错行等于把货发错地方。
+ * 未列出的行按「回仓库」处理（与 `PurchaseOrderLineSchema.transitTo` 的缺省口径一致）。
+ */
+export const PurchaseOrderShipLineSchema = z
+  .object({
+    lineNo: z.number().int().min(1),
+    transitTo: z.enum(['warehouse', 'processor']),
+    processorId: z.string().uuid().optional(),
+  })
+  .superRefine(checkProcessorPair);
+export type PurchaseOrderShipLine = z.infer<typeof PurchaseOrderShipLineSchema>;
+
+/** 发货请求体：至少指定 1 行去向。 */
+export const PurchaseOrderShipInputSchema = z.object({
+  lines: z.array(PurchaseOrderShipLineSchema).min(1, '发货至少指定 1 行明细的去向'),
+});
+export type PurchaseOrderShipInput = z.infer<typeof PurchaseOrderShipInputSchema>;
+
+/**
+ * purchase 模块 A 采购单端点（9 条：5 条第一批 + 完成 + D94 发货/撤销/到货三条）。
  *
  * 权限：`purchase.read` / `.create` / `.update` / `.delete`（scope = domain.action，D44）。
  * 审计：写操作必记（D51）；普通读不记（D54 ②）。
@@ -209,11 +277,15 @@ export type PurchaseOrderUpdateInput = z.infer<typeof PurchaseOrderUpdateInputSc
  *     修改允许；**取消属危险动作，默认禁止且必须给原因**（D52① / D54 ⑥）。
  * 并发：update / cancel 强制 If-Match 强 ETag。
  * 取消：规则复用 `documents.ts` 的 `assertCancelable`（D21：有下游不可取消，先取消下游）。
+ *
+ * 在途（D94 ①/④）：发货 = `purchase.ship`（出）、到货确认 = `purchase.approve`（审）、
+ * 撤销发货 = `purchase.ship` 且必须给原因；`complete` 从 `update` 摘到 `approve`——
+ * 能改单不再自动能入库（D85 修销售单时漏了 A/B 两张）。
  */
 export const PURCHASE_ORDER_ROUTES: readonly RouteDef[] = [
   defineRoute({
     module: 'purchase', operationId: 'purchase.order.complete', method: 'POST',
-    path: '/api/v1/purchase-orders/{id}/complete', domain: 'purchase', action: 'update',
+    path: '/api/v1/purchase-orders/{id}/complete', domain: 'purchase', action: 'approve',
     summary: '完成采购单并入库', audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true }, requiresIfMatch: true,
     request: {}, response: { status: 200, schema: PurchaseOrderSchema },
@@ -266,6 +338,48 @@ export const PURCHASE_ORDER_ROUTES: readonly RouteDef[] = [
     ai: { policy: 'allow' },
     requiresIfMatch: true,
     request: { body: PurchaseOrderUpdateInputSchema },
+    response: { status: 200, schema: PurchaseOrderSchema },
+  }),
+  defineRoute({
+    module: 'purchase',
+    operationId: 'purchase.order.ship',
+    method: 'POST',
+    path: '/api/v1/purchase-orders/{id}/ship',
+    domain: 'purchase',
+    action: 'ship',
+    summary:
+      '采购发货：进行中 → 在途，按明细行记去向（回仓库 / 直发加工厂，D94 ①）；发货即建批次并计入在途量',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    request: { body: PurchaseOrderShipInputSchema },
+    response: { status: 200, schema: PurchaseOrderSchema },
+  }),
+  defineRoute({
+    module: 'purchase',
+    operationId: 'purchase.order.ship.revoke',
+    method: 'POST',
+    path: '/api/v1/purchase-orders/{id}/ship/revoke',
+    domain: 'purchase',
+    action: 'ship',
+    summary: '撤销采购发货：在途 → 进行中，必须给原因（D94 ⑤：点过发货就只能撤销或到货确认）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    response: { status: 200, schema: PurchaseOrderSchema },
+  }),
+  defineRoute({
+    module: 'purchase',
+    operationId: 'purchase.order.receive',
+    method: 'POST',
+    path: '/api/v1/purchase-orders/{id}/receive',
+    domain: 'purchase',
+    action: 'approve',
+    summary:
+      '采购到货确认：在途 → 已完成，按行分流建批次（直发加工厂的批次挂 heldByProcessorId，D94 ①/④）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
     response: { status: 200, schema: PurchaseOrderSchema },
   }),
   defineRoute({

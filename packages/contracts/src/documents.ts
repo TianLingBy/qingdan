@@ -18,15 +18,20 @@ export interface CancelDecision {
  * - 未完成且无直接下游引用 → 可取消，库存流水同事务回滚；
  * - 有直接下游 → 不可取消（先取消下游，逆向解锁，每次只查直接下游）；
  * - 已完成 / 已取消 → 一律不可取消，错账走冲正 R/S/I（D30）。
+ *
+ * 入参放宽为 `string`（D94）：判定只关心「是不是已完成 / 已取消」两态，
+ * 其余状态（进行中 / 在途 / 已发货）一律按未完成处理。各模块单头枚举已不再与
+ * `HEADER_STATES` 完全一致（A/B 单有「在途」、E 单有「已发货」），若继续收窄成
+ * `HeaderState`，每个调用点都得写类型断言去骗编译器——那才是真正的隐患。
  */
-export function canCancel(state: HeaderState, hasDirectDownstream: boolean): CancelDecision {
+export function canCancel(state: string, hasDirectDownstream: boolean): CancelDecision {
   if (state === '已完成') return { allowed: false, reason: 'already_completed' };
   if (state === '已取消') return { allowed: false, reason: 'already_cancelled' };
   if (hasDirectDownstream) return { allowed: false, reason: 'has_downstream' };
   return { allowed: true, reason: null };
 }
 
-export function assertCancelable(state: HeaderState, hasDirectDownstream: boolean): void {
+export function assertCancelable(state: string, hasDirectDownstream: boolean): void {
   const decision = canCancel(state, hasDirectDownstream);
   if (decision.allowed) return;
   if (decision.reason === 'has_downstream') {

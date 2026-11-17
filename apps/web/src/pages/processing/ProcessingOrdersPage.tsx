@@ -59,6 +59,8 @@ import {
 
 const STATUS_STYLE: Readonly<Record<ProcessingOrderStatus, string>> = {
   进行中: 'bg-blue-50 text-blue-700',
+  // D94：料或成品在途，等收货方确认。
+  在途: 'bg-amber-50 text-amber-700',
   已完成: 'bg-emerald-50 text-emerald-700',
   已取消: 'bg-slate-100 text-slate-500',
 };

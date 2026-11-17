@@ -7,6 +7,7 @@ import { routesOfModule } from './registry.js';
 import { ROUTES } from './routes.js';
 import {
   PROCESSING_ORDER_ROUTES,
+  PROCESSING_ORDER_STATES,
   ProcessingMaterialBatchIdsSchema,
   ProcessingOrderCancelableSchema,
   ProcessingOrderCompleteBodySchema,
@@ -17,6 +18,7 @@ import {
   ProcessingOrderListQuerySchema,
   ProcessingOrderLossRecordSchema,
   ProcessingOrderSchema,
+  ProcessingOrderShipInputSchema,
   ProcessingOrderStatusSchema,
   ProcessingOrderUpdateInputSchema,
 } from './processing-orders.js';
@@ -96,8 +98,8 @@ const CREATE_INPUT = {
 } as const;
 
 describe('加工单契约（processing）', () => {
-  it('6 条端点全部登记并汇总进 ROUTES，且归属 processing', () => {
-    expect(PROCESSING_ORDER_ROUTES).toHaveLength(6);
+  it('9 条端点全部登记并汇总进 ROUTES，且归属 processing', () => {
+    expect(PROCESSING_ORDER_ROUTES).toHaveLength(9);
     for (const route of PROCESSING_ORDER_ROUTES) expect(route.module).toBe('processing');
 
     const processingIds = routesOfModule(ROUTES, 'processing').map((r) => r.operationId);
@@ -114,6 +116,10 @@ describe('加工单契约（processing）', () => {
         'PATCH /api/v1/processing-orders/{id} processing.order.update',
         'POST /api/v1/processing-orders/{id}/cancel processing.order.cancel',
         'POST /api/v1/processing-orders/{id}/complete processing.order.complete',
+        // D94 ②：料 / 成品在途的发出、撤销、到货确认。
+        'POST /api/v1/processing-orders/{id}/ship processing.order.ship',
+        'POST /api/v1/processing-orders/{id}/ship/revoke processing.order.ship.revoke',
+        'POST /api/v1/processing-orders/{id}/receive processing.order.receive',
       ].sort(),
     );
 
@@ -124,6 +130,9 @@ describe('加工单契约（processing）', () => {
     expect(byId.get('processing.order.update')?.scope).toBe('processing.update');
     expect(byId.get('processing.order.cancel')?.scope).toBe('processing.delete');
     expect(byId.get('processing.order.complete')?.scope).toBe('processing.approve');
+    expect(byId.get('processing.order.ship')?.scope).toBe('processing.ship');
+    expect(byId.get('processing.order.ship.revoke')?.scope).toBe('processing.ship');
+    expect(byId.get('processing.order.receive')?.scope).toBe('processing.approve');
   });
 
   it('普通读不记审计；写操作全部 audit=write（D51）', () => {
@@ -138,6 +147,9 @@ describe('加工单契约（processing）', () => {
       'processing.order.update',
       'processing.order.cancel',
       'processing.order.complete',
+      'processing.order.ship',
+      'processing.order.ship.revoke',
+      'processing.order.receive',
     ]) {
       expect(byId.get(id)?.audit, id).toEqual({ kind: 'write', required: true });
     }
@@ -178,9 +190,13 @@ describe('加工单契约（processing）', () => {
     );
   });
 
-  it('状态只复用 documents.ts 的 HEADER_STATES，不另造枚举（§10）', () => {
-    expect([...ProcessingOrderStatusSchema.options]).toEqual([...HEADER_STATES]);
+  it('状态在 HEADER_STATES 基础上本地扩「在途」（D94 ②），不引入英文枚举（§10）', () => {
+    expect([...ProcessingOrderStatusSchema.options]).toEqual([...PROCESSING_ORDER_STATES]);
+    expect([...ProcessingOrderStatusSchema.options]).toEqual(['进行中', '在途', '已完成', '已取消']);
+    // HEADER_STATES 是十几个模块共用的三态，不能被这条改动带跑偏。
+    expect([...HEADER_STATES]).toEqual(['进行中', '已完成', '已取消']);
     expect(ProcessingOrderStatusSchema.safeParse('进行中').success).toBe(true);
+    expect(ProcessingOrderStatusSchema.safeParse('在途').success).toBe(true);
     expect(ProcessingOrderStatusSchema.safeParse('已完成').success).toBe(true);
     expect(ProcessingOrderStatusSchema.safeParse('已取消').success).toBe(true);
     for (const invalid of ['pending', 'completed', '取消', '加工中']) {
@@ -511,6 +527,37 @@ describe('加工单契约（processing）', () => {
     ).toBe(false);
     expect(
       ProcessingOrderCompleteBodySchema.safeParse({ lossQty: '1', confirmFullLoss: 'true' }).success,
+    ).toBe(false);
+  });
+
+  it('发货入参：materials 不收验收字段；finished 必须带 lossQty（D94）', () => {
+    expect(
+      ProcessingOrderShipInputSchema.safeParse({
+        transitStage: 'materials',
+        transitTo: 'warehouse',
+      }).success,
+    ).toBe(true);
+    expect(
+      ProcessingOrderShipInputSchema.safeParse({
+        transitStage: 'finished',
+        transitTo: 'customer',
+      }).success,
+    ).toBe(false);
+    expect(
+      ProcessingOrderShipInputSchema.safeParse({
+        transitStage: 'finished',
+        transitTo: 'customer',
+        lossQty: '2',
+        custodianId: HANDLER_ID,
+        confirmFullLoss: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      ProcessingOrderShipInputSchema.safeParse({
+        transitStage: 'materials',
+        transitTo: 'warehouse',
+        lossQty: '2',
+      }).success,
     ).toBe(false);
   });
 

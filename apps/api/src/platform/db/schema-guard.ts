@@ -21,11 +21,17 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // D93 / #298：概览直接读 company 的 address / contact_phone / tax_no / logo_url，
   // 缺列会在业务路径上 500，必须启动时就报出来。
   '20261117090000_settings_center_fields.sql',
-  // D95 / #341：三个列表的排序复合索引。这条与上面几条不同，缺的不是列而是索引——
-  // 缺了不会 500，但 `WHERE + ORDER BY … LIMIT` 会退化成 Seq Scan + Sort：几万行时
-  // 每次翻页都要把全部匹配行重排一遍（实测 2 万行 52ms → 走索引 0.19ms），
-  // 而且这是全系统最高频的一次请求。所以宁可启动就报出来，让人去补迁移。
+  // D94 / #330：在途状态依赖 purchase_order_line.transit_to / processor_id、
+  // processing_order.transit_stage / transit_to、inventory_batch.held_by_processor_id，
+  // 缺列会让发货 / 到货确认直接 500，必须在启动时就报出来。
+  '20261117181000_d94_transit_states.sql',
+  // D95 / #341：三个列表的排序复合索引。缺了不会 500，但高频翻页会退化成 Seq Scan + Sort。
   '20261117213000_paging_sort_indexes.sql',
+  // D98 / #302：主数据静默建档与去重审核依赖的新列与 masterdata_dedupe 表。
+  '20261117223000_masterdata_autocreate.sql',
+  // D94 / #328：在途可占用要求 available_qty 用“占用优先抵在途”的生成公式；
+  // 缺这条会让在途批次一旦被占用就违反非负约束。
+  '20261118000000_d94_transit_occupancy.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

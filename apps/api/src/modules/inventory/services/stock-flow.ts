@@ -5,12 +5,15 @@ import { takeBatchNo } from '../../../platform/numbering/service.js';
 import type {
   CreateBatchCommand,
   CreateBatchReceipt,
+  CreateTransitBatchCommand,
   StockBatchConsumptionSnapshot,
   StockReservationCommand,
   StockReservationReceipt,
+  StockTransitLineCommand,
+  StockTransitSourceCommand,
 } from '../../../platform/services/registry.js';
 
-export type { CreateBatchCommand, CreateBatchReceipt };
+export type { CreateBatchCommand, CreateBatchReceipt, CreateTransitBatchCommand };
 export type { StockBatchConsumptionSnapshot };
 
 export interface StockBatchTransfer {
@@ -82,7 +85,7 @@ export async function transferBatches(
   }));
   for (const transfer of resolvedTransfers) {
     const available = availableById.get(transfer.batchId);
-    const guard = await tx.query<{ enough: boolean }>(
+    const guard = await tx.query<{ enough: boolean; transit_enough: boolean }>(
       `SELECT $1::amount <= $2::amount AS enough`,
       [transfer.qty, available],
     );
@@ -227,6 +230,16 @@ interface ReservationBatchRow {
   batch_no: string;
   pending_execution_qty: string | number;
   available_qty: string | number;
+  in_transit_qty: string | number;
+}
+
+interface TransitBatchRow {
+  id: string;
+  batch_no: string;
+  inbound_qty: string | number;
+  in_transit_qty: string | number;
+  pending_execution_qty: string | number;
+  held_by_processor_id: string | null;
 }
 
 const UUID_RE =
@@ -331,7 +344,8 @@ async function applyPendingReservationChange(
     `SELECT id::text AS id,
             batch_no,
             trim_scale(pending_execution_qty) AS pending_execution_qty,
-            trim_scale(available_qty) AS available_qty
+            trim_scale(available_qty) AS available_qty,
+            trim_scale(in_transit_qty) AS in_transit_qty
        FROM inventory_batch
       WHERE tenant_id = $1
         AND company_id = $2::uuid
@@ -361,9 +375,11 @@ async function applyPendingReservationChange(
       pending_enough: boolean;
     }>(
       `SELECT ($1::amount > 0) AS qty_positive,
-              ($1::amount <= $2::amount) AS available_enough,
-              ($1::amount <= $3::amount) AS pending_enough`,
-      [qty, current.available_qty, current.pending_execution_qty],
+              ($1::amount <= (
+                $2::amount + GREATEST($3::amount - $4::amount, 0::amount)
+              )) AS available_enough,
+              ($1::amount <= $4::amount) AS pending_enough`,
+      [qty, current.available_qty, current.in_transit_qty, current.pending_execution_qty],
     );
     const checks = guard.rows[0];
     if (!checks?.qty_positive) {
@@ -373,7 +389,7 @@ async function applyPendingReservationChange(
       });
     }
     if (direction === 'reserve' && !checks.available_enough) {
-      throw new AppError('VERSION_CONFLICT', '库存批次可用量不足，无法建单占用', {
+      throw new AppError('VERSION_CONFLICT', '库存批次可用量不足（含在途），无法建单占用', {
         reason: 'insufficient_available_qty',
         sourceDocType: input.sourceDocType,
         sourceDocId: input.sourceDocId,
@@ -381,6 +397,7 @@ async function applyPendingReservationChange(
         batchNo: current.batch_no,
         requestedQty: qty,
         availableQty: String(current.available_qty),
+        inTransitQty: String(current.in_transit_qty),
       });
     }
     if (direction === 'release' && !checks.pending_enough) {
@@ -585,6 +602,443 @@ export async function createBatch(
     availableQty: String(batch.available_qty),
     custodianId: batch.custodian_id,
   };
+}
+
+async function assertHeldProcessor(
+  tx: SqlClient,
+  tenantId: string,
+  companyId: string,
+  processorId: string | null | undefined,
+): Promise<void> {
+  if (processorId === null || processorId === undefined) return;
+  assertUuid(processorId, 'heldByProcessorId');
+  const result = await tx.query(
+    `SELECT 1
+       FROM processor
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = $3::uuid`,
+    [processorId, tenantId, companyId],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('VALIDATION_FAILED', '加工厂不存在或不属于该批次公司', {
+      processorId,
+      companyId,
+    });
+  }
+}
+
+/**
+ * 新建在途批次：先按普通入库批次落 inbound_qty + 正流水，再把同一批货
+ * 全量计入 in_transit_qty。两步在同一事务，失败整体回滚。
+ */
+export async function createTransitBatch(
+  tx: SqlClient,
+  command: CreateTransitBatchCommand,
+): Promise<CreateBatchReceipt> {
+  await assertHeldProcessor(tx, command.tenantId, command.companyId, command.heldByProcessorId);
+  const created = await createBatch(tx, command);
+  const updated = await tx.query<{ available_qty: string | number }>(
+    `UPDATE inventory_batch
+        SET in_transit_qty = $1::amount,
+            held_by_processor_id = $2::uuid,
+            version = version + 1
+      WHERE id = $3::uuid
+        AND tenant_id = $4
+        AND company_id = $5::uuid
+        AND in_transit_qty = 0
+        AND pending_execution_qty = 0
+      RETURNING trim_scale(available_qty) AS available_qty`,
+    [
+      command.qty,
+      command.heldByProcessorId ?? null,
+      created.batchId,
+      command.tenantId,
+      command.companyId,
+    ],
+  );
+  const row = updated.rows[0];
+  if (!row) {
+    throw new AppError('VERSION_CONFLICT', '在途批次并发更新失败', {
+      batchId: created.batchId,
+    });
+  }
+  return { ...created, availableQty: String(row.available_qty) };
+}
+
+async function lockTransitBatches(
+  tx: SqlClient,
+  command: StockTransitLineCommand,
+  quantities: ReadonlyMap<string, string>,
+): Promise<Map<string, TransitBatchRow>> {
+  const entries = [...quantities.keys()].sort((left, right) => left.localeCompare(right));
+  const locked = await tx.query<TransitBatchRow>(
+    `SELECT id::text AS id,
+            batch_no,
+            trim_scale(inbound_qty) AS inbound_qty,
+            trim_scale(in_transit_qty) AS in_transit_qty,
+            trim_scale(pending_execution_qty) AS pending_execution_qty,
+            held_by_processor_id::text AS held_by_processor_id
+       FROM inventory_batch
+      WHERE tenant_id = $1
+        AND company_id = $2::uuid
+        AND id = ANY($3::uuid[])
+      ORDER BY id
+      FOR UPDATE`,
+    [command.tenantId, command.companyId, entries],
+  );
+  if (locked.rows.length !== entries.length) {
+    throw new AppError('NOT_FOUND', '存在不存在或不属于该公司的库存批次', {
+      batchIds: entries,
+      companyId: command.companyId,
+    });
+  }
+  return new Map(locked.rows.map((row) => [row.id, row]));
+}
+
+function aggregateTransitLines(
+  command: StockTransitLineCommand,
+): Map<string, string> {
+  if (command.lines.length === 0) {
+    throw new AppError('VALIDATION_FAILED', '在途操作至少需要一条批次明细', {
+      sourceDocType: command.sourceDocType,
+      sourceDocId: command.sourceDocId,
+    });
+  }
+  const totals = new Map<string, string>();
+  for (const line of command.lines) {
+    assertUuid(line.batchId, 'batchId');
+    if (!NON_NEGATIVE_DECIMAL_RE.test(line.qty) || /^0(?:\.0+)?$/.test(line.qty)) {
+      throw new AppError('VALIDATION_FAILED', '在途数量必须是正 decimal 字符串', {
+        batchId: line.batchId,
+        qty: line.qty,
+      });
+    }
+    const current = totals.get(line.batchId);
+    totals.set(line.batchId, current === undefined ? line.qty : addDecimalText(current, line.qty));
+  }
+  return totals;
+}
+
+function addDecimalText(left: string, right: string): string {
+  const scale = 1_000_000n;
+  const toMicro = (value: string): bigint => {
+    const [whole, fraction = ''] = value.split('.');
+    return BigInt(whole ?? '0') * scale + BigInt(fraction.padEnd(6, '0').slice(0, 6));
+  };
+  const total = toMicro(left) + toMicro(right);
+  const whole = total / scale;
+  const fraction = (total % scale).toString().padStart(6, '0').replace(/0+$/, '');
+  return fraction.length === 0 ? String(whole) : `${whole}.${fraction}`;
+}
+
+/** 到货确认：在途量清零，可用量按生成列自然上升；占用关系保留。 */
+export async function receiveTransit(
+  tx: SqlClient,
+  command: StockTransitLineCommand,
+): Promise<void> {
+  const quantities = aggregateTransitLines(command);
+  const rows = await lockTransitBatches(tx, command, quantities);
+  for (const [batchId, qty] of quantities) {
+    const current = rows.get(batchId)!;
+    const enough = await tx.query<{ enough: boolean }>(
+      `SELECT $1::amount <= $2::amount AS enough`,
+      [qty, current.in_transit_qty],
+    );
+    if (!enough.rows[0]?.enough) {
+      throw new AppError('VERSION_CONFLICT', '库存批次在途量不足，无法确认到货', {
+        reason: 'insufficient_in_transit_qty',
+        batchId,
+        batchNo: current.batch_no,
+        requestedQty: qty,
+        inTransitQty: String(current.in_transit_qty),
+      });
+    }
+    await tx.query(
+      `UPDATE inventory_batch
+          SET in_transit_qty = in_transit_qty - $1::amount,
+              version = version + 1
+        WHERE id = $2::uuid
+          AND tenant_id = $3
+          AND company_id = $4::uuid
+          AND in_transit_qty >= $1::amount`,
+      [qty, batchId, command.tenantId, command.companyId],
+    );
+  }
+}
+
+/** B 材料发货：待执行占用原地转成在途，不改变总可占范围。 */
+export async function movePendingToTransit(
+  tx: SqlClient,
+  command: StockTransitLineCommand,
+): Promise<void> {
+  await assertHeldProcessor(
+    tx,
+    command.tenantId,
+    command.companyId,
+    command.heldByProcessorId,
+  );
+  const quantities = aggregateTransitLines(command);
+  const rows = await lockTransitBatches(tx, command, quantities);
+  for (const [batchId, qty] of quantities) {
+    const current = rows.get(batchId)!;
+    const enough = await tx.query<{ enough: boolean }>(
+      `SELECT $1::amount <= $2::amount AS enough`,
+      [qty, current.pending_execution_qty],
+    );
+    if (!enough.rows[0]?.enough) {
+      throw new AppError('VERSION_CONFLICT', '库存批次待执行占用不足，无法转为在途', {
+        reason: 'insufficient_pending_reservation',
+        batchId,
+        batchNo: current.batch_no,
+        requestedQty: qty,
+        pendingExecutionQty: String(current.pending_execution_qty),
+      });
+    }
+    await tx.query(
+      `UPDATE inventory_batch
+          SET pending_execution_qty = pending_execution_qty - $1::amount,
+              in_transit_qty = in_transit_qty + $1::amount,
+              held_by_processor_id = $2::uuid,
+              version = version + 1
+        WHERE id = $3::uuid
+          AND tenant_id = $4
+          AND company_id = $5::uuid
+          AND pending_execution_qty >= $1::amount`,
+      [
+        qty,
+        command.heldByProcessorId ?? null,
+        batchId,
+        command.tenantId,
+        command.companyId,
+      ],
+    );
+  }
+}
+
+/** B 材料到货 / 撤销：在途转回待执行占用，后续 complete 仍沿用 D92 口径。 */
+export async function moveTransitToPending(
+  tx: SqlClient,
+  command: StockTransitLineCommand,
+): Promise<void> {
+  await assertHeldProcessor(
+    tx,
+    command.tenantId,
+    command.companyId,
+    command.heldByProcessorId,
+  );
+  const quantities = aggregateTransitLines(command);
+  const rows = await lockTransitBatches(tx, command, quantities);
+  for (const [batchId, qty] of quantities) {
+    const current = rows.get(batchId)!;
+    const enough = await tx.query<{ enough: boolean }>(
+      `SELECT $1::amount <= $2::amount AS enough`,
+      [qty, current.in_transit_qty],
+    );
+    if (!enough.rows[0]?.enough) {
+      throw new AppError('VERSION_CONFLICT', '库存批次在途量不足，无法转回待执行占用', {
+        reason: 'insufficient_in_transit_qty',
+        batchId,
+        batchNo: current.batch_no,
+        requestedQty: qty,
+        inTransitQty: String(current.in_transit_qty),
+      });
+    }
+    await tx.query(
+      `UPDATE inventory_batch
+          SET in_transit_qty = in_transit_qty - $1::amount,
+              pending_execution_qty = pending_execution_qty + $1::amount,
+              held_by_processor_id = $2::uuid,
+              version = version + 1
+        WHERE id = $3::uuid
+          AND tenant_id = $4
+          AND company_id = $5::uuid
+          AND in_transit_qty >= $1::amount`,
+      [
+        qty,
+        command.heldByProcessorId ?? null,
+        batchId,
+        command.tenantId,
+        command.companyId,
+      ],
+    );
+  }
+}
+
+/** 撤销指定在途批次（B finished 发货撤销使用）。 */
+export async function revokeTransitBatch(
+  tx: SqlClient,
+  command: StockTransitLineCommand,
+): Promise<void> {
+  const quantities = aggregateTransitLines(command);
+  const rows = await lockTransitBatches(tx, command, quantities);
+  for (const [batchId, qty] of quantities) {
+    const current = rows.get(batchId)!;
+    if (
+      current.pending_execution_qty !== 0 &&
+      current.pending_execution_qty !== '0'
+    ) {
+      throw new AppError('STATE_CONFLICT', '在途货已有下游占用，不能撤销发货', {
+        reason: 'HAS_PENDING_OCCUPANCY',
+        batchId,
+        batchNo: current.batch_no,
+        pendingExecutionQty: String(current.pending_execution_qty),
+      });
+    }
+    const guard = await tx.query<{ enough: boolean; transit_enough: boolean }>(
+      `SELECT $1::amount <= $2::amount AS enough,
+              $1::amount <= $3::amount AS transit_enough`,
+      [qty, current.inbound_qty, current.in_transit_qty],
+    );
+    if (!guard.rows[0]?.enough || !guard.rows[0]?.transit_enough) {
+      throw new AppError('VERSION_CONFLICT', '撤销发货时批次数量不足', {
+        batchId,
+        requestedQty: qty,
+        inboundQty: String(current.inbound_qty),
+        inTransitQty: String(current.in_transit_qty),
+      });
+    }
+    await tx.query(
+      `UPDATE inventory_batch
+          SET inbound_qty = inbound_qty - $1::amount,
+              in_transit_qty = in_transit_qty - $1::amount,
+              held_by_processor_id = NULL,
+              version = version + 1
+        WHERE id = $2::uuid
+          AND tenant_id = $3
+          AND company_id = $4::uuid
+          AND in_transit_qty >= $1::amount`,
+      [qty, batchId, command.tenantId, command.companyId],
+    );
+    await tx.query(
+      `INSERT INTO inventory_flow
+         (id, tenant_id, company_id, batch_id, delta,
+          source_doc_type, source_doc_id, handled_by)
+       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::amount, $6, $7::uuid, $8::uuid)`,
+      [
+        uuidv7(),
+        command.tenantId,
+        command.companyId,
+        batchId,
+        `-${qty}`,
+        command.sourceDocType,
+        command.sourceDocId,
+        command.handledBy,
+      ],
+    );
+  }
+}
+
+async function transitBatchesBySource(
+  tx: SqlClient,
+  command: StockTransitSourceCommand,
+): Promise<TransitBatchRow[]> {
+  if (command.sourceDocType !== 'A') {
+    throw new AppError('VALIDATION_FAILED', '仅采购单支持按来源整批处理在途批次');
+  }
+  const result = await tx.query<TransitBatchRow>(
+    `SELECT b.id::text AS id,
+            b.batch_no,
+            trim_scale(b.inbound_qty) AS inbound_qty,
+            trim_scale(b.in_transit_qty) AS in_transit_qty,
+            trim_scale(b.pending_execution_qty) AS pending_execution_qty,
+            b.held_by_processor_id::text AS held_by_processor_id
+       FROM inventory_batch b
+      WHERE b.tenant_id = $1
+        AND b.company_id = $2::uuid
+        AND EXISTS (
+          SELECT 1
+            FROM inventory_flow f
+           WHERE f.tenant_id = b.tenant_id
+             AND f.company_id = b.company_id
+             AND f.batch_id = b.id
+             AND f.source_doc_type = $3
+             AND f.source_doc_id = $4::uuid
+        )
+      ORDER BY b.id
+      FOR UPDATE`,
+    [command.tenantId, command.companyId, command.sourceDocType, command.sourceDocId],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('STATE_CONFLICT', '采购单没有可处理的在途批次', {
+      reason: 'NO_TRANSIT_BATCHES',
+      sourceDocId: command.sourceDocId,
+    });
+  }
+  return result.rows;
+}
+
+/** A 单到货：来源单据创建的全部批次从在途转可用。 */
+export async function receiveTransitBySource(
+  tx: SqlClient,
+  command: StockTransitSourceCommand,
+): Promise<void> {
+  const batches = await transitBatchesBySource(tx, command);
+  await receiveTransit(tx, {
+    ...command,
+    lines: batches
+      .filter((batch) => batch.in_transit_qty !== 0 && batch.in_transit_qty !== '0')
+      .map((batch) => ({ batchId: batch.id, qty: String(batch.in_transit_qty) })),
+  });
+}
+
+/** A 单撤销发货：尚有占用时拒绝；否则冲回 inbound/in_transit 并追加负数流水。 */
+export async function revokeTransitBySource(
+  tx: SqlClient,
+  command: StockTransitSourceCommand,
+): Promise<void> {
+  const batches = await transitBatchesBySource(tx, command);
+  for (const batch of batches) {
+    if (batch.pending_execution_qty !== 0 && batch.pending_execution_qty !== '0') {
+      throw new AppError('STATE_CONFLICT', '在途货已有下游占用，不能撤销发货', {
+        reason: 'HAS_PENDING_OCCUPANCY',
+        batchId: batch.id,
+        batchNo: batch.batch_no,
+        pendingExecutionQty: String(batch.pending_execution_qty),
+      });
+    }
+    const qty = String(batch.in_transit_qty);
+    if (qty === '0') continue;
+    const guard = await tx.query<{ enough: boolean }>(
+      `SELECT $1::amount <= $2::amount AS enough`,
+      [qty, batch.inbound_qty],
+    );
+    if (!guard.rows[0]?.enough) {
+      throw new AppError('VERSION_CONFLICT', '撤销发货时批次入库量不足', {
+        batchId: batch.id,
+        requestedQty: qty,
+        inboundQty: String(batch.inbound_qty),
+      });
+    }
+    await tx.query(
+      `UPDATE inventory_batch
+          SET inbound_qty = inbound_qty - $1::amount,
+              in_transit_qty = in_transit_qty - $1::amount,
+              held_by_processor_id = NULL,
+              version = version + 1
+        WHERE id = $2::uuid
+          AND tenant_id = $3
+          AND company_id = $4::uuid
+          AND in_transit_qty >= $1::amount`,
+      [qty, batch.id, command.tenantId, command.companyId],
+    );
+    await tx.query(
+      `INSERT INTO inventory_flow
+         (id, tenant_id, company_id, batch_id, delta,
+          source_doc_type, source_doc_id, handled_by)
+       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5::amount, $6, $7::uuid, $8::uuid)`,
+      [
+        uuidv7(),
+        command.tenantId,
+        command.companyId,
+        batch.id,
+        `-${qty}`,
+        command.sourceDocType,
+        command.sourceDocId,
+        command.handledBy,
+      ],
+    );
+  }
 }
 
 /**

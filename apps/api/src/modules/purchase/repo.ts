@@ -7,6 +7,7 @@ import {
   type PurchaseOrderCreateInput,
   type PurchaseOrderFee,
   type PurchaseOrderLine,
+  type PurchaseOrderShipLine,
   type PurchaseOrderStatus,
   type PurchaseOrderUpdateInput,
   type SupplierReturn,
@@ -117,10 +118,13 @@ interface HeaderRow {
 
 interface LineRow {
   id: string;
+  line_no: number;
   product_id: string;
   qty: string | number;
   unit_price: string | number;
   amount: string | number;
+  transit_to: 'warehouse' | 'processor' | null;
+  processor_id: string | null;
 }
 
 interface FeeRow {
@@ -166,10 +170,13 @@ const HEADER_FROM = `purchase_order o
    AND s.company_id = o.company_id`;
 
 const LINE_COLUMNS = `l.id,
+  l.line_no,
   l.product_id,
   trim_scale(l.qty) AS qty,
   trim_scale(l.unit_price) AS unit_price,
-  trim_scale(l.amount) AS amount`;
+  trim_scale(l.amount) AS amount,
+  l.transit_to,
+  l.processor_id`;
 
 const FEE_COLUMNS = `f.id,
   f.fee_name,
@@ -192,6 +199,8 @@ function mapLine(row: LineRow): PurchaseOrderLine {
     qty: decimal(row.qty),
     unitPrice: decimal(row.unit_price),
     amount: decimal(row.amount),
+    ...(row.transit_to === null ? {} : { transitTo: row.transit_to }),
+    ...(row.processor_id === null ? {} : { processorId: row.processor_id }),
   };
 }
 
@@ -534,6 +543,30 @@ async function assertProductsInCompany(
   }
 }
 
+export async function assertProcessorsInCompany(
+  ctx: PurchaseOrderRepoContext,
+  processorIds: readonly string[],
+  companyId: string,
+): Promise<void> {
+  const unique = [...new Set(processorIds)];
+  if (unique.length === 0) return;
+  const result = await ctx.tx.query<{ id: string }>(
+    `SELECT id FROM processor
+      WHERE tenant_id = $1
+        AND company_id = $2::uuid
+        AND id = ANY($3::uuid[])`,
+    [ctx.tenantId, companyId, unique],
+  );
+  const found = new Set(result.rows.map((row) => row.id));
+  const missing = unique.filter((id) => !found.has(id));
+  if (missing.length > 0) {
+    throw new AppError('VALIDATION_FAILED', '加工厂不存在或不属于该采购单的公司', {
+      processorIds: missing,
+      companyId,
+    });
+  }
+}
+
 /** 经手人必须存在且属于同一租户。 */
 async function assertHandlerInTenant(
   ctx: PurchaseOrderRepoContext,
@@ -557,9 +590,10 @@ async function insertLines(
   for (const [index, line] of lines.entries()) {
     await ctx.tx.query(
       `INSERT INTO purchase_order_line
-         (id, tenant_id, company_id, order_id, line_no, product_id, qty, unit_price, amount)
+         (id, tenant_id, company_id, order_id, line_no, product_id, qty, unit_price, amount,
+          transit_to, processor_id)
        VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::uuid,
-               $7::amount, $8::amount, ($7::amount * $8::amount))`,
+               $7::amount, $8::amount, ($7::amount * $8::amount), $9, $10::uuid)`,
       [
         uuidv7(),
         ctx.tenantId,
@@ -569,6 +603,8 @@ async function insertLines(
         line.productId,
         line.qty,
         line.unitPrice,
+        line.transitTo ?? null,
+        line.processorId ?? null,
       ],
     );
   }
@@ -637,6 +673,11 @@ export async function insertPurchaseOrder(
     input.lines.map((line) => line.productId),
     input.companyId,
   );
+  await assertProcessorsInCompany(
+    ctx,
+    input.lines.flatMap((line) => (line.processorId ? [line.processorId] : [])),
+    input.companyId,
+  );
 
   await ctx.tx.query(
     `INSERT INTO purchase_order
@@ -690,6 +731,11 @@ export async function updatePurchaseOrder(
     await assertProductsInCompany(
       ctx,
       input.lines.map((line) => line.productId),
+      current.companyId,
+    );
+    await assertProcessorsInCompany(
+      ctx,
+      input.lines.flatMap((line) => (line.processorId ? [line.processorId] : [])),
       current.companyId,
     );
   }
@@ -785,6 +831,113 @@ export async function completePurchaseOrder(
     [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
   );
   if (result.rows.length === 0) throw new AppError('VERSION_CONFLICT', '采购单已被并发修改或不是进行中状态');
+  return getPurchaseOrder(ctx, id);
+}
+
+/** 发采购单：写入每行去向并把状态从「进行中」推进到「在途」。 */
+export async function shipPurchaseOrder(
+  ctx: PurchaseOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+  lines: readonly PurchaseOrderShipLine[],
+): Promise<PurchaseOrder | null> {
+  for (const line of lines) {
+    const updated = await ctx.tx.query<{ id: string }>(
+      `UPDATE purchase_order_line
+          SET transit_to = $1,
+              processor_id = $2::uuid
+        WHERE order_id = $3::uuid
+          AND tenant_id = $4
+          AND company_id = ANY($5::uuid[])
+          AND line_no = $6
+        RETURNING id`,
+      [
+        line.transitTo,
+        line.processorId ?? null,
+        id,
+        ctx.tenantId,
+        [...ctx.companyIds],
+        line.lineNo,
+      ],
+    );
+    if (updated.rows.length === 0) {
+      throw new AppError('VALIDATION_FAILED', '发货明细行不存在', {
+        lineNo: line.lineNo,
+      });
+    }
+  }
+
+  const changed = await ctx.tx.query<{ id: string }>(
+    `UPDATE purchase_order
+        SET status = '在途',
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '进行中'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (changed.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '采购单已被并发修改或不是进行中状态');
+  }
+  return getPurchaseOrder(ctx, id);
+}
+
+/** 撤销采购发货：在途 → 进行中，并清空行级去向。 */
+export async function revokePurchaseOrderShip(
+  ctx: PurchaseOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<PurchaseOrder | null> {
+  await ctx.tx.query(
+    `UPDATE purchase_order_line
+        SET transit_to = NULL,
+            processor_id = NULL
+      WHERE order_id = $1::uuid
+        AND tenant_id = $2`,
+    [id, ctx.tenantId],
+  );
+  const changed = await ctx.tx.query<{ id: string }>(
+    `UPDATE purchase_order
+        SET status = '进行中',
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '在途'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (changed.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '采购单已被并发修改或不是在途状态');
+  }
+  return getPurchaseOrder(ctx, id);
+}
+
+/** 采购到货确认：在途 → 已完成；批次状态由 inventory 端口在同事务处理。 */
+export async function receivePurchaseOrder(
+  ctx: PurchaseOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<PurchaseOrder | null> {
+  const changed = await ctx.tx.query<{ id: string }>(
+    `UPDATE purchase_order
+        SET status = '已完成',
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '在途'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (changed.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '采购单已被并发修改或不是在途状态');
+  }
   return getPurchaseOrder(ctx, id);
 }
 
@@ -1208,4 +1361,113 @@ export async function insertSupplierReturn(
     throw new AppError('INTERNAL_ERROR', '供应商退货创建后读取失败', { id: input.id });
   }
   return created;
+}
+
+/**
+ * 导出用查询（#342）：采购单列表 CSV 的数据源。
+ *
+ * **与 `listPurchaseOrders` 的过滤条件必须保持一致，改一处要改两处。**
+ * 这是刻意的重复：并行任务 #341 正在改 `listPurchaseOrders`，共享 where 拼装会让两个
+ * 改动互相阻塞；另外导出不需要明细与费用，复用列表函数会把它们一起加载进内存。
+ */
+export interface PurchaseOrderExportQuery {
+  readonly companyId?: string;
+  readonly supplierId?: string;
+  readonly status?: PurchaseOrderStatus;
+  readonly keyword?: string;
+  /** 行数上限：内部统一按 `maxRows + 1` 取，多出一行即判定超限（不静默截断）。 */
+  readonly maxRows: number;
+}
+
+export interface PurchaseOrderExportRow {
+  readonly orderNo: string;
+  readonly createdAt: string;
+  readonly supplierName: string;
+  readonly status: PurchaseOrderStatus;
+  readonly handlerId: string | null;
+  readonly qtySum: string;
+  readonly totalAmount: string;
+}
+
+export interface PurchaseOrderExportResult {
+  readonly rows: readonly PurchaseOrderExportRow[];
+  readonly exceedsMaxRows: boolean;
+}
+
+interface PurchaseExportRow {
+  order_no: string;
+  created_at: Date | string;
+  supplier_name: string;
+  status: string;
+  handler_id: string | null;
+  qty_sum: string;
+  total_amount: string | number;
+}
+
+export async function exportPurchaseOrders(
+  ctx: PurchaseOrderRepoContext,
+  query: PurchaseOrderExportQuery,
+): Promise<PurchaseOrderExportResult> {
+  const params: unknown[] = [ctx.tenantId, [...ctx.companyIds]];
+  const where: string[] = ['o.tenant_id = $1', 'o.company_id = ANY($2::uuid[])'];
+
+  if (query.companyId !== undefined) {
+    params.push(query.companyId);
+    where.push(`o.company_id = $${params.length}::uuid`);
+  }
+  if (query.supplierId !== undefined) {
+    params.push(query.supplierId);
+    where.push(`o.supplier_id = $${params.length}::uuid`);
+  }
+  if (query.status !== undefined) {
+    params.push(query.status);
+    where.push(`o.status = $${params.length}`);
+  }
+  if (query.keyword !== undefined) {
+    params.push(likePattern(query.keyword));
+    const keywordParam = `$${params.length}`;
+    where.push(`(
+      o.order_no ILIKE ${keywordParam} ESCAPE '\\'
+      OR s.name ILIKE ${keywordParam} ESCAPE '\\'
+    )`);
+  }
+
+  params.push(query.maxRows + 1);
+  const result = await ctx.tx.query<PurchaseExportRow>(
+    `SELECT o.order_no,
+            o.created_at,
+            s.name AS supplier_name,
+            o.status,
+            o.handler_id,
+            trim_scale(o.total_amount) AS total_amount,
+            COALESCE(
+              (
+                SELECT trim_scale(SUM(l.qty))
+                  FROM purchase_order_line l
+                 WHERE l.tenant_id = o.tenant_id
+                   AND l.order_id = o.id
+              ),
+              0
+            )::text AS qty_sum
+       FROM ${HEADER_FROM}
+      WHERE ${where.join('\n        AND ')}
+      ORDER BY o.id DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+
+  const exceedsMaxRows = result.rows.length > query.maxRows;
+  const kept = exceedsMaxRows ? result.rows.slice(0, query.maxRows) : result.rows;
+  return {
+    rows: kept.map((row) => ({
+      orderNo: row.order_no,
+      createdAt: toDate(row.created_at).toISOString(),
+      supplierName: row.supplier_name,
+      status: row.status as PurchaseOrderStatus,
+      handlerId: row.handler_id,
+      qtySum: String(row.qty_sum),
+      totalAmount: decimal(row.total_amount),
+    })),
+    exceedsMaxRows,
+  };
 }

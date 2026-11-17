@@ -82,6 +82,7 @@ interface InventoryBatchRow {
   pending_execution_qty: string | number;
   available_qty: string | number;
   custodian_id: string | null;
+  held_by_processor_id: string | null;
   version: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -114,6 +115,7 @@ const BATCH_COLUMNS = `b.id,
   b.pending_execution_qty,
   b.available_qty,
   b.custodian_id,
+  b.held_by_processor_id,
   b.version,
   b.created_at,
   b.updated_at`;
@@ -175,6 +177,7 @@ function mapBatch(row: InventoryBatchRow): InventoryBatch {
     pendingExecutionQty: decimal(row.pending_execution_qty),
     availableQty: decimal(row.available_qty),
     custodianId: row.custodian_id,
+    heldByProcessorId: row.held_by_processor_id,
     version: row.version,
     createdAt: toDate(row.created_at).toISOString(),
     updatedAt: toDate(row.updated_at).toISOString(),
@@ -393,5 +396,115 @@ export async function listInventoryFlows(
       hasMore && last
         ? encodeCursor({ createdAt: last.occurredAt, id: last.id })
         : null,
+  };
+}
+
+/**
+ * 导出用查询（#342）：库存批次列表 CSV 的数据源。
+ *
+ * **与 `listInventoryBatches` 的过滤条件必须保持一致，改一处要改两处。**
+ * 这是刻意的重复：并行任务 #341 正在改 `listInventoryBatches`，共用同一段 where 拼装
+ * 会让两个改动互相阻塞。
+ *
+ * 与列表函数不同，这里直接返回「带商品编号 / 商品名」的扁平行：
+ * `mapBatch` 会丢掉 `product_name` / `product_no`，而导出的 CSV 必须带上这两个列，
+ * 否则用户拿到一堆 UUID 没法对账。
+ */
+export interface InventoryBatchExportQuery {
+  readonly companyId?: string;
+  readonly productId?: string;
+  readonly keyword?: string;
+  /** 行数上限：内部统一按 `maxRows + 1` 取，多出一行即判定超限（不静默截断）。 */
+  readonly maxRows: number;
+}
+
+export interface InventoryBatchExportRow {
+  readonly batchNo: string;
+  readonly productNo: string;
+  readonly productName: string;
+  readonly lockedUnitCost: string;
+  readonly inboundQty: string;
+  readonly remainingQty: string;
+  readonly availableQty: string;
+  readonly inTransitQty: string;
+  readonly pendingExecutionQty: string;
+  readonly custodianId: string;
+  readonly createdAt: string;
+}
+
+export interface InventoryBatchExportResult {
+  readonly rows: readonly InventoryBatchExportRow[];
+  readonly exceedsMaxRows: boolean;
+}
+
+interface BatchExportRow {
+  batch_no: string;
+  product_no: string;
+  product_name: string;
+  locked_unit_cost: string | number;
+  inbound_qty: string | number;
+  remaining_qty: string | number;
+  available_qty: string | number;
+  in_transit_qty: string | number;
+  pending_execution_qty: string | number;
+  custodian_id: string;
+  created_at: Date | string;
+}
+
+export async function exportInventoryBatches(
+  ctx: InventoryRepoContext,
+  query: InventoryBatchExportQuery,
+): Promise<InventoryBatchExportResult> {
+  const params: unknown[] = [ctx.tenantId, [...ctx.companyIds]];
+  const where: string[] = ['b.tenant_id = $1', 'b.company_id = ANY($2::uuid[])'];
+
+  if (query.companyId !== undefined) {
+    params.push(query.companyId);
+    where.push(`b.company_id = $${params.length}::uuid`);
+  }
+  if (query.productId !== undefined) {
+    params.push(query.productId);
+    where.push(`b.product_id = $${params.length}::uuid`);
+  }
+  if (query.keyword !== undefined) {
+    params.push(likePattern(query.keyword));
+    const keywordParam = `$${params.length}`;
+    where.push(`(
+      b.batch_no ILIKE ${keywordParam} ESCAPE '\\'
+      OR p.name ILIKE ${keywordParam} ESCAPE '\\'
+    )`);
+  }
+
+  params.push(query.maxRows + 1);
+  const result = await ctx.tx.query<BatchExportRow>(
+    `SELECT ${BATCH_COLUMNS}
+       FROM inventory_batch b
+       JOIN product p
+         ON p.id = b.product_id
+        AND p.tenant_id = b.tenant_id
+        AND p.company_id = b.company_id
+      WHERE ${where.join('\n        AND ')}
+      ORDER BY b.id DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+
+  const exceedsMaxRows = result.rows.length > query.maxRows;
+  const kept = exceedsMaxRows ? result.rows.slice(0, query.maxRows) : result.rows;
+  return {
+    rows: kept.map((row) => ({
+      batchNo: row.batch_no,
+      productNo: row.product_no,
+      productName: row.product_name,
+      lockedUnitCost: decimal(row.locked_unit_cost),
+      inboundQty: decimal(row.inbound_qty),
+      remainingQty: decimal(row.remaining_qty),
+      availableQty: decimal(row.available_qty),
+      inTransitQty: decimal(row.in_transit_qty),
+      pendingExecutionQty: decimal(row.pending_execution_qty),
+      custodianId: row.custodian_id,
+      createdAt: toDate(row.created_at).toISOString(),
+    })),
+    exceedsMaxRows,
   };
 }

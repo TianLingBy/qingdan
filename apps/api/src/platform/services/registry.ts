@@ -61,6 +61,12 @@ export interface CreateBatchReceipt {
   readonly custodianId: string;
 }
 
+/** 新建“在途批次”：A 单发货 / B 单 finished 发货使用，入库量先全部计入在途。 */
+export interface CreateTransitBatchCommand extends CreateBatchCommand {
+  /** 货直发加工厂时记录实际持有人；回仓 / 回本公司时为 null。 */
+  readonly heldByProcessorId?: string | null;
+}
+
 /** 单据对库存批次的待执行占用行。 */
 export interface StockReservationLine {
   readonly batchId: string;
@@ -89,11 +95,55 @@ export interface StockReservationReceipt {
   readonly lines: readonly StockReservationReceiptLine[];
 }
 
+/** 在途批次的状态变更命令（不改库存流水，只改变在途数量或持有人）。 */
+export interface StockTransitLineCommand {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly sourceDocType: 'A' | 'B';
+  readonly sourceDocId: string;
+  readonly handledBy: string;
+  readonly lines: readonly StockReservationLine[];
+  /** 加工厂持有 / 释放时使用；null 表示清空持有人。 */
+  readonly heldByProcessorId?: string | null;
+}
+
+/** 按来源单据处理整批 A 单在途批次（到货 / 撤销发货）。 */
+export interface StockTransitSourceCommand {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly sourceDocType: 'A';
+  readonly sourceDocId: string;
+  readonly handledBy: string;
+}
+
 /** 库存写入端口：由 inventory 实现，内部就是 `inventory/services/stock-flow.ts`。 */
 export interface StockFlowPort {
   applyAdjustment(tx: SqlClient, command: StockAdjustmentCommand): Promise<StockAdjustmentReceipt>;
   /** 新建入库批次（只签名；接线归 #137，A 单入库 / B 单产出调用）。 */
   createBatch(tx: SqlClient, command: CreateBatchCommand): Promise<CreateBatchReceipt>;
+  /** 新建在途批次（A 发货 / B finished 发货）。 */
+  createTransitBatch(
+    tx: SqlClient,
+    command: CreateTransitBatchCommand,
+  ): Promise<CreateBatchReceipt>;
+  /** 在途 → 可用（到货确认）；不改写流水。 */
+  receiveTransit(tx: SqlClient, command: StockTransitLineCommand): Promise<void>;
+  /** 待执行占用 → 在途量（B 材料发货）；不新增流水。 */
+  movePendingToTransit(tx: SqlClient, command: StockTransitLineCommand): Promise<void>;
+  /** 在途量 → 待执行占用（B 材料到货 / 撤销发货）；不新增流水。 */
+  moveTransitToPending(tx: SqlClient, command: StockTransitLineCommand): Promise<void>;
+  /** 撤销指定在途批次：入库量与在途量同时冲回，并追加负数流水。 */
+  revokeTransitBatch(tx: SqlClient, command: StockTransitLineCommand): Promise<void>;
+  /** 撤销整组 A 单在途批次：入库量与在途量同时冲回，并追加负数流水。 */
+  revokeTransitBySource(
+    tx: SqlClient,
+    command: StockTransitSourceCommand,
+  ): Promise<void>;
+  /** A 单全部到货：把来源单据创建的批次从在途转可用。 */
+  receiveTransitBySource(
+    tx: SqlClient,
+    command: StockTransitSourceCommand,
+  ): Promise<void>;
   /** 建单占用待执行量；不改善物流水。 */
   reservePending(
     tx: SqlClient,

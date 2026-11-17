@@ -50,7 +50,7 @@ const ALL_DOMAINS = [
   'permission', 'company', 'profit_report', 'audit', 'api_integration', 'workbench',
 ] as const;
 
-const ALL_ACTIONS = ['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'view_handler', 'export'] as const;
+const ALL_ACTIONS = ['read', 'create', 'update', 'approve', 'ship', 'delete', 'merge', 'view_price', 'view_handler', 'export'] as const;
 
 function perms(domain: string, actions: readonly string[]): Perm[] {
   return actions.map((action) => [domain, action] as const);
@@ -88,6 +88,11 @@ const POSITIONS: readonly PositionSeed[] = [
       ),
       // D89：工作台待办是公共入口，所有预设岗位默认给 read（不含审批动作本身）。
       ...perms('workbench', ['read']),
+      // D98：主数据去重审核（合并两条档案）默认给经理，其余岗位默认无；
+      // 预设只是出厂初值，老板随时可按人增删（权限模型铁律：没有职位，只有权限点）。
+      ...['customer', 'supplier', 'processor', 'product'].flatMap((domain) =>
+        perms(domain, ['merge']),
+      ),
     ],
   },
   {

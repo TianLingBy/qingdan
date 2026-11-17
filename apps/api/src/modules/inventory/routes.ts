@@ -1,7 +1,16 @@
-import { AppError, ROUTES, etagOf, routesOfModule, type RouteDef } from '@qingdan/contracts';
+import {
+  AppError,
+  EXPORT_CONTENT_TYPE,
+  ROUTES,
+  etagOf,
+  exportContentDisposition,
+  routesOfModule,
+  type RouteDef,
+} from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
 import { getBatch, listBatches } from './usecases/batches.js';
+import { exportInventoryBatches } from './usecases/export-inventory-batches.js';
 import {
   approveCostAdjustment,
   createCostAdjustment,
@@ -44,6 +53,18 @@ export function registerInventoryRoutes(app: FastifyInstance): void {
       const batch = await getBatch({ database: instance.database, request });
       reply.header('ETag', etagOf(batch.version));
       return batch;
+    },
+    'inventory.batch.export': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      // 原生 CSV（不是 JSON 信封）：设好响应头直接返回文本，点开即下载（D96）。
+      const file = await exportInventoryBatches({
+        database: instance.database,
+        request,
+      });
+      reply
+        .type(EXPORT_CONTENT_TYPE)
+        .header('content-disposition', exportContentDisposition(file.filename));
+      return file.content;
     },
     'inventory.flow.read': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);

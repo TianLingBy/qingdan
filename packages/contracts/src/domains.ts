@@ -37,7 +37,15 @@ export type DomainKey = keyof typeof DOMAINS;
 
 export const DOMAIN_KEYS = Object.keys(DOMAINS) as DomainKey[];
 
-/** 9 动作（D4 底层模型）：查 / 建 / 编 / 审 / 出（出库/发货）/ 删 / 看价 / 看经手人 / 导。 */
+/**
+ * 10 动作（D4 底层模型 + D90 view_handler + D98 merge）：
+ * 查 / 建 / 编 / 审 / 出（出库/发货）/ 删 / 合并 / 看价 / 看经手人 / 导。
+ *
+ * 「合并」为什么单独一个动作、不复用 update：合并会把两条档案揉成一条并停用被合并的那条，
+ * 影响范围远超「改一个字段」——单据上的引用会被改写、审核台的待办会被批量收口、错合了要回滚。
+ * 单独给权限点，老板才能在不收回「改档案」的前提下把「合档案」这个更重的能力单独收回。
+ * 位置放在 delete 之后：破坏性动作聚在一起，勾选表上一眼能看出「这几个是重手段」。
+ */
 export const ACTIONS = {
   read: '查',
   create: '建',
@@ -45,6 +53,7 @@ export const ACTIONS = {
   approve: '审',
   ship: '出',
   delete: '删',
+  merge: '合并主数据',
   view_price: '看价',
   view_handler: '看经手人',
   export: '导',
