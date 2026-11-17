@@ -288,6 +288,8 @@ export type ProcessingOrderCompleteResult = z.infer<typeof ProcessingOrderComple
 export const ProcessingOrderListQuerySchema = PageQuerySchema.extend({
   companyId: z.string().uuid().optional(),
   processorId: z.string().uuid().optional(),
+  /** 按下单时记的对接人筛（#368）；老单据没记对接人，不会被命中。 */
+  processorContactId: z.string().uuid().optional(),
   status: ProcessingOrderStatusSchema.optional(),
   keyword: z.string().min(1).max(64).optional(),
 });

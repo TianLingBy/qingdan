@@ -21,6 +21,8 @@ const CUSTOMER_ID = '01900000-0000-7000-8000-000000004201';
 const PRODUCT_ID = '01900000-0000-7000-8000-000000004211';
 const BATCH_A_ID = '01900000-0000-7000-8000-000000004221';
 const BATCH_B_ID = '01900000-0000-7000-8000-000000004222';
+/** 客户对接人（#368）：只有第一张单记了它，用来验证「按对接人筛」真的进了 SQL。 */
+const CONTACT_ID = '01900000-0000-7000-8000-000000004231';
 
 const LINE = {
   productId: PRODUCT_ID,
@@ -70,6 +72,14 @@ describe('销售单列表页码分页与排序（D95）', () => {
        ON CONFLICT (id) DO NOTHING`,
       [CUSTOMER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
+    // 对接人（#368）直接插库，不走 `customer.contact.create` 端点：
+    // 这条用例要验的是「列表筛选」，不是「能不能建对接人」。
+    await test.database.query(
+      `INSERT INTO customer_contact (id, tenant_id, company_id, customer_id, name, phone, is_primary)
+       VALUES ($1, $2, $3, $4, '王经理', '13900000001', true)
+       ON CONFLICT (id) DO NOTHING`,
+      [CONTACT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId, CUSTOMER_ID],
+    );
     await test.database.query(
       `INSERT INTO product (id, tenant_id, company_id, product_no, name, aliases, unit)
        VALUES ($1, $2, $3, NULL, '分页商品', '{}', '件')
@@ -110,6 +120,7 @@ describe('销售单列表页码分页与排序（D95）', () => {
     cookie = String(login.headers['set-cookie']).split(';')[0]!;
 
     // 开 6 张单：4 张够验证翻页，6 张让「第 3 页只有 2 条」也能覆盖到。
+    // 只给第 1 张记对接人——这样才能验证「按对接人筛只命中它，其余 5 张不命中」。
     for (let index = 0; index < 6; index += 1) {
       const response = await app.inject({
         method: 'POST',
@@ -119,6 +130,7 @@ describe('销售单列表页码分页与排序（D95）', () => {
           companyId: DEMO_IDS.companyId,
           customerId: CUSTOMER_ID,
           handlerId: DEMO_IDS.ownerEmployeeId,
+          ...(index === 0 ? { customerContactId: CONTACT_ID } : {}),
           lines: [LINE],
           fees: [FEE],
         },
@@ -134,6 +146,28 @@ describe('销售单列表页码分页与排序（D95）', () => {
   });
 
   const base = `/api/v1/sales-orders?customerId=${CUSTOMER_ID}`;
+
+  /**
+   * #368 第三半：按对接人筛。
+   *
+   * 这条用例的要点不是「参数能被解析」——那是契约测试的事——而是
+   * **筛选真的拼进了 SQL 的 WHERE**。所以断言必须落在「返回几条、是哪一条」上。
+   *
+   * 同时验「不传该参数时，没记对接人的老单据照常出现」：
+   * 否则实现成「有 contactId 的单优先」之类的软筛选也会绿。
+   */
+  it('按对接人筛：只命中记了这个对接人的单，没记对接人的单不出现', async () => {
+    const filtered = await list(`${base}&customerContactId=${CONTACT_ID}&page=1&pageSize=50`);
+    expect(filtered.status).toBe(200);
+    expect(filtered.body.total).toBe(1);
+    expect(filtered.body.items).toHaveLength(1);
+    // 必须正好是第 1 张单（循环里只有 index === 0 那张带了对接人）。
+    expect(filtered.body.items[0]!.id).toBe(createdIds[0]);
+
+    const all = await list(`${base}&page=1&pageSize=50`);
+    expect(all.status).toBe(200);
+    expect(all.body.total).toBe(6);
+  });
 
   it('老的游标流程不变：?limit=2 仍给出可续翻的 nextCursor，新字段为 null', async () => {
     const first = await list(`${base}&limit=2`);

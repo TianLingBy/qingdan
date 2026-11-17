@@ -653,7 +653,16 @@ describe('加工单契约（processing）', () => {
     expect(orders.get?.['x-audit']).toEqual({ kind: 'none', required: false });
     expect(orders.get?.['x-mcp-tool']).toBe('qingdan_processing_order_list_read');
     const queryNames = (orders.get?.parameters as Array<{ name: string }>).map((p) => p.name).sort();
-    expect(queryNames).toEqual(['companyId', 'cursor', 'keyword', 'limit', 'processorId', 'status']);
+    expect(queryNames).toEqual([
+      'companyId',
+      'cursor',
+      'keyword',
+      'limit',
+      // #368：按对接人筛（须排在 `processorId` 前，`sort()` 是字典序）。
+      'processorContactId',
+      'processorId',
+      'status',
+    ]);
 
     expect(orders.post?.['x-scope']).toBe('processing.create');
     expect(orders.post?.['x-audit']).toEqual({ kind: 'write', required: true });

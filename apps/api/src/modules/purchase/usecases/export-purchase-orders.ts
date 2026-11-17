@@ -147,6 +147,7 @@ export async function exportPurchaseOrders(
       {
         companyId: query.companyId,
         supplierId: query.supplierId,
+        supplierContactId: query.supplierContactId,
         status: query.status,
         keyword: query.keyword,
         maxRows: EXPORT_MAX_ROWS,

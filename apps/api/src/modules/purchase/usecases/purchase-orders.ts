@@ -69,6 +69,7 @@ export interface PurchaseOrderWriteContext extends PurchaseOrderContext {
 interface ParsedListQuery {
   readonly companyId?: string;
   readonly supplierId?: string;
+  readonly supplierContactId?: string;
   readonly status?: PurchaseOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
@@ -148,6 +149,7 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
   return {
     companyId: parsed.data.companyId,
     supplierId: parsed.data.supplierId,
+    supplierContactId: parsed.data.supplierContactId,
     status: parsed.data.status,
     keyword: parsed.data.keyword,
     cursor,
