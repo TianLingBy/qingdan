@@ -36,6 +36,16 @@ interface ContactKindSpec {
   /** 单据表与单据上的档案引用列（用于 summary 聚合）。 */
   readonly orderTable: string;
   readonly orderOwnerColumn: string;
+  /**
+   * 单据表上的「这次是谁来下单」列（迁移 `20261118060000_masterdata_contacts.sql`
+   * 第 195-211 行加的三个可空引用）。
+   *
+   * 为什么同形却要逐域写死列名：三张单据表都是 `<域>_contact_id`，但 `<域>`
+   * 与 `ownerColumn` 的前缀并不一致（`ownerColumn` 是 `customer_id`，
+   * 而单据上的列是 `customer_contact_id`），拿 `ownerColumn` 去拼会拼出
+   * `customer_id_contact_id` 这种根本不存在的列，且只有到 SQL 执行时才报错。
+   */
+  readonly orderContactColumn: string;
   readonly label: string;
 }
 
@@ -48,6 +58,7 @@ export const CONTACT_SPECS: Readonly<Record<ContactKind, ContactKindSpec>> = {
     hasLegacyPhone: true,
     orderTable: 'sales_order',
     orderOwnerColumn: 'customer_id',
+    orderContactColumn: 'customer_contact_id',
     label: '客户',
   },
   supplier: {
@@ -58,6 +69,7 @@ export const CONTACT_SPECS: Readonly<Record<ContactKind, ContactKindSpec>> = {
     hasLegacyPhone: true,
     orderTable: 'purchase_order',
     orderOwnerColumn: 'supplier_id',
+    orderContactColumn: 'supplier_contact_id',
     label: '供应商',
   },
   processor: {
@@ -68,6 +80,7 @@ export const CONTACT_SPECS: Readonly<Record<ContactKind, ContactKindSpec>> = {
     hasLegacyPhone: false,
     orderTable: 'processing_order',
     orderOwnerColumn: 'processor_id',
+    orderContactColumn: 'processor_contact_id',
     label: '加工厂',
   },
 };
@@ -130,6 +143,9 @@ export interface ContactSummaryData {
     readonly status: string;
     readonly totalAmount: string;
     readonly createdAt: string;
+    /** 下单时的对接人；老单据没有记对接人时为 null。 */
+    readonly contactId: string | null;
+    readonly contactName: string | null;
   }>;
   readonly contacts: readonly ContactRecord[];
 }
@@ -485,7 +501,8 @@ export async function aggregateSummary(
   const spec = CONTACT_SPECS[kind];
   const result = await ctx.tx.query<ContactSummaryRow>(
     `WITH scoped AS (
-       SELECT o.id, o.order_no, o.status, o.total_amount, o.created_at
+       SELECT o.id, o.order_no, o.status, o.total_amount, o.created_at,
+              o.${spec.orderContactColumn} AS contact_id
          FROM ${spec.orderTable} o
         WHERE o.tenant_id = $1
           AND o.company_id = $2::uuid
@@ -493,7 +510,13 @@ export async function aggregateSummary(
           AND o.status <> '已取消'
      ),
      recent AS (
-       SELECT * FROM scoped ORDER BY created_at DESC, id DESC LIMIT 10
+       SELECT s.*, c.name AS contact_name
+         FROM scoped s
+         LEFT JOIN ${spec.table} c
+                ON c.id = s.contact_id
+               AND c.tenant_id = $1
+        ORDER BY s.created_at DESC, s.id DESC
+        LIMIT 10
      )
      SELECT (SELECT COUNT(*)::int FROM scoped) AS order_count,
             (SELECT trim_scale(COALESCE(SUM(total_amount), 0)) FROM scoped) AS total_amount,
@@ -536,6 +559,8 @@ export async function aggregateSummary(
     status: order.status,
     totalAmount: String(order.total_amount),
     createdAt: toDate(order.created_at).toISOString(),
+    contactId: order.contact_id ?? null,
+    contactName: order.contact_name ?? null,
   }));
   const contacts = (row.contacts as ContactRow[]).map((contact) => mapRow(contact));
 
@@ -554,4 +579,6 @@ interface RawOrderJson {
   status: string;
   total_amount: string | number;
   created_at: string;
+  contact_id: string | null;
+  contact_name: string | null;
 }
