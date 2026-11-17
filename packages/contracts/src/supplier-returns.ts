@@ -39,7 +39,9 @@ export type SupplierReturnStatus = z.infer<typeof SupplierReturnStatusSchema>;
 
 /**
  * 商品明细（§5.1）：S 单退货明细，一行可引多个批次（本公司批次，D22）。
- * `amount = qty × unitPrice` 由实现侧计算并落库，契约层只校验类型。
+ * `unitPrice` 只是前端预估时填的参考值，**不参与退款金额计算**；服务端按「行数量均分到
+ * 所引批次 → 各批 `inventory_batch.locked_unit_cost`」算金额（D105），响应里回显服务端
+ * 实际使用的 `unitPrice`（跨批次时为金额 ÷ 数量的加权展示值）与 `amount`。
  */
 export const SupplierReturnLineSchema = z.object({
   productId: z.string().uuid(),
