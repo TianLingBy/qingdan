@@ -3646,6 +3646,88 @@ paths:
         policy: allow
         reasonRequired: false
       x-mcp-tool: qingdan_inventory_flow_read
+  /api/v1/inventory/alerts:
+    get:
+      operationId: inventory.alert.list
+      summary: 低库存预警（可用量 < 最近 30 天日均出库 × 7 × (1+提前量)；只读不记审计，D104）
+      tags:
+        - inventory_qty
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: thresholdRatio
+          in: query
+          required: false
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        batchId:
+                          type: string
+                        productId:
+                          type: string
+                        productName:
+                          type: string
+                        batchNo:
+                          type: string
+                        availableQty:
+                          type: string
+                          pattern: ^\d{1,12}(\.\d{1,6})?$
+                        avgDailyOut:
+                          type: string
+                          pattern: ^\d{1,12}(\.\d{1,6})?$
+                        daysLeft:
+                          type: integer
+                          minimum: -9007199254740991
+                          maximum: 9007199254740991
+                      required:
+                        - batchId
+                        - productId
+                        - productName
+                        - batchNo
+                        - availableQty
+                        - avgDailyOut
+                        - daysLeft
+                      additionalProperties: false
+                required:
+                  - items
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: inventory_qty.read
+      x-module: inventory
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_inventory_alert_list
   /api/v1/stocktakes:
     get:
       operationId: stocktake.list.read

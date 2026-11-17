@@ -146,9 +146,51 @@ export const InventoryFlowListQuerySchema = PageQuerySchema.extend({
 });
 
 /**
- * inventory 首批端点（共 3 条，全部只读）。
+ * 低库存预警查询参数（#354 第 2 条 / D104）。
  *
- * 权限：`inventory_qty.read`（批次）/ `inventory_flow.read`（流水）——
+ * **`thresholdRatio` 用 `.optional()` 而不是 `.default(0.2)`**：zod 的 `.default()` 会把
+ * 输出类型变成必填，生成的 OpenAPI 里这一项就被标成 `required: true`，而缺省其实合法——
+ * 那是契约撒谎（#302 块 B 踩过，D99）。缺省兜底放在用例层：`query.thresholdRatio ?? 0.2`。
+ */
+export const InventoryAlertListQuerySchema = z.object({
+  /** 必传：预警按公司算，服务端不猜「默认公司」（同 D99⑧ / D102⑦）。 */
+  companyId: z.string().uuid(),
+  /**
+   * 提前量倍数（D104）：判定式 `availableQty < avgDailyOut × 7 × (1 + thresholdRatio)`。
+   * 范围 0–1，缺省 0.2 = 在 7 天窗口上再提前 20%（≈8.4 天库存就开始提醒）。
+   */
+  thresholdRatio: z.coerce.number().min(0).max(1).optional(),
+});
+
+/**
+ * 低库存预警条目（#354 / D104）。
+ *
+ * `availableQty` / `avgDailyOut` 都是 decimal 字符串（D54 `numeric(18,6)`）：
+ * 前者直接来自批次生成列，后者是最近 30 天出库量 ÷ 30 并按 6 位四舍五入。
+ * `daysLeft` 是整数天 = `floor(availableQty / avgDailyOut)`，**不做 `GREATEST(0, …)`**：
+ * 断货就是 0 天，未来若可用量约束放宽成负数，负天数必须原样透出（前端要能显示负数）。
+ */
+export const InventoryAlertItemSchema = z.object({
+  batchId: z.string(),
+  productId: z.string(),
+  productName: z.string(),
+  batchNo: z.string(),
+  availableQty: NonNegativeDecimal,
+  avgDailyOut: NonNegativeDecimal,
+  daysLeft: z.number().int(),
+});
+export type InventoryAlertItem = z.infer<typeof InventoryAlertItemSchema>;
+
+/** 预警列表响应：只给 `items`——这不是分页列表，一次最多 200 条（D104）。 */
+export const InventoryAlertListResponseSchema = z.object({
+  items: z.array(InventoryAlertItemSchema),
+});
+export type InventoryAlertListResponse = z.infer<typeof InventoryAlertListResponseSchema>;
+
+/**
+ * inventory 首批端点（原 3 条只读 + #354 的预警 1 条，全部只读）。
+ *
+ * 权限：`inventory_qty.read`（批次 / 预警）/ `inventory_flow.read`（流水）——
  *   scope 按功能域拆分（D44），operationId 用 `inventory.*` 伞名（Issue #48）。
  * 审计：普通读不记（D54 ②）。
  * 写入口：**本批不登记**；库存写入只能经单据用例（Issue #48 §2）。
@@ -188,5 +230,18 @@ export const INVENTORY_ROUTES: readonly RouteDef[] = [
     audit: { kind: 'none' },
     request: { query: InventoryFlowListQuerySchema },
     response: { status: 200, schema: pageSchema(InventoryFlowSchema) },
+  }),
+  defineRoute({
+    module: 'inventory',
+    operationId: 'inventory.alert.list',
+    method: 'GET',
+    path: '/api/v1/inventory/alerts',
+    domain: 'inventory_qty',
+    action: 'read',
+    summary: '低库存预警（可用量 < 最近 30 天日均出库 × 7 × (1+提前量)；只读不记审计，D104）',
+    audit: { kind: 'none' },
+    ai: { policy: 'allow' },
+    request: { query: InventoryAlertListQuerySchema },
+    response: { status: 200, schema: InventoryAlertListResponseSchema },
   }),
 ];
