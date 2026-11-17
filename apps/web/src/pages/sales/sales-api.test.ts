@@ -122,7 +122,7 @@ describe('销售单接口封装', () => {
     expect(body.amount).toBe('-1200');
   });
 
-  it('打印客户联与导出 CSV 走 prints 契约的两条路径', async () => {
+  it('打印客户联走 prints 契约、导出 CSV 走原生下载（不带分页参数）', async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const api = createSalesApi(
       new ApiClient({
@@ -138,12 +138,16 @@ describe('销售单接口封装', () => {
     );
 
     await api.print('o1');
-    await api.exportCsv({ companyId: 'c1', status: '已完成' });
+    await api.exportCsv({ companyId: 'c1', status: '已完成', pageSize: 20, page: 2, sort: 'orderNo' });
 
     expect(calls[0]?.url).toBe('/api/v1/sales-orders/o1/print');
+    // 导出不带 pagePageSize/cursor：后端 EXPORT_MAX_ROWS 一次取全量，带 pageSize 会被 422 拦
+    // （`assertNoPagingParams`）；万一漏了它静默生效，CSV 只会剩当前页那几行。
     expect(calls[1]?.url).toBe(
-      '/api/v1/sales-orders/export?companyId=c1&status=%E5%B7%B2%E5%AE%8C%E6%88%90&limit=50',
+      '/api/v1/sales-orders/export?companyId=c1&status=%E5%B7%B2%E5%AE%8C%E6%88%90',
     );
+    // 导出要拿到原生字节流，Accept 不能写 application/json（反代会按它改写响应或直接 406）
+    expect(new Headers(calls[1]?.init.headers).get('Accept')).toBe('*/*');
   });
 
   it('客户 / 批次走只读端点：客户按公司、批次按公司与商品（D15 / D22）', async () => {

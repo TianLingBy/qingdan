@@ -77,9 +77,18 @@ function seedClient(input: {
       customerId: undefined,
       status: undefined,
       keyword: undefined,
-      cursor: null,
+      page: 1,
+      pageSize: 20,
+      sort: 'createdAt',
+      order: 'desc',
     }),
-    { items: [...input.orders], nextCursor: null },
+    {
+      items: [...input.orders],
+      total: input.orders.length,
+      page: 1,
+      pageSize: 20,
+      nextCursor: null,
+    },
   );
   return client;
 }
