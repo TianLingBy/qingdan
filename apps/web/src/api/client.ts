@@ -137,6 +137,21 @@ export function buildRequestUrl(
   return appendQuery(joinUrl(baseUrl, path), query);
 }
 
+/**
+ * 打包一个能放上 HTTP 头的值。
+ *
+ * HTTP 头的值只能是 ByteString（每个字符 ≤ 0xFF），`Headers.set` 遇到中文会直接抛
+ * `TypeError: Cannot convert argument to a ByteString`——请求连发都发不出去。
+ *
+ * `X-Reason`（审计原因）是自由文本，中文是常态，所以在这里 percent-encode：
+ * 信息不丢，服务端审计里是一段可解码的转义串。等后端把原因收进 body（或写入时解码）
+ * 之后这段可以删掉——见 #332 的报告。
+ */
+export function headerSafeValue(value: string): string {
+  // eslint-disable-next-line no-control-regex -- 这里就是在判断「是否全在 latin-1 区间」
+  return /^[\u0000-\u00ff]*$/.test(value) ? value : encodeURIComponent(value);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -248,7 +263,7 @@ export class ApiClient {
       finalHeaders.set('Idempotency-Key', idempotencyKey);
     }
     if (reason) {
-      finalHeaders.set('X-Reason', reason);
+      finalHeaders.set('X-Reason', headerSafeValue(reason));
     }
 
     const doFetch = this.fetchImpl ?? fetch;
