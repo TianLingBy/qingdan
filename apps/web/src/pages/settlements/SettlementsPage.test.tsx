@@ -206,4 +206,20 @@ describe('结算单 C 页面', () => {
     expect(html).not.toContain('下一批');
     expect(html).not.toContain('data-sort');
   });
+
+  /**
+   * 撤销结算（D88）的按钮在详情面板里，而详情面板只在 `detailId` 非空时渲染——
+   * `renderToStaticMarkup` 的首屏里没有它，**这里测不到**。
+   *
+   * 所以本文件只留一条「文案别说反」的断言（结算后可撤销、但不能冲正），
+   * 请求形状（`confirm: true` + `reason` + 强 `If-Match`）由
+   * `settlements-api.test.ts` 的 `撤销结算（D88 / #288）` 覆盖。
+   */
+  it('底部说明写「可撤销但不能冲正」，不再说「不可取消」（D88 之后那半句过期了）', () => {
+    const html = renderPage(seedClient({ me: FULL, orders: [ORDER] }));
+
+    expect(html).toContain('可撤销');
+    expect(html).toContain('不能冲正');
+    expect(html).not.toContain('不可冲正、不可取消');
+  });
 });
