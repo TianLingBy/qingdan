@@ -4092,6 +4092,32 @@ paths:
                   type: string
                   format: uuid
                   pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                customerDraft:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                    contactName:
+                      anyOf:
+                        - type: string
+                          maxLength: 64
+                        - type: "null"
+                    contactPhone:
+                      anyOf:
+                        - type: string
+                          maxLength: 32
+                        - type: "null"
+                    creditTermDays:
+                      anyOf:
+                        - type: integer
+                          minimum: 0
+                          maximum: 9007199254740991
+                        - type: "null"
+                  required:
+                    - name
+                  additionalProperties: false
                 handlerId:
                   type: string
                   format: uuid
@@ -4160,7 +4186,6 @@ paths:
                     additionalProperties: false
               required:
                 - companyId
-                - customerId
                 - handlerId
                 - lines
               additionalProperties: false
@@ -5049,6 +5074,33 @@ paths:
                   type: string
                   format: uuid
                   pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                supplierDraft:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                    contactName:
+                      anyOf:
+                        - type: string
+                          maxLength: 64
+                        - type: "null"
+                    contactPhone:
+                      anyOf:
+                        - type: string
+                          maxLength: 32
+                        - type: "null"
+                    suppliedMaterials:
+                      maxItems: 20
+                      type: array
+                      items:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                  required:
+                    - name
+                  additionalProperties: false
                 handlerId:
                   type: string
                   format: uuid
@@ -5118,7 +5170,6 @@ paths:
                     additionalProperties: false
               required:
                 - companyId
-                - supplierId
                 - handlerId
                 - lines
               additionalProperties: false
@@ -5886,6 +5937,21 @@ paths:
                   type: string
                   format: uuid
                   pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                processorDraft:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                    contactName:
+                      anyOf:
+                        - type: string
+                          maxLength: 64
+                        - type: "null"
+                  required:
+                    - name
+                  additionalProperties: false
                 outputProductId:
                   type: string
                   format: uuid
@@ -5960,7 +6026,6 @@ paths:
                     - type: "null"
               required:
                 - companyId
-                - processorId
                 - outputProductId
                 - handlerId
                 - materialBatchIds
@@ -6545,6 +6610,16 @@ paths:
             schema:
               type: object
               properties:
+                companyDraft:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                  required:
+                    - name
+                  additionalProperties: false
                 fromCompanyId:
                   type: string
                   format: uuid
@@ -7660,6 +7735,243 @@ paths:
         policy: allow
         reasonRequired: false
       x-mcp-tool: qingdan_payment_callback_receive
+      x-idempotent: true
+  /api/v1/sales-orders/{orderId}/payment-requests:
+    post:
+      operationId: payment.request.create
+      summary: 发起客户扫码收款：服务端按应收余额算金额并生成支付二维码（不接收金额入参；同一单同渠道未过期的待支付单直接复用）
+      tags:
+        - payment
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                  salesOrderId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                  channel:
+                    type: string
+                    enum:
+                      - wechat
+                      - alipay
+                  amount:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - pending
+                      - paid
+                      - expired
+                      - cancelled
+                  qrContent:
+                    type:
+                      - string
+                      - "null"
+                  payUrl:
+                    type:
+                      - string
+                      - "null"
+                  expiresAt:
+                    type: string
+                  paidAt:
+                    type:
+                      - string
+                      - "null"
+                required:
+                  - id
+                  - salesOrderId
+                  - channel
+                  - amount
+                  - status
+                  - qrContent
+                  - payUrl
+                  - expiresAt
+                  - paidAt
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: payment.create
+      x-module: payment
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_payment_request_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel:
+                  type: string
+                  enum:
+                    - wechat
+                    - alipay
+              required:
+                - channel
+              additionalProperties: false
+  /api/v1/payments/{id}:
+    get:
+      operationId: payment.request.read
+      summary: 查询待支付单（含二维码与金额）；已过期但未写入库的 pending 单在这里返回 expired
+      tags:
+        - payment
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                  salesOrderId:
+                    type: string
+                    format: uuid
+                    pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                  channel:
+                    type: string
+                    enum:
+                      - wechat
+                      - alipay
+                  amount:
+                    type: string
+                  status:
+                    type: string
+                    enum:
+                      - pending
+                      - paid
+                      - expired
+                      - cancelled
+                  qrContent:
+                    type:
+                      - string
+                      - "null"
+                  payUrl:
+                    type:
+                      - string
+                      - "null"
+                  expiresAt:
+                    type: string
+                  paidAt:
+                    type:
+                      - string
+                      - "null"
+                required:
+                  - id
+                  - salesOrderId
+                  - channel
+                  - amount
+                  - status
+                  - qrContent
+                  - payUrl
+                  - expiresAt
+                  - paidAt
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: payment.read
+      x-module: payment
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_payment_request_read
+  /api/v1/payments/mock/{providerOrderNo}/confirm:
+    post:
+      operationId: payment.mock.confirm
+      summary: mock 模式下模拟第三方平台「客户已付款」：复用回调入账路径写收款；live 模式返回 404（不暴露存在性）
+      tags:
+        - payment
+      security: []
+      parameters:
+        - name: providerOrderNo
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received:
+                    type: boolean
+                  duplicate:
+                    type: boolean
+                  receiptId:
+                    anyOf:
+                      - type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                      - type: "null"
+                required:
+                  - received
+                  - duplicate
+                  - receiptId
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: payment.create
+      x-module: payment
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_payment_mock_confirm
       x-idempotent: true
   /api/v1/billing/subscription:
     get:

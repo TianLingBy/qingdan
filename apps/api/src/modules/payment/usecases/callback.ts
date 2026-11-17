@@ -6,7 +6,7 @@ import {
 import type { FastifyRequest } from 'fastify';
 import { flushAuditOutbox } from '../../../platform/audit/writer.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
-import type { Database } from '../../../platform/db/client.js';
+import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { salesReceiptPort } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 import {
@@ -271,34 +271,43 @@ async function tenantIdOfCompany(database: Database, companyId: string): Promise
   return row.tenant_id;
 }
 
-export async function receivePaymentCallback(
-  ctx: PaymentCallbackContext,
+/** 入账钩子拿到的结果：收款行 id + 入账凭据行 id（mock 侧要用它回填 `payment_request`）。 */
+export interface AppliedPayment {
+  readonly receiptId: string;
+  readonly paymentTransactionId: string;
+}
+
+/**
+ * 一条「已确认收款」的入账请求——**验签之后的形态**。
+ *
+ * 真实回调与 mock 确认的差别只在「这条报文怎么证明是真的」：
+ * 回调靠 RSA/form 验签，mock 靠运行模式 + 本系统自己发的商户订单号。
+ * 一旦确认，入账该做的事完全一样（金额校验 → 幂等 → 写凭据 → 写收款行 → 回填），
+ * 所以两条路都走这里，不各写一套（同一份钱的逻辑写两遍，早晚会分叉）。
+ */
+export interface PaymentCallbackEntry {
+  readonly companyId: string;
+  readonly channel: PaymentChannel;
+  readonly outTradeNo: string;
+  readonly transactionId: string;
+  readonly amount: string;
+  /** 发起侧能直接给出销售单 id；真实回调只有商户单号，按单号反查。 */
+  readonly salesOrderId?: string;
+  /** 同一业务事务内的收尾（mock 回填 payment_request）；真实回调不传。 */
+  readonly afterApply?: (tx: SqlClient, applied: AppliedPayment) => Promise<void>;
+}
+
+export async function applyPaymentCallback(
+  database: Database,
+  entry: PaymentCallbackEntry,
 ): Promise<PaymentCallbackResult> {
-  const database = ctx.database;
-  if (!database) {
-    throw new AppError(
-      'NOT_IMPLEMENTED',
-      'payment.callback.receive 尚未实现（数据库未配置）',
-      { operationId: 'payment.callback.receive' },
-    );
-  }
-
-  const channel = parseChannel(ctx.request.params);
-  const resolved =
-    channel === 'wechat'
-      ? resolveWechatCallback(
-          ctx.request.headers,
-          typeof ctx.request.body === 'string' ? ctx.request.body : '',
-        )
-      : resolveAlipayCallback(ctx.request.body);
-
-  const tenantId = await tenantIdOfCompany(database, resolved.companyId);
+  const tenantId = await tenantIdOfCompany(database, entry.companyId);
 
   const outcome = await withTenant(database, tenantId, async (tx) => {
     const idempotencyKey = {
-      companyId: resolved.companyId,
-      channel: resolved.channel,
-      outTradeNo: resolved.outTradeNo,
+      companyId: entry.companyId,
+      channel: entry.channel,
+      outTradeNo: entry.outTradeNo,
     };
 
     // 先看幂等键：重复投递时不再按「当前应收余额」校验（首笔已把余额收平）。
@@ -315,32 +324,37 @@ export async function receivePaymentCallback(
       };
     }
 
-    const order = await salesReceiptPort().findOrderByNo(tx, {
-      companyId: resolved.companyId,
-      orderNo: resolved.outTradeNo,
-    });
+    const order = entry.salesOrderId
+      ? await salesReceiptPort().findOrderById(tx, {
+          companyIds: [entry.companyId],
+          orderId: entry.salesOrderId,
+        })
+      : await salesReceiptPort().findOrderByNo(tx, {
+          companyId: entry.companyId,
+          orderNo: entry.outTradeNo,
+        });
     if (!order) {
       throw new AppError('NOT_FOUND', '支付回调对应的销售单不存在', {
-        outTradeNo: resolved.outTradeNo,
+        outTradeNo: entry.outTradeNo,
       });
     }
 
     const expected = receivableBalance(order.totalAmount, order.receivedAmount);
-    if (decimalToMicros(resolved.amount) !== decimalToMicros(expected)) {
+    if (decimalToMicros(entry.amount) !== decimalToMicros(expected)) {
       throw new AppError('VALIDATION_FAILED', '回调金额与应收余额不一致，拒绝入账', {
-        outTradeNo: resolved.outTradeNo,
+        outTradeNo: entry.outTradeNo,
         expected,
-        actual: resolved.amount,
+        actual: entry.amount,
       });
     }
 
     const recorded = await repo.recordCallback(tx, {
       tenantId: order.tenantId,
       companyId: order.companyId,
-      channel: resolved.channel,
-      outTradeNo: resolved.outTradeNo,
-      transactionId: resolved.transactionId,
-      amount: resolved.amount,
+      channel: entry.channel,
+      outTradeNo: entry.outTradeNo,
+      transactionId: entry.transactionId,
+      amount: entry.amount,
       status: '已支付',
     });
 
@@ -362,13 +376,18 @@ export async function receivePaymentCallback(
       tenantId: order.tenantId,
       companyId: order.companyId,
       orderId: order.id,
-      amount: resolved.amount,
-      channel: resolved.channel,
-      transactionId: resolved.transactionId,
-      remark: `${resolved.channel} 支付回调；交易号 ${resolved.transactionId}`,
+      amount: entry.amount,
+      channel: entry.channel,
+      transactionId: entry.transactionId,
+      remark: `${entry.channel} 支付回调；交易号 ${entry.transactionId}`,
     });
 
     await repo.attachReceipt(tx, { id: recorded.id, receiptId });
+
+    // 收尾与入账同事务：要么「钱进了账 + 待支付单标已付」，要么两边都没发生。
+    if (entry.afterApply) {
+      await entry.afterApply(tx, { receiptId, paymentTransactionId: recorded.id });
+    }
 
     return {
       result: {
@@ -387,4 +406,28 @@ export async function receivePaymentCallback(
   }
 
   return outcome.result;
+}
+
+export async function receivePaymentCallback(
+  ctx: PaymentCallbackContext,
+): Promise<PaymentCallbackResult> {
+  const database = ctx.database;
+  if (!database) {
+    throw new AppError(
+      'NOT_IMPLEMENTED',
+      'payment.callback.receive 尚未实现（数据库未配置）',
+      { operationId: 'payment.callback.receive' },
+    );
+  }
+
+  const channel = parseChannel(ctx.request.params);
+  const resolved =
+    channel === 'wechat'
+      ? resolveWechatCallback(
+          ctx.request.headers,
+          typeof ctx.request.body === 'string' ? ctx.request.body : '',
+        )
+      : resolveAlipayCallback(ctx.request.body);
+
+  return await applyPaymentCallback(database, resolved);
 }

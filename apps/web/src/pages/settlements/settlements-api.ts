@@ -126,9 +126,15 @@ export async function fetchSourceDocNoMap(
 /** 两态顺序即筛选选项顺序（D2③）。 */
 export const SETTLEMENT_STATES: readonly SettlementOrderStatus[] = ['待确认', '已结算'];
 
-export const SETTLEMENT_STATE_STYLE: Readonly<Record<SettlementOrderStatus, string>> = {
-  待确认: 'bg-amber-50 text-amber-800',
-  已结算: 'bg-emerald-50 text-emerald-700',
+/**
+ * 状态 → v0.13 `.st` 语义档（颜色规则在 `styles/app-v013.css` 的 `.st` 系列）。
+ * `待确认` 给 `bad`：不是出错，是「钱还没落定、等财务动手」，红一点才有人管（照视觉稿 C 单）。
+ */
+export const SETTLEMENT_STATE_TONE: Readonly<
+  Record<SettlementOrderStatus, 'bad' | 'ok'>
+> = {
+  待确认: 'bad',
+  已结算: 'ok',
 };
 
 export const SETTLEMENT_STATE_HINT: Readonly<Record<SettlementOrderStatus, string>> = {
