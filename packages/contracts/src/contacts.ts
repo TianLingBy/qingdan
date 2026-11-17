@@ -107,6 +107,14 @@ export const ContactRecentOrderSchema = z.object({
   /** 无 `view_price` 时不出现这个键（与汇总的 `totalAmount` 同口径）。 */
   totalAmount: AmountString.optional(),
   createdAt: z.string().datetime(),
+  /**
+   * 这张单下单时的对接人；2026-11 之前的单据没有记，或对接人后来被硬删时为 null。
+   *
+   * 为什么不用 optional：前端要拿它做「这一单是谁跟的」的展示，null 明确表示
+   * 「这单当时没记对接人」，而键缺失会让前端分不清「没这个字段」和「老数据」。
+   */
+  contactId: z.string().nullable(),
+  contactName: z.string().nullable(),
 });
 export type ContactRecentOrder = z.infer<typeof ContactRecentOrderSchema>;
 
