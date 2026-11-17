@@ -77,6 +77,8 @@ export const InventoryBatchSchema = z.object({
   availableQty: NonNegativeDecimal,
   /** 保管人（实物责任，F5）；变更需留痕。 */
   custodianId: z.string(),
+  /** 直发加工厂时货当前压在哪家加工厂；回本公司 / 回仓时为 null（D94 ①）。 */
+  heldByProcessorId: z.string().uuid().nullable().optional(),
   /** 乐观锁版本：后续写用例（经单据调用）用强 ETag `"<version>"`（D60③ 同款）。 */
   version: z.number().int(),
   createdAt: z.string().datetime(),

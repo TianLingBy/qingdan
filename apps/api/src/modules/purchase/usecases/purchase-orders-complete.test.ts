@@ -6,7 +6,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
 import { createTestDatabase, type TestDatabase } from '../../../testing/pglite.js';
-import { completePurchaseOrder, createPurchaseOrder } from './purchase-orders.js';
+import {
+  completePurchaseOrder,
+  createPurchaseOrder,
+  receivePurchaseOrder,
+  revokePurchaseOrderShip,
+  shipPurchaseOrder,
+} from './purchase-orders.js';
 
 /**
  * 采购单 A 完成（#99 A 链路）：逐行建批次 + 入库流水；D84 起费用按明细金额占比摊入锁价。
@@ -17,9 +23,16 @@ import { completePurchaseOrder, createPurchaseOrder } from './purchase-orders.js
 const SUPPLIER_ID = '01900000-0000-7000-8000-000000000301';
 const PRODUCT_ID = '01900000-0000-7000-8000-000000000311';
 const PRODUCT_2_ID = '01900000-0000-7000-8000-000000000312';
+const PROCESSOR_ID = '01900000-0000-7000-8000-000000000313';
 
 const FULL_SCOPE: ScopeMatrix = [
-  { domain: 'purchase', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
+  {
+    domain: 'purchase',
+    actions: ['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price'],
+  },
+];
+const UPDATE_ONLY_SCOPE: ScopeMatrix = [
+  { domain: 'purchase', actions: ['read', 'create', 'update', 'view_price'] },
 ];
 
 interface FakeRequestInput {
@@ -126,6 +139,59 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
     return { order, headers };
   }
 
+  async function ship(
+    id: string,
+    lines: Array<{ lineNo: number; transitTo: 'warehouse' | 'processor'; processorId?: string }>,
+    version = 1,
+    overrides: Partial<Principal> = {},
+  ): Promise<PurchaseOrder> {
+    const { reply } = makeReply();
+    return shipPurchaseOrder({
+      database: test.database,
+      request: makeRequest({
+        principal: principal(overrides),
+        params: { id },
+        headers: { 'if-match': `"${version}"` },
+        body: { lines },
+      }),
+      reply,
+    });
+  }
+
+  async function receive(
+    id: string,
+    version = 2,
+    overrides: Partial<Principal> = {},
+  ): Promise<PurchaseOrder> {
+    const { reply } = makeReply();
+    return receivePurchaseOrder({
+      database: test.database,
+      request: makeRequest({
+        principal: principal(overrides),
+        params: { id },
+        headers: { 'if-match': `"${version}"` },
+      }),
+      reply,
+    });
+  }
+
+  async function revoke(
+    id: string,
+    version = 2,
+    overrides: Partial<Principal> = {},
+  ): Promise<PurchaseOrder> {
+    const { reply } = makeReply();
+    return revokePurchaseOrderShip({
+      database: test.database,
+      request: makeRequest({
+        principal: principal(overrides),
+        params: { id },
+        headers: { 'if-match': `"${version}"` },
+      }),
+      reply,
+    });
+  }
+
   async function batchCount(): Promise<number> {
     const result = await test.database.query<{ count: string }>(
       `SELECT count(*)::text AS count FROM inventory_batch`,
@@ -135,21 +201,38 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
 
   /** 某个 A 单建出的批次，按商品 id 排序（与明细顺序一致）。 */
   async function batchesOf(orderId: string): Promise<
-    { product_id: string; locked_unit_cost: string; inbound_qty: string }[]
+    {
+      product_id: string;
+      locked_unit_cost: string;
+      inbound_qty: string;
+      in_transit_qty: string;
+      available_qty: string;
+      held_by_processor_id: string | null;
+      custodian_id: string;
+    }[]
   > {
     const result = await test.database.query<{
       product_id: string;
       locked_unit_cost: string;
       inbound_qty: string;
+      in_transit_qty: string;
+      available_qty: string;
+      held_by_processor_id: string | null;
+      custodian_id: string;
     }>(
-      `SELECT b.product_id::text AS product_id,
+      `SELECT DISTINCT b.id::text AS id,
+              b.product_id::text AS product_id,
               trim_scale(b.locked_unit_cost)::text AS locked_unit_cost,
-              trim_scale(b.inbound_qty)::text AS inbound_qty
+              trim_scale(b.inbound_qty)::text AS inbound_qty,
+              trim_scale(b.in_transit_qty)::text AS in_transit_qty,
+              trim_scale(b.available_qty)::text AS available_qty,
+              b.held_by_processor_id::text AS held_by_processor_id,
+              b.custodian_id::text AS custodian_id
          FROM inventory_flow f
          JOIN inventory_batch b ON b.id = f.batch_id
         WHERE f.source_doc_type = 'A'
           AND f.source_doc_id = $1
-        ORDER BY b.product_id`,
+        ORDER BY 2, 1`,
       [orderId],
     );
     return result.rows;
@@ -191,6 +274,13 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
        ON CONFLICT (id) DO NOTHING`,
       [SUPPLIER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
+    await test.database.query(
+      `INSERT INTO processor
+         (id, tenant_id, company_id, processor_no, name, contact_name)
+       VALUES ($1, $2, $3, NULL, '完成用例加工厂', '王五')
+       ON CONFLICT (id) DO NOTHING`,
+      [PROCESSOR_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
+    );
     for (const [id, name] of [
       [PRODUCT_ID, '完成用例商品'],
       [PRODUCT_2_ID, '完成用例商品二'],
@@ -208,6 +298,88 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
   afterAll(async () => {
     resetServices();
     await test?.database.close();
+  });
+
+  it('发货按行去向建在途批次；到货后转可用且保留加工厂持有人', async () => {
+    const order = await createOne();
+    const shipped = await ship(order.id, [
+      { lineNo: 1, transitTo: 'processor', processorId: PROCESSOR_ID },
+      { lineNo: 2, transitTo: 'warehouse' },
+    ]);
+    expect(shipped).toMatchObject({ status: '在途', version: 2 });
+
+    const transitBatches = await batchesOf(order.id);
+    expect(transitBatches).toHaveLength(2);
+    expect(transitBatches[0]).toMatchObject({
+      product_id: PRODUCT_ID,
+      in_transit_qty: '2',
+      available_qty: '0',
+      held_by_processor_id: PROCESSOR_ID,
+      custodian_id: DEMO_IDS.ownerEmployeeId,
+    });
+    expect(transitBatches[1]).toMatchObject({
+      product_id: PRODUCT_2_ID,
+      in_transit_qty: '3',
+      available_qty: '0',
+      held_by_processor_id: null,
+      custodian_id: DEMO_IDS.ownerEmployeeId,
+    });
+
+    const received = await receive(order.id, 2);
+    expect(received).toMatchObject({ status: '已完成', version: 3 });
+    const arrived = await batchesOf(order.id);
+    expect(arrived.map((row) => row.in_transit_qty)).toEqual(['0', '0']);
+    expect(arrived.map((row) => row.available_qty)).toEqual(['2', '3']);
+    expect(arrived[0]?.held_by_processor_id).toBe(PROCESSOR_ID);
+
+    await expectAppError(revoke(order.id, 3), 'STATE_CONFLICT');
+  });
+
+  it('撤销发货把在途批次冲回，订单回到进行中并可继续改单', async () => {
+    const order = await createOne();
+    await ship(order.id, [{ lineNo: 1, transitTo: 'warehouse' }]);
+    const revoked = await revoke(order.id, 2);
+    expect(revoked).toMatchObject({ status: '进行中', version: 3 });
+
+    const batches = await batchesOf(order.id);
+    expect(batches).toHaveLength(2);
+    expect(batches.every((row) => row.in_transit_qty === '0')).toBe(true);
+    expect(batches.every((row) => row.inbound_qty === '0')).toBe(true);
+    expect(batches.every((row) => row.available_qty === '0')).toBe(true);
+    const flows = await test.database.query<{ delta: string }>(
+      `SELECT trim_scale(delta)::text AS delta
+         FROM inventory_flow
+        WHERE source_doc_type = 'A' AND source_doc_id = $1::uuid
+        ORDER BY occurred_at, id`,
+      [order.id],
+    );
+    expect(flows.rows.map((row) => row.delta)).toEqual(['2', '3', '-2', '-3']);
+  });
+
+  it('完成与到货确认收紧权限：只有 update 没有 approve/ship → 403', async () => {
+    const direct = await createOne();
+    await expectAppError(
+      finish(direct.id, 1, { scope: UPDATE_ONLY_SCOPE }),
+      'FORBIDDEN',
+    );
+
+    const shipOnlyDenied = await createOne();
+    await expectAppError(
+      ship(
+        shipOnlyDenied.id,
+        [{ lineNo: 1, transitTo: 'warehouse' }],
+        1,
+        { scope: UPDATE_ONLY_SCOPE },
+      ),
+      'FORBIDDEN',
+    );
+
+    const receiveDenied = await createOne();
+    await ship(receiveDenied.id, [{ lineNo: 1, transitTo: 'warehouse' }]);
+    await expectAppError(
+      receive(receiveDenied.id, 2, { scope: UPDATE_ONLY_SCOPE }),
+      'FORBIDDEN',
+    );
   });
 
   it('完成：逐行建批次 + 入库流水，成本锁定单价、保管人=经手人、完成审计', async () => {
@@ -365,7 +537,7 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
 
     expect(await batchCount()).toBe(before + 1);
     const batches = await batchesOf(order.id);
-    expect(batches).toEqual([
+    expect(batches).toMatchObject([
       { product_id: PRODUCT_2_ID, locked_unit_cost: '6.5', inbound_qty: '2' },
     ]);
     const allocation = await feeAllocationOf(order.id);

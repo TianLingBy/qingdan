@@ -8,6 +8,9 @@ import {
   createPurchaseOrder,
   getPurchaseOrder,
   listPurchaseOrders,
+  receivePurchaseOrder,
+  revokePurchaseOrderShip,
+  shipPurchaseOrder,
   updatePurchaseOrder,
 } from './usecases/purchase-orders.js';
 import {
@@ -37,6 +40,9 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'purchase.order.update': 'purchase_order',
   'purchase.order.cancel': 'purchase_order',
   'purchase.order.complete': 'purchase_order',
+  'purchase.order.ship': 'purchase_order',
+  'purchase.order.ship.revoke': 'purchase_order',
+  'purchase.order.receive': 'purchase_order',
   'supplier_return.create': 'supplier_return',
   'supplier_return.complete': 'supplier_return',
   'supplier_return.cancel': 'supplier_return',
@@ -83,6 +89,18 @@ export function registerPurchaseRoutes(app: FastifyInstance): void {
     'purchase.order.complete': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await completePurchaseOrder({ database: instance.database, request, reply });
+    },
+    'purchase.order.ship': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await shipPurchaseOrder({ database: instance.database, request, reply });
+    },
+    'purchase.order.ship.revoke': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await revokePurchaseOrderShip({ database: instance.database, request, reply });
+    },
+    'purchase.order.receive': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await receivePurchaseOrder({ database: instance.database, request, reply });
     },
     'supplier_return.list.read': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);

@@ -33,6 +33,7 @@ const SUPPLIER_ID = '01900000-0000-7000-8000-000000000401';
 const SUPPLIER_2_ID = '01900000-0000-7000-8000-000000000402';
 const PRODUCT_ID = '01900000-0000-7000-8000-000000000411';
 const PRODUCT_2_ID = '01900000-0000-7000-8000-000000000412';
+const PROCESSOR_ID = '01900000-0000-7000-8000-000000000413';
 const BATCH_ID = '01900000-0000-7000-8000-000000000421';
 const FLOW_ID = '01900000-0000-7000-8000-000000000422';
 
@@ -151,6 +152,13 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
         [id, DEMO_IDS.tenantId, DEMO_IDS.companyId, name],
       );
     }
+    await test.database.query(
+      `INSERT INTO processor
+         (id, tenant_id, company_id, processor_no, name, contact_name)
+       VALUES ($1, $2, $3, NULL, 'HTTP采购加工厂', '王五')
+       ON CONFLICT (id) DO NOTHING`,
+      [PROCESSOR_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
+    );
 
     app = buildApp({
       config: testConfig({ publicBaseUrl: PUBLIC_BASE_URL }),
@@ -166,6 +174,46 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
   afterAll(async () => {
     await app.close();
     await test.database.close();
+  });
+
+  it('发货 → 在途 → 到货确认：HTTP 路由贯通，无 ship 权限 403', async () => {
+    const order = await createOne(nextRequestId('transit-seed'), {
+      lines: [
+        { ...LINE, transitTo: 'processor', processorId: PROCESSOR_ID },
+      ],
+    });
+    const denied = await app.inject({
+      method: 'POST',
+      url: `/api/v1/purchase-orders/${order.id}/ship`,
+      headers: writeHeaders(warehouseCookie, nextRequestId('transit-denied'), {
+        'if-match': '"1"',
+      }),
+      payload: { lines: [{ lineNo: 1, transitTo: 'warehouse' }] },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const shipped = await app.inject({
+      method: 'POST',
+      url: `/api/v1/purchase-orders/${order.id}/ship`,
+      headers: writeHeaders(ownerCookie, nextRequestId('transit-ship'), {
+        'if-match': '"1"',
+      }),
+      payload: {
+        lines: [{ lineNo: 1, transitTo: 'processor', processorId: PROCESSOR_ID }],
+      },
+    });
+    expect(shipped.statusCode).toBe(200);
+    expect(shipped.json()).toMatchObject({ status: '在途', version: 2 });
+
+    const received = await app.inject({
+      method: 'POST',
+      url: `/api/v1/purchase-orders/${order.id}/receive`,
+      headers: writeHeaders(ownerCookie, nextRequestId('transit-receive'), {
+        'if-match': '"2"',
+      }),
+    });
+    expect(received.statusCode).toBe(200);
+    expect(received.json()).toMatchObject({ status: '已完成', version: 3 });
   });
 
   it('未登录 → 401；无 purchase.create → 403', async () => {

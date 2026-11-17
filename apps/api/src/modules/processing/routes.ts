@@ -9,6 +9,9 @@ import {
   getProcessingOrder,
   getProcessingOrderForPrint,
   listProcessingOrders,
+  receiveProcessingOrder,
+  revokeProcessingOrderShip,
+  shipProcessingOrder,
   updateProcessingOrder,
 } from './usecases/processing-orders.js';
 import { renderProcessingOrderFactoryCopy } from './services/factory-copy.js';
@@ -35,6 +38,9 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'processing.order.update': 'processing_order',
   'processing.order.cancel': 'processing_order',
   'processing.order.complete': 'processing_order',
+  'processing.order.ship': 'processing_order',
+  'processing.order.ship.revoke': 'processing_order',
+  'processing.order.receive': 'processing_order',
 };
 
 /** 无数据库时保持骨架语义：501 + operationId。 */
@@ -103,6 +109,22 @@ export function registerProcessingRoutes(app: FastifyInstance): void {
         request,
         reply,
       });
+    },
+    'processing.order.ship': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await shipProcessingOrder({ database: instance.database, request, reply });
+    },
+    'processing.order.ship.revoke': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await revokeProcessingOrderShip({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+    'processing.order.receive': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await receiveProcessingOrder({ database: instance.database, request, reply });
     },
   };
 

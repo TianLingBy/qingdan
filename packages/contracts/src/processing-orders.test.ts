@@ -18,6 +18,7 @@ import {
   ProcessingOrderListQuerySchema,
   ProcessingOrderLossRecordSchema,
   ProcessingOrderSchema,
+  ProcessingOrderShipInputSchema,
   ProcessingOrderStatusSchema,
   ProcessingOrderUpdateInputSchema,
 } from './processing-orders.js';
@@ -526,6 +527,37 @@ describe('加工单契约（processing）', () => {
     ).toBe(false);
     expect(
       ProcessingOrderCompleteBodySchema.safeParse({ lossQty: '1', confirmFullLoss: 'true' }).success,
+    ).toBe(false);
+  });
+
+  it('发货入参：materials 不收验收字段；finished 必须带 lossQty（D94）', () => {
+    expect(
+      ProcessingOrderShipInputSchema.safeParse({
+        transitStage: 'materials',
+        transitTo: 'warehouse',
+      }).success,
+    ).toBe(true);
+    expect(
+      ProcessingOrderShipInputSchema.safeParse({
+        transitStage: 'finished',
+        transitTo: 'customer',
+      }).success,
+    ).toBe(false);
+    expect(
+      ProcessingOrderShipInputSchema.safeParse({
+        transitStage: 'finished',
+        transitTo: 'customer',
+        lossQty: '2',
+        custodianId: HANDLER_ID,
+        confirmFullLoss: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      ProcessingOrderShipInputSchema.safeParse({
+        transitStage: 'materials',
+        transitTo: 'warehouse',
+        lossQty: '2',
+      }).success,
     ).toBe(false);
   });
 
