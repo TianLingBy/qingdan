@@ -40,6 +40,9 @@ import {
 } from './usecases/positions.js';
 import { updatePermissionOverrides } from './usecases/permission-overrides.js';
 import { getSettingsOverview } from './usecases/settings-overview.js';
+import { confirmPhoneChange, requestPhoneChange } from './usecases/settings-phone.js';
+import { updateSettingsProfile } from './usecases/settings-profile.js';
+import { listSettingsSessions, revokeSettingsSession } from './usecases/settings-sessions.js';
 import { getCompanySubscription, updateCompanySubscription } from './usecases/subscription.js';
 import { getWorkbenchTodos } from '../workbench/usecases/todos.js';
 
@@ -104,6 +107,13 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'platform.position.update': 'position',
   'platform.position.delete': 'position',
   'billing.subscription.update': 'company',
+  // D97 / #298 第 2 块：五个 /me 端点。失败审计的 objectId 由 mountRoutes 从路径参数取，
+  // 只有踢会话那条带 `{id}`（那是会话 id），因此 objectType 给 'session'；
+  // 其余四条没有 id 参数，操作对象恒为本人（employee）。
+  'platform.settings.update_profile': 'employee',
+  'platform.settings.request_phone_change': 'employee',
+  'platform.settings.confirm_phone_change': 'employee',
+  'platform.settings.revoke_session': 'session',
 };
 
 function userAgentOf(request: FastifyRequest): string | null {
@@ -190,6 +200,36 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
     // 设置中心概览（D93 / #298）：只读聚合；缺 company.read 由用例返回 403。
     'platform.settings.overview': ({ app: instance, request }) =>
       getSettingsOverview({ database: instance.database, request }),
+    // 设置中心 · 我的资料（D97 / #298 第 2 块）：端点写死 /me，改谁由会话决定。
+    'platform.settings.update_profile': ({ app: instance, request, reply }) =>
+      updateSettingsProfile({ database: instance.database, request, reply }),
+    'platform.settings.request_phone_change': ({ app: instance, request }) =>
+      requestPhoneChange({
+        database: instance.database,
+        config: options.config,
+        smsSender: options.smsSender,
+        request,
+      }).catch((error: unknown) => {
+        // 与 platform.code.send 同一处理：生产短信未配置 → 501，
+        // 别让用户以为是自己号码填错了。
+        if (error instanceof SmsNotConfiguredError) {
+          throw new AppError('NOT_IMPLEMENTED', error.message, {
+            operationId: 'platform.settings.request_phone_change',
+          });
+        }
+        throw error;
+      }),
+    'platform.settings.confirm_phone_change': ({ app: instance, request }) =>
+      confirmPhoneChange({
+        database: instance.database,
+        config: options.config,
+        smsSender: options.smsSender,
+        request,
+      }),
+    'platform.settings.sessions': ({ app: instance, request }) =>
+      listSettingsSessions({ database: instance.database, request }),
+    'platform.settings.revoke_session': ({ app: instance, request }) =>
+      revokeSettingsSession({ database: instance.database, request }),
     // 工作台待办（D89 / #289）：归属 platform（跨模块只读聚合），用例在 modules/workbench。
     'workbench.todos.read': ({ app: instance, request, route }) => {
       requireDatabase(instance, route);
