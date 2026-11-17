@@ -305,7 +305,8 @@ describe('采购单契约（purchase）', () => {
     expect(Object.keys(PurchaseOrderCreateInputSchema.shape)).not.toContain('orderNo');
     expect(Object.keys(PurchaseOrderCreateInputSchema.shape)).not.toContain('status');
     expect(Object.keys(PurchaseOrderCreateInputSchema.shape).sort()).toEqual(
-      ['companyId', 'fees', 'handlerId', 'lines', 'supplierId'].sort(),
+      // D100：`supplierId` 与 `supplierDraft` 二选一。
+      ['companyId', 'fees', 'handlerId', 'lines', 'supplierDraft', 'supplierId'].sort(),
     );
   });
 

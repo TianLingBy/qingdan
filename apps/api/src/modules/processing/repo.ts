@@ -39,7 +39,12 @@ export interface ProcessingOrderListQuery {
 }
 
 /** 创建输入 = 契约创建体 + 用例生成的 uuid / 单号。 */
-export type ProcessingOrderInsertInput = ProcessingOrderCreateInput & {
+/** `processorId` 由用例解析后必填（D100，同 E 单的 `customerId`）。 */
+export type ProcessingOrderInsertInput = Omit<
+  ProcessingOrderCreateInput,
+  'processorId' | 'processorDraft'
+> & {
+  readonly processorId: string;
   readonly id: string;
   readonly orderNo: string;
 };

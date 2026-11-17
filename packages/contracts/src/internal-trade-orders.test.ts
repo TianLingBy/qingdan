@@ -314,7 +314,15 @@ describe('内部交易单契约（internal-trade）', () => {
     expect(keys).not.toContain('fromCompanyName');
     expect(keys).not.toContain('toCompanyName');
     expect(keys.sort()).toEqual(
-      ['fromCompanyId', 'handlerId', 'internalPrice', 'lines', 'toCompanyId'].sort(),
+      // D100：`companyDraft` 在契约上只为拿到明确 422「公司只能选不能建」，永远不建档。
+      [
+        'companyDraft',
+        'fromCompanyId',
+        'handlerId',
+        'internalPrice',
+        'lines',
+        'toCompanyId',
+      ].sort(),
     );
   });
 
