@@ -6,9 +6,14 @@
 # 串成一条命令，每一步都可单独跳过（-SkipBackup / -SkipBuild）。
 #
 # 用法：
-#   pwsh -File ops/local/sync-up.ps1                       # 全流程
+#   pwsh -File ops/local/sync-up.ps1                       # 全流程（默认先验证再动线上）
+#   pwsh -File ops/local/sync-up.ps1 -SkipVerify           # 跳过升级前验证（只在急着回滚时用）
 #   pwsh -File ops/local/sync-up.ps1 -SkipBackup           # 已经手动备过
 #   pwsh -File ops/local/sync-up.ps1 -DryRun               # 只看会做什么，不动手
+#
+# 2026-11-17 负责人口径：「系统升级都先准备好，测试好才更新」。
+# 所以第 0.5 步是本机验证：build + 全量测试 + 仓库自检，任一不过就停，
+# 连备份都不做、线上一个字节都不动。验证通过才进入同步与重启。
 #
 # 不会碰的东西：.env（含密码与 pepper）、ops/backups（历史备份）、apps/web/dist（前端产物）
 
@@ -17,6 +22,7 @@ param(
   [string]$RepoRoot   = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
   [string]$DeployRoot = 'E:\qingdan-server',
   [string]$Distro     = 'Ubuntu',
+  [switch]$SkipVerify,
   [switch]$SkipBackup,
   [switch]$SkipBuild,
   [switch]$SkipFrontend,
@@ -49,6 +55,33 @@ $before = (& git -C $RepoRoot rev-parse --short HEAD 2>&1 | Out-String).Trim()
 $branch = (& git -C $RepoRoot rev-parse --abbrev-ref HEAD 2>&1 | Out-String).Trim()
 Say "源仓库：$RepoRoot ($branch @ $before)"
 Say "部署目录：$AppDir"
+
+# ---------- 0.5 升级前验证（负责人口径：先准备好、测试好才更新） ----------
+# 为什么挡在这里：E:\qingdan-server 是唯一能点开、能给人看的环境，
+# 代码有毛病直接同步上去就等于拿它当试验田。验证不过时**一个字节都不动线上**，
+# 连备份都不触发 —— 备份是为了不可逆的迁移，不是给没验过的代码擦屁股。
+$verifyLog = Join-Path $env:TEMP ("qingdan-verify-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
+
+function Step([string]$title, [scriptblock]$run) {
+  Say "  $title ..."
+  & $run 2>&1 | Tee-Object -FilePath $verifyLog -Append | Select-Object -Last 4 | ForEach-Object { Say "    $_" }
+  if ($LASTEXITCODE -ne 0) { Die "$title 失败（exit=$LASTEXITCODE），不升级。完整日志：$verifyLog" }
+}
+
+if ($SkipVerify) {
+  Say '跳过升级前验证（-SkipVerify）'
+} elseif ($DryRun) {
+  Say "DRY  验证流程：pnpm install --frozen-lockfile / pnpm -r build / pnpm -r test / tests/run.ps1"
+} else {
+  Say '升级前验证（约 4 分钟，全绿才继续）...'
+  if (-not (Test-Path (Join-Path $RepoRoot 'node_modules'))) {
+    Step 'pnpm install --frozen-lockfile' { pnpm -C $RepoRoot install --frozen-lockfile }
+  }
+  Step 'pnpm -r build' { pnpm -C $RepoRoot -r build }
+  Step 'pnpm -r test'  { pnpm -C $RepoRoot -r test }
+  Step 'tests/run.ps1' { pwsh -NoProfile -File (Join-Path $RepoRoot 'tests\run.ps1') }
+  Say "验证通过，日志：$verifyLog"
+}
 
 # ---------- 1. 先备份（不可逆动作之前必须留退路） ----------
 if ($SkipBackup) {
