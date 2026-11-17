@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { allows, type ScopeAction } from '../../lib/access';
+import { resolveListState, type ListState } from '../../lib/list-state';
 import { useCompanyLabel } from '../../lib/company-directory';
 import { useEmployeeLabel } from '../../lib/employee-directory';
 import { orderEditBlockedText } from '../../lib/order-edit-guard';
@@ -65,6 +66,7 @@ import {
   validateDraft,
   type SalesFeeDraft,
   type SalesLineDraft,
+  type SalesOrderSort,
 } from './sales-api';
 
 const STATUS_STYLE: Readonly<Record<SalesOrderStatus, string>> = {
@@ -74,6 +76,19 @@ const STATUS_STYLE: Readonly<Record<SalesOrderStatus, string>> = {
   已完成: 'bg-emerald-50 text-emerald-700',
   已取消: 'bg-slate-100 text-slate-500',
 };
+
+/**
+ * 工具条上的状态分段按钮。顺序按单据生命周期排，「全部」永远第一。
+ * `已发货` 是 D94 新增的中间态（货已发出、等客户签收），不能漏——漏了它
+ * 财务就筛不出发了货还没签收的单。
+ */
+const STATUS_TABS: readonly { readonly value: '' | SalesOrderStatus; readonly label: string }[] = [
+  { value: '', label: '全部状态' },
+  { value: '进行中', label: '进行中' },
+  { value: '已发货', label: '已发货' },
+  { value: '已完成', label: '已完成' },
+  { value: '已取消', label: '已取消' },
+];
 
 const PAGE_DESCRIPTION =
   '选 A / B 批次出售，售价随单据；破下限需 platform 审批（D20）；费用行 ≥ 0（D39）；「已完成」= 货已发出并生成结算单草稿，不等于已结算（D19 / D72）。';
@@ -89,6 +104,42 @@ const EMPTY_FEE: SalesFeeDraft = {
 
 function errorText(error: unknown): string {
   return describeWriteError(error);
+}
+
+/**
+ * 可排序表头（D95）。点一次切方向，再点换字段。
+ *
+ * 为什么排序要真发给服务端、不能只排当前页：一页只有 20 行，用户点「金额」是想看
+ * **这批单里金额最大的**，不是「这 20 行里最大的」。假排序（只排前端拿到的数组）
+ * 会让最大值藏在第 3 页看不见，而且看起来还挺正常——这比没有排序更糟。
+ *
+ * 箭头用 `aria-sort` 给读屏用，视觉箭头只是 `↑`/`↓` 两个字，不引图标库。
+ */
+function SortableHead(props: {
+  readonly field: SalesOrderSort;
+  readonly current: SalesOrderSort;
+  readonly order: 'asc' | 'desc';
+  readonly onSort: (field: SalesOrderSort) => void;
+  readonly className?: string;
+  readonly children: React.ReactNode;
+}) {
+  const active = props.current === props.field;
+  const ariaSort = active ? (props.order === 'asc' ? 'ascending' : 'descending') : 'none';
+  return (
+    <th className={props.className} aria-sort={ariaSort} data-sort={active ? '' : undefined}>
+      <button
+        type="button"
+        onClick={() => props.onSort(props.field)}
+        className="inline-flex items-center gap-1 font-medium hover:text-slate-900"
+        title={`按${typeof props.children === 'string' ? props.children : '该列'}排序`}
+      >
+        {props.children}
+        <span aria-hidden="true" className="text-xs text-slate-400">
+          {active ? (props.order === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    </th>
+  );
 }
 
 function shortId(id: string): string {
@@ -1046,8 +1097,15 @@ export function SalesOrdersPage() {
   const [customerFilter, setCustomerFilter] = useState('');
   const [status, setStatus] = useState<'' | SalesOrderStatus>('');
   const [keyword, setKeyword] = useState('');
-  const [cursors, setCursors] = useState<(string | null)[]>([null]);
-  const [pageIndex, setPageIndex] = useState(0);
+  /**
+   * 页码模式（D95）。原来是 `cursors: (string|null)[]` + `pageIndex` 的游标栈：
+   * 游标模式下「上一页」得靠回退栈、页码只能显示「第 N 页」而不知道总页数。
+   * 现在后端给 `total`，页码条能画 `1 / 12 页`，也能直接跳。
+   */
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [sort, setSort] = useState<SalesOrderSort>('createdAt');
+  const [order, setOrder] = useState<'asc' | 'desc'>('desc');
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SalesOrderDetail | null>(null);
@@ -1103,8 +1161,7 @@ export function SalesOrdersPage() {
   const batchesError = batchesQuery.error ? errorText(batchesQuery.error) : null;
 
   useEffect(() => {
-    setCursors([null]);
-    setPageIndex(0);
+    setPage(1);
   }, [companyId, customerFilter, status, keyword]);
 
   useEffect(() => {
@@ -1119,9 +1176,12 @@ export function SalesOrdersPage() {
       customerId: optionalText(customerFilter),
       status: status || undefined,
       keyword: optionalText(keyword),
-      cursor: cursors[pageIndex] ?? null,
+      page,
+      pageSize,
+      sort,
+      order,
     }),
-    [companyId, customerFilter, status, keyword, cursors, pageIndex],
+    [companyId, customerFilter, status, keyword, page, pageSize, sort, order],
   );
 
   const list = useQuery({
@@ -1282,17 +1342,32 @@ export function SalesOrdersPage() {
 
   const exportCsv = useMutation({
     mutationFn: () => salesApi.exportCsv(filters),
-    onSuccess: (doc) => {
-      const url = URL.createObjectURL(new Blob([doc.content], { type: doc.contentType }));
+    onSuccess: ({ blob, filename }) => {
+      // 后端给的是原生 CSV（D96），blob 直接用；文件名来自 content-disposition。
+      const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = doc.filename;
+      anchor.download = filename;
       anchor.click();
       URL.revokeObjectURL(url);
-      setNotice(`已导出 ${doc.filename}（敏感读，服务端已记审计）。`);
+      setNotice(`已导出 ${filename}（敏感读，服务端已记审计）。`);
     },
     onError: (error) => setNotice(`导出失败：${errorText(error)}`),
   });
+
+  /**
+   * 切排序。点同一列就翻方向，点别的列换字段并回到 `desc`（列表默认看最新的）。
+   * 换排序后必须回到第 1 页：第 5 页的「金额最大」在新排序下没意义，而且可能直接超界。
+   */
+  const handleSort = (field: SalesOrderSort) => {
+    if (field === sort) {
+      setOrder((current) => (current === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSort(field);
+      setOrder('desc');
+    }
+    setPage(1);
+  };
 
   const beginCreate = () => {
     setEditing(null);
@@ -1389,7 +1464,18 @@ export function SalesOrdersPage() {
 
   const serverIssues = save.error instanceof ApiError ? extractIssues(save.error.details) : [];
   const rows = list.data?.items ?? [];
-  const nextCursor = list.data?.nextCursor ?? null;
+  /**
+   * 页码模式（D95）：`total` 才是真的总条数。老游标模式返回 null，
+   * 这时退化成「没有页码条」而不是显示 0 条——否则用户会以为库是空的。
+   */
+  const total = list.data?.total ?? null;
+  const totalPages = total === null ? null : Math.max(1, Math.ceil(total / pageSize));
+  /** 列表四态：由服务端状态决定，交给 CSS 的 `data-state` 驱动，不在 JSX 里三元分支。 */
+  const listState: ListState = resolveListState({
+    isPending: list.isPending,
+    hasError: list.error !== null,
+    isEmpty: rows.length === 0,
+  });
   const detailOrder = detail.data;
   /** D20：破下限被拒时服务端带回 costFloor，如实展示，不自己编审批入口。 */
   const priceFloorIssue =
@@ -1453,11 +1539,30 @@ export function SalesOrdersPage() {
         </p>
       )}
 
-      <div className="flex flex-wrap gap-3 rounded-xl border border-slate-200 bg-white p-4">
+      {/*
+        工具条（v0.13 `.toolbar`）：状态切换用 `.seg` 分段按钮而不是下拉框——
+        销售单 90% 的操作是「只看进行中」，点一下比展开下拉再选快一步。
+        其它两个筛选（公司、客户）仍是下拉，因为它们选项多、变化少。
+      */}
+      <div className="toolbar">
+        <div className="seg" role="group" aria-label="按状态筛选">
+          {STATUS_TABS.map((tab) => (
+            <button
+              key={tab.value || 'all'}
+              type="button"
+              className={status === tab.value ? 'on' : undefined}
+              aria-pressed={status === tab.value}
+              onClick={() => setStatus(tab.value)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
         {companyIds.length > 1 && (
           <select
             value={companyId}
             onChange={(event) => setCompanyId(event.target.value)}
+            aria-label="按公司筛选"
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
             <option value="">全部公司</option>
@@ -1471,6 +1576,7 @@ export function SalesOrdersPage() {
         <select
           value={customerFilter}
           onChange={(event) => setCustomerFilter(event.target.value)}
+          aria-label="按客户筛选"
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
         >
           <option value="">全部客户</option>
@@ -1480,22 +1586,16 @@ export function SalesOrdersPage() {
             </option>
           ))}
         </select>
-        <select
-          value={status}
-          onChange={(event) => setStatus(event.target.value as typeof status)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">全部状态</option>
-          <option value="进行中">进行中</option>
-          <option value="已完成">已完成</option>
-          <option value="已取消">已取消</option>
-        </select>
         <input
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder="按单号或客户名搜索"
-          className="min-w-56 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          placeholder="搜索单号或客户名"
+          aria-label="搜索单号或客户名"
+          className="search"
         />
+        <span className="ml-auto text-sm" style={{ color: 'var(--text-3)' }}>
+          点表头可排序：单号 / 金额 / 日期
+        </span>
       </div>
 
       {formOpen && (
@@ -1575,30 +1675,61 @@ export function SalesOrdersPage() {
       {actionError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>}
       {notice && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{notice}</p>}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        {list.isPending ? (
-          <ListLoading label="正在加载销售单…" />
-        ) : list.error ? (
-          <ListError title="销售单加载失败" error={list.error} onRetry={() => void list.refetch()} />
-        ) : rows.length === 0 ? (
-          <ListEmpty title="暂无销售单。可调整筛选条件，或用右上角「新建销售单」开第一张。" />
-        ) : (
-          <table className="w-full min-w-[1000px] text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+      {/*
+        列表区（v0.13）。四态由容器与 tbody 上的 `data-state` 驱动，**不写 JSX 分支**：
+        `app-v013.css` 的 `[data-state] > .st-block` 与 `tbody[data-state="…"] > tr.st-tr.*`
+        负责显隐，这样状态切换时表头宽度不变、列不会塌。
+      */}
+      <div className="card" data-state={listState}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1000px] text-left">
+            <thead>
               <tr>
-                <th className="px-4 py-3">单号</th>
-                <th className="px-4 py-3">客户</th>
-                <th className="px-4 py-3">数量</th>
-                <th className="px-4 py-3">成交额</th>
-                <th className="px-4 py-3">状态</th>
-                <th className="px-4 py-3">经手人</th>
-                <th className="px-4 py-3">开单时间</th>
-                <th className="px-4 py-3 text-right">操作</th>
+                <SortableHead field="orderNo" current={sort} order={order} onSort={handleSort}>
+                  单号
+                </SortableHead>
+                <th>客户</th>
+                <th className="num">数量</th>
+                <SortableHead
+                  field="totalAmount"
+                  current={sort}
+                  order={order}
+                  onSort={handleSort}
+                  className="num"
+                >
+                  金额
+                </SortableHead>
+                <th>状态</th>
+                <th>经手人</th>
+                <SortableHead field="createdAt" current={sort} order={order} onSort={handleSort}>
+                  开单时间
+                </SortableHead>
+                <th className="text-right">操作</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody data-state={listState}>
+              {/* 三个状态行：同一 tbody 内，CSS 按 data-state 只显示其中一个 */}
+              <tr className="st-tr st-loading">
+                <td colSpan={8}>
+                  <ListLoading label="正在加载销售单…" />
+                </td>
+              </tr>
+              <tr className="st-tr st-error">
+                <td colSpan={8}>
+                  <ListError
+                    title="销售单加载失败"
+                    error={list.error ?? null}
+                    onRetry={() => void list.refetch()}
+                  />
+                </td>
+              </tr>
+              <tr className="st-tr st-empty">
+                <td colSpan={8}>
+                  <ListEmpty title="暂无销售单。可调整筛选条件，或用右上角「新建销售单」开第一张。" />
+                </td>
+              </tr>
               {rows.map((order) => (
-                <tr key={order.id} className="border-b border-slate-100 last:border-0">
+                <tr key={order.id} className="st-tr r-row">
                   <td className="px-4 py-3">
                     <button
                       type="button"
@@ -1674,31 +1805,35 @@ export function SalesOrdersPage() {
               ))}
             </tbody>
           </table>
+        </div>
+        {/*
+          页码条（v0.13 `.pager`）。`total` 为 null 说明后端还走游标模式（老端点），
+          这时不画页码条更好——画了也点不动，用户会以为坏了。
+        */}
+        {totalPages !== null && (
+          <div className="pager">
+            <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              上一页
+            </button>
+            <input
+              value={page}
+              aria-label="页码"
+              inputMode="numeric"
+              onChange={(event) => {
+                const next = Number.parseInt(event.target.value, 10);
+                if (Number.isFinite(next)) setPage(Math.min(totalPages, Math.max(1, next)));
+              }}
+            />
+            <span className="of">/ {totalPages} 页 · 共 {total} 张</span>
+            <button
+              type="button"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              下一页
+            </button>
+          </div>
         )}
-      </div>
-
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          disabled={pageIndex === 0}
-          onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          上一页
-        </button>
-        <span className="text-sm text-slate-500">第 {pageIndex + 1} 页</span>
-        <button
-          type="button"
-          disabled={!nextCursor}
-          onClick={() => {
-            if (!nextCursor) return;
-            setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
-            setPageIndex((index) => index + 1);
-          }}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          下一页
-        </button>
       </div>
 
       {detailId !== null && (
