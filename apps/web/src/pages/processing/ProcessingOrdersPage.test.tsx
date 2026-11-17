@@ -12,7 +12,10 @@ import { MASKED_AMOUNT } from '../../lib/decimal';
 import { authKeys } from '../auth/auth-api';
 import {
   CompletionPanel,
+  DetailPanel,
   ProcessingOrdersPage,
+  editBlockedText,
+  printBlockedText,
   validateCompletionDraft,
   validateDraft,
 } from './ProcessingOrdersPage';
@@ -287,5 +290,108 @@ describe('加工单开单前校验', () => {
     expect(
       validateDraft(PROCESSOR_ID, PRODUCT_ID, [validMaterial], [validFee], tooLong, ''),
     ).toContain('辅料说明最多 500 字');
+  });
+});
+
+/* ------------------- 详情面板按钮三态（#261 / P0-08） ------------------- */
+
+const PANEL_ORDER: ProcessingOrderDetail = {
+  ...ORDER,
+  outputBatchId: null,
+  lossRecord: null,
+  cancelable: { allowed: true, reason: null },
+};
+
+const FULL_ACTIONS = {
+  canViewPrice: true,
+  canUpdate: true,
+  canPrint: true,
+  canCancel: true,
+  canComplete: true,
+};
+
+function renderDetailPanel(
+  overrides: Partial<typeof FULL_ACTIONS> & { status?: ProcessingOrderDetail['status'] } = {},
+): string {
+  const { status, ...perms } = overrides;
+  return renderToStaticMarkup(
+    <DetailPanel
+      order={{ ...PANEL_ORDER, status: status ?? PANEL_ORDER.status }}
+      products={[PRODUCT]}
+      batches={[]}
+      canViewPrice={perms.canViewPrice ?? FULL_ACTIONS.canViewPrice}
+      canUpdate={perms.canUpdate ?? FULL_ACTIONS.canUpdate}
+      canPrint={perms.canPrint ?? FULL_ACTIONS.canPrint}
+      canCancel={perms.canCancel ?? FULL_ACTIONS.canCancel}
+      canComplete={perms.canComplete ?? FULL_ACTIONS.canComplete}
+      canceling={false}
+      completing={false}
+      onClose={() => undefined}
+      onEdit={() => undefined}
+      onCancel={() => undefined}
+      onComplete={() => undefined}
+      onPrint={() => undefined}
+    />,
+  );
+}
+
+/** 取出某个按钮自己的标签，避免被旁边的提示文案干扰。 */
+function buttonTag(html: string, label: string): string {
+  const match = new RegExp(`<button[^>]*>${label}</button>`).exec(html);
+  expect(match, `找不到按钮「${label}」`).not.toBeNull();
+  return match![0];
+}
+
+/**
+ * 只看 `disabled` **属性**，不看 class：按钮 class 里带 `disabled:opacity-40`，
+ * 直接 `toContain('disabled')` 会把「能点」误判成「禁用」。
+ */
+function isDisabled(html: string, label: string): boolean {
+  return /\sdisabled(=""|\s|>)/.test(buttonTag(html, label));
+}
+
+describe('加工单详情面板：按钮三态', () => {
+  it('有权限 + 状态允许：编辑与打印都能点', () => {
+    const html = renderDetailPanel();
+
+    expect(isDisabled(html, '编辑')).toBe(false);
+    expect(isDisabled(html, '打印发厂联')).toBe(false);
+  });
+
+  it('无 processing.update：「编辑」禁用并说明缺哪个权限点', () => {
+    const html = renderDetailPanel({ canUpdate: false });
+
+    expect(isDisabled(html, '编辑')).toBe(true);
+    expect(html).toContain('当前身份没有 processing.update 权限');
+  });
+
+  it('无 processing.read：「打印发厂联」禁用并说明缺哪个权限点', () => {
+    const html = renderDetailPanel({ canPrint: false });
+
+    expect(isDisabled(html, '打印发厂联')).toBe(true);
+    expect(html).toContain('当前身份没有 processing.read 权限');
+  });
+
+  it('有权限但单据已完成：「编辑」禁用，原因说的是状态而不是权限', () => {
+    const html = renderDetailPanel({ status: '已完成' });
+
+    expect(isDisabled(html, '编辑')).toBe(true);
+    expect(html).toContain('只有「进行中」的加工单能编辑，当前是「已完成」');
+    expect(html).not.toContain('当前身份没有 processing.update 权限');
+  });
+
+  it('先权限后状态：两样都不满足时只提缺权限', () => {
+    expect(editBlockedText({ canUpdate: false, canViewPrice: true, status: '已完成' })).toBe(
+      '当前身份没有 processing.update 权限',
+    );
+    expect(editBlockedText({ canUpdate: true, canViewPrice: false, status: '进行中' })).toContain(
+      'processing.view_price',
+    );
+    expect(editBlockedText({ canUpdate: true, canViewPrice: true, status: '进行中' })).toBeNull();
+  });
+
+  it('打印只需要 processing.read，不看单据状态（已取消也能补打）', () => {
+    expect(printBlockedText(true)).toBeNull();
+    expect(printBlockedText(false)).toBe('当前身份没有 processing.read 权限');
   });
 });

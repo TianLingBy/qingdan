@@ -726,6 +726,8 @@ interface DetailPanelProps {
   readonly products: readonly Product[];
   readonly batches: readonly InventoryBatch[];
   readonly canViewPrice: boolean;
+  readonly canUpdate: boolean;
+  readonly canPrint: boolean;
   readonly canCancel: boolean;
   readonly canComplete: boolean;
   readonly canceling: boolean;
@@ -737,11 +739,45 @@ interface DetailPanelProps {
   readonly onPrint: () => void;
 }
 
-function DetailPanel({
+/**
+ * 详情面板「编辑」的禁用原因，三态口径（#261 / P0-08）。
+ *
+ * 顺序是**先权限后状态**：没有权限的人改不了单，先告诉他缺哪个权限点；
+ * 有权限但状态不允许，再说状态——两句话同时给会让用户不知道该找谁。
+ */
+export function editBlockedText(input: {
+  readonly canUpdate: boolean;
+  readonly canViewPrice: boolean;
+  readonly status: ProcessingOrderDetail['status'];
+}): string | null {
+  if (!input.canUpdate) return '当前身份没有 processing.update 权限';
+  if (!input.canViewPrice) return '无看价权限：看不到加工费就没法改单（processing.view_price）';
+  if (input.status !== '进行中') {
+    return `只有「进行中」的加工单能编辑，当前是「${input.status}」`;
+  }
+  return null;
+}
+
+/**
+ * 「打印发厂联」的禁用原因。
+ *
+ * 打印本质是读取后输出，不新增权限点，用 `processing.read`（#261 要求 2）。
+ */
+export function printBlockedText(canPrint: boolean): string | null {
+  return canPrint ? null : '当前身份没有 processing.read 权限';
+}
+
+/**
+ * 导出给静态渲染测试用（#261 要求 4）：页面本体要靠交互才能打开详情面板，
+ * 纯 `renderToStaticMarkup` 到不了，只能单独渲染面板验证按钮三态。
+ */
+export function DetailPanel({
   order,
   products,
   batches,
   canViewPrice,
+  canUpdate,
+  canPrint,
   canCancel,
   canComplete,
   canceling,
@@ -765,6 +801,8 @@ function DetailPanel({
         : order.cancelable.reason === 'has_downstream'
           ? '存在下游单据，需先取消下游'
           : '当前状态不可取消';
+  const editBlocked = editBlockedText({ canUpdate, canViewPrice, status: order.status });
+  const printBlocked = printBlockedText(canPrint);
 
   return (
     <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -899,8 +937,9 @@ function DetailPanel({
         <button
           type="button"
           onClick={onEdit}
-          disabled={order.status !== '进行中'}
+          disabled={editBlocked !== null}
           className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
+          title={editBlocked ?? undefined}
         >
           编辑
         </button>
@@ -915,11 +954,15 @@ function DetailPanel({
         <button
           type="button"
           onClick={onPrint}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+          disabled={printBlocked !== null}
+          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
+          title={printBlocked ?? undefined}
         >
           打印发厂联
         </button>
         {cancelReason && <span className="text-xs text-slate-500">{cancelReason}</span>}
+        {editBlocked && <span className="text-xs text-slate-500">{editBlocked}</span>}
+        {printBlocked && <span className="text-xs text-slate-500">{printBlocked}</span>}
         {!canComplete && order.status === '进行中' && (
           <span className="text-xs text-slate-500">
             完成 / 验收需要 processing.approve
@@ -1614,6 +1657,8 @@ export function ProcessingOrdersPage() {
               products={products}
               batches={detailBatches}
               canViewPrice={canViewPrice}
+              canUpdate={can('update')}
+              canPrint={can('read')}
               canCancel={can('delete')}
               canComplete={can('approve')}
               canceling={cancelOrder.isPending}
