@@ -100,6 +100,8 @@ export interface SupplierReturnPage {
 export interface PurchaseOrderState {
   readonly id: string;
   readonly companyId: string;
+  /** 单头供应商：改单换对接人时要拿它校验「同供应商」（#306）。 */
+  readonly supplierId: string;
   readonly status: PurchaseOrderStatus;
   readonly version: number;
 }
@@ -111,6 +113,9 @@ interface HeaderRow {
   order_no: string;
   supplier_id: string;
   supplier_name: string;
+  /** 下单对接人（#306）：可空；停用后名字仍回（LEFT JOIN 保留历史可读）。 */
+  supplier_contact_id: string | null;
+  supplier_contact_name: string | null;
   status: string;
   handler_id: string;
   goods_amount: string | number;
@@ -144,6 +149,7 @@ interface FeeRow {
 interface StateRow {
   id: string;
   company_id: string;
+  supplier_id: string;
   status: string;
   version: number;
 }
@@ -159,6 +165,8 @@ const HEADER_COLUMNS = `o.id,
   o.order_no,
   o.supplier_id,
   s.name AS supplier_name,
+  o.supplier_contact_id,
+  k.name AS supplier_contact_name,
   o.status,
   o.handler_id,
   trim_scale(o.goods_amount) AS goods_amount,
@@ -172,7 +180,11 @@ const HEADER_FROM = `purchase_order o
   JOIN supplier s
     ON s.id = o.supplier_id
    AND s.tenant_id = o.tenant_id
-   AND s.company_id = o.company_id`;
+   AND s.company_id = o.company_id
+  LEFT JOIN supplier_contact k
+    ON k.id = o.supplier_contact_id
+   AND k.tenant_id = o.tenant_id
+   AND k.company_id = o.company_id`;
 
 const LINE_COLUMNS = `l.id,
   l.line_no,
@@ -227,6 +239,8 @@ function mapHeader(row: HeaderRow): Omit<PurchaseOrder, 'lines' | 'fees'> {
     orderNo: row.order_no,
     supplierId: row.supplier_id,
     supplierName: row.supplier_name,
+    supplierContactId: row.supplier_contact_id,
+    supplierContactName: row.supplier_contact_name,
     status: row.status as PurchaseOrderStatus,
     handlerId: row.handler_id,
     goodsAmount: decimal(row.goods_amount),
@@ -459,7 +473,7 @@ export async function loadPurchaseOrderState(
   id: string,
 ): Promise<PurchaseOrderState | null> {
   const result = await ctx.tx.query<StateRow>(
-    `SELECT id, company_id, status, version
+    `SELECT id, company_id, supplier_id, status, version
        FROM purchase_order
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -471,6 +485,7 @@ export async function loadPurchaseOrderState(
   return {
     id: row.id,
     companyId: row.company_id,
+    supplierId: row.supplier_id,
     status: row.status as PurchaseOrderStatus,
     version: row.version,
   };
@@ -516,6 +531,35 @@ async function assertSupplierInCompany(
       supplierId,
       companyId,
     });
+  }
+}
+
+/**
+ * 下单对接人校验（#306）：必须**同供应商 + 同公司 + 启用**，否则 422。
+ * 三条一起查（任一条不满足都是同一个用户错误），`details.field` 指回入参名。
+ */
+async function assertSupplierContactUsable(
+  ctx: PurchaseOrderRepoContext,
+  contactId: string,
+  supplierId: string,
+  companyId: string,
+): Promise<void> {
+  const result = await ctx.tx.query(
+    `SELECT 1
+       FROM supplier_contact
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = $3::uuid
+        AND supplier_id = $4::uuid
+        AND status = '启用'`,
+    [contactId, ctx.tenantId, companyId, supplierId],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      '对接人不存在、不属于该供应商、跨公司或已停用',
+      { field: 'supplierContactId', supplierContactId: contactId },
+    );
   }
 }
 
@@ -673,6 +717,14 @@ export async function insertPurchaseOrder(
 ): Promise<PurchaseOrder> {
   await assertSupplierInCompany(ctx, input.supplierId, input.companyId);
   await assertHandlerInTenant(ctx, input.handlerId);
+  if (input.supplierContactId !== undefined) {
+    await assertSupplierContactUsable(
+      ctx,
+      input.supplierContactId,
+      input.supplierId,
+      input.companyId,
+    );
+  }
   await assertProductsInCompany(
     ctx,
     input.lines.map((line) => line.productId),
@@ -686,9 +738,18 @@ export async function insertPurchaseOrder(
 
   await ctx.tx.query(
     `INSERT INTO purchase_order
-       (id, tenant_id, company_id, order_no, supplier_id, handler_id, status)
-     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, '进行中')`,
-    [input.id, ctx.tenantId, input.companyId, input.orderNo, input.supplierId, input.handlerId],
+       (id, tenant_id, company_id, order_no, supplier_id, supplier_contact_id,
+        handler_id, status)
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7::uuid, '进行中')`,
+    [
+      input.id,
+      ctx.tenantId,
+      input.companyId,
+      input.orderNo,
+      input.supplierId,
+      input.supplierContactId ?? null,
+      input.handlerId,
+    ],
   );
   await insertLines(ctx, input.id, input.companyId, input.lines);
   await insertFees(ctx, input.id, input.companyId, input.fees);
@@ -731,6 +792,23 @@ export async function updatePurchaseOrder(
   if (input.handlerId !== undefined) {
     await assertHandlerInTenant(ctx, input.handlerId);
   }
+  /**
+   * 对接人三态（#306）：传值=换人、传 null=清空、未传=不动；换供应商未指定对接人时清空。
+   */
+  const nextContactId =
+    input.supplierContactId !== undefined
+      ? input.supplierContactId
+      : input.supplierId !== undefined && input.supplierId !== current.supplierId
+        ? null
+        : undefined;
+  if (typeof nextContactId === 'string') {
+    await assertSupplierContactUsable(
+      ctx,
+      nextContactId,
+      input.supplierId ?? current.supplierId,
+      current.companyId,
+    );
+  }
   if (input.lines !== undefined) {
     // D15：改单换明细同样不得引用他公司商品；校验放在任何写入之前，失败不留半张单。
     await assertProductsInCompany(
@@ -749,6 +827,7 @@ export async function updatePurchaseOrder(
     `UPDATE purchase_order
         SET supplier_id = COALESCE($4::uuid, supplier_id),
             handler_id = COALESCE($5::uuid, handler_id),
+            supplier_contact_id = CASE WHEN $7::boolean THEN $8::uuid ELSE supplier_contact_id END,
             version = version + 1
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -763,6 +842,8 @@ export async function updatePurchaseOrder(
       input.supplierId ?? null,
       input.handlerId ?? null,
       expectedVersion,
+      nextContactId !== undefined,
+      nextContactId ?? null,
     ],
   );
   if (updated.rows.length === 0) {
