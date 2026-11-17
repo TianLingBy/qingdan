@@ -310,6 +310,10 @@ describe('masterdata 对接人 + 汇总（PGlite + seed 演示租户）', () => 
     expect(full.totalAmount).toBe('35');
     expect(full.contacts).toHaveLength(2);
     expect(full.contacts[0]?.phone).toBe('13800001111');
+    // 最近单据要能说出「这一单是谁跟的」（#307 详情页的对接人列）。
+    expect(full.recentOrders).toHaveLength(1);
+    expect(full.recentOrders[0]?.contactId).toBe(created.contact.id);
+    expect(full.recentOrders[0]?.contactName).toBe('王经理');
 
     // 销售不持 customer.view_price → **键根本没有**（不是 null、不是 0）。
     const noPrice = await summary(CUSTOMER_A_ID, salesCookie);
@@ -320,6 +324,9 @@ describe('masterdata 对接人 + 汇总（PGlite + seed 演示租户）', () => 
     const recent = masked.recentOrders as Array<Record<string, unknown>>;
     expect(recent).toHaveLength(1);
     expect('totalAmount' in recent[0]!).toBe(false);
+    // 对接人不是金额，不持 view_price 也照常给——详情页要显示「谁跟的单」。
+    expect(recent[0]?.contactId).toBe(created.contact.id);
+    expect(recent[0]?.contactName).toBe('王经理');
   });
 
   it('summary 不统计跨子公司单据', async () => {

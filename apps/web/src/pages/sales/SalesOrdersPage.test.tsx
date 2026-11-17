@@ -210,6 +210,7 @@ const FULL_PERMS = {
   canViewPrice: true,
   canUpdate: true,
   canShip: true,
+  canComplete: true,
   canCancel: true,
 };
 
@@ -229,11 +230,13 @@ function renderDetailPanel(
         canViewPrice={perms.canViewPrice ?? FULL_PERMS.canViewPrice}
         canUpdate={perms.canUpdate ?? FULL_PERMS.canUpdate}
         canShip={perms.canShip ?? FULL_PERMS.canShip}
+        canComplete={perms.canComplete ?? FULL_PERMS.canComplete}
         canCancel={perms.canCancel ?? FULL_PERMS.canCancel}
         busy={false}
         onClose={() => undefined}
         onEdit={() => undefined}
         onShip={() => undefined}
+        onComplete={() => undefined}
         onCancel={() => undefined}
         onPrint={() => undefined}
         onError={() => undefined}
@@ -282,5 +285,27 @@ describe('销售单详情「编辑」入口的三态（#261 同型缺陷）', ()
 
   it('有看价时打印按钮不带那条说明', () => {
     expect(renderDetailPanel()).not.toContain('打印件上的金额是「—」');
+  });
+});
+
+describe('销售单「发货 → 客户签收」两步（D94）', () => {
+  it('进行中 + 有 ship：发货可点，签收置灰（还没发货）', () => {
+    const html = renderDetailPanel();
+    expect(buttonTag(html, '发货')).not.toContain('disabled=""');
+    expect(buttonTag(html, '客户签收')).toContain('disabled=""');
+    expect(html).toContain('仅「已发货」状态的销售单可签收');
+  });
+
+  it('已发货 + 有 approve：签收可点，发货置灰（已经发过了）', () => {
+    const html = renderDetailPanel({ status: '已发货' });
+    expect(buttonTag(html, '客户签收')).not.toContain('disabled=""');
+    expect(buttonTag(html, '发货')).toContain('disabled=""');
+  });
+
+  it('已发货但缺 sales.approve（如仓管）：签收置灰并说明缺哪个权限点', () => {
+    // 这是把「发货」与「签收」拆成两个 action 的全部意义：仓管能发货，但认不了收入。
+    const html = renderDetailPanel({ status: '已发货', canComplete: false });
+    expect(buttonTag(html, '客户签收')).toContain('disabled=""');
+    expect(html).toContain('当前身份没有 sales.approve 权限');
   });
 });

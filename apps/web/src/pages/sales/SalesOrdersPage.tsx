@@ -857,11 +857,13 @@ interface DetailPanelProps {
   readonly canViewPrice: boolean;
   readonly canUpdate: boolean;
   readonly canShip: boolean;
+  readonly canComplete: boolean;
   readonly canCancel: boolean;
   readonly busy: boolean;
   readonly onClose: () => void;
   readonly onEdit: () => void;
   readonly onShip: () => void;
+  readonly onComplete: () => void;
   readonly onCancel: () => void;
   readonly onPrint: () => void;
   readonly onError: (message: string) => void;
@@ -874,11 +876,13 @@ export function DetailPanel({
   canViewPrice,
   canUpdate,
   canShip,
+  canComplete,
   canCancel,
   busy,
   onClose,
   onEdit,
   onShip,
+  onComplete,
   onCancel,
   onPrint,
   onError,
@@ -1043,12 +1047,32 @@ export function DetailPanel({
             !canShip
               ? '当前身份没有 sales.ship 权限'
               : order.status !== '进行中'
-                ? '仅「进行中」状态的销售单可出库'
+                ? '仅「进行中」状态的销售单可发货'
                 : undefined
           }
           className="rounded border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-40"
         >
-          完成销售单
+          发货
+        </button>
+        {/*
+          签收单独一个按钮（D94）：发货只让货走出去，签收才认收入、才生成结算草稿。
+          两个动作的权限不同（sales.ship / sales.approve），合并会把「谁发的货」与
+          「谁确认的收入」压成同一件事。
+        */}
+        <button
+          type="button"
+          onClick={onComplete}
+          disabled={order.status !== '已发货' || !canComplete || busy}
+          title={
+            !canComplete
+              ? '当前身份没有 sales.approve 权限'
+              : order.status !== '已发货'
+                ? '仅「已发货」状态的销售单可签收'
+                : undefined
+          }
+          className="rounded border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-40"
+        >
+          客户签收
         </button>
         <button
           type="button"
@@ -1291,7 +1315,7 @@ export function SalesOrdersPage() {
     onSuccess: async (order) => {
       await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
       setNotice(
-        `销售单 ${order.orderNo} 已完成：已扣减批次可用量并生成结算单 C 草稿（D72）。`,
+        `销售单 ${order.orderNo} 已发货：批次可用量已扣减，等待客户签收后再确认收入（D94）。`,
       );
     },
     /**
@@ -1310,7 +1334,35 @@ export function SalesOrdersPage() {
     },
   });
 
+  /**
+   * 客户签收（D94）：`已发货` → `已完成`，同事务生成结算单 C 草稿。
+   *
+   * 与发货是两个权限：仓管有 `sales.ship` 但通常没有 `sales.approve`。合并成一个按钮的话，
+   * 「谁把货发出去了」与「谁认了这笔记收入」就再分不开。
+   */
+  const completeOrder = useMutation({
+    mutationFn: (order: SalesOrderDetail) => salesApi.complete(order.id, order.version),
+    onSuccess: async (order) => {
+      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+      setNotice(
+        `销售单 ${order.orderNo} 已完成签收：已生成结算单 C 草稿，待财务确认（D72 / D94）。`,
+      );
+    },
+    /** 撞版本冲突时不自动重提：完成会生成 C 草稿，不可逆，要让用户看清当前状态再点（D60）。 */
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, salesApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '签收失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(staleActionRetryText(fresh.version, '签收'));
+      await queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+    },
+  });
+
   const cancelOrder = useMutation({
+
     mutationFn: (order: SalesOrderDetail) => salesApi.cancel(order.id, order.version),
     onSuccess: async () => {
       setActionError(null);
@@ -1428,19 +1480,40 @@ export function SalesOrdersPage() {
   };
 
   const askShip = (order: SalesOrderDetail) => {
-    /** 列表行按钮只按「进行中」判断，但列表可能是旧的（别人刚取消/完成了）。别静默失败。 */
+    /** 列表行按钮只按「进行中」判断，但列表可能是旧的（别人刚取消 / 刚发货了）。别静默失败。 */
     if (!can('ship')) {
       setActionError('当前身份没有 sales.ship 权限');
       return;
     }
     if (order.status !== '进行中') {
-      setActionError(`这张单当前是「${order.status}」，不能再完成；请刷新列表查看最新状态。`);
+      setActionError(`这张单当前是「${order.status}」，不能再发货；请刷新列表查看最新状态。`);
       return;
     }
     setActionError(null);
-    const message = `确认完成销售单 ${order.orderNo} 吗？\n\n完成后会：\n· 按行内批次均分扣减库存可用量（D72）\n· 同事务生成结算单 C 草稿，财务确认后才算结算（D19）\n\n完成后不可取消，错账请走冲正。`;
+    const message = `确认发出销售单 ${order.orderNo} 吗？\n\n发货后会：\n· 按行内批次均分扣减库存可用量（D72）\n· 单据转为「已发货」，等客户签收\n\n这一步不可撤销，错发请走冲正。`;
     if (globalThis.confirm?.(message) === false) return;
     shipOrder.mutate(order);
+  };
+
+  /**
+   * 客户签收（D94）：`已发货` → `已完成`，这一步才生成结算草稿。
+   *
+   * 与发货分开确认，因为后果不同：发货只是货走出去，签收才认收入、才引出对账与退款。
+   * 而且两个动作权限不同（`sales.ship` 与 `sales.approve`），能发货的人往往不能确认收入。
+   */
+  const askComplete = (order: SalesOrderDetail) => {
+    if (!can('approve')) {
+      setActionError('当前身份没有 sales.approve 权限');
+      return;
+    }
+    if (order.status !== '已发货') {
+      setActionError(`这张单当前是「${order.status}」，不能签收；请刷新列表查看最新状态。`);
+      return;
+    }
+    setActionError(null);
+    const message = `确认客户已签收销售单 ${order.orderNo} 吗？\n\n签收后会：\n· 单据转为「已完成」\n· 同事务生成结算单 C 草稿，财务确认后才算结算（D19）\n\n完成后不可取消，错账请走冲正。`;
+    if (globalThis.confirm?.(message) === false) return;
+    completeOrder.mutate(order);
   };
 
   const askCancel = (order: SalesOrderDetail) => {
@@ -1669,7 +1742,12 @@ export function SalesOrdersPage() {
       )}
       {shipOrder.error && (
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-          完成失败：{errorText(shipOrder.error)}
+          发货失败：{errorText(shipOrder.error)}
+        </p>
+      )}
+      {completeOrder.error && (
+        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+          签收失败：{errorText(completeOrder.error)}
         </p>
       )}
       {actionError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>}
@@ -1860,11 +1938,13 @@ export function SalesOrdersPage() {
               canViewPrice={canViewPrice}
               canUpdate={can('update')}
               canShip={can('ship')}
+              canComplete={can('approve')}
               canCancel={can('delete')}
-              busy={shipOrder.isPending || cancelOrder.isPending}
+              busy={shipOrder.isPending || completeOrder.isPending || cancelOrder.isPending}
               onClose={() => setDetailId(null)}
               onEdit={() => beginEdit(detailOrder)}
               onShip={() => askShip(detailOrder)}
+              onComplete={() => askComplete(detailOrder)}
               onCancel={() => askCancel(detailOrder)}
               onPrint={() => print.mutate(detailOrder.id)}
               onError={setActionError}
