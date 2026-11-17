@@ -55,6 +55,14 @@ export interface ApiRequestOptions {
    * 204 无响应体的端点（如权限覆盖 PATCH 回 `ETag` 头）靠它拿到响应头。
    */
   responseMeta?: (meta: ResponseMeta) => void;
+  /**
+   * 期望的响应体形态，默认 `json`。
+   *
+   * 列表导出（D96）返回的是 `text/csv` 而不是 JSON 信封，用默认的 `json` 会把整个
+   * CSV 当成一个字符串塞进 `PrintDocument` 类型里——类型对不上、运行时也拿不到
+   * 文件名（在 `content-disposition` 头里），所以导出必须显式要 `blob`。
+   */
+  responseType?: 'json' | 'text' | 'blob';
 }
 
 /** 成功响应的元信息：状态码 + 响应头（只读）。 */
@@ -230,7 +238,11 @@ export class ApiClient {
     const requestId = this.newRequestId();
 
     const finalHeaders = new Headers();
-    finalHeaders.set('Accept', 'application/json');
+    // 导出要 blob/text 时别声明只接 json：有的反代按 Accept 挑分支，
+    // 声明 application/json 却拿到 text/csv 会让部分网关直接改写成 406。
+    finalHeaders.set('Accept', options.responseType === undefined || options.responseType === 'json'
+      ? 'application/json'
+      : '*/*');
     // 调用方自定义头先写，保留头最后 set()：大小写不敏感且不会被覆盖/重复（D54）。
     for (const [key, value] of Object.entries(headers ?? {})) {
       finalHeaders.set(key, value);
@@ -297,7 +309,10 @@ export class ApiClient {
       options.responseMeta?.({ status: response.status, headers: response.headers });
       return undefined as T;
     }
-    const payload = (await readPayload(response)) as T;
+    // blob 也必须先走 responseMeta，调用方要读 content-disposition 里的文件名。
+    const payload = (
+      options.responseType === 'blob' ? await response.blob() : await readPayload(response)
+    ) as T;
     options.responseMeta?.({ status: response.status, headers: response.headers });
     return payload;
   }

@@ -43,6 +43,12 @@ import {
 } from '../../lib/decimal';
 import type { PageResult } from '../masterdata/masterdata-api';
 
+/**
+ * 销售单列表的查询条件。
+ *
+ * 两套分页参数并存（D95）：`cursor`/`limit` 是老的游标模式，`page`/`pageSize` 是新的
+ * 页码模式。**不能同时给**——后端会 422。页码模式下响应带 `total`，前端才画得出页码条。
+ */
 export interface SalesOrderListFilters {
   readonly companyId?: string;
   readonly customerId?: string;
@@ -50,6 +56,26 @@ export interface SalesOrderListFilters {
   readonly keyword?: string;
   readonly cursor?: string | null;
   readonly limit?: number;
+  /** 页码模式：第几页，从 1 起。 */
+  readonly page?: number;
+  /** 页码模式：每页条数。 */
+  readonly pageSize?: number;
+  /** 排序字段，只能是后端白名单里的三个（D95）。 */
+  readonly sort?: SalesOrderSort;
+  /** 排序方向，默认 desc。 */
+  readonly order?: 'asc' | 'desc';
+}
+
+/** 后端 `SalesOrderListQuerySchema` 的排序白名单，多写一个会被 422 挡回来。 */
+export type SalesOrderSort = 'orderNo' | 'totalAmount' | 'createdAt';
+
+/** 页码模式的列表响应：比游标模式多 `total`/`page`/`pageSize`。 */
+export interface PagedSalesOrders {
+  readonly items: SalesOrder[];
+  readonly total: number;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly nextCursor: string | null;
 }
 
 function listQuery(
@@ -61,7 +87,29 @@ function listQuery(
     status: filters.status,
     keyword: filters.keyword,
     cursor: filters.cursor ?? undefined,
-    limit: filters.limit ?? 50,
+    limit: filters.limit,
+    page: filters.page,
+    pageSize: filters.pageSize,
+    sort: filters.sort,
+    order: filters.order,
+  };
+}
+
+/**
+ * 导出用的查询条件：**只保留筛选，丢掉全部分页与排序参数**。
+ *
+ * 导出一次取全量（后端 `EXPORT_MAX_ROWS` 兜底），带上 `pageSize` 之类会被后端
+ * 明确 422（`assertNoPagingParams`）。更要紧的是别让它悄悄生效——那会把 CSV 截成
+ * 只有一页的行数，而调用方看到的是「导出成功」。
+ */
+function exportQuery(
+  filters: SalesOrderListFilters,
+): Record<string, string | undefined> {
+  return {
+    companyId: filters.companyId,
+    customerId: filters.customerId,
+    status: filters.status,
+    keyword: filters.keyword,
   };
 }
 
@@ -83,10 +131,29 @@ export interface SalesBatchListFilters {
   readonly limit?: number;
 }
 
+/**
+ * 从 `content-disposition` 里取文件名。
+ *
+ * 服务端走 RFC 5987（`attachment; filename*=UTF-8''%E9%94%80...`），因为文件名是中文
+ * 而 HTTP 头只能 ASCII。老 IE 那种 `filename="..."` 形式这里不处理——我们不支持它。
+ * 解析失败返回 null，由调用方退回默认名，**不要因此让整次导出失败**。
+ */
+export function filenameFromDisposition(value: string | null): string | null {
+  if (!value) return null;
+  const match = /filename\*=UTF-8''([^;]+)/i.exec(value);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1].trim());
+  } catch {
+    return null;
+  }
+}
+
 export function createSalesApi(client: ApiClient = apiClient) {
   return {
+    /** 列表：页码模式传 `page`/`pageSize` 才有 `total`；只传 `cursor`/`limit` 是老的游标模式。 */
     list: (filters: SalesOrderListFilters = {}) =>
-      client.get<PageResult<SalesOrder>>('/sales-orders', { query: listQuery(filters) }),
+      client.get<PagedSalesOrders>('/sales-orders', { query: listQuery(filters) }),
     detail: (id: string) => client.get<SalesOrderDetail>(`/sales-orders/${id}`),
     create: (input: SalesOrderCreateInput) =>
       client.post<SalesOrder>('/sales-orders', input),
@@ -108,9 +175,25 @@ export function createSalesApi(client: ApiClient = apiClient) {
       }),
     /** 客户联（HTML 由服务端渲染，前端只打开 / 落盘）。 */
     print: (id: string) => client.get<PrintDocument>(`/sales-orders/${id}/print`),
-    /** 列表导出 CSV（敏感读，服务端记审计，D54 ②）。 */
-    exportCsv: (filters: SalesOrderListFilters = {}) =>
-      client.get<PrintDocument>('/sales-orders/export', { query: listQuery(filters) }),
+    /**
+     * 列表导出 CSV（敏感读，服务端记审计，D54 ②）。
+     *
+     * 返回**原生 CSV 流**（D96），不是 JSON 信封——所以显式要 `blob`，文件名从
+     * `content-disposition` 拿。之前这里按 `PrintDocument` 解析，`doc.content` 在
+     * 运行时是 `undefined`，下下来的是个空文件且文件名叫 `undefined`。
+     */
+    exportCsv: async (filters: SalesOrderListFilters = {}) => {
+      let filename = 'sales-orders.csv';
+      const blob = await client.get<Blob>('/sales-orders/export', {
+        query: exportQuery(filters),
+        responseType: 'blob',
+        responseMeta: ({ headers }) => {
+          const parsed = filenameFromDisposition(headers.get('content-disposition'));
+          if (parsed) filename = parsed;
+        },
+      });
+      return { blob, filename };
+    },
     /** 追加收款 / 退款（退款传负数金额，D34）。 */
     createReceipt: (orderId: string, input: SalesReceiptCreateInput) =>
       client.post<SalesReceipt>(`/sales-orders/${orderId}/receipts`, input),
@@ -141,13 +224,8 @@ export type SalesApi = ReturnType<typeof createSalesApi>;
 export const salesApi = createSalesApi();
 
 export const salesQueryKeys = {
-  list: (filters: {
-    companyId?: string;
-    customerId?: string;
-    status?: SalesOrderStatus;
-    keyword?: string;
-    cursor?: string | null;
-  }) => ['sales-orders', 'list', filters] as const,
+  /** 直接复用请求参数类型：两处各写一份会漏改（本页改分页时缓存键就漏过 page/sort）。 */
+  list: (filters: SalesOrderListFilters) => ['sales-orders', 'list', filters] as const,
   detail: (id: string | null) => ['sales-orders', 'detail', id] as const,
   /** 主数据映射：与主数据页 / A / B 共用同一前缀，切页面不重复拉。 */
   products: ['masterdata', 'products', { limit: 200 }] as const,
