@@ -100,6 +100,7 @@ interface DetailPanelProps {
   readonly busy: boolean;
   readonly onClose: () => void;
   readonly onConfirm: () => void;
+  readonly onUnsettle: () => void;
 }
 
 function DetailPanel({
@@ -110,6 +111,7 @@ function DetailPanel({
   busy,
   onClose,
   onConfirm,
+  onUnsettle,
 }: DetailPanelProps) {
   const employeeLabel = useEmployeeLabel();
   const blocked = confirmBlockedText(order.confirmable.reason);
@@ -136,15 +138,32 @@ function DetailPanel({
           </>
         }
         actions={
-          <button
-            type="button"
-            disabled={!canApprove || !order.confirmable.allowed || !canViewPrice || busy}
-            onClick={onConfirm}
-            className="btn btn-primary"
-            title={canApprove ? undefined : '当前身份没有 settlement.approve 权限'}
-          >
-            {busy ? '确认中…' : '确认结算'}
-          </button>
+          <>
+            {/**
+             * 撤销只在「已结算」出现：这是把已经落定的账翻回来，
+             * 待确认的单没有可撤销的东西。
+             */}
+            {order.status === '已结算' ? (
+              <button
+                type="button"
+                disabled={!canApprove || busy}
+                onClick={onUnsettle}
+                className="btn"
+                title={canApprove ? '撤销后整单退回「待确认」，原因会记进审计' : '当前身份没有 settlement.approve 权限'}
+              >
+                撤销结算
+              </button>
+            ) : null}
+            <button
+              type="button"
+              disabled={!canApprove || !order.confirmable.allowed || !canViewPrice || busy}
+              onClick={onConfirm}
+              className="btn btn-primary"
+              title={canApprove ? undefined : '当前身份没有 settlement.approve 权限'}
+            >
+              {busy ? '确认中…' : '确认结算'}
+            </button>
+          </>
         }
         onClose={onClose}
       />
@@ -225,8 +244,9 @@ function DetailPanel({
       ) : null}
 
       <p className="note">
-        一期一单只结算一次（D19），不能部分结算；结算后<b>不可冲正、不可取消</b>，
-        错账走 R 客户退货（D2③）。C 单是计算与结算凭证，商品明细以来源 E / N 单为准。
+        一期一单只结算一次（D19），不能部分结算。结算后<b>可撤销</b>（D88：整单退回「待确认」，
+        须填原因并记审计），但<b>不能冲正</b>——错账仍走 R 客户退货（D2③）。
+        C 单是计算与结算凭证，商品明细以来源 E / N 单为准。
       </p>
     </section>
   );
@@ -328,6 +348,79 @@ export function SettlementsPage() {
       );
     },
   });
+
+  /**
+   * 撤销结算（D88 / #288）：已结算 → 待确认，整单退回。
+   *
+   * 与 confirm 完全对称：强 ETag、冲突时刷到最新再让用户判断。
+   * 差别只有一处——撤销是「把已经落定的账再翻回来」，所以原因必填且落审计。
+   */
+  const unsettle = useMutation({
+    mutationFn: (input: { order: SettlementOrderDetail; reason: string }) =>
+      settlementsApi.unsettle(input.order.id, input.order.version, input.reason),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['settlements'] });
+      setActionError(null);
+      setStaleNotice(null);
+    },
+    onError: async (error, input) => {
+      const fresh = await recoverFromStaleVersion(error, input.order.id, settlementsApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '撤销结算失败，请稍后重试'));
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['settlements'] });
+      setStaleNotice(
+        fresh.status === '待确认'
+          ? `这张结算单已经回到「待确认」了（v${fresh.version}）：别人先撤过，不用重复撤。`
+          : `这张结算单刚被别人改过，已刷新到最新状态（v${fresh.version}）；请核对后重新撤销。`,
+      );
+    },
+  });
+
+  /**
+   * 撤销前先取最新详情——理由同 `askConfirm`：列表是旧快照，拿它的 version 会 409（D60）。
+   * 状态判定也只看服务端给出的 `status`，不从列表行自己推。
+   */
+  const askUnsettle = async (orderId: string) => {
+    setActionError(null);
+    setStaleNotice(null);
+    try {
+      const fresh = await settlementsApi.detail(orderId);
+      setDetailId(orderId);
+      if (fresh.status !== '已结算') {
+        setActionError(`这张单当前是「${fresh.status}」，只有已结算的单能撤销。`);
+        return;
+      }
+      /**
+       * 原因走 prompt 而不是自建弹窗：这里只为一个字段开一个模态，
+       * 代价（焦点陷阱、Esc、点遮罩关闭、移动端键盘遮挡）比收益大。
+       */
+      const reason = globalThis.prompt?.(
+        `撤销结算 ${fresh.orderNo} 的原因（1–200 字，会记进审计）：`,
+      );
+      if (reason === null || reason === undefined) return;
+      const trimmed = reason.trim();
+      if (trimmed.length === 0) {
+        setActionError('必须填写撤销原因：财务事后要能答「谁为什么把结算撤了」。');
+        return;
+      }
+      if (trimmed.length > 200) {
+        setActionError(`原因最多 200 字，当前 ${trimmed.length} 字。`);
+        return;
+      }
+      if (
+        globalThis.confirm?.(
+          `确认撤销 ${fresh.orderNo} 的结算吗？\\n\\n撤销后：\\n· 状态退回「待确认」\\n· 提成快照作废，需重新确认\\n· 会在审计里留下这条原因`
+        ) === false
+      ) {
+        return;
+      }
+      unsettle.mutate({ order: fresh, reason: trimmed });
+    } catch (error) {
+      setActionError(describeWriteError(error, '读取结算单失败，请稍后重试'));
+    }
+  };
 
   /**
    * 确认前先取最新详情：列表里的是旧版本，直接拿它的 version 会 409（D60）；
@@ -648,7 +741,8 @@ export function SettlementsPage() {
 
       <p className="note">
         结算单<b>没有「新建」按钮</b>：草稿由 E 销售单 / N 内部交易单「已完成」时自动生成（D19 / D29）。
-        一期一单一次结算，结算后不可冲正、不可取消，错账走 R 退货（D2③）。
+        一期一单只结算一次（D19），<b>结算后可撤销</b>（D88：整单退回「待确认」，须填原因并记审计），
+        但<b>不能冲正</b>——错账仍走 R 客户退货（D2③）。
       </p>
 
       {detailId !== null ? (
@@ -669,9 +763,10 @@ export function SettlementsPage() {
               sourceDocNo={sourceDocNo.data ?? null}
               canViewPrice={canViewPrice}
               canApprove={can('approve')}
-              busy={confirm.isPending}
+              busy={confirm.isPending || unsettle.isPending}
               onClose={() => setDetailId(null)}
               onConfirm={() => void askConfirm(detailOrder.id)}
+              onUnsettle={() => void askUnsettle(detailOrder.id)}
             />
           ) : null}
         </>
