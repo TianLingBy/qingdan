@@ -42,12 +42,35 @@ function headerValue(request: FastifyRequest, name: string): string | undefined 
   return typeof value === 'string' ? value : undefined;
 }
 
+/**
+ * 把 `X-Reason` 解回原文。
+ *
+ * HTTP 头的值只能是 ByteString（每个字符 ≤ 0xFF），浏览器里 `Headers.set()` 遇到中文会直接抛
+ * `TypeError: Cannot convert argument to a ByteString`——请求连发都发不出去。所以网页端只能
+ * percent-encode 之后再塞头（见 `apps/web/src/api/client.ts` 的 `headerSafeValue`）。
+ *
+ * 审计日志是给人看的：老板查「这单是被谁、为了什么改的」，落库不能是 `%E5%AE%A2%E6%88%B7…`。
+ * 因此入库前在这里解回原文。
+ *
+ * 不是所有调用方都编码：curl、脚本、测试可能直接传原文。`decodeURIComponent` 对不含 `%` 的串
+ * 原样返回，所以两条路都通。解码失败只可能是串里本来就有孤立的 `%`（例如手拼「降价 5%」），
+ * 那恰恰说明它没被编码过，保留原值才对——所以 catch 里不报错，原样返回。
+ */
+function decodeReason(raw: string): string {
+  if (!raw.includes('%')) return raw;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 /** 从请求头取审计来源与原因（纯函数，便于单测）。 */
 export function auditContextFrom(request: FastifyRequest): AuditContext {
   const reasonRaw = headerValue(request, HEADERS.reason);
   const reason =
     typeof reasonRaw === 'string' && reasonRaw.trim() !== ''
-      ? reasonRaw.trim().slice(0, MAX_REASON_LENGTH)
+      ? decodeReason(reasonRaw.trim()).slice(0, MAX_REASON_LENGTH)
       : null;
   return {
     source: auditSourceFromClient(headerValue(request, HEADERS.client)),
