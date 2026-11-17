@@ -32,3 +32,6 @@ ops/backups/
 .parallel-demo/
 .DS_Store
 Thumbs.db
+
+# pnpm deploy 产物（宿主预生成给 Dockerfile.local 用，体积大且每次重生成）
+out-api/
