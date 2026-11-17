@@ -30,6 +30,7 @@ import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useCompanyLabel } from '../../lib/company-directory';
 import { useEmployeeLabel } from '../../lib/employee-directory';
+import { orderEditBlockedText } from '../../lib/order-edit-guard';
 import {
   describeWriteError,
   isStaleVersionError,
@@ -813,7 +814,7 @@ interface DetailPanelProps {
   readonly onError: (message: string) => void;
 }
 
-function DetailPanel({
+export function DetailPanel({
   order,
   products,
   batches,
@@ -833,6 +834,16 @@ function DetailPanel({
   const lineTotal = sumNullable(order.lines.map((line) => line.amount));
   const feeTotal = sumNullable(order.fees.map((fee) => fee.amount));
   const cancelReason = cancelDisabledReason(order.cancelable.reason);
+  /**
+   * 详情面板的「编辑」要和列表行同一把尺子（#261 同型缺陷）：
+   * 列表行判了 `sales.update`，这里原先只判了看价与状态，于是「按钮点得动，保存才 403」。
+   */
+  const editBlocked = orderEditBlockedText({
+    domain: 'sales',
+    canUpdate,
+    canViewPrice,
+    status: order.status,
+  });
 
   return (
     <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -965,8 +976,8 @@ function DetailPanel({
         <button
           type="button"
           onClick={onEdit}
-          disabled={order.status !== '进行中' || !canViewPrice}
-          title={!canViewPrice ? '无看价权限：看不到原单价就没法安全改单' : undefined}
+          disabled={editBlocked !== null}
+          title={editBlocked ?? undefined}
           className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
         >
           编辑
@@ -997,11 +1008,13 @@ function DetailPanel({
         <button
           type="button"
           onClick={onPrint}
+          title={canViewPrice ? undefined : '无看价权限：打印件上的金额是「—」（D79），不会印出具体金额'}
           className="rounded border border-slate-300 px-3 py-1.5 text-sm"
         >
           打印客户联
         </button>
         {cancelReason && <span className="text-xs text-slate-500">{cancelReason}</span>}
+        {editBlocked && <span className="text-xs text-slate-500">{editBlocked}</span>}
         {!canCancel && order.cancelable.allowed && (
           <span className="text-xs text-slate-500">当前身份无取消权限（sales.delete）</span>
         )}
@@ -1397,6 +1410,7 @@ export function SalesOrdersPage() {
             type="button"
             onClick={() => exportCsv.mutate()}
             disabled={!can('export') || exportCsv.isPending}
+            title={!can('export') ? '当前身份没有 sales.export 权限' : undefined}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40"
           >
             {exportCsv.isPending ? '导出中…' : '导出 CSV'}
@@ -1428,6 +1442,12 @@ export function SalesOrdersPage() {
       {meData && !can('create') && (
         <p className="text-xs text-slate-500">
           「新建」需要 sales.create；当前身份只能查看（权限判定在服务端，前端只是不画按钮）。
+        </p>
+      )}
+
+      {meData && !can('export') && (
+        <p className="text-xs text-slate-500">
+          「导出 CSV」需要 sales.export：导出会把整批单据落成文件，服务端按敏感读记审计（D54②）。
         </p>
       )}
 
@@ -1612,7 +1632,14 @@ export function SalesOrdersPage() {
                         disabled={!can('update') || !canViewPrice || order.status !== '进行中'}
                         onClick={() => void withFreshDetail(order.id, beginEdit)}
                         className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-40"
-                        title={!canViewPrice ? '无看价权限：看不到原单价就没法安全改单' : undefined}
+                        title={
+                          orderEditBlockedText({
+                            domain: 'sales',
+                            canUpdate: can('update'),
+                            canViewPrice,
+                            status: order.status,
+                          }) ?? undefined
+                        }
                       >
                         编辑
                       </button>
