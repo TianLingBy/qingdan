@@ -11,8 +11,12 @@ import { defineRoute, type RouteDef } from './registry.js';
  * 口径：
  * - 只聚合**有明确待处理状态、且存在能推进它的端点**的单据（采购 / 销售没有
  *   `approve` 语义的中途状态，不进入本端点，见 D85 / D89）。
- * - 权限过滤：调用者没有该域 `approve` 的条目 `count=0` 且不查库；一个候选域
- *   `approve` 都没有时也返回全部 `TODO_KINDS`（统一形状，前端只兼容一种）。
+ * - 权限过滤：调用者没有该条目要求的权限点的，`count=0` 且不查库；一条都够不上时
+ *   也返回全部 `TODO_KINDS`（统一形状，前端只兼容一种）。
+ * - **前 6 条要的是 `approve`，第 7 条 `inventory_alert` 要的是 `read`**：前 6 条是
+ *   「有一张单等你批」，第 7 条是「有一批货快断了，你该知道」。仓管没有审批权，
+ *   但他恰恰是最需要知道哪批货撑不到下周的人；挂 `approve` 会把预警从最该看见的人
+ *   的屏幕上拿掉（D89 补记 / D104）。
  * - 「本人负责」：单据有 `handler_id` / `applicant_id` / `requested_by` /
  *   `commission_owner_id` 等负责人字段的按本人过滤；没有负责人字段的按调用者
  *   **可见公司内全部**计，并在 `hint` 里写明「可见公司内在办」。
@@ -32,6 +36,7 @@ export const TODO_KINDS = [
   'customer_return_pending',
   'supplier_return_pending',
   'processing_pending',
+  'inventory_alert',
 ] as const;
 
 export type TodoKind = (typeof TODO_KINDS)[number];
