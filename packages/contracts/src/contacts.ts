@@ -118,6 +118,34 @@ export const ContactRecentOrderSchema = z.object({
 });
 export type ContactRecentOrder = z.infer<typeof ContactRecentOrderSchema>;
 
+/**
+ * 按对接人分组的一行（`?groupBy=contact` 时才有）。
+ *
+ * `contactId` 为 null 表示「这批订单当时没记对接人」——**这一组不能丢**，
+ * 丢了之后各分组的 orderCount 加起来就小于总数，看的人会以为丢单了。
+ */
+export const ContactSummaryGroupSchema = z.object({
+  contactId: z.string().nullable(),
+  contactName: z.string().nullable(),
+  orderCount: z.number().int(),
+  /** 无 `view_price` 时不出现这个键（与汇总的 `totalAmount` 同口径）。 */
+  totalAmount: AmountString.optional(),
+  lastOrderAt: z.string().datetime().nullable(),
+});
+export type ContactSummaryGroup = z.infer<typeof ContactSummaryGroupSchema>;
+
+/**
+ * 档案汇总的查询参数。
+ *
+ * 用 `.optional()` 不用 `.default()`：OpenAPI 里带 default 的字段会被标成
+ * `required: true`，而这里「不传」是完全合法的（不分组只回汇总）——
+ * 标成必填就是契约撒谎（D99⑤ 同口径）。
+ */
+export const ContactSummaryQuerySchema = z.object({
+  groupBy: z.enum(['contact']).optional(),
+});
+export type ContactSummaryQuery = z.infer<typeof ContactSummaryQuerySchema>;
+
 const summaryFields = {
   /** 单据数（不含已取消；只统计本公司的单）。 */
   orderCount: z.number().int(),
@@ -127,6 +155,13 @@ const summaryFields = {
   lastOrderAt: z.string().datetime().nullable(),
   /** 最近 10 张单（按创建时间倒序）。 */
   recentOrders: z.array(ContactRecentOrderSchema),
+  /**
+   * 按对接人分组；**只在请求带 `?groupBy=contact` 时出现**。
+   *
+   * 用 optional 而不是永远返回：不分组时算它要额外一次聚合，而调用方（详情页
+   * 首屏）并不需要。这不是「数据可能没有」，是「这次没问」。
+   */
+  contactGroups: z.array(ContactSummaryGroupSchema).optional(),
 };
 
 export const CustomerSummarySchema = z.object({
@@ -229,8 +264,9 @@ function contactRoutes(config: ContactKindConfig): RouteDef[] {
       path: `/api/v1/${entitySegment}/{id}/summary`,
       domain,
       action: 'read',
-      summary: `${label}档案汇总（单数/累计金额/最近单据/对接人；金额需 view_price）`,
+      summary: `${label}档案汇总（单数/累计金额/最近单据/对接人；带 groupBy=contact 时附按对接人分组；金额需 view_price）`,
       audit: { kind: 'none' },
+      request: { query: ContactSummaryQuerySchema },
       response: { status: 200, schema: config.summarySchema },
     }),
   ];

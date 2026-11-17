@@ -140,6 +140,15 @@ describe('masterdata 对接人 + 汇总（PGlite + seed 演示租户）', () => 
     });
   }
 
+  /** 带 `?groupBy=contact` 的汇总（与 `summary` 只差一个查询参数）。 */
+  async function groupedSummary(customerId: string, cookie: string) {
+    return app.inject({
+      method: 'GET',
+      url: `/api/v1/customers/${customerId}/summary?groupBy=contact`,
+      headers: readHeaders(cookie, nextRequestId('summary-group')),
+    });
+  }
+
   const created: { contact: CustomerContact; order: SalesOrder } = {} as never;
 
   beforeAll(async () => {
@@ -353,6 +362,67 @@ describe('masterdata 对接人 + 汇总（PGlite + seed 演示租户）', () => 
     expect(body.recentOrders).toHaveLength(1);
     expect(body.recentOrders[0]?.id).toBe(created.order.id);
   });
+
+  it('groupBy=contact：按对接人分组、无对接人的单单独成组、分项之和等于总数', async () => {
+    // 再造一张**不带对接人**的单：它必须出现在 contactId: null 那一组里。
+    // 如果把这组过滤掉，各分组的 orderCount 加起来就小于 orderCount 总数——
+    // 而「拿分项核对总数」正是分组的唯一用途。
+    const plain = await createOrder();
+    expect(plain.statusCode).toBe(201);
+
+    const response = await groupedSummary(CUSTOMER_A_ID, ownerCookie);
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as CustomerSummary;
+    const groups = body.contactGroups;
+    expect(groups).toBeDefined();
+    expect(body.orderCount).toBe(2);
+
+    // 分项之和 === 总数（这条比任何单点断言都重要）。
+    expect(groups!.reduce((sum, group) => sum + group.orderCount, 0)).toBe(body.orderCount);
+
+    const withContact = groups!.find((group) => group.contactId === created.contact.id);
+    expect(withContact?.contactName).toBe('王经理');
+    expect(withContact?.orderCount).toBe(1);
+
+    const orphan = groups!.find((group) => group.contactId === null);
+    expect(orphan).toBeDefined();
+    expect(orphan?.orderCount).toBe(1);
+    expect(orphan?.contactName).toBeNull();
+
+    // 有对接人的那组金额是 35，无对接人那组也是 35（两张单同价）。
+    expect(withContact?.totalAmount).toBe('35');
+  });
+
+  it('不带 groupBy 时没有 contactGroups 键；无 view_price 时分组金额键不出现', async () => {
+    const plain = await summary(CUSTOMER_A_ID, ownerCookie);
+    expect(plain.statusCode).toBe(200);
+    // 「这次没问」与「数据可能没有」是两件事：不分组时键不该存在。
+    expect('contactGroups' in (plain.json() as Record<string, unknown>)).toBe(false);
+
+    const masked = await groupedSummary(CUSTOMER_A_ID, salesCookie);
+    expect(masked.statusCode).toBe(200);
+    const body = masked.json() as Record<string, unknown>;
+    expect('totalAmount' in body).toBe(false);
+    const groups = body.contactGroups as Array<Record<string, unknown>>;
+    expect(groups.length).toBeGreaterThan(0);
+    expect('totalAmount' in groups[0]!).toBe(false);
+    // 对接人与笔数不是金额，照常给。
+    expect(groups[0]?.orderCount).toBeDefined();
+    expect('contactId' in groups[0]!).toBe(true);
+  });
+
+  it('groupBy 传非法值 → 422', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/customers/${CUSTOMER_A_ID}/summary?groupBy=product`,
+      headers: readHeaders(ownerCookie, nextRequestId('summary-bad-group')),
+    });
+    expect(response.statusCode).toBe(422);
+    // 错误体是扁平的 `{ code, message, details, requestId }`，不是 `{ error: {...} }`。
+    const body = response.json() as { code: string; details: { issues: unknown[] } };
+    expect(body.code).toBe('VALIDATION_FAILED');
+  });
+
 
   it('回填幂等：迁移里的回填语句连跑两次，对接人数量不变', async () => {
     const legacyCustomerId = '01900000-0000-7000-8000-000000005201';

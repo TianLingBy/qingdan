@@ -3308,7 +3308,7 @@ paths:
   /api/v1/customers/{id}/summary:
     get:
       operationId: customer.summary.read
-      summary: 客户档案汇总（单数/累计金额/最近单据/对接人；金额需 view_price）
+      summary: 客户档案汇总（单数/累计金额/最近单据/对接人；带 groupBy=contact 时附按对接人分组；金额需 view_price）
       tags:
         - customer
       security:
@@ -3320,6 +3320,13 @@ paths:
           required: true
           schema:
             type: string
+        - name: groupBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - contact
       responses:
         "200":
           description: 成功
@@ -3550,7 +3557,7 @@ paths:
   /api/v1/suppliers/{id}/summary:
     get:
       operationId: supplier.summary.read
-      summary: 供应商档案汇总（单数/累计金额/最近单据/对接人；金额需 view_price）
+      summary: 供应商档案汇总（单数/累计金额/最近单据/对接人；带 groupBy=contact 时附按对接人分组；金额需 view_price）
       tags:
         - supplier
       security:
@@ -3562,6 +3569,13 @@ paths:
           required: true
           schema:
             type: string
+        - name: groupBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - contact
       responses:
         "200":
           description: 成功
@@ -3792,7 +3806,7 @@ paths:
   /api/v1/processors/{id}/summary:
     get:
       operationId: processor.summary.read
-      summary: 加工厂档案汇总（单数/累计金额/最近单据/对接人；金额需 view_price）
+      summary: 加工厂档案汇总（单数/累计金额/最近单据/对接人；带 groupBy=contact 时附按对接人分组；金额需 view_price）
       tags:
         - processor
       security:
@@ -3804,6 +3818,13 @@ paths:
           required: true
           schema:
             type: string
+        - name: groupBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - contact
       responses:
         "200":
           description: 成功
@@ -11100,6 +11121,38 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ContactRecentOrder"
+        contactGroups:
+          type: array
+          items:
+            type: object
+            properties:
+              contactId:
+                type:
+                  - string
+                  - "null"
+              contactName:
+                type:
+                  - string
+                  - "null"
+              orderCount:
+                type: integer
+                minimum: -9007199254740991
+                maximum: 9007199254740991
+              totalAmount:
+                type: string
+                pattern: ^\d{1,12}(\.\d{1,6})?$
+              lastOrderAt:
+                anyOf:
+                  - type: string
+                    format: date-time
+                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  - type: "null"
+            required:
+              - contactId
+              - contactName
+              - orderCount
+              - lastOrderAt
+            additionalProperties: false
         contacts:
           type: array
           items:
@@ -11130,6 +11183,38 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ContactRecentOrder"
+        contactGroups:
+          type: array
+          items:
+            type: object
+            properties:
+              contactId:
+                type:
+                  - string
+                  - "null"
+              contactName:
+                type:
+                  - string
+                  - "null"
+              orderCount:
+                type: integer
+                minimum: -9007199254740991
+                maximum: 9007199254740991
+              totalAmount:
+                type: string
+                pattern: ^\d{1,12}(\.\d{1,6})?$
+              lastOrderAt:
+                anyOf:
+                  - type: string
+                    format: date-time
+                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  - type: "null"
+            required:
+              - contactId
+              - contactName
+              - orderCount
+              - lastOrderAt
+            additionalProperties: false
         contacts:
           type: array
           items:
@@ -11160,6 +11245,38 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ContactRecentOrder"
+        contactGroups:
+          type: array
+          items:
+            type: object
+            properties:
+              contactId:
+                type:
+                  - string
+                  - "null"
+              contactName:
+                type:
+                  - string
+                  - "null"
+              orderCount:
+                type: integer
+                minimum: -9007199254740991
+                maximum: 9007199254740991
+              totalAmount:
+                type: string
+                pattern: ^\d{1,12}(\.\d{1,6})?$
+              lastOrderAt:
+                anyOf:
+                  - type: string
+                    format: date-time
+                    pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  - type: "null"
+            required:
+              - contactId
+              - contactName
+              - orderCount
+              - lastOrderAt
+            additionalProperties: false
         contacts:
           type: array
           items:
