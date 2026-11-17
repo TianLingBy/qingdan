@@ -24,6 +24,10 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // processing_order.transit_stage / transit_to、inventory_batch.held_by_processor_id，
   // 缺列会让发货 / 到货确认直接 500，必须在启动时就报出来。
   '20261117181000_d94_transit_states.sql',
+  // D97 / #298 第 2 块：换号用例读写 employee.pending_phone / pending_phone_code_hash /
+  // pending_phone_expires_at，并往 login_code 写 purpose='phone_change' 的频控流水。
+  // 缺这三列 → 换号端点 500；缺 purpose 放宽 → 频控流水 INSERT 撞 CHECK 约束。
+  '20261117220000_settings_center_fields.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

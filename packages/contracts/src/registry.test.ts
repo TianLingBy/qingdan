@@ -30,7 +30,16 @@ describe('注册表自检', () => {
   });
 
   it('危险动作默认禁止 AI（D54 ⑥）', () => {
-    const dangerous = ROUTES.filter((r) => /\.(delete|revoke|reverse|cost-correct|confirm)$/.test(r.operationId) || r.operationId.includes('.permission.'));
+    // 判据必须同时认点分与下划线词形：operationId 现在既有 `sales.order.dispatch_revoke`
+    // 这类下划线词，也有 `platform.settings.revoke_session` 这种「动词_名词」的本人端点。
+    // 只认 `.revoke$` 的话，把它们写成 `revoke_session` 就等于给危险动作换了个名字绕过守卫——
+    // 测试还是绿的，但危险动作已经能交给 AI 了。所以动词后允许再跟一段下划线名词。
+    // `cost[-_]correct`：原写法 `cost-correct` 里的连字符在正则中不是字面量，
+    // 实际等价于「cor 后可选的 t」，容易写成谁都没注意的漏网，这里显式列出两种分隔符。
+    const DANGEROUS_ID = /[._](delete|revoke|reverse|cost[-_]correct|confirm)([._][a-z_]+)?$/;
+    const dangerous = ROUTES.filter(
+      (r) => DANGEROUS_ID.test(r.operationId) || r.operationId.includes('.permission.'),
+    );
     expect(dangerous.length).toBeGreaterThan(0);
     for (const r of dangerous) {
       expect(r.ai.policy, r.operationId).toBe('forbid');

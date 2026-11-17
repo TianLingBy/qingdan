@@ -7468,6 +7468,329 @@ paths:
         policy: allow
         reasonRequired: false
       x-mcp-tool: qingdan_platform_settings_overview
+  /api/v1/employees/me:
+    patch:
+      operationId: platform.settings.update_profile
+      summary: 保存我的资料（只改本人；name 免业务 scope，公司四字段需 company.update）
+      tags:
+        - employee
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  phoneMasked:
+                    type: string
+                  version:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  company:
+                    anyOf:
+                      - $ref: "#/components/schemas/Company"
+                      - type: "null"
+                required:
+                  - id
+                  - name
+                  - phoneMasked
+                  - version
+                  - company
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: employee.update
+      x-module: platform
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_platform_settings_update_profile
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                company:
+                  type: object
+                  properties:
+                    address:
+                      anyOf:
+                        - type: string
+                          maxLength: 200
+                        - type: "null"
+                    contactPhone:
+                      anyOf:
+                        - type: string
+                          maxLength: 32
+                        - type: "null"
+                    taxNo:
+                      anyOf:
+                        - type: string
+                          pattern: ^[0-9A-Z]{15,20}$
+                        - type: "null"
+                    logoUrl:
+                      anyOf:
+                        - type: string
+                          maxLength: 500
+                        - type: "null"
+                  additionalProperties: false
+              additionalProperties: false
+  /api/v1/employees/me/phone/request:
+    post:
+      operationId: platform.settings.request_phone_change
+      summary: 申请换手机号（向新号发 6 位码；同号 60 秒一条、24 小时最多 10 条）
+      tags:
+        - employee
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  phoneMasked:
+                    type: string
+                  resendAfterSeconds:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                  expiresAt:
+                    type: string
+                required:
+                  - phoneMasked
+                  - resendAfterSeconds
+                  - expiresAt
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: employee.update
+      x-module: platform
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_platform_settings_request_phone_change
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                phone:
+                  type: string
+                  pattern: ^1[0-9]{10}$
+              required:
+                - phone
+              additionalProperties: false
+  /api/v1/employees/me/phone/confirm:
+    post:
+      operationId: platform.settings.confirm_phone_change
+      summary: 确认换手机号（码一次性；成功后改手机号并吊销本人全部会话）
+      tags:
+        - employee
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  phoneMasked:
+                    type: string
+                  sessionsRevoked:
+                    type: integer
+                    minimum: -9007199254740991
+                    maximum: 9007199254740991
+                required:
+                  - phoneMasked
+                  - sessionsRevoked
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: employee.update
+      x-module: platform
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_platform_settings_confirm_phone_change
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+              required:
+                - code
+              additionalProperties: false
+  /api/v1/employees/me/sessions:
+    get:
+      operationId: platform.settings.sessions
+      summary: 我的登录会话（只回设备标识与时间，不回 token / UA 原文）
+      tags:
+        - employee
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters: []
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        deviceLabel:
+                          type: string
+                        issuedAt:
+                          type: string
+                        lastSeenAt:
+                          type:
+                            - string
+                            - "null"
+                        expiresAt:
+                          type: string
+                        revokedAt:
+                          type:
+                            - string
+                            - "null"
+                        current:
+                          type: boolean
+                        active:
+                          type: boolean
+                      required:
+                        - id
+                        - deviceLabel
+                        - issuedAt
+                        - lastSeenAt
+                        - expiresAt
+                        - revokedAt
+                        - current
+                        - active
+                      additionalProperties: false
+                required:
+                  - items
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: employee.read
+      x-module: platform
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_platform_settings_sessions
+  /api/v1/employees/me/sessions/{id}:
+    delete:
+      operationId: platform.settings.revoke_session
+      summary: 踢掉我的一条会话（只限本人；id 不属于本人 → 403）
+      tags:
+        - employee
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  revokedAt:
+                    type: string
+                required:
+                  - id
+                  - revokedAt
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: employee.update
+      x-module: platform
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_platform_settings_revoke_session
   /api/v1/reports/profit:
     get:
       operationId: profit_report.read
