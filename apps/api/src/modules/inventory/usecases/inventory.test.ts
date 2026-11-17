@@ -247,7 +247,7 @@ describe('inventory 只读用例（PGlite + 0008）', () => {
     expect(Number(batch.remainingQty)).toBe(90);
     expect(Number(batch.inTransitQty)).toBe(5);
     expect(Number(batch.pendingExecutionQty)).toBe(5);
-    expect(Number(batch.availableQty)).toBe(80);
+    expect(Number(batch.availableQty)).toBe(85);
     expect(typeof batch.lockedUnitCost).toBe('string');
 
     const detail = await getBatch(readCtx({}, { params: { id: BATCH_1_ID } }));

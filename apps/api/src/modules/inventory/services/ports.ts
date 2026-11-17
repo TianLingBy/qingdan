@@ -2,9 +2,16 @@ import type { ServiceRegistry } from '../../../platform/services/registry.js';
 import {
   applyStockAdjustment,
   createBatch as createStockBatch,
+  createTransitBatch as createStockTransitBatch,
   inspectBatches,
+  movePendingToTransit as movePendingBatchesToTransit,
+  moveTransitToPending as moveTransitBatchesToPending,
+  receiveTransit,
+  receiveTransitBySource,
   releasePendingReservations,
   reservePendingReservations,
+  revokeTransitBatch,
+  revokeTransitBySource,
   transferBatches,
 } from './stock-flow.js';
 
@@ -41,6 +48,17 @@ export const inventoryServices: Pick<
         sourceDocId: command.sourceDocId,
         handledBy: command.handledBy,
       }),
+    createTransitBatch: async (tx, command) =>
+      createStockTransitBatch(tx, {
+        ...command,
+        heldByProcessorId: command.heldByProcessorId ?? null,
+      }),
+    receiveTransit,
+    movePendingToTransit: movePendingBatchesToTransit,
+    moveTransitToPending: moveTransitBatchesToPending,
+    revokeTransitBatch,
+    revokeTransitBySource,
+    receiveTransitBySource,
     reservePending: async (tx, command) =>
       reservePendingReservations(tx, {
         tenantId: command.tenantId,

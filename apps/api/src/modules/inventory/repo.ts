@@ -66,6 +66,7 @@ interface InventoryBatchRow {
   pending_execution_qty: string | number;
   available_qty: string | number;
   custodian_id: string | null;
+  held_by_processor_id: string | null;
   version: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -98,6 +99,7 @@ const BATCH_COLUMNS = `b.id,
   b.pending_execution_qty,
   b.available_qty,
   b.custodian_id,
+  b.held_by_processor_id,
   b.version,
   b.created_at,
   b.updated_at`;
@@ -152,6 +154,7 @@ function mapBatch(row: InventoryBatchRow): InventoryBatch {
     pendingExecutionQty: decimal(row.pending_execution_qty),
     availableQty: decimal(row.available_qty),
     custodianId: row.custodian_id,
+    heldByProcessorId: row.held_by_processor_id,
     version: row.version,
     createdAt: toDate(row.created_at).toISOString(),
     updatedAt: toDate(row.updated_at).toISOString(),

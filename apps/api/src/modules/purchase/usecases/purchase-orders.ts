@@ -2,6 +2,7 @@ import {
   AppError,
   PurchaseOrderCreateInputSchema,
   PurchaseOrderListQuerySchema,
+  PurchaseOrderShipInputSchema,
   PurchaseOrderUpdateInputSchema,
   allowsScope,
   assertCancelable,
@@ -13,6 +14,7 @@ import {
   type PurchaseOrder,
   type PurchaseOrderCreateInput,
   type PurchaseOrderDetail,
+  type PurchaseOrderShipInput,
   type PurchaseOrderStatus,
   type PurchaseOrderUpdateInput,
 } from '@qingdan/contracts';
@@ -93,7 +95,7 @@ function requireDatabase(ctx: PurchaseOrderContext, operationId: string): Databa
 /** scope = domain.action（D50/D52）；权限引擎已在认证层合并岗位基线 ⊕ 个人覆盖 ∩ token scope。 */
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create' | 'update' | 'delete',
+  action: 'read' | 'create' | 'update' | 'approve' | 'ship' | 'delete',
 ): void {
   if (!allowsScope(principal.scope, 'purchase', action)) {
     throw new AppError('FORBIDDEN', `缺少 purchase.${action} 权限`);
@@ -169,6 +171,48 @@ function parseUpdateInput(body: unknown): PurchaseOrderUpdateInput {
     throw new AppError('VALIDATION_FAILED', '请求体不合法', { issues: issuesOf(parsed.error) });
   }
   return parsed.data;
+}
+
+function parseShipInput(body: unknown): PurchaseOrderShipInput {
+  const parsed = PurchaseOrderShipInputSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new AppError('VALIDATION_FAILED', '请求体不合法', { issues: issuesOf(parsed.error) });
+  }
+  const seen = new Set<number>();
+  for (const line of parsed.data.lines) {
+    if (seen.has(line.lineNo)) {
+      throw new AppError('VALIDATION_FAILED', '同一明细行不能重复指定去向', {
+        lineNo: line.lineNo,
+      });
+    }
+    seen.add(line.lineNo);
+  }
+  return parsed.data;
+}
+
+function purchaseBatchPlan(order: PurchaseOrder): {
+  readonly products: Map<number, string>;
+  readonly allocation: ReturnType<typeof allocatePurchaseFees>;
+} {
+  const products = new Map<number, string>();
+  const allocationLines = order.lines.map((line, index) => {
+    const lineNo = index + 1;
+    products.set(lineNo, line.productId);
+    if (line.unitPrice === null || line.amount === null) {
+      throw new AppError('VALIDATION_FAILED', '采购单入库需要看价权限');
+    }
+    return { lineNo, qty: line.qty, unitPrice: line.unitPrice };
+  });
+  const allocation = allocatePurchaseFees(
+    allocationLines,
+    order.fees.map((fee) => {
+      if (fee.amount === null) {
+        throw new AppError('INTERNAL_ERROR', '采购单费用金额读取异常');
+      }
+      return fee.amount;
+    }),
+  );
+  return { products, allocation };
 }
 
 /** 强 ETag `"<version>"`；缺失 → 428，格式非法 → 409（与 masterdata 一致）。 */
@@ -443,7 +487,7 @@ export async function cancelPurchaseOrder(
 export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Promise<PurchaseOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'purchase.order.complete');
-  requireScope(principal, 'update');
+  requireScope(principal, 'approve');
   assertHumanCredential(principal, '完成采购单');
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -456,24 +500,9 @@ export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Pro
     if (state.status !== '进行中') throw new AppError('VALIDATION_FAILED', '只有进行中的采购单可以完成');
     const order = await repo.getPurchaseOrder(context, id);
     if (!order) throw new AppError('NOT_FOUND', '采购单不存在');
-    // 完成即锁成本：先把所有行一次性校验完，避免建到一半才发现某行缺看价权限。
-    const allocationLines = order.lines.map((line, index) => {
-      if (line.unitPrice === null || line.amount === null) {
-        throw new AppError('VALIDATION_FAILED', '完成采购单需要看价权限');
-      }
-      return { lineNo: index + 1, qty: line.qty, unitPrice: line.unitPrice };
-    });
-    // D84：费用按明细金额占比摊入行锁价；行金额合计为 0 时退化为按数量占比，末行承接余数。
-    const allocation = allocatePurchaseFees(
-      allocationLines,
-      order.fees.map((fee) => {
-        if (fee.amount === null) throw new AppError('INTERNAL_ERROR', '采购单费用金额读取异常');
-        return fee.amount;
-      }),
-    );
-    const productByLineNo = new Map(order.lines.map((line, index) => [index + 1, line.productId]));
+    const { products, allocation } = purchaseBatchPlan(order);
     for (const line of allocation.lines) {
-      const productId = productByLineNo.get(line.lineNo);
+      const productId = products.get(line.lineNo);
       if (productId === undefined) {
         throw new AppError('INTERNAL_ERROR', '采购单费用分摊行与明细行不匹配', { lineNo: line.lineNo });
       }
@@ -506,4 +535,224 @@ export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Pro
     ctx.reply.header('ETag', etagOf(completed.version));
     return maskPurchaseOrderAmounts(completed, allowsScope(principal.scope, 'purchase', 'view_price'));
   });
+}
+
+/** 采购发货：进行中 → 在途；仓库去向建在途批次，直发加工厂记持有人。 */
+export async function shipPurchaseOrder(ctx: PurchaseOrderWriteContext): Promise<PurchaseOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'purchase.order.ship');
+  requireScope(principal, 'ship');
+  assertHumanCredential(principal, '采购发货');
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const input = parseShipInput(ctx.request.body);
+  const audit = auditEventOf(ctx.request, principal, 'purchase.order.ship', id, {});
+
+  const shipped = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const state = await repo.loadPurchaseOrderState(context, id);
+    if (!state) throw new AppError('NOT_FOUND', '采购单不存在');
+    if (state.version !== expectedVersion) {
+      throw new AppError('VERSION_CONFLICT', '采购单版本与 If-Match 不一致', {
+        expected: expectedVersion,
+        current: state.version,
+      });
+    }
+    if (state.status !== '进行中') {
+      throw new AppError('STATE_CONFLICT', '只有进行中的采购单可以发货', {
+        status: state.status,
+      });
+    }
+    const order = await repo.getPurchaseOrder(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '采购单不存在');
+    if (!order.handlerId) {
+      throw new AppError('INTERNAL_ERROR', '采购单缺少经手人，无法建在途批次');
+    }
+
+    const requested = new Map(input.lines.map((line) => [line.lineNo, line]));
+    for (const lineNo of requested.keys()) {
+      if (lineNo < 1 || lineNo > order.lines.length) {
+        throw new AppError('VALIDATION_FAILED', '发货明细行不存在', { lineNo });
+      }
+    }
+    const directions = order.lines.map((line, index) => {
+      const lineNo = index + 1;
+      const explicit = requested.get(lineNo);
+      const transitTo = explicit?.transitTo ?? line.transitTo ?? 'warehouse';
+      const processorId =
+        transitTo === 'processor'
+          ? explicit?.processorId ?? line.processorId
+          : undefined;
+      if (transitTo === 'processor' && processorId === undefined) {
+        throw new AppError('VALIDATION_FAILED', '直发加工厂必须填写 processorId', { lineNo });
+      }
+      return { lineNo, transitTo, processorId };
+    });
+    await repo.assertProcessorsInCompany(
+      context,
+      directions.flatMap((line) => (line.processorId ? [line.processorId] : [])),
+      order.companyId,
+    );
+
+    const { products, allocation } = purchaseBatchPlan(order);
+    const transitBatches: Array<{
+      lineNo: number;
+      batchId: string;
+      batchNo: string;
+      transitTo: 'warehouse' | 'processor';
+      processorId: string | null;
+    }> = [];
+    for (const line of allocation.lines) {
+      const productId = products.get(line.lineNo);
+      const direction = directions[line.lineNo - 1];
+      if (!productId || !direction) {
+        throw new AppError('INTERNAL_ERROR', '采购发货行映射缺失', { lineNo: line.lineNo });
+      }
+      if (line.qty === '0') continue;
+      const batch = await stockFlowPort().createTransitBatch(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        productId,
+        qty: line.qty,
+        lockedUnitCost: line.adjustedUnitCost,
+        custodianId: order.handlerId,
+        sourceDocType: 'A',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+        heldByProcessorId: direction.processorId ?? null,
+      });
+      transitBatches.push({
+        lineNo: line.lineNo,
+        batchId: batch.batchId,
+        batchNo: batch.batchNo,
+        transitTo: direction.transitTo,
+        processorId: direction.processorId ?? null,
+      });
+    }
+
+    const result = await repo.shipPurchaseOrder(context, id, expectedVersion, directions);
+    if (!result) throw new AppError('NOT_FOUND', '采购单不存在');
+    audit.companyId = result.companyId;
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: result.status,
+      version: result.version,
+      transitBatches,
+      feeAllocation: allocation.lines,
+    };
+    return result;
+  });
+
+  ctx.reply.header('ETag', etagOf(shipped.version));
+  return maskPurchaseOrderAmounts(
+    shipped,
+    allowsScope(principal.scope, 'purchase', 'view_price'),
+  );
+}
+
+/** 撤销采购发货：清掉在途批次并回到进行中；已有占用或到货后不可撤。 */
+export async function revokePurchaseOrderShip(
+  ctx: PurchaseOrderWriteContext,
+): Promise<PurchaseOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'purchase.order.ship.revoke');
+  requireScope(principal, 'ship');
+  assertHumanCredential(principal, '撤销采购发货');
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const audit = auditEventOf(ctx.request, principal, 'purchase.order.ship.revoke', id, {});
+
+  const order = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const state = await repo.loadPurchaseOrderState(context, id);
+    if (!state) throw new AppError('NOT_FOUND', '采购单不存在');
+    if (state.version !== expectedVersion) {
+      throw new AppError('VERSION_CONFLICT', '采购单版本与 If-Match 不一致', {
+        expected: expectedVersion,
+        current: state.version,
+      });
+    }
+    if (state.status !== '在途') {
+      throw new AppError('STATE_CONFLICT', '只有「在途」的采购单可以撤销发货', {
+        status: state.status,
+        reason: 'NOT_IN_TRANSIT',
+      });
+    }
+    await stockFlowPort().revokeTransitBySource(tx, {
+      tenantId: principal.tenantId,
+      companyId: state.companyId,
+      sourceDocType: 'A',
+      sourceDocId: id,
+      handledBy: principal.employeeId,
+    });
+    const result = await repo.revokePurchaseOrderShip(context, id, expectedVersion);
+    if (!result) throw new AppError('NOT_FOUND', '采购单不存在');
+    audit.companyId = result.companyId;
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: result.status,
+      version: result.version,
+      reason: ctx.request.auditReason,
+    };
+    return result;
+  });
+
+  ctx.reply.header('ETag', etagOf(order.version));
+  return maskPurchaseOrderAmounts(
+    order,
+    allowsScope(principal.scope, 'purchase', 'view_price'),
+  );
+}
+
+/** 采购到货确认：在途批次转可用，状态推进到已完成。 */
+export async function receivePurchaseOrder(
+  ctx: PurchaseOrderWriteContext,
+): Promise<PurchaseOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'purchase.order.receive');
+  requireScope(principal, 'approve');
+  assertHumanCredential(principal, '采购到货确认');
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const audit = auditEventOf(ctx.request, principal, 'purchase.order.receive', id, {});
+
+  const order = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const state = await repo.loadPurchaseOrderState(context, id);
+    if (!state) throw new AppError('NOT_FOUND', '采购单不存在');
+    if (state.version !== expectedVersion) {
+      throw new AppError('VERSION_CONFLICT', '采购单版本与 If-Match 不一致', {
+        expected: expectedVersion,
+        current: state.version,
+      });
+    }
+    if (state.status !== '在途') {
+      throw new AppError('STATE_CONFLICT', '只有「在途」的采购单可以到货确认', {
+        status: state.status,
+        reason: 'NOT_IN_TRANSIT',
+      });
+    }
+    await stockFlowPort().receiveTransitBySource(tx, {
+      tenantId: principal.tenantId,
+      companyId: state.companyId,
+      sourceDocType: 'A',
+      sourceDocId: id,
+      handledBy: principal.employeeId,
+    });
+    const result = await repo.receivePurchaseOrder(context, id, expectedVersion);
+    if (!result) throw new AppError('NOT_FOUND', '采购单不存在');
+    audit.companyId = result.companyId;
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: result.status,
+      version: result.version,
+    };
+    return result;
+  });
+
+  ctx.reply.header('ETag', etagOf(order.version));
+  return maskPurchaseOrderAmounts(
+    order,
+    allowsScope(principal.scope, 'purchase', 'view_price'),
+  );
 }
