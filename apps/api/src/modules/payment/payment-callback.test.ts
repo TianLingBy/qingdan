@@ -181,7 +181,8 @@ describe('支付回调（PGlite + seed）', () => {
     });
     expect(completed.statusCode).toBe(200);
     const result = completed.json() as SalesOrder;
-    expect(result.status).toBe('已完成');
+    // D94 ③：出库只到「已发货」；C 草稿与库存已在出库时落库，够支付回调用例使用。
+    expect(result.status).toBe('已发货');
     return result;
   }
 

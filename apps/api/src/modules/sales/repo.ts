@@ -377,6 +377,35 @@ export async function loadSalesOrderState(
   };
 }
 
+/**
+ * 出库 / 签收前锁定单头行（D94 数据安全）。
+ *
+ * 来源单校验与状态变更必须在同一事务里；`FOR UPDATE` 让并发两次签收串行，
+ * 后到者在版本校验处失败，而不是两份校验都过了再抢着 UPDATE。
+ */
+export async function lockSalesOrderState(
+  ctx: SalesOrderRepoContext,
+  id: string,
+): Promise<SalesOrderState | null> {
+  const result = await ctx.tx.query<StateRow>(
+    `SELECT id, company_id, status, version
+       FROM sales_order
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+      FOR UPDATE`,
+    [id, ctx.tenantId, [...ctx.companyIds]],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    status: row.status as SalesOrderStatus,
+    version: row.version,
+  };
+}
+
 /** 直接下游判定（D21）：库存流水以 E 单为来源即视为下游已发生。 */
 export async function hasDirectDownstream(
   ctx: SalesOrderRepoContext,
@@ -885,26 +914,73 @@ export async function loadSalesOrderCompletionSource(
 }
 
 /**
- * 完成销售单：仅「进行中」可完成（D19 三态）。
+ * 销售出库：进行中 → 已发货（D94 ③）。
  *
  * 库存扣减与 C 草稿由用例在同一事务内调 D70 端口完成，本函数只改状态。
+ */
+export async function shipSalesOrder(
+  ctx: SalesOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<SalesOrder | null> {
+  return transitionSalesOrderStatus(
+    ctx,
+    id,
+    expectedVersion,
+    '已发货',
+    ['进行中'],
+    '只有「进行中」的销售单可出库，已发货/已完成/已取消不可再次出库',
+  );
+}
+
+/**
+ * 客户签收：已完成（D94 ③）。
+ *
+ * 接受 `from` 里的前置状态（「已发货」；D94 ⑤ 允许「进行中」跳过在途直接签收，
+ * 此时由用例先补出库的扣库存 + C 草稿）。来源单校验在用例里、同事务内完成。
  */
 export async function completeSalesOrder(
   ctx: SalesOrderRepoContext,
   id: string,
   expectedVersion: number,
+  from: readonly SalesOrderStatus[] = ['已发货'],
+): Promise<SalesOrder | null> {
+  return transitionSalesOrderStatus(
+    ctx,
+    id,
+    expectedVersion,
+    '已完成',
+    from,
+    '只有「进行中」或「已发货」的销售单可签收完成，已完成/已取消不可再次完成',
+  );
+}
+
+async function transitionSalesOrderStatus(
+  ctx: SalesOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+  to: SalesOrderStatus,
+  from: readonly SalesOrderStatus[],
+  invalidStatusMessage: string,
 ): Promise<SalesOrder | null> {
   const result = await ctx.tx.query<{ id: string }>(
     `UPDATE sales_order
-        SET status = '已完成',
+        SET status = $5,
             version = version + 1
       WHERE id = $1::uuid
         AND tenant_id = $2
         AND company_id = ANY($3::uuid[])
         AND version = $4
-        AND status = '进行中'
+        AND status = ANY($6::text[])
       RETURNING id`,
-    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+    [
+      id,
+      ctx.tenantId,
+      [...ctx.companyIds],
+      expectedVersion,
+      to,
+      [...from],
+    ],
   );
   if (result.rows.length === 0) {
     const current = await loadSalesOrderState(ctx, id);
@@ -916,11 +992,9 @@ export async function completeSalesOrder(
         { expected: expectedVersion, current: current.version },
       );
     }
-    throw new AppError(
-      'VALIDATION_FAILED',
-      '只有「进行中」的销售单可完成，已完成/已取消不可再次完成',
-      { status: current.status },
-    );
+    throw new AppError('VALIDATION_FAILED', invalidStatusMessage, {
+      status: current.status,
+    });
   }
 
   return getSalesOrder(ctx, id);

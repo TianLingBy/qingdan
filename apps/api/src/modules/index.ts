@@ -13,8 +13,10 @@ import { billingEntitlementService } from './platform/services/entitlement.js';
 import { platformServices } from './platform/services/ports.js';
 import { registerProcessingRoutes } from './processing/routes.js';
 import { processingServices } from './processing/services/references.js';
+import { processingSourceOrderServices } from './processing/services/source-orders.js';
 import { processingLossAggregateService } from './processing/services/loss-aggregate.js';
 import { registerPurchaseRoutes } from './purchase/routes.js';
+import { purchaseSourceOrderServices } from './purchase/services/source-orders.js';
 import { registerReportRoutes } from './report/index.js';
 import { registerSalesRoutes } from './sales/routes.js';
 import { salesServices } from './sales/services/receipts-port.js';
@@ -67,6 +69,9 @@ export function registerModules(app: FastifyInstance, options: RegisterModulesOp
   registerServices(salesServices);
   // Issue #163 / D70：成本更正判定所需的下游引用聚合端口。
   registerServices(processingServices);
+  // D94 ③ / D70：E 单签收按批次反查来源 A / B 单状态。
+  registerServices(purchaseSourceOrderServices);
+  registerServices(processingSourceOrderServices);
   registerServices(salesReferenceServices);
   registerServices(settlementStatusServices);
 

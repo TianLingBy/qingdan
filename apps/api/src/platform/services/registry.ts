@@ -354,11 +354,72 @@ export interface BatchDirectoryPort {
     tx: SqlClient,
     query: { tenantId: string; batchIds: readonly string[] },
   ): Promise<readonly BatchSummary[]>;
+  /**
+   * 批次来源单据（D94 ③）：E 单签收时按批次反查 A/B 单是否到货。
+   * 来源取自建批流水（`inventory_flow` 该批次首条正数流水），sales 不直读库存表。
+   */
+  lookupBatchSources(
+    tx: SqlClient,
+    query: {
+      readonly tenantId: string;
+      readonly companyId: string;
+      readonly batchIds: readonly string[];
+    },
+  ): Promise<readonly BatchSourceSummary[]>;
 }
 
 export interface BatchSummary {
   readonly id: string;
   readonly batchNo: string;
+}
+
+/** 批次建批来源（D94 ③）：`source_doc_type` 为各单据模块登记的类型（A / B / N …）。 */
+export interface BatchSourceSummary {
+  readonly batchId: string;
+  readonly sourceDocType: string;
+  readonly sourceDocId: string;
+}
+
+/** 来源单据状态查询（D94 ③：E 单签收按批次反查 A / B 单是否已完成）。 */
+export interface SourceOrderStatusDoc {
+  readonly type: 'A' | 'B';
+  readonly id: string;
+}
+
+export interface SourceOrderStatusFact {
+  readonly type: 'A' | 'B';
+  readonly id: string;
+  /** 单号：错误信息必须指名是哪张单没到货。 */
+  readonly orderNo: string;
+  readonly status: string;
+}
+
+export interface SourceOrderStatusQuery {
+  readonly tenantId: string;
+  /** 公司隔离（D15）：来源单必须与销售单同公司。 */
+  readonly companyId: string;
+  readonly docs: readonly SourceOrderStatusDoc[];
+}
+
+/**
+ * 单个模块（purchase / processing）的只读来源单状态实现。
+ *
+ * `docType` 由实现方声明（A = 采购单、B = 加工单），调用方只按类型分发。
+ */
+export interface SourceOrderStatusSource {
+  readonly docType: 'A' | 'B';
+  lookupStatuses(
+    tx: SqlClient,
+    query: SourceOrderStatusQuery,
+  ): Promise<readonly SourceOrderStatusFact[]>;
+}
+
+/** 来源单状态聚合端口（D70）：由 purchase / processing 各自注册，本文件只做分发。 */
+export interface SourceOrderStatusPort {
+  lookupStatuses(
+    tx: SqlClient,
+    query: SourceOrderStatusQuery,
+  ): Promise<readonly SourceOrderStatusFact[]>;
 }
 
 /** B 单完成使用的库存批次成本/可用量只读端口（D70 / #194）。 */
@@ -414,6 +475,9 @@ export interface ServiceRegistry {
   readonly batchDirectory?: BatchDirectoryPort;
   readonly stockBatchInspection?: StockBatchInspectionPort;
   readonly stockBatchTransfer?: StockBatchTransferPort;
+  /** D94 ③：E 单签收反查来源单，purchase / processing 各注册一个只读来源。 */
+  readonly purchaseSourceOrders?: SourceOrderStatusSource;
+  readonly processingSourceOrders?: SourceOrderStatusSource;
 }
 
 let registry: ServiceRegistry = {};
@@ -489,6 +553,37 @@ export function batchDirectoryPort(): BatchDirectoryPort {
     });
   }
   return registry.batchDirectory;
+}
+
+/**
+ * 来源单状态聚合端口（D94 ③ / D70）。
+ *
+ * purchase 与 processing 各自只读自己的单头表，本端口按 `type` 分发；
+ * 缺少某个来源实现时抛 NOT_IMPLEMENTED，绝不让「查不到」静默变成「已到货」。
+ */
+export function sourceOrderStatusPort(): SourceOrderStatusPort {
+  const sources = [
+    registry.purchaseSourceOrders,
+    registry.processingSourceOrders,
+  ].filter((source): source is SourceOrderStatusSource => source !== undefined);
+  if (sources.length === 0) {
+    throw new AppError('NOT_IMPLEMENTED', 'purchase / processing 未注册 SourceOrderStatusSource（D70）', {
+      port: 'SourceOrderStatusPort',
+    });
+  }
+  return {
+    async lookupStatuses(tx, query) {
+      if (query.docs.length === 0) return [];
+      const collected = await Promise.all(
+        sources.map(async (source) => {
+          const docs = query.docs.filter((doc) => doc.type === source.docType);
+          if (docs.length === 0) return [];
+          return await source.lookupStatuses(tx, { ...query, docs });
+        }),
+      );
+      return collected.flat();
+    },
+  };
 }
 
 export function salesReceiptPort(): SalesReceiptPort {
