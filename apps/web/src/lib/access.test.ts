@@ -42,6 +42,7 @@ const ALL_ACTIONS = [
   'approve',
   'ship',
   'delete',
+  'merge',
   'view_price',
   'export',
 ] as const satisfies readonly ScopeMatrix[number]['actions'][number][];
