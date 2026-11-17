@@ -60,8 +60,9 @@ const FLOW = {
 } as const;
 
 describe('库存契约（inventory）', () => {
-  it('3 条端点全部登记并汇总进 ROUTES，且归属 inventory', () => {
-    expect(INVENTORY_ROUTES).toHaveLength(3);
+  it('4 条端点全部登记并汇总进 ROUTES，且归属 inventory', () => {
+    // 3 条首批只读（#49）+ 1 条低库存预警（#354 / D104）。
+    expect(INVENTORY_ROUTES).toHaveLength(4);
     for (const route of INVENTORY_ROUTES) expect(route.module).toBe('inventory');
 
     const inventoryIds = routesOfModule(ROUTES, 'inventory').map((r) => r.operationId);
@@ -75,6 +76,7 @@ describe('库存契约（inventory）', () => {
         'GET /api/v1/inventory/batches inventory.batch.list.read',
         'GET /api/v1/inventory/batches/{id} inventory.batch.detail.read',
         'GET /api/v1/inventory/flows inventory.flow.read',
+        'GET /api/v1/inventory/alerts inventory.alert.list',
       ].sort(),
     );
 
@@ -82,6 +84,8 @@ describe('库存契约（inventory）', () => {
     expect(byId.get('inventory.batch.list.read')?.scope).toBe('inventory_qty.read');
     expect(byId.get('inventory.batch.detail.read')?.scope).toBe('inventory_qty.read');
     expect(byId.get('inventory.flow.read')?.scope).toBe('inventory_flow.read');
+    // 预警与批次列表同一个权限点：能看到库存的人才看得到预警（D104⑦）。
+    expect(byId.get('inventory.alert.list')?.scope).toBe('inventory_qty.read');
   });
 
   it('全部只读、普通读不记审计；本批不登记任何 HTTP 写端点', () => {
@@ -284,5 +288,17 @@ describe('库存契约（inventory）', () => {
     const flows = doc.paths['/api/v1/inventory/flows'] as Record<string, Record<string, unknown>>;
     expect(flows.get?.['x-scope']).toBe('inventory_flow.read');
     expect(flows.get?.['x-mcp-tool']).toBe('qingdan_inventory_flow_read');
+
+    const alerts = doc.paths['/api/v1/inventory/alerts'] as Record<string, Record<string, unknown>>;
+    expect(alerts.get?.['x-scope']).toBe('inventory_qty.read');
+    expect(alerts.get?.['x-audit']).toEqual({ kind: 'none', required: false });
+    expect(alerts.get?.['x-ai-policy']).toEqual({ policy: 'allow', reasonRequired: false });
+    expect(alerts.get?.['x-mcp-tool']).toBe('qingdan_inventory_alert_list');
+    const alertParams = (
+      alerts.get?.parameters as Array<{ name: string; required?: boolean }>
+    ).map((p) => `${p.name}:${p.required === true ? 'required' : 'optional'}`);
+    // D99/D104⑤：`thresholdRatio` 有缺省值但缺省合法，OpenAPI 必须如实标成可选，
+    // 否则前端照着「必填」做表单，把不传当成错。
+    expect(alertParams).toEqual(['companyId:required', 'thresholdRatio:optional']);
   });
 });

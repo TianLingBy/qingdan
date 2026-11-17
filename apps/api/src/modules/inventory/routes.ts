@@ -9,6 +9,7 @@ import {
 } from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
+import { listInventoryAlerts } from './usecases/alerts.js';
 import { getBatch, listBatches } from './usecases/batches.js';
 import { exportInventoryBatches } from './usecases/export-inventory-batches.js';
 import {
@@ -47,6 +48,11 @@ export function registerInventoryRoutes(app: FastifyInstance): void {
     'inventory.batch.list.read': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);
       return await listBatches({ database: instance.database, request });
+    },
+    // #354 第 2 条：低库存预警，只读、无副作用（口径见 D104）。
+    'inventory.alert.list': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listInventoryAlerts({ database: instance.database, request });
     },
     'inventory.batch.detail.read': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);

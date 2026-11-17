@@ -3,6 +3,7 @@ import {
   encodeCursor,
   resolvePaging,
   type CursorPayload,
+  type InventoryAlertItem,
   type InventoryBatch,
   type InventoryBatchDetail,
   type InventoryFlow,
@@ -449,6 +450,100 @@ interface BatchExportRow {
   pending_execution_qty: string | number;
   custodian_id: string;
   created_at: Date | string;
+}
+
+/** 低库存预警的判定窗口与口径（#354 / D104，写进 decisions.md，改这里要同改文档）。 */
+export const ALERT_WINDOW_DAYS = 30;
+
+export const ALERT_COVER_DAYS = 7;
+
+/** 一次最多回多少条：预警是「今天该补哪几批货」，不是报表（不分页，D104）。 */
+export const ALERT_LIMIT = 200;
+
+export interface InventoryAlertQuery {
+  readonly companyId: string;
+  /** 已由用例层兜底成 0.2；这里不做缺省判断。 */
+  readonly thresholdRatio: number;
+}
+
+interface InventoryAlertRow {
+  batch_id: string;
+  product_id: string;
+  product_name: string;
+  batch_no: string;
+  available_qty: string | number;
+  avg_daily_out: string | number;
+  days_left: string | number;
+}
+
+/**
+ * 低库存预警（#354 第 2 条 / D104）：一条 SQL 出全表，不 N+1。
+ *
+ * 口径（三个数字见 D104）：
+ * - `avgDailyOut` = 最近 30 天该批次的出库量合计 ÷ 30，**只算负数流水**（`delta < 0`
+ *   是出库；正数是入库 / 冲正，混进去会把日均算大、把预警算没）。
+ * - 判定式 `availableQty < avgDailyOut × 7 × (1 + thresholdRatio)`：
+ *   `thresholdRatio` 是**叠加在 7 天窗口上的提前量倍数**（缺省 0.2 ≈ 8.4 天就开始提醒），
+ *   不是替代 7 天窗口（#354 给了两个读法，这里选了这一个，理由见 D104）。
+ * - `daysLeft` = `floor(availableQty / avgDailyOut)`，**不加 `GREATEST(0, …)`**：
+ *   断货就是 0 天，负数要原样透给前端（`available_qty` 目前有 `>= 0` 的 DB 约束，
+ *   所以今天最多到 0；约束一旦放宽，负数自然出现，表达式不用改）。
+ * - **没有历史出库的批次不进预警**：新进的货还没开始卖，`avgDailyOut = 0` 会让
+ *   `daysLeft` 变成 +∞，报出来只是噪音。`outbound` 里 `delta < 0` 先筛过一遍，
+ *   `avg` 再取 `out_qty > 0`，join 时就天然排除了零出库批次。
+ */
+export async function listInventoryAlerts(
+  ctx: InventoryRepoContext,
+  query: InventoryAlertQuery,
+): Promise<InventoryAlertItem[]> {
+  const result = await ctx.tx.query<InventoryAlertRow>(
+    `WITH outbound AS (
+       SELECT f.batch_id,
+              SUM(-f.delta) AS out_qty
+         FROM inventory_flow f
+        WHERE f.tenant_id = $1
+          AND f.company_id = $2::uuid
+          AND f.delta < 0
+          AND f.occurred_at >= now() - interval '${ALERT_WINDOW_DAYS} days'
+        GROUP BY f.batch_id
+     ),
+     avg AS (
+       SELECT o.batch_id,
+              round(o.out_qty / ${ALERT_WINDOW_DAYS}, 6) AS avg_daily_out
+         FROM outbound o
+        WHERE o.out_qty > 0
+     )
+     SELECT b.id AS batch_id,
+            b.product_id,
+            p.name AS product_name,
+            b.batch_no,
+            b.available_qty,
+            a.avg_daily_out,
+            floor(b.available_qty / a.avg_daily_out) AS days_left
+       FROM inventory_batch b
+       JOIN avg a
+         ON a.batch_id = b.id
+       JOIN product p
+         ON p.id = b.product_id
+        AND p.tenant_id = b.tenant_id
+        AND p.company_id = b.company_id
+      WHERE b.tenant_id = $1
+        AND b.company_id = $2::uuid
+        AND b.available_qty < a.avg_daily_out * ${ALERT_COVER_DAYS} * (1 + $3::numeric)
+      ORDER BY days_left ASC, b.id
+      LIMIT $4`,
+    [ctx.tenantId, query.companyId, query.thresholdRatio, ALERT_LIMIT],
+  );
+
+  return result.rows.map((row) => ({
+    batchId: row.batch_id,
+    productId: row.product_id,
+    productName: row.product_name,
+    batchNo: row.batch_no,
+    availableQty: decimal(row.available_qty),
+    avgDailyOut: decimal(row.avg_daily_out),
+    daysLeft: Number(row.days_left),
+  }));
 }
 
 export async function exportInventoryBatches(
