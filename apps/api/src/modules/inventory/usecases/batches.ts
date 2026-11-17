@@ -2,7 +2,6 @@ import {
   AppError,
   InventoryBatchListQuerySchema,
   allowsScope,
-  clampLimit,
   decodeCursor,
   type CursorPayload,
   type InventoryBatch,
@@ -26,7 +25,11 @@ interface ParsedBatchListQuery {
   readonly productId?: string;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
-  readonly limit: number;
+  readonly limit?: number;
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly sort?: 'batchNo' | 'availableQty' | 'createdAt';
+  readonly order?: 'asc' | 'desc';
 }
 
 function requirePrincipal(request: FastifyRequest): Principal {
@@ -74,7 +77,13 @@ function parseListQuery(request: FastifyRequest): ParsedBatchListQuery {
     productId: parsed.data.productId,
     keyword: parsed.data.keyword,
     cursor: parsed.data.cursor === undefined ? undefined : parseCursor(parsed.data.cursor),
-    limit: clampLimit(parsed.data.limit),
+    // 不在这里 clamp：留 undefined 给 resolvePaging 区分「没传 limit」与「传了 limit」，
+    // 前者是页码模式默认 20，后者是游标模式默认 50（老调用方行为）。
+    limit: parsed.data.limit,
+    page: parsed.data.page,
+    pageSize: parsed.data.pageSize,
+    sort: parsed.data.sort,
+    order: parsed.data.order,
   };
 }
 
@@ -92,9 +101,13 @@ function repoContext(tx: SqlClient, principal: Principal): repo.InventoryRepoCon
 }
 
 /** 批次列表：普通读，不记审计（D54②）。 */
-export async function listBatches(
-  ctx: InventoryContext,
-): Promise<{ items: InventoryBatch[]; nextCursor: string | null }> {
+export async function listBatches(ctx: InventoryContext): Promise<{
+  items: InventoryBatch[];
+  total: number | null;
+  page: number | null;
+  pageSize: number | null;
+  nextCursor: string | null;
+}> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'inventory.batch.list.read');
   requireInventoryRead(principal);

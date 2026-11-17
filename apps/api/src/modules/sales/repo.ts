@@ -1,6 +1,7 @@
 import {
   AppError,
   encodeCursor,
+  resolvePaging,
   type CustomerReturn,
   type CustomerReturnCreateInput,
   type CustomerReturnLine,
@@ -16,9 +17,11 @@ import {
   type SalesOrderLine,
   type SalesOrderStatus,
   type SalesOrderUpdateInput,
+  type SortOrder,
 } from '@qingdan/contracts';
 import { v7 as uuidv7 } from 'uuid';
 import type { SqlClient } from '../../platform/db/client.js';
+import { buildOrderBy } from '../../platform/db/order-by.js';
 
 /**
  * 销售单 E 数据访问层（D15 / D16 / D20 / D21 / D22 / D39 / D54）。
@@ -44,8 +47,17 @@ export interface SalesOrderListQuery {
   readonly status?: SalesOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
-  readonly limit: number;
+  /** 省略表示调用方没传 limit——由 resolvePaging 决定是游标默认 50 还是页码默认 20。 */
+  readonly limit?: number;
+  /** 页码模式（D95）：与 cursor 互斥，同时给由 resolvePaging 抛 422。 */
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly sort?: SalesOrderSortKey;
+  readonly order?: SortOrder;
 }
+
+/** 排序白名单（与契约 `SalesOrderListQuerySchema.sort` 一一对应，列名核对自 0013 建表语句）。 */
+export type SalesOrderSortKey = 'orderNo' | 'totalAmount' | 'createdAt';
 
 /** 创建输入 = 契约创建体 + 用例生成的 uuid / 单号。 */
 export type SalesOrderInsertInput = SalesOrderCreateInput & {
@@ -55,6 +67,10 @@ export type SalesOrderInsertInput = SalesOrderCreateInput & {
 
 export interface SalesOrderPage {
   readonly items: SalesOrder[];
+  /** 页码模式下的总条数；游标模式恒为 null（老调用方不读这几个字段）。 */
+  readonly total: number | null;
+  readonly page: number | null;
+  readonly pageSize: number | null;
   readonly nextCursor: string | null;
 }
 
@@ -268,7 +284,11 @@ async function queryFees(
   return grouped;
 }
 
-/** 销售单列表：租户 + 可见公司内过滤，按 UUIDv7 id 倒序分页。 */
+/**
+ * 销售单列表：租户 + 可见公司内过滤。
+ * 游标模式（cursor / 仅 limit）按 UUIDv7 id 倒序翻页，行为与 D95 之前完全一致；
+ * 页码模式（page / pageSize）走 OFFSET，并额外带 total。
+ */
 export async function listSalesOrders(
   ctx: SalesOrderRepoContext,
   query: SalesOrderListQuery,
@@ -299,41 +319,104 @@ export async function listSalesOrders(
       OR c.name ILIKE ${keywordParam} ESCAPE '\\'
     )`);
   }
-  if (query.cursor !== undefined) {
+  const paging = resolvePaging({
+    // resolvePaging 只看「有没有 cursor」这一个事实，解码后的 id 就够当凭据。
+    cursor: query.cursor === undefined ? undefined : query.cursor.id,
+    limit: query.limit,
+    page: query.page,
+    pageSize: query.pageSize,
+  });
+  if (paging.mode === 'cursor' && query.cursor !== undefined) {
     params.push(query.cursor.id);
     where.push(`o.id < $${params.length}::uuid`);
   }
 
-  params.push(query.limit + 1);
-  const result = await ctx.tx.query<HeaderRow>(
-    `SELECT ${HEADER_COLUMNS}
+  const orderBy = buildOrderBy(COLUMN_MAP, query.sort, query.order, 'o.id', 'id');
+  const whereSql = where.join('\n        AND ');
+  const selectSql = `SELECT ${HEADER_COLUMNS}
        FROM ${HEADER_FROM}
-      WHERE ${where.join('\n        AND ')}
-      ORDER BY o.id DESC
+      WHERE ${whereSql}`;
+
+  if (paging.mode === 'offset') {
+    params.push(paging.limit, paging.offset);
+    const result = await ctx.tx.query<HeaderRow>(
+      `${selectSql}
+      ORDER BY ${orderBy}
+      LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
+    );
+    // total 单独一条 COUNT：**故意不与 items 同一快照**。
+    // 取舍理由：列表页每次翻页/筛选都走这条路，而 `COUNT(*) OVER()` 要求窗口函数先消费
+    // 全部匹配行，计划会退化成「Seq Scan + Sort」，新加的排序索引一次也用不上
+    // （EXPLAIN 实测：2 万行 21ms vs 走索引 0.047ms；18 万行 229ms 且溢出 temp read=2486）。
+    // READ COMMITTED 下两次语句之间若有并发写入，总数可能与当页条数差一两条——
+    // 这不会让人做错任何决定；真正需要严格一致的是财务对账，那走结算模块，不是列表页码。
+    // 另外：超过最后一页时分页那条返回 0 行，这条 COUNT 照样给出真实总数，
+    // 所以「page 超出范围」不再需要额外的补查分支。
+    // 曾评估：分页子查询 LEFT JOIN COUNT（同快照，实测 11.089ms vs 本写法 15.2ms），
+    // 因参数位置需在子查询内复用、嵌套加深、筛选项增减时易错位而放弃——错位不会编译报错，
+    // 只会让某条筛选在 COUNT 里算错，总数和当页对不上却查不出原因。
+    const countResult = await ctx.tx.query<{ n: string }>(
+      `SELECT COUNT(*) AS n FROM ${HEADER_FROM} WHERE ${whereSql}`,
+      params.slice(0, -2),
+    );
+    const items = await assembleSalesOrders(ctx, result.rows);
+    return {
+      items,
+      total: Number(countResult.rows[0]!.n),
+      page: paging.page,
+      pageSize: paging.limit,
+      nextCursor: null,
+    };
+  }
+
+  params.push(paging.limit + 1);
+  const result = await ctx.tx.query<HeaderRow>(
+    `${selectSql}
+      ORDER BY ${orderBy}
       LIMIT $${params.length}`,
     params,
   );
 
-  const hasMore = result.rows.length > query.limit;
-  const pageRows = hasMore ? result.rows.slice(0, query.limit) : result.rows;
-  const ids = pageRows.map((row) => row.id);
-  const [linesByOrder, feesByOrder] = await Promise.all([
-    queryLines(ctx, ids),
-    queryFees(ctx, ids),
-  ]);
-  const items = pageRows.map((row) => ({
-    ...mapHeader(row),
-    lines: linesByOrder.get(row.id) ?? [],
-    fees: feesByOrder.get(row.id) ?? [],
-  }));
+  const hasMore = result.rows.length > paging.limit;
+  const pageRows = hasMore ? result.rows.slice(0, paging.limit) : result.rows;
+  const items = await assembleSalesOrders(ctx, pageRows);
   const last = items[items.length - 1];
   return {
     items,
+    total: null,
+    page: null,
+    pageSize: null,
     nextCursor:
       hasMore && last
         ? encodeCursor({ createdAt: last.createdAt, id: last.id })
         : null,
   };
+}
+
+/** 排序白名单：键 → 真实列。`id` 只为保住改动前的默认序（原 ORDER BY o.id DESC）。 */
+const COLUMN_MAP = {
+  id: 'o.id',
+  orderNo: 'o.order_no',
+  totalAmount: 'o.total_amount',
+  createdAt: 'o.created_at',
+} as const satisfies Record<string, string>;
+
+/** 把单头行补齐商品行与费用行（两种分页模式共用）。 */
+async function assembleSalesOrders(
+  ctx: SalesOrderRepoContext,
+  rows: HeaderRow[],
+): Promise<SalesOrder[]> {
+  const ids = rows.map((row) => row.id);
+  const [linesByOrder, feesByOrder] = await Promise.all([
+    queryLines(ctx, ids),
+    queryFees(ctx, ids),
+  ]);
+  return rows.map((row) => ({
+    ...mapHeader(row),
+    lines: linesByOrder.get(row.id) ?? [],
+    fees: feesByOrder.get(row.id) ?? [],
+  }));
 }
 
 /** 销售单详情基础实体：租户 + 可见公司内；查不到（含跨公司）返回 null。 */

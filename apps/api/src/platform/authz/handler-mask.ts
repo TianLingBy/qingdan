@@ -22,11 +22,14 @@ export function maskHandlerId<T extends { handlerId: string | null }>(
   return { ...value, handlerId: null };
 }
 
-/** 分页列表脱敏：对 `items` 逐条置 null。 */
-export function maskHandlerIdInPage<T extends { handlerId: string | null }>(
-  page: { items: readonly T[]; nextCursor: string | null },
-  principal: Principal | null | undefined,
-): { items: T[]; nextCursor: string | null } {
+/**
+ * 分页列表脱敏：对 `items` 逐条置 null。
+ * 返回类型保留 page 的其余字段（D95 起列表还带 total / page / pageSize），只换掉 items 的元素类型。
+ */
+export function maskHandlerIdInPage<
+  T extends { handlerId: string | null },
+  P extends { items: readonly T[]; nextCursor: string | null },
+>(page: P, principal: Principal | null | undefined): Omit<P, 'items'> & { items: T[] } {
   return {
     ...page,
     items: page.items.map((item) => maskHandlerId(item, principal)),

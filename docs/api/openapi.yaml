@@ -2835,6 +2835,37 @@ paths:
             type: string
             minLength: 1
             maxLength: 64
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - batchNo
+              - availableQty
+              - createdAt
       responses:
         "200":
           description: 成功
@@ -2847,6 +2878,24 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/InventoryBatch"
+                  total:
+                    anyOf:
+                      - type: integer
+                        minimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  page:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  pageSize:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
                   nextCursor:
                     anyOf:
                       - type: string
@@ -2854,6 +2903,9 @@ paths:
                       - type: "null"
                 required:
                   - items
+                  - total
+                  - page
+                  - pageSize
                   - nextCursor
                 additionalProperties: false
         default:
@@ -3596,6 +3648,37 @@ paths:
             type: string
             minLength: 1
             maxLength: 64
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - orderNo
+              - totalAmount
+              - createdAt
       responses:
         "200":
           description: 成功
@@ -3608,6 +3691,24 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/SalesOrder"
+                  total:
+                    anyOf:
+                      - type: integer
+                        minimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  page:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  pageSize:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
                   nextCursor:
                     anyOf:
                       - type: string
@@ -3615,6 +3716,9 @@ paths:
                       - type: "null"
                 required:
                   - items
+                  - total
+                  - page
+                  - pageSize
                   - nextCursor
                 additionalProperties: false
         default:
@@ -4462,6 +4566,37 @@ paths:
             type: string
             minLength: 1
             maxLength: 64
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - orderNo
+              - totalAmount
+              - createdAt
       responses:
         "200":
           description: 成功
@@ -4474,6 +4609,24 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/PurchaseOrder"
+                  total:
+                    anyOf:
+                      - type: integer
+                        minimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  page:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  pageSize:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
                   nextCursor:
                     anyOf:
                       - type: string
@@ -4481,6 +4634,9 @@ paths:
                       - type: "null"
                 required:
                   - items
+                  - total
+                  - page
+                  - pageSize
                   - nextCursor
                 additionalProperties: false
         default:

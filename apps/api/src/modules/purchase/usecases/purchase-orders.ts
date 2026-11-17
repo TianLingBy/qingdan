@@ -6,7 +6,6 @@ import {
   allowsScope,
   assertCancelable,
   canCancel,
-  clampLimit,
   decodeCursor,
   etagOf,
   type CursorPayload,
@@ -67,7 +66,11 @@ interface ParsedListQuery {
   readonly status?: PurchaseOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
-  readonly limit: number;
+  readonly limit?: number;
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly sort?: 'orderNo' | 'totalAmount' | 'createdAt';
+  readonly order?: 'asc' | 'desc';
 }
 
 function headerValue(request: FastifyRequest, name: string): string | undefined {
@@ -142,7 +145,13 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
     status: parsed.data.status,
     keyword: parsed.data.keyword,
     cursor,
-    limit: clampLimit(parsed.data.limit),
+    // 不在这里 clamp：留 undefined 给 resolvePaging 区分「没传 limit」与「传了 limit」，
+    // 前者是页码模式默认 20，后者是游标模式默认 50（老调用方行为）。
+    limit: parsed.data.limit,
+    page: parsed.data.page,
+    pageSize: parsed.data.pageSize,
+    sort: parsed.data.sort,
+    order: parsed.data.order,
   };
 }
 
@@ -220,9 +229,13 @@ function auditEventOf(
  * 采购单列表（普通读，不记审计 D54②）。
  * `keyword` 匹配单号或供应商名；不可见公司一律返回空列表（D15）。
  */
-export async function listPurchaseOrders(
-  ctx: PurchaseOrderContext,
-): Promise<{ items: PurchaseOrder[]; nextCursor: string | null }> {
+export async function listPurchaseOrders(ctx: PurchaseOrderContext): Promise<{
+  items: PurchaseOrder[];
+  total: number | null;
+  page: number | null;
+  pageSize: number | null;
+  nextCursor: string | null;
+}> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'purchase.order.list.read');
   requireScope(principal, 'read');
@@ -237,6 +250,9 @@ export async function listPurchaseOrders(
     items: page.items.map((order) =>
       maskPurchaseOrderAmounts(order, canViewPrice),
     ),
+    total: page.total,
+    page: page.page,
+    pageSize: page.pageSize,
     nextCursor: page.nextCursor,
   };
 }

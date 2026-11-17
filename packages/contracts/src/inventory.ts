@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineRoute, type RouteDef } from './registry.js';
-import { PageQuerySchema, pageSchema } from './pagination.js';
+import { PageQuerySchema, PageableSchema, pageSchema, pagedResultSchema } from './pagination.js';
 
 /**
  * 库存契约（inventory 首批只读，Issue #48 / D67）。
@@ -126,6 +126,10 @@ export const InventoryBatchListQuerySchema = PageQuerySchema.extend({
   companyId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
   keyword: z.string().min(1).max(64).optional(),
+  /** 页码模式（D95）：只批次列表是试点，流水列表不认这四个参数（故放这里不放基类）。 */
+  ...PageableSchema,
+  /** 排序白名单（D95）：只收批次表真实存在的列（0008 建表语句），未登记的一律 422。 */
+  sort: z.enum(['batchNo', 'availableQty', 'createdAt']).optional(),
 });
 
 /**
@@ -158,7 +162,7 @@ export const INVENTORY_ROUTES: readonly RouteDef[] = [
     summary: '库存批次列表（按公司/商品/批次号或商品名检索；普通读不记审计，D38）',
     audit: { kind: 'none' },
     request: { query: InventoryBatchListQuerySchema },
-    response: { status: 200, schema: pageSchema(InventoryBatchSchema) },
+    response: { status: 200, schema: pagedResultSchema(InventoryBatchSchema) },
   }),
   defineRoute({
     module: 'inventory',

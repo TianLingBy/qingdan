@@ -309,7 +309,18 @@ describe('销售单契约（sales）', () => {
     expect(orders.get?.['x-audit']).toEqual({ kind: 'none', required: false });
     expect(orders.get?.['x-mcp-tool']).toBe('qingdan_sales_order_list_read');
     const queryNames = (orders.get?.parameters as Array<{ name: string }>).map((p) => p.name).sort();
-    expect(queryNames).toEqual(['companyId', 'cursor', 'customerId', 'keyword', 'limit', 'status']);
+    expect(queryNames).toEqual([
+      'companyId',
+      'cursor',
+      'customerId',
+      'keyword',
+      'limit',
+      'order',
+      'page',
+      'pageSize',
+      'sort',
+      'status',
+    ]);
 
     expect(orders.post?.['x-scope']).toBe('sales.create');
     expect(orders.post?.['x-audit']).toEqual({ kind: 'write', required: true });

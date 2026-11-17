@@ -261,7 +261,17 @@ describe('库存契约（inventory）', () => {
     expect(batches.get?.['x-audit']).toEqual({ kind: 'none', required: false });
     expect(batches.get?.['x-mcp-tool']).toBe('qingdan_inventory_batch_list_read');
     const queryNames = (batches.get?.parameters as Array<{ name: string }>).map((p) => p.name).sort();
-    expect(queryNames).toEqual(['companyId', 'cursor', 'keyword', 'limit', 'productId']);
+    expect(queryNames).toEqual([
+      'companyId',
+      'cursor',
+      'keyword',
+      'limit',
+      'order',
+      'page',
+      'pageSize',
+      'productId',
+      'sort',
+    ]);
 
     const detail = doc.paths['/api/v1/inventory/batches/{id}'] as Record<
       string,

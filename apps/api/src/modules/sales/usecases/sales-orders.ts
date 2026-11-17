@@ -6,7 +6,6 @@ import {
   allowsScope,
   assertCancelable,
   canCancel,
-  clampLimit,
   decodeCursor,
   etagOf,
   type CursorPayload,
@@ -76,7 +75,11 @@ interface ParsedListQuery {
   readonly status?: SalesOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
-  readonly limit: number;
+  readonly limit?: number;
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly sort?: 'orderNo' | 'totalAmount' | 'createdAt';
+  readonly order?: 'asc' | 'desc';
 }
 
 function headerValue(
@@ -169,7 +172,13 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
     status: parsed.data.status,
     keyword: parsed.data.keyword,
     cursor,
-    limit: clampLimit(parsed.data.limit),
+    // 不在这里 clamp：留 undefined 给 resolvePaging 区分「没传 limit」与「传了 limit」，
+    // 前者是页码模式默认 20，后者是游标模式默认 50（老调用方行为）。
+    limit: parsed.data.limit,
+    page: parsed.data.page,
+    pageSize: parsed.data.pageSize,
+    sort: parsed.data.sort,
+    order: parsed.data.order,
   };
 }
 
@@ -258,9 +267,13 @@ function auditEventOf(
 }
 
 /** 销售单列表（普通读，不记审计）。 */
-export async function listSalesOrders(
-  ctx: SalesOrderContext,
-): Promise<{ items: SalesOrder[]; nextCursor: string | null }> {
+export async function listSalesOrders(ctx: SalesOrderContext): Promise<{
+  items: SalesOrder[];
+  total: number | null;
+  page: number | null;
+  pageSize: number | null;
+  nextCursor: string | null;
+}> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.list.read');
   requireScope(principal, 'read');
@@ -272,6 +285,9 @@ export async function listSalesOrders(
   );
   return {
     items: page.items.map((order) => maskSalesOrderAmounts(order, canViewPrice)),
+    total: page.total,
+    page: page.page,
+    pageSize: page.pageSize,
     nextCursor: page.nextCursor,
   };
 }

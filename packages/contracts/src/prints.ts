@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineRoute, type RouteDef } from './registry.js';
-import { SalesOrderListQuerySchema } from './sales-orders.js';
+import { SalesOrderExportQuerySchema } from './sales-orders.js';
 
 /**
  * 打印 / 导出契约（销售单打印、加工单打印、销售单列表导出）。
@@ -53,7 +53,7 @@ export const PRINT_ROUTES: readonly RouteDef[] = [
     summary: '销售单列表导出 CSV（按筛选条件；敏感读，记审计）',
     audit: { kind: 'sensitive-read' },
     ai: { policy: 'forbid', reasonRequired: true },
-    request: { query: SalesOrderListQuerySchema },
+    request: { query: SalesOrderExportQuerySchema },
     response: { status: 200, schema: PrintDocumentSchema },
   }),
 ];
