@@ -162,11 +162,24 @@ export function createSalesApi(client: ApiClient = apiClient) {
         headers: ifMatch(version),
       }),
     /**
-     * 销售出库（D72 / D85）：扣批次可用量 + 生成 C 单草稿，同事务；AI 禁止。
-     * 原 `complete` 端点已改名为 `ship`：销售单没有「出货后再确认」这一步（D85）。
+     * 销售发货（D72 / D85 / D94）：`进行中` → `已发货`，扣批次可用量 + 生成 C 单草稿，同事务；AI 禁止。
+     *
+     * D85 曾把「出库」与「完成」合并成这一个端点（当时判断销售单没有「出货后再确认」这一步）；
+     * D94 又把它们拆开了：货出门与客户签收之间有一段真实的时间差，签收还会引出退款与对账，
+     * 不能和出库塞进同一次点击。现在 ship 与 complete 各自需要 `sales.ship` 与 `sales.approve`。
      */
     ship: (id: string, version: number) =>
       client.post<SalesOrder>(`/sales-orders/${id}/ship`, undefined, {
+        headers: ifMatch(version),
+      }),
+    /**
+     * 客户签收（D94）：`已发货` → `已完成`，同事务生成结算草稿。
+     *
+     * 与 ship 分开是为了权限能拆：能发货的人（仓管）不一定能确认收入（财务）。两个动作挂
+     * 同一个 action 上，老板就再也分不开「谁把货发出去了」与「谁认了这笔记收入」。
+     */
+    complete: (id: string, version: number) =>
+      client.post<SalesOrder>(`/sales-orders/${id}/complete`, undefined, {
         headers: ifMatch(version),
       }),
     cancel: (id: string, version: number) =>
