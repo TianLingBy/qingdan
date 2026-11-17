@@ -7,6 +7,7 @@ import { routesOfModule } from './registry.js';
 import { ROUTES } from './routes.js';
 import {
   PURCHASE_ORDER_ROUTES,
+  PURCHASE_ORDER_STATES,
   PurchaseOrderCancelableSchema,
   PurchaseOrderCreateInputSchema,
   PurchaseOrderDetailSchema,
@@ -16,6 +17,7 @@ import {
   PurchaseOrderLineViewSchema,
   PurchaseOrderListQuerySchema,
   PurchaseOrderSchema,
+  PurchaseOrderShipInputSchema,
   PurchaseOrderStatusSchema,
   PurchaseOrderUpdateInputSchema,
 } from './purchase-orders.js';
@@ -81,8 +83,8 @@ const CREATE_INPUT = {
 } as const;
 
 describe('采购单契约（purchase）', () => {
-  it('6 条端点全部登记并汇总进 ROUTES，且归属 purchase', () => {
-    expect(PURCHASE_ORDER_ROUTES).toHaveLength(6);
+  it('9 条端点全部登记并汇总进 ROUTES，且归属 purchase', () => {
+    expect(PURCHASE_ORDER_ROUTES).toHaveLength(9);
     for (const route of PURCHASE_ORDER_ROUTES) expect(route.module).toBe('purchase');
 
     const purchaseIds = routesOfModule(ROUTES, 'purchase').map((r) => r.operationId);
@@ -99,6 +101,10 @@ describe('采购单契约（purchase）', () => {
         'PATCH /api/v1/purchase-orders/{id} purchase.order.update',
         'POST /api/v1/purchase-orders/{id}/cancel purchase.order.cancel',
         'POST /api/v1/purchase-orders/{id}/complete purchase.order.complete',
+        // D94：发货 / 撤销发货 / 到货确认。
+        'POST /api/v1/purchase-orders/{id}/ship purchase.order.ship',
+        'POST /api/v1/purchase-orders/{id}/ship/revoke purchase.order.ship.revoke',
+        'POST /api/v1/purchase-orders/{id}/receive purchase.order.receive',
       ].sort(),
     );
 
@@ -108,14 +114,26 @@ describe('采购单契约（purchase）', () => {
     expect(byId.get('purchase.order.create')?.scope).toBe('purchase.create');
     expect(byId.get('purchase.order.update')?.scope).toBe('purchase.update');
     expect(byId.get('purchase.order.cancel')?.scope).toBe('purchase.delete');
-    expect(byId.get('purchase.order.complete')?.scope).toBe('purchase.update');
+    // 完成走审批动作（D85），不是「能改单就能完成」。
+    expect(byId.get('purchase.order.complete')?.scope).toBe('purchase.approve');
+    expect(byId.get('purchase.order.ship')?.scope).toBe('purchase.ship');
+    expect(byId.get('purchase.order.ship.revoke')?.scope).toBe('purchase.ship');
+    expect(byId.get('purchase.order.receive')?.scope).toBe('purchase.approve');
   });
 
   it('普通读不记审计；写操作全部 audit=write（D51）', () => {
     const byId = new Map(PURCHASE_ORDER_ROUTES.map((r) => [r.operationId, r]));
     expect(byId.get('purchase.order.list.read')?.audit).toEqual({ kind: 'none', required: false });
     expect(byId.get('purchase.order.detail.read')?.audit).toEqual({ kind: 'none', required: false });
-    for (const id of ['purchase.order.create', 'purchase.order.update', 'purchase.order.cancel']) {
+    for (const id of [
+      'purchase.order.create',
+      'purchase.order.update',
+      'purchase.order.cancel',
+      'purchase.order.complete',
+      'purchase.order.ship',
+      'purchase.order.ship.revoke',
+      'purchase.order.receive',
+    ]) {
       expect(byId.get(id)?.audit, id).toEqual({ kind: 'write', required: true });
     }
   });
@@ -135,12 +153,16 @@ describe('采购单契约（purchase）', () => {
     expect(byId.get('purchase.order.create')?.response?.status).toBe(201);
   });
 
-  it('状态只复用 documents.ts 的 HEADER_STATES，不另造枚举（§10）', () => {
-    expect([...PurchaseOrderStatusSchema.options]).toEqual([...HEADER_STATES]);
+  it('状态在 HEADER_STATES 基础上本地扩「在途」（D94），不引入英文枚举（§10）', () => {
+    expect([...PurchaseOrderStatusSchema.options]).toEqual([...PURCHASE_ORDER_STATES]);
+    expect([...PurchaseOrderStatusSchema.options]).toEqual(['进行中', '在途', '已完成', '已取消']);
+    // HEADER_STATES 是十几个模块共用的三态，不能被这条改动带跑偏。
+    expect([...HEADER_STATES]).toEqual(['进行中', '已完成', '已取消']);
     expect(PurchaseOrderStatusSchema.safeParse('进行中').success).toBe(true);
+    expect(PurchaseOrderStatusSchema.safeParse('在途').success).toBe(true);
     expect(PurchaseOrderStatusSchema.safeParse('已完成').success).toBe(true);
     expect(PurchaseOrderStatusSchema.safeParse('已取消').success).toBe(true);
-    for (const invalid of ['pending', 'completed', '取消', '待入库']) {
+    for (const invalid of ['pending', 'completed', '取消', '待入库', '已发货']) {
       expect(PurchaseOrderStatusSchema.safeParse(invalid).success, invalid).toBe(false);
     }
     expect(PurchaseOrderSchema.safeParse(ORDER).success).toBe(true);
@@ -150,7 +172,8 @@ describe('采购单契约（purchase）', () => {
   it('A 单商品明细不含 batchIds（入库时生成批次，不引用既有批次），金额是 decimal 字符串', () => {
     expect(PurchaseOrderLineSchema.safeParse(LINE).success).toBe(true);
     expect(Object.keys(PurchaseOrderLineSchema.shape).sort()).toEqual(
-      ['amount', 'productId', 'qty', 'unitPrice'].sort(),
+      // D94 ①：行级到货去向 transitTo / processorId。
+      ['amount', 'productId', 'qty', 'unitPrice', 'transitTo', 'processorId'].sort(),
     );
     expect(Object.keys(PurchaseOrderLineSchema.shape)).not.toContain('batchIds');
 
@@ -166,6 +189,61 @@ describe('采购单契约（purchase）', () => {
       );
     }
     expect(PurchaseOrderLineSchema.safeParse({ ...LINE, qty: '1.234567' }).success).toBe(true);
+  });
+
+  it('到货去向：去加工厂必须带 processorId，视图 schema 用同一份校验（D94 ①）', () => {
+    // 不填去向 = 回仓库，老路径不受影响。
+    expect(PurchaseOrderLineSchema.safeParse(LINE).success).toBe(true);
+    expect(
+      PurchaseOrderLineSchema.safeParse({ ...LINE, transitTo: 'warehouse' }).success,
+    ).toBe(true);
+    expect(
+      PurchaseOrderLineSchema.safeParse({
+        ...LINE,
+        transitTo: 'processor',
+        processorId: SUPPLIER_ID,
+      }).success,
+    ).toBe(true);
+
+    // 去加工厂却没给加工厂 id：报错落在 processorId 上，文案固定（前端按这个提示填）。
+    const missing = PurchaseOrderLineSchema.safeParse({ ...LINE, transitTo: 'processor' });
+    expect(missing.success).toBe(false);
+    if (missing.success) throw new Error('unreachable');
+    expect(missing.error.issues[0]?.path).toEqual(['processorId']);
+    expect(missing.error.issues[0]?.message).toBe('transitTo 为 processor 时必须填 processorId');
+
+    // 视图 schema（金额可空）继承了同一份校验——两处只有一份定义。
+    expect(
+      PurchaseOrderLineViewSchema.safeParse({ ...LINE, unitPrice: null, amount: null }).success,
+    ).toBe(true);
+    expect(
+      PurchaseOrderLineViewSchema.safeParse({
+        ...LINE,
+        unitPrice: null,
+        amount: null,
+        transitTo: 'processor',
+      }).success,
+    ).toBe(false);
+
+    // 发货入参：至少 1 行，行用 lineNo 定位（数组下标并发改单后会错位）。
+    expect(PurchaseOrderShipInputSchema.safeParse({ lines: [] }).success).toBe(false);
+    expect(
+      PurchaseOrderShipInputSchema.safeParse({ lines: [{ lineNo: 0, transitTo: 'warehouse' }] })
+        .success,
+    ).toBe(false);
+    expect(
+      PurchaseOrderShipInputSchema.safeParse({ lines: [{ lineNo: 1, transitTo: 'warehouse' }] })
+        .success,
+    ).toBe(true);
+    expect(
+      PurchaseOrderShipInputSchema.safeParse({ lines: [{ lineNo: 1, transitTo: 'processor' }] })
+        .success,
+    ).toBe(false);
+    expect(
+      PurchaseOrderShipInputSchema.safeParse({
+        lines: [{ lineNo: 1, transitTo: 'processor', processorId: SUPPLIER_ID }],
+      }).success,
+    ).toBe(true);
   });
 
   it('A 单费用金额不得为负，最低 0（2026-11-15 口径，D39 作废）', () => {

@@ -3587,6 +3587,7 @@ paths:
             type: string
             enum:
               - 进行中
+              - 已发货
               - 已完成
               - 已取消
         - name: keyword
@@ -3939,6 +3940,44 @@ paths:
         policy: forbid
         reasonRequired: true
       x-mcp-tool: qingdan_sales_order_ship
+      x-requires-if-match: true
+  /api/v1/sales-orders/{id}/complete:
+    post:
+      operationId: sales.order.complete
+      summary: 客户签收完成：已发货 → 已完成（D94 ③：按批次反查来源 A/B 单必须全部已完成，否则 409；D94 ④：签收走 approve，不是 ship）
+      tags:
+        - sales
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: sales.approve
+      x-module: sales
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_sales_order_complete
       x-requires-if-match: true
   /api/v1/sales-orders/{id}/cancel:
     post:
@@ -4399,7 +4438,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiErrorBody"
-      x-scope: purchase.update
+      x-scope: purchase.approve
       x-module: purchase
       x-audit:
         kind: write
@@ -4453,6 +4492,7 @@ paths:
             type: string
             enum:
               - 进行中
+              - 在途
               - 已完成
               - 已取消
         - name: keyword
@@ -4567,6 +4607,15 @@ paths:
                       amount:
                         type: string
                         pattern: ^\d{1,12}(\.\d{1,6})?$
+                      transitTo:
+                        type: string
+                        enum:
+                          - warehouse
+                          - processor
+                      processorId:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
                     required:
                       - productId
                       - qty
@@ -4716,6 +4765,15 @@ paths:
                       amount:
                         type: string
                         pattern: ^\d{1,12}(\.\d{1,6})?$
+                      transitTo:
+                        type: string
+                        enum:
+                          - warehouse
+                          - processor
+                      processorId:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
                     required:
                       - productId
                       - qty
@@ -4752,6 +4810,153 @@ paths:
                       - amount
                     additionalProperties: false
               additionalProperties: false
+  /api/v1/purchase-orders/{id}/ship:
+    post:
+      operationId: purchase.order.ship
+      summary: 采购发货：进行中 → 在途，按明细行记去向（回仓库 / 直发加工厂，D94 ①）；发货即建批次并计入在途量
+      tags:
+        - purchase
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: purchase.ship
+      x-module: purchase
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_purchase_order_ship
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lines:
+                  minItems: 1
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      lineNo:
+                        type: integer
+                        minimum: 1
+                        maximum: 9007199254740991
+                      transitTo:
+                        type: string
+                        enum:
+                          - warehouse
+                          - processor
+                      processorId:
+                        type: string
+                        format: uuid
+                        pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                    required:
+                      - lineNo
+                      - transitTo
+                    additionalProperties: false
+              required:
+                - lines
+              additionalProperties: false
+  /api/v1/purchase-orders/{id}/ship/revoke:
+    post:
+      operationId: purchase.order.ship.revoke
+      summary: 撤销采购发货：在途 → 进行中，必须给原因（D94 ⑤：点过发货就只能撤销或到货确认）
+      tags:
+        - purchase
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: purchase.ship
+      x-module: purchase
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_purchase_order_ship_revoke
+      x-requires-if-match: true
+  /api/v1/purchase-orders/{id}/receive:
+    post:
+      operationId: purchase.order.receive
+      summary: 采购到货确认：在途 → 已完成，按行分流建批次（直发加工厂的批次挂 heldByProcessorId，D94 ①/④）
+      tags:
+        - purchase
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: purchase.approve
+      x-module: purchase
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_purchase_order_receive
+      x-requires-if-match: true
   /api/v1/purchase-orders/{id}/cancel:
     post:
       operationId: purchase.order.cancel
@@ -5124,6 +5329,7 @@ paths:
             type: string
             enum:
               - 进行中
+              - 在途
               - 已完成
               - 已取消
         - name: keyword
@@ -5485,6 +5691,141 @@ paths:
         policy: forbid
         reasonRequired: true
       x-mcp-tool: qingdan_processing_order_cancel
+      x-requires-if-match: true
+  /api/v1/processing-orders/{id}/ship:
+    post:
+      operationId: processing.order.ship
+      summary: 加工发货：进行中 → 在途，带 transitStage（料/成品在路上）+ transitTo（回仓/直发客户，D94 ②）
+      tags:
+        - processing
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processing.ship
+      x-module: processing
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_processing_order_ship
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                transitStage:
+                  type: string
+                  enum:
+                    - materials
+                    - finished
+                transitTo:
+                  type: string
+                  enum:
+                    - warehouse
+                    - customer
+              required:
+                - transitStage
+                - transitTo
+              additionalProperties: false
+  /api/v1/processing-orders/{id}/ship/revoke:
+    post:
+      operationId: processing.order.ship.revoke
+      summary: 撤销加工发货：在途 → 进行中，必须给原因（D94 ⑤）
+      tags:
+        - processing
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processing.ship
+      x-module: processing
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_processing_order_ship_revoke
+      x-requires-if-match: true
+  /api/v1/processing-orders/{id}/receive:
+    post:
+      operationId: processing.order.receive
+      summary: 加工到货确认：在途 → 已完成（D94 ②/④：到货确认走 approve，与改单 update 分离）
+      tags:
+        - processing
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingOrder"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processing.approve
+      x-module: processing
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_processing_order_receive
       x-requires-if-match: true
   /api/v1/processing-orders/{id}/complete:
     post:
@@ -6643,6 +6984,7 @@ paths:
             type: string
             enum:
               - 进行中
+              - 已发货
               - 已完成
               - 已取消
         - name: keyword
@@ -8599,6 +8941,7 @@ components:
           type: string
           enum:
             - 进行中
+            - 已发货
             - 已完成
             - 已取消
         handlerId:
@@ -8731,6 +9074,7 @@ components:
           type: string
           enum:
             - 进行中
+            - 已发货
             - 已完成
             - 已取消
         handlerId:
@@ -9006,6 +9350,7 @@ components:
           type: string
           enum:
             - 进行中
+            - 在途
             - 已完成
             - 已取消
         handlerId:
@@ -9085,6 +9430,15 @@ components:
             - type: string
               pattern: ^\d{1,12}(\.\d{1,6})?$
             - type: "null"
+        transitTo:
+          type: string
+          enum:
+            - warehouse
+            - processor
+        processorId:
+          type: string
+          format: uuid
+          pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
       required:
         - productId
         - qty
@@ -9142,6 +9496,7 @@ components:
           type: string
           enum:
             - 进行中
+            - 在途
             - 已完成
             - 已取消
         handlerId:
@@ -9327,6 +9682,7 @@ components:
           type: string
           enum:
             - 进行中
+            - 在途
             - 已完成
             - 已取消
         handlerId:
@@ -9376,6 +9732,16 @@ components:
             - type: string
               pattern: ^[EN]-\d{4}-\d{8}-\d{4}$
             - type: "null"
+        transitStage:
+          type: string
+          enum:
+            - materials
+            - finished
+        transitTo:
+          type: string
+          enum:
+            - warehouse
+            - customer
         version:
           type: integer
           minimum: -9007199254740991
@@ -9460,6 +9826,7 @@ components:
           type: string
           enum:
             - 进行中
+            - 在途
             - 已完成
             - 已取消
         handlerId:
@@ -9509,6 +9876,16 @@ components:
             - type: string
               pattern: ^[EN]-\d{4}-\d{8}-\d{4}$
             - type: "null"
+        transitStage:
+          type: string
+          enum:
+            - materials
+            - finished
+        transitTo:
+          type: string
+          enum:
+            - warehouse
+            - customer
         version:
           type: integer
           minimum: -9007199254740991

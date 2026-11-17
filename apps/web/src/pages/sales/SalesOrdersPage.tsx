@@ -68,6 +68,8 @@ import {
 
 const STATUS_STYLE: Readonly<Record<SalesOrderStatus, string>> = {
   进行中: 'bg-blue-50 text-blue-700',
+  // D94：货已发出、等客户签收（签收走 sales.order.complete）。
+  已发货: 'bg-amber-50 text-amber-700',
   已完成: 'bg-emerald-50 text-emerald-700',
   已取消: 'bg-slate-100 text-slate-500',
 };

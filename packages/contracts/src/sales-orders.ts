@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { HEADER_STATES, type CancelDecision } from './documents.js';
+import type { CancelDecision } from './documents.js';
 import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
 import { SalesReceiptSchema } from './sales-receipts.js';
@@ -39,9 +39,15 @@ const NonNegativeDecimal = z
   .string()
   .regex(/^\d{1,12}(\.\d{1,6})?$/, '必须是 decimal 字符串（非负、最多 6 位小数）');
 
-/** 单头三态（契约第一批 §10）：直接复用单据框架的 `HEADER_STATES`，不另造枚举。 */
-export const SalesOrderStatusSchema = z.enum(HEADER_STATES);
-export type SalesOrderStatus = z.infer<typeof SalesOrderStatusSchema>;
+/**
+ * 单头状态（D94 ③）：进行中 → 已发货 → 已完成，另有已取消，「在途可跳过」。
+ *
+ * **不再复用 `documents.ts` 的 `HEADER_STATES`**：那个三态还被退货单（R/S）、盘点等共用；
+ * E 单的「已发货」只在本地扩一态（D85 之后出库 = `ship`，签收完成才是 `complete`）。
+ */
+export const SALES_ORDER_STATES = ['进行中', '已发货', '已完成', '已取消'] as const;
+export type SalesOrderStatus = (typeof SALES_ORDER_STATES)[number];
+export const SalesOrderStatusSchema = z.enum(SALES_ORDER_STATES);
 
 /**
  * 商品明细（§5.1）：E 单单价为售价；一行可引多个批次（D22 本公司批次）。
@@ -193,9 +199,9 @@ export const SalesOrderUpdateInputSchema = z
 export type SalesOrderUpdateInput = z.infer<typeof SalesOrderUpdateInputSchema>;
 
 /**
- * sales 模块 E 销售单端点（6 条：5 条第一批 + D72 出库）。
+ * sales 模块 E 销售单端点（7 条：5 条第一批 + D72 出库 + D94 签收完成）。
  *
- * 权限：`sales.read` / `.create` / `.update` / `.ship` / `.delete`（scope = domain.action，D44）。
+ * 权限：`sales.read` / `.create` / `.update` / `.ship` / `.approve` / `.delete`（scope = domain.action，D44）。
  * 审计：写操作必记（D51）；普通读不记（D54 ②）。
  * AI：**开单属业务动作，默认禁止**（与既有写端点口径一致）；
  *     修改允许；**取消属危险动作，默认禁止且必须给原因**（D52① / D54 ⑥）。
@@ -265,6 +271,20 @@ export const SALES_ORDER_ROUTES: readonly RouteDef[] = [
     action: 'ship',
     summary:
       '销售出库（D72 扣减批次可用量 + 生成 C 单草稿，同事务；仅「进行中」可出库；权限 sales.ship，D85；AI 默认禁止）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    response: { status: 200, schema: SalesOrderSchema },
+  }),
+  defineRoute({
+    module: 'sales',
+    operationId: 'sales.order.complete',
+    method: 'POST',
+    path: '/api/v1/sales-orders/{id}/complete',
+    domain: 'sales',
+    action: 'approve',
+    summary:
+      '客户签收完成：已发货 → 已完成（D94 ③：按批次反查来源 A/B 单必须全部已完成，否则 409；D94 ④：签收走 approve，不是 ship）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
