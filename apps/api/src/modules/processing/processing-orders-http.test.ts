@@ -219,6 +219,44 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     await test.database.close();
   });
 
+  it('材料发货 → 在途 → 到货回进行中：HTTP 路由贯通，无 ship 权限 403', async () => {
+    const order = await createOne(nextRequestId('transit-seed'));
+    const denied = await app.inject({
+      method: 'POST',
+      url: `/api/v1/processing-orders/${order.id}/ship`,
+      headers: writeHeaders(warehouseCookie, nextRequestId('transit-denied'), {
+        'if-match': '"1"',
+      }),
+      payload: { transitStage: 'materials', transitTo: 'warehouse' },
+    });
+    expect(denied.statusCode).toBe(403);
+
+    const shipped = await app.inject({
+      method: 'POST',
+      url: `/api/v1/processing-orders/${order.id}/ship`,
+      headers: writeHeaders(ownerCookie, nextRequestId('transit-ship'), {
+        'if-match': '"1"',
+      }),
+      payload: { transitStage: 'materials', transitTo: 'warehouse' },
+    });
+    expect(shipped.statusCode).toBe(200);
+    expect(shipped.json()).toMatchObject({
+      status: '在途',
+      transitStage: 'materials',
+      version: 2,
+    });
+
+    const received = await app.inject({
+      method: 'POST',
+      url: `/api/v1/processing-orders/${order.id}/receive`,
+      headers: writeHeaders(ownerCookie, nextRequestId('transit-receive'), {
+        'if-match': '"2"',
+      }),
+    });
+    expect(received.statusCode).toBe(200);
+    expect(received.json()).toMatchObject({ status: '进行中', version: 3 });
+  });
+
   it('未登录 → 401；无 processing.create → 403', async () => {
     const anonymous = await app.inject({
       method: 'GET',

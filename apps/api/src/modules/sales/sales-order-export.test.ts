@@ -1,4 +1,4 @@
-import type { PrintDocument, SalesOrder } from '@qingdan/contracts';
+import type { SalesOrder } from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../app.js';
@@ -94,6 +94,20 @@ describe('销售单列表导出 CSV', () => {
       url: '/api/v1/sales-orders/export',
       headers: readHeaders(cookie, requestId),
     });
+  }
+
+  /**
+   * 导出改成原生 CSV 后（D96）：响应体就是 CSV 文本，文件名走 content-disposition，
+   * 这里统一断言三个响应头，再返回 body 给用例逐行检查。
+   */
+  function csvOf(response: { headers: Record<string, unknown>; body: string }): string {
+    expect(String(response.headers['content-type'])).toContain('text/csv');
+    const disposition = String(response.headers['content-disposition']);
+    expect(disposition.startsWith(`attachment; filename*=UTF-8''`)).toBe(true);
+    expect(decodeURIComponent(disposition.split("UTF-8''")[1]!)).toMatch(
+      /^销售单-\d{8}\.csv$/,
+    );
+    return response.body;
   }
 
   beforeAll(async () => {
@@ -197,22 +211,20 @@ describe('销售单列表导出 CSV', () => {
     const response = await exportCsv(ownerCookie, 'req-export-owner');
     expect(response.statusCode).toBe(200);
 
-    const doc = response.json() as PrintDocument;
-    expect(doc.contentType).toBe('text/csv');
-    expect(doc.filename).toMatch(/^销售单-\d{8}\.csv$/);
-    expect(doc.content.startsWith(UTF8_BOM)).toBe(true);
+    const content = csvOf(response);
+    expect(content.startsWith(UTF8_BOM)).toBe(true);
 
-    const rows = doc.content.slice(1).split('\r\n').filter(Boolean);
+    const rows = content.slice(1).split('\r\n').filter(Boolean);
     expect(rows[0]).toBe(HEADER);
     expect(rows).toHaveLength(3); // 表头 + 2 张单
 
-    expect(doc.content).toContain(orderA.orderNo);
-    expect(doc.content).toContain(orderB.orderNo);
-    expect(doc.content).toContain('导出客户一');
+    expect(content).toContain(orderA.orderNo);
+    expect(content).toContain(orderB.orderNo);
+    expect(content).toContain('导出客户一');
     // orderA：2 + 1 = 3，金额 246.9 + 10 = 256.9 → 256.90
-    expect(doc.content).toContain(',3,256.90');
+    expect(content).toContain(',3,256.90');
     // orderB：3 × 10 = 30 → 30.00
-    expect(doc.content).toContain(',3,30.00');
+    expect(content).toContain(',3,30.00');
 
     const audit = await test.database.query<{ action: string; result: string }>(
       `SELECT action, result
@@ -228,26 +240,25 @@ describe('销售单列表导出 CSV', () => {
     const response = await exportCsv(managerCookie, 'req-export-manager');
     expect(response.statusCode).toBe(200);
 
-    const doc = response.json() as PrintDocument;
-    expect(doc.contentType).toBe('text/csv');
+    const content = csvOf(response);
 
-    const rows = doc.content.slice(1).split('\r\n').filter(Boolean);
+    const rows = content.slice(1).split('\r\n').filter(Boolean);
     expect(rows[0]).toBe('# 当前账号无看价权限，金额列已留空');
     expect(rows[1]).toBe(HEADER);
     expect(rows.slice(2)).toHaveLength(2);
     for (const row of rows.slice(2)) {
       expect(row.endsWith(',')).toBe(true); // 最后一列（金额合计）为空
     }
-    expect(doc.content).not.toContain('256.90');
-    expect(doc.content).not.toContain('30.00');
+    expect(content).not.toContain('256.90');
+    expect(content).not.toContain('30.00');
   });
 
   it('含逗号 / 引号的客户名：引号包裹且内部引号双写', async () => {
     const response = await exportCsv(ownerCookie, 'req-export-escape');
     expect(response.statusCode).toBe(200);
 
-    const doc = response.json() as PrintDocument;
-    expect(doc.content).toContain('"导出,客户""二"""');
+    const content = csvOf(response);
+    expect(content).toContain('"导出,客户""二"""');
   });
 
   it('AI 凭证导出 → 403 AI_ACTION_FORBIDDEN；人类凭证同一路径仍 200', async () => {

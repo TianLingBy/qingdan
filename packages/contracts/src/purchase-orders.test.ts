@@ -413,7 +413,18 @@ describe('采购单契约（purchase）', () => {
     expect(orders.get?.['x-audit']).toEqual({ kind: 'none', required: false });
     expect(orders.get?.['x-mcp-tool']).toBe('qingdan_purchase_order_list_read');
     const queryNames = (orders.get?.parameters as Array<{ name: string }>).map((p) => p.name).sort();
-    expect(queryNames).toEqual(['companyId', 'cursor', 'keyword', 'limit', 'status', 'supplierId']);
+    expect(queryNames).toEqual([
+      'companyId',
+      'cursor',
+      'keyword',
+      'limit',
+      'order',
+      'page',
+      'pageSize',
+      'sort',
+      'status',
+      'supplierId',
+    ]);
 
     expect(orders.post?.['x-scope']).toBe('purchase.create');
     expect(orders.post?.['x-audit']).toEqual({ kind: 'write', required: true });

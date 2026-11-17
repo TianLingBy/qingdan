@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { clampLimit, decodeCursor, encodeCursor, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT, PageQuerySchema, pageSchema } from './pagination.js';
+import {
+  clampLimit,
+  decodeCursor,
+  encodeCursor,
+  DEFAULT_PAGE_LIMIT,
+  DEFAULT_PAGE_SIZE,
+  MAX_PAGE_LIMIT,
+  PageQuerySchema,
+  pageSchema,
+  pagedResultSchema,
+  resolvePaging,
+} from './pagination.js';
 import { z } from 'zod';
 import { AUTHZ_LAYER_ORDER, allowsScope, scopeIsSubset } from './authz.js';
 import { AppError } from './errors.js';
@@ -27,6 +38,73 @@ describe('游标分页（契约第三批 §3）', () => {
     const parsed = schema.parse({ items: [{ id: 'a' }], nextCursor: null });
     expect(parsed.items).toHaveLength(1);
     expect(PageQuerySchema.parse({ limit: '10' }).limit).toBe(10);
+  });
+});
+
+describe('页码模式（D95）', () => {
+  it('只带 cursor → 游标模式，limit 照旧默认 50', () => {
+    expect(resolvePaging({ cursor: 'abc' })).toEqual({
+      mode: 'cursor',
+      limit: DEFAULT_PAGE_LIMIT,
+      offset: 0,
+      page: 1,
+    });
+  });
+
+  it('只带 page → 页码模式，每页默认 20', () => {
+    expect(resolvePaging({ page: 3 })).toEqual({
+      mode: 'offset',
+      limit: DEFAULT_PAGE_SIZE,
+      offset: 40,
+      page: 3,
+    });
+  });
+
+  it('cursor 与 page 同时给 → VALIDATION_FAILED，details.field=page', () => {
+    expect(() => resolvePaging({ cursor: 'abc', page: 2 })).toThrowError(AppError);
+    try {
+      resolvePaging({ cursor: 'abc', page: 2 });
+    } catch (error) {
+      expect((error as AppError).code).toBe('VALIDATION_FAILED');
+      expect((error as AppError).details).toMatchObject({ field: 'page' });
+    }
+  });
+
+  it('pageSize 优先于 limit', () => {
+    expect(resolvePaging({ page: 2, limit: 100, pageSize: 5 })).toEqual({
+      mode: 'offset',
+      limit: 5,
+      offset: 5,
+      page: 2,
+    });
+  });
+
+  it('什么都不给 → 页码模式第 1 页（前端默认要看到页码条）', () => {
+    expect(resolvePaging({})).toEqual({
+      mode: 'offset',
+      limit: DEFAULT_PAGE_SIZE,
+      offset: 0,
+      page: 1,
+    });
+  });
+
+  it('只带 limit 仍是游标模式：老前端靠它拿 nextCursor', () => {
+    expect(resolvePaging({ limit: 2 })).toEqual({
+      mode: 'cursor',
+      limit: 2,
+      offset: 0,
+      page: 1,
+    });
+  });
+
+  it('pagedResultSchema 允许 total/page/pageSize 为 null（游标模式）', () => {
+    const schema = pagedResultSchema(z.object({ id: z.string() }));
+    expect(
+      schema.parse({ items: [{ id: 'a' }], total: null, page: null, pageSize: null, nextCursor: null }),
+    ).toMatchObject({ total: null, page: null });
+    expect(
+      schema.parse({ items: [], total: 0, page: 1, pageSize: 20, nextCursor: null }).total,
+    ).toBe(0);
   });
 });
 

@@ -1,6 +1,7 @@
 import {
   AppError,
   encodeCursor,
+  resolvePaging,
   type CustomerReturn,
   type CustomerReturnCreateInput,
   type CustomerReturnLine,
@@ -16,9 +17,11 @@ import {
   type SalesOrderLine,
   type SalesOrderStatus,
   type SalesOrderUpdateInput,
+  type SortOrder,
 } from '@qingdan/contracts';
 import { v7 as uuidv7 } from 'uuid';
 import type { SqlClient } from '../../platform/db/client.js';
+import { buildOrderBy } from '../../platform/db/order-by.js';
 
 /**
  * 销售单 E 数据访问层（D15 / D16 / D20 / D21 / D22 / D39 / D54）。
@@ -44,8 +47,17 @@ export interface SalesOrderListQuery {
   readonly status?: SalesOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
-  readonly limit: number;
+  /** 省略表示调用方没传 limit——由 resolvePaging 决定是游标默认 50 还是页码默认 20。 */
+  readonly limit?: number;
+  /** 页码模式（D95）：与 cursor 互斥，同时给由 resolvePaging 抛 422。 */
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly sort?: SalesOrderSortKey;
+  readonly order?: SortOrder;
 }
+
+/** 排序白名单（与契约 `SalesOrderListQuerySchema.sort` 一一对应，列名核对自 0013 建表语句）。 */
+export type SalesOrderSortKey = 'orderNo' | 'totalAmount' | 'createdAt';
 
 /** 创建输入 = 契约创建体 + 用例生成的 uuid / 单号。 */
 export type SalesOrderInsertInput = SalesOrderCreateInput & {
@@ -55,6 +67,10 @@ export type SalesOrderInsertInput = SalesOrderCreateInput & {
 
 export interface SalesOrderPage {
   readonly items: SalesOrder[];
+  /** 页码模式下的总条数；游标模式恒为 null（老调用方不读这几个字段）。 */
+  readonly total: number | null;
+  readonly page: number | null;
+  readonly pageSize: number | null;
   readonly nextCursor: string | null;
 }
 
@@ -268,7 +284,11 @@ async function queryFees(
   return grouped;
 }
 
-/** 销售单列表：租户 + 可见公司内过滤，按 UUIDv7 id 倒序分页。 */
+/**
+ * 销售单列表：租户 + 可见公司内过滤。
+ * 游标模式（cursor / 仅 limit）按 UUIDv7 id 倒序翻页，行为与 D95 之前完全一致；
+ * 页码模式（page / pageSize）走 OFFSET，并额外带 total。
+ */
 export async function listSalesOrders(
   ctx: SalesOrderRepoContext,
   query: SalesOrderListQuery,
@@ -299,41 +319,104 @@ export async function listSalesOrders(
       OR c.name ILIKE ${keywordParam} ESCAPE '\\'
     )`);
   }
-  if (query.cursor !== undefined) {
+  const paging = resolvePaging({
+    // resolvePaging 只看「有没有 cursor」这一个事实，解码后的 id 就够当凭据。
+    cursor: query.cursor === undefined ? undefined : query.cursor.id,
+    limit: query.limit,
+    page: query.page,
+    pageSize: query.pageSize,
+  });
+  if (paging.mode === 'cursor' && query.cursor !== undefined) {
     params.push(query.cursor.id);
     where.push(`o.id < $${params.length}::uuid`);
   }
 
-  params.push(query.limit + 1);
-  const result = await ctx.tx.query<HeaderRow>(
-    `SELECT ${HEADER_COLUMNS}
+  const orderBy = buildOrderBy(COLUMN_MAP, query.sort, query.order, 'o.id', 'id');
+  const whereSql = where.join('\n        AND ');
+  const selectSql = `SELECT ${HEADER_COLUMNS}
        FROM ${HEADER_FROM}
-      WHERE ${where.join('\n        AND ')}
-      ORDER BY o.id DESC
+      WHERE ${whereSql}`;
+
+  if (paging.mode === 'offset') {
+    params.push(paging.limit, paging.offset);
+    const result = await ctx.tx.query<HeaderRow>(
+      `${selectSql}
+      ORDER BY ${orderBy}
+      LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params,
+    );
+    // total 单独一条 COUNT：**故意不与 items 同一快照**。
+    // 取舍理由：列表页每次翻页/筛选都走这条路，而 `COUNT(*) OVER()` 要求窗口函数先消费
+    // 全部匹配行，计划会退化成「Seq Scan + Sort」，新加的排序索引一次也用不上
+    // （EXPLAIN 实测：2 万行 21ms vs 走索引 0.047ms；18 万行 229ms 且溢出 temp read=2486）。
+    // READ COMMITTED 下两次语句之间若有并发写入，总数可能与当页条数差一两条——
+    // 这不会让人做错任何决定；真正需要严格一致的是财务对账，那走结算模块，不是列表页码。
+    // 另外：超过最后一页时分页那条返回 0 行，这条 COUNT 照样给出真实总数，
+    // 所以「page 超出范围」不再需要额外的补查分支。
+    // 曾评估：分页子查询 LEFT JOIN COUNT（同快照，实测 11.089ms vs 本写法 15.2ms），
+    // 因参数位置需在子查询内复用、嵌套加深、筛选项增减时易错位而放弃——错位不会编译报错，
+    // 只会让某条筛选在 COUNT 里算错，总数和当页对不上却查不出原因。
+    const countResult = await ctx.tx.query<{ n: string }>(
+      `SELECT COUNT(*) AS n FROM ${HEADER_FROM} WHERE ${whereSql}`,
+      params.slice(0, -2),
+    );
+    const items = await assembleSalesOrders(ctx, result.rows);
+    return {
+      items,
+      total: Number(countResult.rows[0]!.n),
+      page: paging.page,
+      pageSize: paging.limit,
+      nextCursor: null,
+    };
+  }
+
+  params.push(paging.limit + 1);
+  const result = await ctx.tx.query<HeaderRow>(
+    `${selectSql}
+      ORDER BY ${orderBy}
       LIMIT $${params.length}`,
     params,
   );
 
-  const hasMore = result.rows.length > query.limit;
-  const pageRows = hasMore ? result.rows.slice(0, query.limit) : result.rows;
-  const ids = pageRows.map((row) => row.id);
-  const [linesByOrder, feesByOrder] = await Promise.all([
-    queryLines(ctx, ids),
-    queryFees(ctx, ids),
-  ]);
-  const items = pageRows.map((row) => ({
-    ...mapHeader(row),
-    lines: linesByOrder.get(row.id) ?? [],
-    fees: feesByOrder.get(row.id) ?? [],
-  }));
+  const hasMore = result.rows.length > paging.limit;
+  const pageRows = hasMore ? result.rows.slice(0, paging.limit) : result.rows;
+  const items = await assembleSalesOrders(ctx, pageRows);
   const last = items[items.length - 1];
   return {
     items,
+    total: null,
+    page: null,
+    pageSize: null,
     nextCursor:
       hasMore && last
         ? encodeCursor({ createdAt: last.createdAt, id: last.id })
         : null,
   };
+}
+
+/** 排序白名单：键 → 真实列。`id` 只为保住改动前的默认序（原 ORDER BY o.id DESC）。 */
+const COLUMN_MAP = {
+  id: 'o.id',
+  orderNo: 'o.order_no',
+  totalAmount: 'o.total_amount',
+  createdAt: 'o.created_at',
+} as const satisfies Record<string, string>;
+
+/** 把单头行补齐商品行与费用行（两种分页模式共用）。 */
+async function assembleSalesOrders(
+  ctx: SalesOrderRepoContext,
+  rows: HeaderRow[],
+): Promise<SalesOrder[]> {
+  const ids = rows.map((row) => row.id);
+  const [linesByOrder, feesByOrder] = await Promise.all([
+    queryLines(ctx, ids),
+    queryFees(ctx, ids),
+  ]);
+  return rows.map((row) => ({
+    ...mapHeader(row),
+    lines: linesByOrder.get(row.id) ?? [],
+    fees: feesByOrder.get(row.id) ?? [],
+  }));
 }
 
 /** 销售单详情基础实体：租户 + 可见公司内；查不到（含跨公司）返回 null。 */
@@ -365,6 +448,35 @@ export async function loadSalesOrderState(
       WHERE id = $1::uuid
         AND tenant_id = $2
         AND company_id = ANY($3::uuid[])`,
+    [id, ctx.tenantId, [...ctx.companyIds]],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    status: row.status as SalesOrderStatus,
+    version: row.version,
+  };
+}
+
+/**
+ * 出库 / 签收前锁定单头行（D94 数据安全）。
+ *
+ * 来源单校验与状态变更必须在同一事务里；`FOR UPDATE` 让并发两次签收串行，
+ * 后到者在版本校验处失败，而不是两份校验都过了再抢着 UPDATE。
+ */
+export async function lockSalesOrderState(
+  ctx: SalesOrderRepoContext,
+  id: string,
+): Promise<SalesOrderState | null> {
+  const result = await ctx.tx.query<StateRow>(
+    `SELECT id, company_id, status, version
+       FROM sales_order
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+      FOR UPDATE`,
     [id, ctx.tenantId, [...ctx.companyIds]],
   );
   const row = result.rows[0];
@@ -885,26 +997,73 @@ export async function loadSalesOrderCompletionSource(
 }
 
 /**
- * 完成销售单：仅「进行中」可完成（D19 三态）。
+ * 销售出库：进行中 → 已发货（D94 ③）。
  *
  * 库存扣减与 C 草稿由用例在同一事务内调 D70 端口完成，本函数只改状态。
+ */
+export async function shipSalesOrder(
+  ctx: SalesOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<SalesOrder | null> {
+  return transitionSalesOrderStatus(
+    ctx,
+    id,
+    expectedVersion,
+    '已发货',
+    ['进行中'],
+    '只有「进行中」的销售单可出库，已发货/已完成/已取消不可再次出库',
+  );
+}
+
+/**
+ * 客户签收：已完成（D94 ③）。
+ *
+ * 接受 `from` 里的前置状态（「已发货」；D94 ⑤ 允许「进行中」跳过在途直接签收，
+ * 此时由用例先补出库的扣库存 + C 草稿）。来源单校验在用例里、同事务内完成。
  */
 export async function completeSalesOrder(
   ctx: SalesOrderRepoContext,
   id: string,
   expectedVersion: number,
+  from: readonly SalesOrderStatus[] = ['已发货'],
+): Promise<SalesOrder | null> {
+  return transitionSalesOrderStatus(
+    ctx,
+    id,
+    expectedVersion,
+    '已完成',
+    from,
+    '只有「进行中」或「已发货」的销售单可签收完成，已完成/已取消不可再次完成',
+  );
+}
+
+async function transitionSalesOrderStatus(
+  ctx: SalesOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+  to: SalesOrderStatus,
+  from: readonly SalesOrderStatus[],
+  invalidStatusMessage: string,
 ): Promise<SalesOrder | null> {
   const result = await ctx.tx.query<{ id: string }>(
     `UPDATE sales_order
-        SET status = '已完成',
+        SET status = $5,
             version = version + 1
       WHERE id = $1::uuid
         AND tenant_id = $2
         AND company_id = ANY($3::uuid[])
         AND version = $4
-        AND status = '进行中'
+        AND status = ANY($6::text[])
       RETURNING id`,
-    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+    [
+      id,
+      ctx.tenantId,
+      [...ctx.companyIds],
+      expectedVersion,
+      to,
+      [...from],
+    ],
   );
   if (result.rows.length === 0) {
     const current = await loadSalesOrderState(ctx, id);
@@ -916,11 +1075,9 @@ export async function completeSalesOrder(
         { expected: expectedVersion, current: current.version },
       );
     }
-    throw new AppError(
-      'VALIDATION_FAILED',
-      '只有「进行中」的销售单可完成，已完成/已取消不可再次完成',
-      { status: current.status },
-    );
+    throw new AppError('VALIDATION_FAILED', invalidStatusMessage, {
+      status: current.status,
+    });
   }
 
   return getSalesOrder(ctx, id);
@@ -1527,4 +1684,115 @@ export async function insertCustomerReturn(
     });
   }
   return created;
+}
+
+/**
+ * 导出用查询（#342）：销售单列表 CSV 的数据源。
+ *
+ * **与 `listSalesOrders` 的过滤条件必须保持一致，改一处要改两处。**
+ * 这是刻意的重复：并行任务 #341 正在改 `listSalesOrders`，若把 where 拼装抽成共享函数，
+ * 两个改动会在同一段代码上互相阻塞；而且导出只需要表头列 + 数量合计，
+ * 复用列表函数会连带把明细、批次、费用全加载进内存（5 万行时直接打爆进程）。
+ */
+export interface SalesOrderExportQuery {
+  readonly companyId?: string;
+  readonly customerId?: string;
+  readonly status?: SalesOrderStatus;
+  readonly keyword?: string;
+  /** 行数上限：内部统一按 `maxRows + 1` 取，多出一行即判定超限（不静默截断）。 */
+  readonly maxRows: number;
+}
+
+export interface SalesOrderExportRow {
+  readonly orderNo: string;
+  readonly createdAt: string;
+  readonly customerName: string;
+  readonly status: SalesOrderStatus;
+  readonly handlerId: string | null;
+  /** 明细数量合计，由 SQL 聚合（decimal 字符串，不在 JS 里做浮点累加）。 */
+  readonly qtySum: string;
+  readonly totalAmount: string;
+}
+
+export interface SalesOrderExportResult {
+  readonly rows: readonly SalesOrderExportRow[];
+  readonly exceedsMaxRows: boolean;
+}
+
+interface ExportRow {
+  order_no: string;
+  created_at: Date | string;
+  customer_name: string;
+  status: string;
+  handler_id: string | null;
+  qty_sum: string;
+  total_amount: string | number;
+}
+
+export async function exportSalesOrders(
+  ctx: SalesOrderRepoContext,
+  query: SalesOrderExportQuery,
+): Promise<SalesOrderExportResult> {
+  const params: unknown[] = [ctx.tenantId, [...ctx.companyIds]];
+  const where: string[] = ['o.tenant_id = $1', 'o.company_id = ANY($2::uuid[])'];
+
+  if (query.companyId !== undefined) {
+    params.push(query.companyId);
+    where.push(`o.company_id = $${params.length}::uuid`);
+  }
+  if (query.customerId !== undefined) {
+    params.push(query.customerId);
+    where.push(`o.customer_id = $${params.length}::uuid`);
+  }
+  if (query.status !== undefined) {
+    params.push(query.status);
+    where.push(`o.status = $${params.length}`);
+  }
+  if (query.keyword !== undefined) {
+    params.push(likePattern(query.keyword));
+    const keywordParam = `$${params.length}`;
+    where.push(`(
+      o.order_no ILIKE ${keywordParam} ESCAPE '\\'
+      OR c.name ILIKE ${keywordParam} ESCAPE '\\'
+    )`);
+  }
+
+  params.push(query.maxRows + 1);
+  const result = await ctx.tx.query<ExportRow>(
+    `SELECT o.order_no,
+            o.created_at,
+            c.name AS customer_name,
+            o.status,
+            o.handler_id,
+            trim_scale(o.total_amount) AS total_amount,
+            COALESCE(
+              (
+                SELECT trim_scale(SUM(l.qty))
+                  FROM sales_order_line l
+                 WHERE l.tenant_id = o.tenant_id
+                   AND l.order_id = o.id
+              ),
+              0
+            )::text AS qty_sum
+       FROM ${HEADER_FROM}
+      WHERE ${where.join('\n        AND ')}
+      ORDER BY o.id DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+
+  const exceedsMaxRows = result.rows.length > query.maxRows;
+  const kept = exceedsMaxRows ? result.rows.slice(0, query.maxRows) : result.rows;
+  return {
+    rows: kept.map((row) => ({
+      orderNo: row.order_no,
+      createdAt: toDate(row.created_at).toISOString(),
+      customerName: row.customer_name,
+      status: row.status as SalesOrderStatus,
+      handlerId: row.handler_id,
+      qtySum: String(row.qty_sum),
+      totalAmount: decimal(row.total_amount),
+    })),
+    exceedsMaxRows,
+  };
 }

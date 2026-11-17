@@ -61,6 +61,12 @@ export interface CreateBatchReceipt {
   readonly custodianId: string;
 }
 
+/** 新建“在途批次”：A 单发货 / B 单 finished 发货使用，入库量先全部计入在途。 */
+export interface CreateTransitBatchCommand extends CreateBatchCommand {
+  /** 货直发加工厂时记录实际持有人；回仓 / 回本公司时为 null。 */
+  readonly heldByProcessorId?: string | null;
+}
+
 /** 单据对库存批次的待执行占用行。 */
 export interface StockReservationLine {
   readonly batchId: string;
@@ -89,11 +95,55 @@ export interface StockReservationReceipt {
   readonly lines: readonly StockReservationReceiptLine[];
 }
 
+/** 在途批次的状态变更命令（不改库存流水，只改变在途数量或持有人）。 */
+export interface StockTransitLineCommand {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly sourceDocType: 'A' | 'B';
+  readonly sourceDocId: string;
+  readonly handledBy: string;
+  readonly lines: readonly StockReservationLine[];
+  /** 加工厂持有 / 释放时使用；null 表示清空持有人。 */
+  readonly heldByProcessorId?: string | null;
+}
+
+/** 按来源单据处理整批 A 单在途批次（到货 / 撤销发货）。 */
+export interface StockTransitSourceCommand {
+  readonly tenantId: string;
+  readonly companyId: string;
+  readonly sourceDocType: 'A';
+  readonly sourceDocId: string;
+  readonly handledBy: string;
+}
+
 /** 库存写入端口：由 inventory 实现，内部就是 `inventory/services/stock-flow.ts`。 */
 export interface StockFlowPort {
   applyAdjustment(tx: SqlClient, command: StockAdjustmentCommand): Promise<StockAdjustmentReceipt>;
   /** 新建入库批次（只签名；接线归 #137，A 单入库 / B 单产出调用）。 */
   createBatch(tx: SqlClient, command: CreateBatchCommand): Promise<CreateBatchReceipt>;
+  /** 新建在途批次（A 发货 / B finished 发货）。 */
+  createTransitBatch(
+    tx: SqlClient,
+    command: CreateTransitBatchCommand,
+  ): Promise<CreateBatchReceipt>;
+  /** 在途 → 可用（到货确认）；不改写流水。 */
+  receiveTransit(tx: SqlClient, command: StockTransitLineCommand): Promise<void>;
+  /** 待执行占用 → 在途量（B 材料发货）；不新增流水。 */
+  movePendingToTransit(tx: SqlClient, command: StockTransitLineCommand): Promise<void>;
+  /** 在途量 → 待执行占用（B 材料到货 / 撤销发货）；不新增流水。 */
+  moveTransitToPending(tx: SqlClient, command: StockTransitLineCommand): Promise<void>;
+  /** 撤销指定在途批次：入库量与在途量同时冲回，并追加负数流水。 */
+  revokeTransitBatch(tx: SqlClient, command: StockTransitLineCommand): Promise<void>;
+  /** 撤销整组 A 单在途批次：入库量与在途量同时冲回，并追加负数流水。 */
+  revokeTransitBySource(
+    tx: SqlClient,
+    command: StockTransitSourceCommand,
+  ): Promise<void>;
+  /** A 单全部到货：把来源单据创建的批次从在途转可用。 */
+  receiveTransitBySource(
+    tx: SqlClient,
+    command: StockTransitSourceCommand,
+  ): Promise<void>;
   /** 建单占用待执行量；不改善物流水。 */
   reservePending(
     tx: SqlClient,
@@ -354,11 +404,72 @@ export interface BatchDirectoryPort {
     tx: SqlClient,
     query: { tenantId: string; batchIds: readonly string[] },
   ): Promise<readonly BatchSummary[]>;
+  /**
+   * 批次来源单据（D94 ③）：E 单签收时按批次反查 A/B 单是否到货。
+   * 来源取自建批流水（`inventory_flow` 该批次首条正数流水），sales 不直读库存表。
+   */
+  lookupBatchSources(
+    tx: SqlClient,
+    query: {
+      readonly tenantId: string;
+      readonly companyId: string;
+      readonly batchIds: readonly string[];
+    },
+  ): Promise<readonly BatchSourceSummary[]>;
 }
 
 export interface BatchSummary {
   readonly id: string;
   readonly batchNo: string;
+}
+
+/** 批次建批来源（D94 ③）：`source_doc_type` 为各单据模块登记的类型（A / B / N …）。 */
+export interface BatchSourceSummary {
+  readonly batchId: string;
+  readonly sourceDocType: string;
+  readonly sourceDocId: string;
+}
+
+/** 来源单据状态查询（D94 ③：E 单签收按批次反查 A / B 单是否已完成）。 */
+export interface SourceOrderStatusDoc {
+  readonly type: 'A' | 'B';
+  readonly id: string;
+}
+
+export interface SourceOrderStatusFact {
+  readonly type: 'A' | 'B';
+  readonly id: string;
+  /** 单号：错误信息必须指名是哪张单没到货。 */
+  readonly orderNo: string;
+  readonly status: string;
+}
+
+export interface SourceOrderStatusQuery {
+  readonly tenantId: string;
+  /** 公司隔离（D15）：来源单必须与销售单同公司。 */
+  readonly companyId: string;
+  readonly docs: readonly SourceOrderStatusDoc[];
+}
+
+/**
+ * 单个模块（purchase / processing）的只读来源单状态实现。
+ *
+ * `docType` 由实现方声明（A = 采购单、B = 加工单），调用方只按类型分发。
+ */
+export interface SourceOrderStatusSource {
+  readonly docType: 'A' | 'B';
+  lookupStatuses(
+    tx: SqlClient,
+    query: SourceOrderStatusQuery,
+  ): Promise<readonly SourceOrderStatusFact[]>;
+}
+
+/** 来源单状态聚合端口（D70）：由 purchase / processing 各自注册，本文件只做分发。 */
+export interface SourceOrderStatusPort {
+  lookupStatuses(
+    tx: SqlClient,
+    query: SourceOrderStatusQuery,
+  ): Promise<readonly SourceOrderStatusFact[]>;
 }
 
 /** B 单完成使用的库存批次成本/可用量只读端口（D70 / #194）。 */
@@ -414,6 +525,9 @@ export interface ServiceRegistry {
   readonly batchDirectory?: BatchDirectoryPort;
   readonly stockBatchInspection?: StockBatchInspectionPort;
   readonly stockBatchTransfer?: StockBatchTransferPort;
+  /** D94 ③：E 单签收反查来源单，purchase / processing 各注册一个只读来源。 */
+  readonly purchaseSourceOrders?: SourceOrderStatusSource;
+  readonly processingSourceOrders?: SourceOrderStatusSource;
 }
 
 let registry: ServiceRegistry = {};
@@ -489,6 +603,37 @@ export function batchDirectoryPort(): BatchDirectoryPort {
     });
   }
   return registry.batchDirectory;
+}
+
+/**
+ * 来源单状态聚合端口（D94 ③ / D70）。
+ *
+ * purchase 与 processing 各自只读自己的单头表，本端口按 `type` 分发；
+ * 缺少某个来源实现时抛 NOT_IMPLEMENTED，绝不让「查不到」静默变成「已到货」。
+ */
+export function sourceOrderStatusPort(): SourceOrderStatusPort {
+  const sources = [
+    registry.purchaseSourceOrders,
+    registry.processingSourceOrders,
+  ].filter((source): source is SourceOrderStatusSource => source !== undefined);
+  if (sources.length === 0) {
+    throw new AppError('NOT_IMPLEMENTED', 'purchase / processing 未注册 SourceOrderStatusSource（D70）', {
+      port: 'SourceOrderStatusPort',
+    });
+  }
+  return {
+    async lookupStatuses(tx, query) {
+      if (query.docs.length === 0) return [];
+      const collected = await Promise.all(
+        sources.map(async (source) => {
+          const docs = query.docs.filter((doc) => doc.type === source.docType);
+          if (docs.length === 0) return [];
+          return await source.lookupStatuses(tx, { ...query, docs });
+        }),
+      );
+      return collected.flat();
+    },
+  };
 }
 
 export function salesReceiptPort(): SalesReceiptPort {

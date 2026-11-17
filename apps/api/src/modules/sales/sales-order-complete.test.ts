@@ -7,14 +7,15 @@ import { DEMO_IDS, seed } from '../../platform/db/seed.js';
 import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
 
 /**
- * E 单「出库 / 完成」HTTP 层（D72 / D85 / D19 / D70）。
+ * E 单「出库 / 签收」HTTP 层（D72 / D85 / D94 / D19 / D70）。
  *
  * 验证：
- * - 出库 = 扣批次可用量（按行均分，末批承余量）+ 生成 C 单草稿 + 状态改「已完成」，同一事务；
+ * - 出库 = 扣批次可用量（按行均分，末批承余量）+ 生成 C 单草稿 + 状态改「已发货」，同一事务；
  * - 流水来源为 E 单（`inventory_flow.source_doc_type = 'E'`）；
  * - C 草稿金额：总售价 = 单据总金额，总成本 = Σ(行数量 × 行加权平均批次成本)；
  * - 仅「进行中」可出库，重复出库 422；库存不足整单回滚；
  * - 权限点 `sales.ship`（D85）：只有 `sales.update` 的销售身份 403。
+ * - 签收（`sales.order.complete`）见 `sales-order-receipt.test.ts`（D94 ③）。
  */
 
 const PUBLIC_BASE_URL = 'https://qingdan.example';
@@ -166,7 +167,7 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
     await test.database.close();
   });
 
-  it('完成 → 扣两批各 2.5 + 生成 C 草稿 + 状态已完成 + ETag 前进', async () => {
+  it('出库 → 扣两批各 2.5 + 生成 C 草稿 + 状态已发货 + ETag 前进', async () => {
     const order = await createOrder(nextRequestId('ok'));
     const saleBefore = await batchAvailable(BATCH_A_ID);
     const costBefore = await batchAvailable(BATCH_B_ID);
@@ -174,11 +175,11 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
     const response = await complete(order, nextRequestId('ok-complete'));
     expect(response.statusCode).toBe(200);
     const body = response.json() as SalesOrder;
-    expect(body.status).toBe('已完成');
+    expect(body.status).toBe('已发货');
     expect(body.version).toBe(order.version + 1);
     expect(response.headers.etag).toBe(`"${body.version}"`);
 
-    // #286 A 案：建单占用 2.5 后可用量 97.5；完成先释放占用再扣 2.5，
+    // #286 A 案：建单占用 2.5 后可用量 97.5；出库先释放占用再扣 2.5，
     // 最终仍是 97.5，不会出现 pending 与 inbound 双扣成 95。
     expect(saleBefore).toBe('97.5');
     expect(costBefore).toBe('97.5');
@@ -247,7 +248,7 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
     expect(audit.rows).toHaveLength(1);
     expect(audit.rows[0]!.changes).toMatchObject({
       beforeStatus: '进行中',
-      afterStatus: '已完成',
+      afterStatus: '已发货',
       stockFlowCount: 2,
       pendingReleases: [
         { batchId: BATCH_A_ID, qty: '2.5', pendingAfter: '0' },
@@ -285,7 +286,7 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
     ]);
   });
 
-  it('重复完成 → 422；已完成单不可再取消', async () => {
+  it('重复出库 → 422；已发货单有下游、不可取消（409）', async () => {
     const order = await createOrder(nextRequestId('twice'));
     const first = await complete(order, nextRequestId('twice-1'));
     expect(first.statusCode).toBe(200);
@@ -299,10 +300,15 @@ describe('E 单出库（D72：扣库存 + C 草稿同事务；D85：sales.ship�
       url: `/api/v1/sales-orders/${order.id}/cancel`,
       headers: writeHeaders(ownerCookie, nextRequestId('twice-cancel'), {
         'if-match': '"2"',
-        'x-audit-reason': '重复完成后再尝试取消',
+        'x-audit-reason': '已发货后再尝试取消',
       }),
     });
-    expect(cancel.statusCode).toBe(422);
+    // 出库已写 E 单来源的库存流水（D21 直接下游），取消必须先处理下游。
+    expect(cancel.statusCode).toBe(409);
+    expect(cancel.json()).toMatchObject({
+      code: 'VERSION_CONFLICT',
+      details: { reason: 'has_downstream' },
+    });
   });
 
   it('待执行占用不足 → 409 且整单回滚（状态仍进行中、无 C 草稿、无流水）', async () => {

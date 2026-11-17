@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
 import { createTestDatabase, type TestDatabase } from '../../../testing/pglite.js';
 import {
+  receiveTransit,
   releasePendingReservations,
   reservePendingReservations,
 } from './stock-flow.js';
@@ -186,5 +187,109 @@ describe('库存待执行占用 / 释放', () => {
     });
     expect(await pendingOf(BATCH_ID)).toEqual(beforeBatch);
     expect(await pendingOf(BATCH_2_ID)).toEqual(beforeBatch2);
+  });
+
+  it('在途量可被占用：仅 5 件在途时占 5 成功、占 6 拒绝', async () => {
+    await test.database.query(
+      `UPDATE inventory_batch
+          SET inbound_qty = 5,
+              referenced_qty = 0,
+              in_transit_qty = 5,
+              pending_execution_qty = 0
+        WHERE id = $1::uuid`,
+      [BATCH_ID],
+    );
+    const receipt = await test.database.transaction((tx) =>
+      reservePendingReservations(tx, {
+        tenantId: DEMO_IDS.tenantId,
+        companyId: DEMO_IDS.companyId,
+        sourceDocType: 'E',
+        sourceDocId: DOC_ID,
+        handledBy: DEMO_IDS.ownerEmployeeId,
+        lines: [{ batchId: BATCH_ID, qty: '5' }],
+      }),
+    );
+    expect(receipt.lines[0]).toMatchObject({
+      qty: '5',
+      pendingAfter: '5',
+      availableAfter: '0',
+    });
+    await expect(
+      test.database.transaction((tx) =>
+        reservePendingReservations(tx, {
+          tenantId: DEMO_IDS.tenantId,
+          companyId: DEMO_IDS.companyId,
+          sourceDocType: 'E',
+          sourceDocId: OTHER_DOC_ID,
+          handledBy: DEMO_IDS.ownerEmployeeId,
+          lines: [{ batchId: BATCH_ID, qty: '1' }],
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: 'VERSION_CONFLICT',
+      details: {
+        reason: 'insufficient_available_qty',
+        availableQty: '0',
+        inTransitQty: '5',
+      },
+    });
+  });
+
+  it('在途占用到货后保留：到货清零 inTransit，再占 3 成功、再占 4 拒绝', async () => {
+    await test.database.query(
+      `UPDATE inventory_batch
+          SET inbound_qty = 7,
+              referenced_qty = 0,
+              in_transit_qty = 5,
+              pending_execution_qty = 0
+        WHERE id = $1::uuid`,
+      [BATCH_ID],
+    );
+    await test.database.transaction((tx) =>
+      reservePendingReservations(tx, {
+        tenantId: DEMO_IDS.tenantId,
+        companyId: DEMO_IDS.companyId,
+        sourceDocType: 'E',
+        sourceDocId: DOC_ID,
+        handledBy: DEMO_IDS.ownerEmployeeId,
+        lines: [{ batchId: BATCH_ID, qty: '3' }],
+      }),
+    );
+    await test.database.transaction((tx) =>
+      receiveTransit(tx, {
+        tenantId: DEMO_IDS.tenantId,
+        companyId: DEMO_IDS.companyId,
+        sourceDocType: 'B',
+        sourceDocId: OTHER_DOC_ID,
+        handledBy: DEMO_IDS.ownerEmployeeId,
+        lines: [{ batchId: BATCH_ID, qty: '5' }],
+      }),
+    );
+    expect(await pendingOf(BATCH_ID)).toMatchObject({
+      pending_execution_qty: '3',
+      available_qty: '4',
+    });
+    await test.database.transaction((tx) =>
+      reservePendingReservations(tx, {
+        tenantId: DEMO_IDS.tenantId,
+        companyId: DEMO_IDS.companyId,
+        sourceDocType: 'E',
+        sourceDocId: OTHER_DOC_ID,
+        handledBy: DEMO_IDS.ownerEmployeeId,
+        lines: [{ batchId: BATCH_ID, qty: '3' }],
+      }),
+    );
+    await expect(
+      test.database.transaction((tx) =>
+        reservePendingReservations(tx, {
+          tenantId: DEMO_IDS.tenantId,
+          companyId: DEMO_IDS.companyId,
+          sourceDocType: 'E',
+          sourceDocId: OTHER_DOC_ID,
+          handledBy: DEMO_IDS.ownerEmployeeId,
+          lines: [{ batchId: BATCH_ID, qty: '4' }],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'VERSION_CONFLICT' });
   });
 });

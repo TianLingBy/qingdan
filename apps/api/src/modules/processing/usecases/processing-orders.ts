@@ -3,6 +3,7 @@ import {
   ProcessingOrderCompleteBodySchema,
   ProcessingOrderCreateInputSchema,
   ProcessingOrderListQuerySchema,
+  ProcessingOrderShipInputSchema,
   ProcessingOrderUpdateInputSchema,
   allowsScope,
   assertCancelable,
@@ -16,6 +17,7 @@ import {
   type ProcessingOrderDetail,
   type ProcessingOrderStatus,
   type ProcessingOrderUpdateInput,
+  type ProcessingOrderShipInput,
   type ProcessingOrderCompleteResult,
   type ProcessingMaterialInput,
 } from '@qingdan/contracts';
@@ -97,7 +99,7 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create' | 'update' | 'delete' | 'approve',
+  action: 'read' | 'create' | 'update' | 'delete' | 'approve' | 'ship',
 ): void {
   if (!allowsScope(principal.scope, 'processing', action)) {
     throw new AppError('FORBIDDEN', `缺少 processing.${action} 权限`);
@@ -107,6 +109,16 @@ function requireScope(
 function parseCompleteInput(body: unknown) {
   const parsed = ProcessingOrderCompleteBodySchema.safeParse(body);
   if (!parsed.success) throw new AppError('VALIDATION_FAILED', '请求体不合法', { issues: issuesOf(parsed.error) });
+  return parsed.data;
+}
+
+function parseShipInput(body: unknown): ProcessingOrderShipInput {
+  const parsed = ProcessingOrderShipInputSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new AppError('VALIDATION_FAILED', '请求体不合法', {
+      issues: issuesOf(parsed.error),
+    });
+  }
   return parsed.data;
 }
 
@@ -635,4 +647,344 @@ export async function completeProcessingOrder(
   });
   ctx.reply.header('ETag', etagOf(expectedVersion + 1));
   return result;
+}
+
+/**
+ * B 单发货：
+ * - materials：待执行占用转在途，到货后再转回待执行，随后仍走原 complete；
+ * - finished：按验收损耗生成在途产出批次，同时扣材料并锁定成本；到货只完成状态机。
+ */
+export async function shipProcessingOrder(
+  ctx: ProcessingOrderWriteContext,
+): Promise<ProcessingOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'processing.order.ship');
+  requireScope(principal, 'ship');
+  assertHumanCredential(principal, '加工发货');
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const input = parseShipInput(ctx.request.body);
+  const audit = auditEventOf(ctx.request, principal, 'processing.order.ship', id, {});
+
+  const shipped = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const state = await repo.loadProcessingOrderState(context, id);
+    if (!state) throw new AppError('NOT_FOUND', '加工单不存在');
+    if (state.version !== expectedVersion) {
+      throw new AppError('VERSION_CONFLICT', '加工单版本与 If-Match 不一致', {
+        expected: expectedVersion,
+        current: state.version,
+      });
+    }
+    if (state.status !== '进行中') {
+      throw new AppError('STATE_CONFLICT', '只有进行中的加工单可以发货', {
+        status: state.status,
+      });
+    }
+    const order = await repo.getProcessingOrder(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '加工单不存在');
+
+    if (input.transitStage === 'materials') {
+      await stockFlowPort().movePendingToTransit(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+        lines: processingReservationLines(order.materialBatchIds),
+        heldByProcessorId: order.processorId,
+      });
+      const result = await repo.startProcessingTransit(context, id, expectedVersion, input);
+      if (!result) throw new AppError('NOT_FOUND', '加工单不存在');
+      audit.companyId = result.companyId;
+      audit.changeSummary = {
+        beforeStatus: state.status,
+        afterStatus: result.status,
+        version: result.version,
+        transitStage: input.transitStage,
+        transitTo: input.transitTo,
+        materialBatchIds: order.materialBatchIds,
+      };
+      return result;
+    }
+
+    // finished：复制 complete 的成本与产出计算，但产出批次落成“在途”。
+    const lossQty = input.lossQty;
+    if (lossQty === undefined) {
+      throw new AppError('VALIDATION_FAILED', 'finished 段发货必须填写 lossQty');
+    }
+    const custodianId = input.custodianId ?? order.handlerId;
+    if (!custodianId) {
+      throw new AppError('INTERNAL_ERROR', '加工单缺少经手人，无法生成产出批次');
+    }
+    const loss = micros(lossQty);
+    const inputQty = micros(order.inputQty);
+    if (loss > inputQty) {
+      throw new AppError('VALIDATION_FAILED', '损耗量不能大于投入量');
+    }
+    const sellable = inputQty - loss;
+    if (sellable === 0n && input.confirmFullLoss !== true) {
+      throw new AppError('VALIDATION_FAILED', '全损耗必须二次确认 confirmFullLoss=true');
+    }
+
+    const batches = await stockBatchInspectionPort().inspectBatches(tx, {
+      tenantId: principal.tenantId,
+      companyId: order.companyId,
+      batchIds: order.materialBatchIds.map((row) => row.batchId),
+    });
+    const costs = new Map(batches.map((row) => [row.batchId, row.lockedUnitCost]));
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: order.companyId,
+      sourceDocType: 'B',
+      sourceDocId: id,
+      handledBy: principal.employeeId,
+      lines: processingReservationLines(order.materialBatchIds),
+    });
+    let materialCost = 0n;
+    for (const material of order.materialBatchIds) {
+      const cost = costs.get(material.batchId);
+      if (!cost) throw new AppError('NOT_FOUND', '材料批次不存在');
+      materialCost += micros(material.qty) * micros(cost) / SCALE;
+      await stockFlowPort().applyAdjustment(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        batchId: material.batchId,
+        delta: decimal(-micros(material.qty)),
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+      });
+    }
+    const fees = order.fees.reduce((sum, fee) => sum + micros(fee.amount), 0n);
+    const totalCost = materialCost + fees;
+    const lossAmount = sellable === 0n ? totalCost : totalCost * loss / inputQty;
+    let outputBatchId: string | null = null;
+    let outputBatch: ProcessingOrderCompleteResult['outputBatch'] = null;
+    if (sellable > 0n) {
+      if (!order.outputProductId) {
+        throw new AppError('VALIDATION_FAILED', '加工单缺少成品商品，无法生成产出批次');
+      }
+      const unitCost = decimal(totalCost * SCALE / sellable);
+      const created = await stockFlowPort().createTransitBatch(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        productId: order.outputProductId,
+        qty: decimal(sellable),
+        lockedUnitCost: unitCost,
+        custodianId,
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+        heldByProcessorId: null,
+      });
+      outputBatchId = created.batchId;
+      outputBatch = {
+        id: created.batchId,
+        batchNo: created.batchNo,
+        qty: decimal(sellable),
+        lockedUnitCost: unitCost,
+      };
+    }
+    const result = await repo.startProcessingFinishedTransit(context, id, expectedVersion, {
+      transitTo: input.transitTo,
+      lossQty,
+      sellableQty: decimal(sellable),
+      outputBatchId,
+      materialCostAmount: decimal(materialCost),
+      lossAmount: decimal(lossAmount),
+      partialLossAmount: decimal(sellable === 0n ? 0n : lossAmount),
+    });
+    if (!result) throw new AppError('NOT_FOUND', '加工单不存在');
+    audit.companyId = result.companyId;
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: result.status,
+      version: result.version,
+      transitStage: input.transitStage,
+      transitTo: input.transitTo,
+      lossQty,
+      sellableQty: decimal(sellable),
+      outputBatch,
+      materialCostAmount: decimal(materialCost),
+      lossAmount: decimal(lossAmount),
+      pendingReleases: released.lines,
+    };
+    return result;
+  });
+
+  ctx.reply.header('ETag', etagOf(shipped.version));
+  return shipped;
+}
+
+/** B 单到货：materials 回进行中；finished 完成状态机。 */
+export async function receiveProcessingOrder(
+  ctx: ProcessingOrderWriteContext,
+): Promise<ProcessingOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'processing.order.receive');
+  requireScope(principal, 'approve');
+  assertHumanCredential(principal, '加工到货确认');
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const audit = auditEventOf(ctx.request, principal, 'processing.order.receive', id, {});
+
+  const received = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const state = await repo.loadProcessingOrderState(context, id);
+    if (!state) throw new AppError('NOT_FOUND', '加工单不存在');
+    if (state.version !== expectedVersion) {
+      throw new AppError('VERSION_CONFLICT', '加工单版本与 If-Match 不一致', {
+        expected: expectedVersion,
+        current: state.version,
+      });
+    }
+    if (state.status !== '在途' || state.transitStage === null) {
+      throw new AppError('STATE_CONFLICT', '加工单不在途，不能到货确认', {
+        status: state.status,
+        reason: 'NOT_IN_TRANSIT',
+      });
+    }
+    const order = await repo.getProcessingOrder(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '加工单不存在');
+
+    if (state.transitStage === 'materials') {
+      await stockFlowPort().moveTransitToPending(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+        lines: processingReservationLines(order.materialBatchIds),
+        heldByProcessorId: order.processorId,
+      });
+      const result = await repo.receiveProcessingMaterials(context, id, expectedVersion);
+      if (!result) throw new AppError('NOT_FOUND', '加工单不存在');
+      audit.companyId = result.companyId;
+      audit.changeSummary = {
+        beforeStatus: state.status,
+        afterStatus: result.status,
+        version: result.version,
+        transitStage: state.transitStage,
+        restoredPendingReservations: order.materialBatchIds,
+      };
+      return result;
+    }
+
+    if (state.outputBatchId && state.sellableQty && state.sellableQty !== '0') {
+      await stockFlowPort().receiveTransit(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+        lines: [{ batchId: state.outputBatchId, qty: state.sellableQty }],
+      });
+    }
+    const result = await repo.receiveProcessingFinished(context, id, expectedVersion);
+    if (!result) throw new AppError('NOT_FOUND', '加工单不存在');
+    audit.companyId = result.companyId;
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: result.status,
+      version: result.version,
+      transitStage: state.transitStage,
+      outputBatchId: state.outputBatchId,
+    };
+    return result;
+  });
+
+  ctx.reply.header('ETag', etagOf(received.version));
+  return received;
+}
+
+/** B 单撤销发货：materials 恢复占用；finished 反向恢复材料、占用并作废产出批次。 */
+export async function revokeProcessingOrderShip(
+  ctx: ProcessingOrderWriteContext,
+): Promise<ProcessingOrder> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'processing.order.ship.revoke');
+  requireScope(principal, 'ship');
+  assertHumanCredential(principal, '撤销加工发货');
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const audit = auditEventOf(ctx.request, principal, 'processing.order.ship.revoke', id, {});
+
+  const revoked = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const state = await repo.loadProcessingOrderState(context, id);
+    if (!state) throw new AppError('NOT_FOUND', '加工单不存在');
+    if (state.version !== expectedVersion) {
+      throw new AppError('VERSION_CONFLICT', '加工单版本与 If-Match 不一致', {
+        expected: expectedVersion,
+        current: state.version,
+      });
+    }
+    if (state.status !== '在途' || state.transitStage === null) {
+      throw new AppError('STATE_CONFLICT', '只有「在途」的加工单可以撤销发货', {
+        status: state.status,
+        reason: 'NOT_IN_TRANSIT',
+      });
+    }
+    const order = await repo.getProcessingOrder(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '加工单不存在');
+
+    if (state.transitStage === 'materials') {
+      await stockFlowPort().moveTransitToPending(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+        lines: processingReservationLines(order.materialBatchIds),
+        heldByProcessorId: null,
+      });
+    } else {
+      if (state.outputBatchId && state.sellableQty && state.sellableQty !== '0') {
+        await stockFlowPort().revokeTransitBatch(tx, {
+          tenantId: principal.tenantId,
+          companyId: order.companyId,
+          sourceDocType: 'B',
+          sourceDocId: id,
+          handledBy: principal.employeeId,
+          lines: [{ batchId: state.outputBatchId, qty: state.sellableQty }],
+        });
+      }
+      for (const material of order.materialBatchIds) {
+        await stockFlowPort().applyAdjustment(tx, {
+          tenantId: principal.tenantId,
+          companyId: order.companyId,
+          batchId: material.batchId,
+          delta: material.qty,
+          sourceDocType: 'B',
+          sourceDocId: id,
+          handledBy: principal.employeeId,
+        });
+      }
+      await stockFlowPort().reservePending(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+        lines: processingReservationLines(order.materialBatchIds),
+      });
+    }
+
+    const result = await repo.revokeProcessingTransit(context, id, expectedVersion);
+    if (!result) throw new AppError('NOT_FOUND', '加工单不存在');
+    audit.companyId = result.companyId;
+    audit.changeSummary = {
+      beforeStatus: state.status,
+      afterStatus: result.status,
+      version: result.version,
+      transitStage: state.transitStage,
+      outputBatchId: state.outputBatchId,
+      reason: ctx.request.auditReason,
+    };
+    return result;
+  });
+
+  ctx.reply.header('ETag', etagOf(revoked.version));
+  return revoked;
 }

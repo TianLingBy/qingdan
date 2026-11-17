@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { CancelDecision } from './documents.js';
 import { defineRoute, type RouteDef } from './registry.js';
-import { PageQuerySchema, pageSchema } from './pagination.js';
+import { PageQuerySchema, PageableSchema, pagedResultSchema } from './pagination.js';
 
 /**
  * 采购单 A 契约（契约第一批 §3.1 / §5.1 / §5.2 / §10，第一批第二切）。
@@ -210,6 +210,10 @@ export const PurchaseOrderListQuerySchema = PageQuerySchema.extend({
   supplierId: z.string().uuid().optional(),
   status: PurchaseOrderStatusSchema.optional(),
   keyword: z.string().min(1).max(64).optional(),
+  /** 页码模式（D95）：三个列表试点之一，故这四个参数在这里而不是基类上。 */
+  ...PageableSchema,
+  /** 排序白名单（D95）：只收单头真实存在的列（0010 建表语句），未登记的一律 422。 */
+  sort: z.enum(['orderNo', 'totalAmount', 'createdAt']).optional(),
 });
 
 /**
@@ -296,7 +300,7 @@ export const PURCHASE_ORDER_ROUTES: readonly RouteDef[] = [
     summary: '采购单列表（按公司/供应商/状态/单号或供应商名检索；普通读不记审计，D15）',
     audit: { kind: 'none' },
     request: { query: PurchaseOrderListQuerySchema },
-    response: { status: 200, schema: pageSchema(PurchaseOrderSchema) },
+    response: { status: 200, schema: pagedResultSchema(PurchaseOrderSchema) },
   }),
   defineRoute({
     module: 'purchase',

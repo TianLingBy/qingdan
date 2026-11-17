@@ -1,15 +1,16 @@
 import { z } from 'zod';
 import { defineRoute, type RouteDef } from './registry.js';
-import { SalesOrderListQuerySchema } from './sales-orders.js';
 
 /**
- * 打印 / 导出契约（销售单打印、加工单打印、销售单列表导出）。
+ * 打印契约（销售单打印、加工单打印）。
+ * 列表导出（sales.order.export / purchase.order.export / inventory.batch.export）
+ * 见 exports.ts（#342）。
  *
  * 口径约束：
  * - 返回体统一为 `PrintDocumentSchema`：内容与文件名由服务端生成，前端只落盘 / 渲染；
  * - 销售单打印的金额受看价权限约束（D27 / D79）：无权限时金额为 null，不 403；
- * - 列表导出属敏感读，必记审计（D54 ②）；单张打印按普通读处理，不记审计；
- * - 打印 / 导出均禁止 AI 凭证直接调用（与 sales 模块写路径口径一致，D52①）。
+ * - 单张打印按普通读处理，不记审计；
+ * - 打印禁止 AI 凭证直接调用（与 sales 模块写路径口径一致，D52①）。
  */
 
 export const PrintDocumentSchema = z.object({
@@ -43,17 +44,7 @@ export const PRINT_ROUTES: readonly RouteDef[] = [
     audit: { kind: 'none' },
     response: { status: 200, schema: PrintDocumentSchema },
   }),
-  defineRoute({
-    module: 'sales',
-    domain: 'sales',
-    action: 'export',
-    operationId: 'sales.order.export',
-    method: 'GET',
-    path: '/api/v1/sales-orders/export',
-    summary: '销售单列表导出 CSV（按筛选条件；敏感读，记审计）',
-    audit: { kind: 'sensitive-read' },
-    ai: { policy: 'forbid', reasonRequired: true },
-    request: { query: SalesOrderListQuerySchema },
-    response: { status: 200, schema: PrintDocumentSchema },
-  }),
+  // 销售单列表导出（sales.order.export）已迁到 exports.ts（#342）：
+  // 三个导出端点统一为「原生 CSV + 全量上限」，与打印的 JSON 信封不是一回事，
+  // 留在本文件会让人误以为导出也走 PrintDocumentSchema。
 ];

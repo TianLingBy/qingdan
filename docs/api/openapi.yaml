@@ -342,6 +342,7 @@ paths:
                               - approve
                               - ship
                               - delete
+                              - merge
                               - view_price
                               - view_handler
                               - export
@@ -817,6 +818,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - merge
                             - view_handler
                             - export
                     required:
@@ -935,6 +937,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - merge
                             - view_handler
                             - export
                     required:
@@ -1283,6 +1286,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - merge
                             - view_price
                             - view_handler
                             - export
@@ -1480,6 +1484,7 @@ paths:
                           - approve
                           - ship
                           - delete
+                          - merge
                           - view_price
                           - view_handler
                           - export
@@ -2835,6 +2840,37 @@ paths:
             type: string
             minLength: 1
             maxLength: 64
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - batchNo
+              - availableQty
+              - createdAt
       responses:
         "200":
           description: 成功
@@ -2847,6 +2883,24 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/InventoryBatch"
+                  total:
+                    anyOf:
+                      - type: integer
+                        minimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  page:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  pageSize:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
                   nextCursor:
                     anyOf:
                       - type: string
@@ -2854,6 +2908,9 @@ paths:
                       - type: "null"
                 required:
                   - items
+                  - total
+                  - page
+                  - pageSize
                   - nextCursor
                 additionalProperties: false
         default:
@@ -3597,6 +3654,37 @@ paths:
             type: string
             minLength: 1
             maxLength: 64
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - orderNo
+              - totalAmount
+              - createdAt
       responses:
         "200":
           description: 成功
@@ -3609,6 +3697,24 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/SalesOrder"
+                  total:
+                    anyOf:
+                      - type: integer
+                        minimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  page:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  pageSize:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
                   nextCursor:
                     anyOf:
                       - type: string
@@ -3616,6 +3722,9 @@ paths:
                       - type: "null"
                 required:
                   - items
+                  - total
+                  - page
+                  - pageSize
                   - nextCursor
                 additionalProperties: false
         default:
@@ -4502,6 +4611,37 @@ paths:
             type: string
             minLength: 1
             maxLength: 64
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 9007199254740991
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            exclusiveMinimum: 0
+            maximum: 200
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - orderNo
+              - totalAmount
+              - createdAt
       responses:
         "200":
           description: 成功
@@ -4514,6 +4654,24 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/PurchaseOrder"
+                  total:
+                    anyOf:
+                      - type: integer
+                        minimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  page:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
+                  pageSize:
+                    anyOf:
+                      - type: integer
+                        exclusiveMinimum: 0
+                        maximum: 9007199254740991
+                      - type: "null"
                   nextCursor:
                     anyOf:
                       - type: string
@@ -4521,6 +4679,9 @@ paths:
                       - type: "null"
                 required:
                   - items
+                  - total
+                  - page
+                  - pageSize
                   - nextCursor
                 additionalProperties: false
         default:
@@ -5747,6 +5908,15 @@ paths:
                   enum:
                     - warehouse
                     - customer
+                lossQty:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                custodianId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                confirmFullLoss:
+                  type: boolean
               required:
                 - transitStage
                 - transitTo
@@ -6943,7 +7113,7 @@ paths:
   /api/v1/sales-orders/export:
     get:
       operationId: sales.order.export
-      summary: 销售单列表导出 CSV（按筛选条件；敏感读，记审计）
+      summary: 销售单列表导出 CSV（全量、按筛选条件；敏感读，记审计）
       tags:
         - sales
       security:
@@ -7000,24 +7170,8 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  contentType:
-                    type: string
-                    enum:
-                      - text/html
-                      - text/csv
-                  content:
-                    type: string
-                  filename:
-                    type: string
-                    minLength: 1
-                    maxLength: 200
-                required:
-                  - contentType
-                  - content
-                  - filename
-                additionalProperties: false
+                type: string
+                description: CSV 文本（UTF-8 BOM + CRLF）；响应头见 content-type / content-disposition
         default:
           description: 错误（统一错误体）
           content:
@@ -7033,6 +7187,124 @@ paths:
         policy: forbid
         reasonRequired: true
       x-mcp-tool: qingdan_sales_order_export
+  /api/v1/purchase-orders/export:
+    get:
+      operationId: purchase.order.export
+      summary: 采购单列表导出 CSV（全量、按筛选条件；敏感读，记审计）
+      tags:
+        - purchase
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: supplierId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - 进行中
+              - 在途
+              - 已完成
+              - 已取消
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: string
+                description: CSV 文本（UTF-8 BOM + CRLF）；响应头见 content-type / content-disposition
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: purchase.export
+      x-module: purchase
+      x-audit:
+        kind: sensitive-read
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_purchase_order_export
+  /api/v1/inventory/batches/export:
+    get:
+      operationId: inventory.batch.export
+      summary: 库存批次列表导出 CSV（全量、按筛选条件；敏感读，记审计）
+      tags:
+        - inventory_qty
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: companyId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: productId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: string
+                description: CSV 文本（UTF-8 BOM + CRLF）；响应头见 content-type / content-disposition
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: inventory_qty.export
+      x-module: inventory
+      x-audit:
+        kind: sensitive-read
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_inventory_batch_export
   /api/v1/payments/{channel}/callback:
     post:
       operationId: payment.callback.receive
@@ -7439,6 +7711,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - merge
                             - view_price
                             - view_handler
                             - export
@@ -8062,6 +8335,7 @@ components:
                     - approve
                     - ship
                     - delete
+                    - merge
                     - view_price
                     - view_handler
                     - export
@@ -8177,6 +8451,7 @@ components:
                     - approve
                     - ship
                     - delete
+                    - merge
                     - view_price
                     - view_handler
                     - export
@@ -8692,6 +8967,7 @@ components:
                     - approve
                     - ship
                     - delete
+                    - merge
                     - view_handler
                     - export
             required:
@@ -8811,6 +9087,12 @@ components:
           pattern: ^\d{1,12}(\.\d{1,6})?$
         custodianId:
           type: string
+        heldByProcessorId:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
         version:
           type: integer
           minimum: -9007199254740991
@@ -8877,6 +9159,12 @@ components:
           pattern: ^\d{1,12}(\.\d{1,6})?$
         custodianId:
           type: string
+        heldByProcessorId:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
         version:
           type: integer
           minimum: -9007199254740991

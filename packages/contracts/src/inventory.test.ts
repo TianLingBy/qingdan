@@ -34,6 +34,7 @@ const BATCH = {
   pendingExecutionQty: '5',
   availableQty: '80',
   custodianId: 'e1',
+  heldByProcessorId: null,
   version: 1,
   createdAt: '2026-11-05T00:00:00.000Z',
   updatedAt: '2026-11-05T00:00:00.000Z',
@@ -156,6 +157,7 @@ describe('库存契约（inventory）', () => {
         'pendingExecutionQty',
         'availableQty',
         'custodianId',
+        'heldByProcessorId',
         'version',
         'createdAt',
         'updatedAt',
@@ -261,7 +263,17 @@ describe('库存契约（inventory）', () => {
     expect(batches.get?.['x-audit']).toEqual({ kind: 'none', required: false });
     expect(batches.get?.['x-mcp-tool']).toBe('qingdan_inventory_batch_list_read');
     const queryNames = (batches.get?.parameters as Array<{ name: string }>).map((p) => p.name).sort();
-    expect(queryNames).toEqual(['companyId', 'cursor', 'keyword', 'limit', 'productId']);
+    expect(queryNames).toEqual([
+      'companyId',
+      'cursor',
+      'keyword',
+      'limit',
+      'order',
+      'page',
+      'pageSize',
+      'productId',
+      'sort',
+    ]);
 
     const detail = doc.paths['/api/v1/inventory/batches/{id}'] as Record<
       string,
