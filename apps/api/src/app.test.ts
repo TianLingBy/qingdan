@@ -163,6 +163,26 @@ describe('审计上下文（X-Client / X-Reason，契约 D54 §9-4）', () => {
     expect(auditContextFrom(unknown)).toEqual({ source: 'api', reason: null });
   });
 
+  /**
+   * 浏览器 `Headers.set()` 只收 ByteString，中文必须先 percent-encode 才能进头；
+   * 但审计里要存中文原文，所以读出来要解码。两条来源都得对：
+   * 编码过的（网页端）与没编码的（curl / 脚本）。
+   */
+  it('X-Reason 里的 percent-encoding 解回中文；没编码的原样保留', () => {
+    const encoded = {
+      headers: { 'x-reason': encodeURIComponent('客户改单，仓库重打单') },
+    } as unknown as FastifyRequest;
+    expect(auditContextFrom(encoded).reason).toBe('客户改单，仓库重打单');
+
+    // 没编码的（curl 直接传原文）不能因为多一次解码变成乱码
+    const plain = { headers: { 'x-reason': '补录漏单' } } as unknown as FastifyRequest;
+    expect(auditContextFrom(plain).reason).toBe('补录漏单');
+
+    // 串里本来就有孤立的 %（手拼「降价 5%」没编码）→ 解码会抛，必须退回原值而不是报错
+    const literalPercent = { headers: { 'x-reason': '降价 5%' } } as unknown as FastifyRequest;
+    expect(auditContextFrom(literalPercent).reason).toBe('降价 5%');
+  });
+
   it('AI 写操作缺 X-Reason → 抛 VALIDATION_FAILED；人类写操作不要求', () => {
     expect(() =>
       assertAuditReason({ kind: 'write', actorType: 'ai', reason: null, operationId: 'sales.create' }),
