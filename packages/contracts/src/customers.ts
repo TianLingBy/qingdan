@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
+import { MasterdataSuggestQuerySchema, MasterdataSuggestResultSchema } from './suggest.js';
 
 /**
  * 客户资料契约（masterdata 第二切，契约第一批 §2）。
@@ -92,6 +93,20 @@ export const CUSTOMER_ROUTES: readonly RouteDef[] = [
     audit: { kind: 'none' },
     request: { query: CustomerListQuerySchema },
     response: { status: 200, schema: pageSchema(CustomerSchema) },
+  }),
+  defineRoute({
+    module: 'masterdata',
+    operationId: 'customer.suggest',
+    method: 'GET',
+    path: '/api/v1/customers/suggest',
+    domain: 'customer',
+    action: 'read',
+    summary: '建档防重：按名称提示已有相似客户（只回 id/名称/相似度，D99）',
+    // 只读、无副作用、打字过程中高频调用 → 不刷审计表（D54② 普通读不记）。
+    audit: { kind: 'none' },
+    ai: { policy: 'allow' },
+    request: { query: MasterdataSuggestQuerySchema },
+    response: { status: 200, schema: MasterdataSuggestResultSchema },
   }),
   defineRoute({
     module: 'masterdata',

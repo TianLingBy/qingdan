@@ -1648,6 +1648,82 @@ paths:
                 - name
                 - unit
               additionalProperties: false
+  /api/v1/products/suggest:
+    get:
+      operationId: product.suggest
+      summary: 建档防重：按名称提示已有相似商品（只回 id/名称/相似度，D99）
+      tags:
+        - product
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  candidates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        score:
+                          type: number
+                        reason:
+                          type: string
+                      required:
+                        - id
+                        - name
+                        - score
+                        - reason
+                      additionalProperties: false
+                required:
+                  - candidates
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: product.read
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_product_suggest
   /api/v1/products/{id}:
     get:
       operationId: product.detail.read
@@ -1941,6 +2017,82 @@ paths:
                 - companyId
                 - name
               additionalProperties: false
+  /api/v1/customers/suggest:
+    get:
+      operationId: customer.suggest
+      summary: 建档防重：按名称提示已有相似客户（只回 id/名称/相似度，D99）
+      tags:
+        - customer
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  candidates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        score:
+                          type: number
+                        reason:
+                          type: string
+                      required:
+                        - id
+                        - name
+                        - score
+                        - reason
+                      additionalProperties: false
+                required:
+                  - candidates
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: customer.read
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_customer_suggest
   /api/v1/customers/{id}:
     get:
       operationId: customer.detail.read
@@ -2232,6 +2384,82 @@ paths:
                 - name
                 - suppliedMaterials
               additionalProperties: false
+  /api/v1/suppliers/suggest:
+    get:
+      operationId: supplier.suggest
+      summary: 建档防重：按名称提示已有相似供应商（只回 id/名称/相似度，D99）
+      tags:
+        - supplier
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  candidates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        score:
+                          type: number
+                        reason:
+                          type: string
+                      required:
+                        - id
+                        - name
+                        - score
+                        - reason
+                      additionalProperties: false
+                required:
+                  - candidates
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: supplier.read
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_supplier_suggest
   /api/v1/suppliers/{id}:
     get:
       operationId: supplier.detail.read
@@ -2510,6 +2738,82 @@ paths:
                 - companyId
                 - name
               additionalProperties: false
+  /api/v1/processors/suggest:
+    get:
+      operationId: processor.suggest
+      summary: 建档防重：按名称提示已有相似加工厂（只回 id/名称/相似度，D99）
+      tags:
+        - processor
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+        - name: companyId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+            pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  candidates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        score:
+                          type: number
+                        reason:
+                          type: string
+                      required:
+                        - id
+                        - name
+                        - score
+                        - reason
+                      additionalProperties: false
+                required:
+                  - candidates
+                additionalProperties: false
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processor.read
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_processor_suggest
   /api/v1/processors/{id}:
     get:
       operationId: processor.detail.read

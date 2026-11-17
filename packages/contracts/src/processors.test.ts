@@ -20,8 +20,9 @@ import { routesOfModule } from './registry.js';
  * 由 masterdata 负责人按本文件落地，改签名必须先改这里并过评审。
  */
 describe('加工厂契约（masterdata）', () => {
-  it('7 条端点全部登记并汇总进 ROUTES，且归属 masterdata', () => {
-    expect(PROCESSOR_ROUTES).toHaveLength(7);
+  it('8 条端点全部登记并汇总进 ROUTES，且归属 masterdata', () => {
+    // 5 条加工厂 CRUD + 2 条报价 + #302 块 B 的 suggest（只读相似档案提示）
+    expect(PROCESSOR_ROUTES).toHaveLength(8);
     for (const route of PROCESSOR_ROUTES) expect(route.module).toBe('masterdata');
 
     const masterdataIds = routesOfModule(ROUTES, 'masterdata').map((r) => r.operationId);
@@ -33,6 +34,7 @@ describe('加工厂契约（masterdata）', () => {
     expect(actual).toEqual(
       [
         'GET /api/v1/processors processor.list.read',
+        'GET /api/v1/processors/suggest processor.suggest',
         'POST /api/v1/processors processor.create',
         'GET /api/v1/processors/{id} processor.detail.read',
         'PATCH /api/v1/processors/{id} processor.update',
@@ -48,6 +50,8 @@ describe('加工厂契约（masterdata）', () => {
     expect(byId.get('processor.list.read')?.scope).toBe('processor.read');
     expect(byId.get('processor.detail.read')?.scope).toBe('processor.read');
     expect(byId.get('processor.quote.read')?.scope).toBe('processor.read');
+    // suggest 是只读提示，权限落在 read 上（无 read 就 403，见 D99⑧）
+    expect(byId.get('processor.suggest')?.scope).toBe('processor.read');
     expect(byId.get('processor.create')?.scope).toBe('processor.create');
     expect(byId.get('processor.update')?.scope).toBe('processor.update');
     expect(byId.get('processor.delete')?.scope).toBe('processor.delete');
@@ -56,6 +60,8 @@ describe('加工厂契约（masterdata）', () => {
     expect(byId.get('processor.list.read')?.audit.kind).toBe('none');
     expect(byId.get('processor.detail.read')?.audit.kind).toBe('none');
     expect(byId.get('processor.quote.read')?.audit.kind).toBe('none');
+    // 输入框边打边问的高频只读接口不刷审计表（D99⑥）
+    expect(byId.get('processor.suggest')?.audit.kind).toBe('none');
     for (const id of ['processor.create', 'processor.update', 'processor.delete', 'processor.quote.create']) {
       expect(byId.get(id)?.audit).toEqual({ kind: 'write', required: true });
     }

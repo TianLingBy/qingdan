@@ -18,8 +18,9 @@ import { routesOfModule } from './registry.js';
  * 由 masterdata 负责人按本文件落地，改签名必须先改这里并过评审。
  */
 describe('供应商契约（masterdata）', () => {
-  it('5 条端点全部登记并汇总进 ROUTES，且归属 masterdata', () => {
-    expect(SUPPLIER_ROUTES).toHaveLength(5);
+  it('6 条端点全部登记并汇总进 ROUTES，且归属 masterdata', () => {
+    // 5 条 CRUD + #302 块 B 的 suggest（只读相似档案提示）
+    expect(SUPPLIER_ROUTES).toHaveLength(6);
     for (const route of SUPPLIER_ROUTES) expect(route.module).toBe('masterdata');
 
     const masterdataIds = routesOfModule(ROUTES, 'masterdata').map((r) => r.operationId);
@@ -31,6 +32,7 @@ describe('供应商契约（masterdata）', () => {
     expect(actual).toEqual(
       [
         'GET /api/v1/suppliers supplier.list.read',
+        'GET /api/v1/suppliers/suggest supplier.suggest',
         'POST /api/v1/suppliers supplier.create',
         'GET /api/v1/suppliers/{id} supplier.detail.read',
         'PATCH /api/v1/suppliers/{id} supplier.update',
@@ -43,12 +45,16 @@ describe('供应商契约（masterdata）', () => {
     const byId = new Map(SUPPLIER_ROUTES.map((r) => [r.operationId, r]));
     expect(byId.get('supplier.list.read')?.scope).toBe('supplier.read');
     expect(byId.get('supplier.detail.read')?.scope).toBe('supplier.read');
+    // suggest 是只读提示，权限落在 read 上（无 read 就 403，见 D99⑧）
+    expect(byId.get('supplier.suggest')?.scope).toBe('supplier.read');
     expect(byId.get('supplier.create')?.scope).toBe('supplier.create');
     expect(byId.get('supplier.update')?.scope).toBe('supplier.update');
     expect(byId.get('supplier.delete')?.scope).toBe('supplier.delete');
 
     expect(byId.get('supplier.list.read')?.audit.kind).toBe('none');
     expect(byId.get('supplier.detail.read')?.audit.kind).toBe('none');
+    // 输入框边打边问的高频只读接口不刷审计表（D99⑥）
+    expect(byId.get('supplier.suggest')?.audit.kind).toBe('none');
     for (const id of ['supplier.create', 'supplier.update', 'supplier.delete']) {
       expect(byId.get(id)?.audit).toEqual({ kind: 'write', required: true });
     }

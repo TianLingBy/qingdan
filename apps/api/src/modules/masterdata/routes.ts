@@ -31,6 +31,12 @@ import {
   listQuotes,
   updateProcessor,
 } from './usecases/processors.js';
+import {
+  suggestCustomers,
+  suggestProcessors,
+  suggestProducts,
+  suggestSuppliers,
+} from './usecases/suggest.js';
 
 /**
  * masterdata 端点挂载（Issue #15 首切：商品资料）。
@@ -187,9 +193,29 @@ export function registerMasterdataRoutes(app: FastifyInstance): void {
     },
   };
 
+  // 建档防重 4 条（D99）：只读、无副作用、不写审计；权限 / 公司隔离都在用例内。
+  const suggestHandlers: RouteHandlers = {
+    'customer.suggest': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await suggestCustomers({ database: instance.database, request });
+    },
+    'supplier.suggest': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await suggestSuppliers({ database: instance.database, request });
+    },
+    'processor.suggest': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await suggestProcessors({ database: instance.database, request });
+    },
+    'product.suggest': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await suggestProducts({ database: instance.database, request });
+    },
+  };
+
   mountRoutes(app, {
     routes: routesOfModule(ROUTES, 'masterdata'),
     failureObjectTypes: FAILURE_OBJECT_TYPES,
-    handlers,
+    handlers: { ...handlers, ...suggestHandlers },
   });
 }
