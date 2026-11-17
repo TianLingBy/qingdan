@@ -85,6 +85,8 @@ export interface SalesOrderPage {
 export interface SalesOrderState {
   readonly id: string;
   readonly companyId: string;
+  /** 单头客户：改单换对接人时要拿它校验「同客户」（#306）。 */
+  readonly customerId: string;
   readonly status: SalesOrderStatus;
   readonly version: number;
 }
@@ -96,6 +98,9 @@ interface HeaderRow {
   order_no: string;
   customer_id: string;
   customer_name: string;
+  /** 下单对接人（#306）：可空；停用后名字仍回（LEFT JOIN 保留历史可读）。 */
+  customer_contact_id: string | null;
+  customer_contact_name: string | null;
   status: string;
   handler_id: string;
   total_amount: string | number;
@@ -123,6 +128,7 @@ interface FeeRow {
 interface StateRow {
   id: string;
   company_id: string;
+  customer_id: string;
   status: string;
   version: number;
 }
@@ -138,6 +144,8 @@ const HEADER_COLUMNS = `o.id,
   o.order_no,
   o.customer_id,
   c.name AS customer_name,
+  o.customer_contact_id,
+  k.name AS customer_contact_name,
   o.status,
   o.handler_id,
   trim_scale(o.total_amount) AS total_amount,
@@ -149,7 +157,11 @@ const HEADER_FROM = `sales_order o
   JOIN customer c
     ON c.id = o.customer_id
    AND c.tenant_id = o.tenant_id
-   AND c.company_id = o.company_id`;
+   AND c.company_id = o.company_id
+  LEFT JOIN customer_contact k
+    ON k.id = o.customer_contact_id
+   AND k.tenant_id = o.tenant_id
+   AND k.company_id = o.company_id`;
 
 const LINE_COLUMNS = `l.id,
   l.product_id,
@@ -183,6 +195,8 @@ function mapHeader(row: HeaderRow): Omit<SalesOrder, 'lines' | 'fees'> {
     orderNo: row.order_no,
     customerId: row.customer_id,
     customerName: row.customer_name,
+    customerContactId: row.customer_contact_id,
+    customerContactName: row.customer_contact_name,
     status: row.status as SalesOrderStatus,
     handlerId: row.handler_id,
     totalAmount: decimal(row.total_amount),
@@ -451,7 +465,7 @@ export async function loadSalesOrderState(
   id: string,
 ): Promise<SalesOrderState | null> {
   const result = await ctx.tx.query<StateRow>(
-    `SELECT id, company_id, status, version
+    `SELECT id, company_id, customer_id, status, version
        FROM sales_order
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -463,6 +477,7 @@ export async function loadSalesOrderState(
   return {
     id: row.id,
     companyId: row.company_id,
+    customerId: row.customer_id,
     status: row.status as SalesOrderStatus,
     version: row.version,
   };
@@ -479,7 +494,7 @@ export async function lockSalesOrderState(
   id: string,
 ): Promise<SalesOrderState | null> {
   const result = await ctx.tx.query<StateRow>(
-    `SELECT id, company_id, status, version
+    `SELECT id, company_id, customer_id, status, version
        FROM sales_order
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -492,6 +507,7 @@ export async function lockSalesOrderState(
   return {
     id: row.id,
     companyId: row.company_id,
+    customerId: row.customer_id,
     status: row.status as SalesOrderStatus,
     version: row.version,
   };
@@ -554,6 +570,38 @@ async function assertHandlerInTenant(
   }
 }
 
+/**
+ * 下单对接人校验（#306）：必须**同客户 + 同公司 + 启用**，否则 422。
+ *
+ * 三条一起查而不是分三次：任一条不满足给的都是同一个用户错误（「这个对接人不能用在
+ * 这张单上」），分开报只会让前端去猜是哪一条；`details.field` 指回入参名，
+ * 前端据此把红框画在对接人选择器上。已停用的对接人**不能**再被新单引用，
+ * 但历史单上的旧引用照常可读（删除是软停用，行没删）。
+ */
+async function assertCustomerContactUsable(
+  ctx: SalesOrderRepoContext,
+  contactId: string,
+  customerId: string,
+  companyId: string,
+): Promise<void> {
+  const result = await ctx.tx.query(
+    `SELECT 1
+       FROM customer_contact
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = $3::uuid
+        AND customer_id = $4::uuid
+        AND status = '启用'`,
+    [contactId, ctx.tenantId, companyId, customerId],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      '对接人不存在、不属于该客户、跨公司或已停用',
+      { field: 'customerContactId', customerContactId: contactId },
+    );
+  }
+}
 /**
  * 一次性校验所有商品 / 批次归属（D22），并逐行用 SQL 计算 D20 下限。
  * 契约的 batchIds 未携带逐批引用量，故同一行内每个批次按等额引用处理。
@@ -759,6 +807,14 @@ export async function insertSalesOrder(
 ): Promise<SalesOrder> {
   await assertCustomerInCompany(ctx, input.customerId, input.companyId);
   await assertHandlerInTenant(ctx, input.handlerId);
+  if (input.customerContactId !== undefined) {
+    await assertCustomerContactUsable(
+      ctx,
+      input.customerContactId,
+      input.customerId,
+      input.companyId,
+    );
+  }
   const costFloors = await resolveLineCostFloors(
     ctx,
     input.lines,
@@ -767,14 +823,16 @@ export async function insertSalesOrder(
 
   await ctx.tx.query(
     `INSERT INTO sales_order
-       (id, tenant_id, company_id, order_no, customer_id, handler_id, status)
-     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, '进行中')`,
+       (id, tenant_id, company_id, order_no, customer_id, customer_contact_id,
+        handler_id, status)
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7::uuid, '进行中')`,
     [
       input.id,
       ctx.tenantId,
       input.companyId,
       input.orderNo,
       input.customerId,
+      input.customerContactId ?? null,
       input.handlerId,
     ],
   );
@@ -829,6 +887,25 @@ export async function updateSalesOrder(
   if (input.handlerId !== undefined) {
     await assertHandlerInTenant(ctx, input.handlerId);
   }
+  /**
+   * 对接人三态（#306）：传值=换人、传 null=清空、未传=不动。
+   * 换客户但没指定新对接人时顺手清空——旧的对接人属于旧客户，留着就破坏了
+   * 「单据对接人必须属于本单客户」这条不变量。
+   */
+  const nextContactId =
+    input.customerContactId !== undefined
+      ? input.customerContactId
+      : input.customerId !== undefined && input.customerId !== current.customerId
+        ? null
+        : undefined;
+  if (typeof nextContactId === 'string') {
+    await assertCustomerContactUsable(
+      ctx,
+      nextContactId,
+      input.customerId ?? current.customerId,
+      current.companyId,
+    );
+  }
   const costFloors =
     input.lines === undefined
       ? null
@@ -838,6 +915,7 @@ export async function updateSalesOrder(
     `UPDATE sales_order
         SET customer_id = COALESCE($4::uuid, customer_id),
             handler_id = COALESCE($5::uuid, handler_id),
+            customer_contact_id = CASE WHEN $7::boolean THEN $8::uuid ELSE customer_contact_id END,
             version = version + 1
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -852,6 +930,8 @@ export async function updateSalesOrder(
       input.customerId ?? null,
       input.handlerId ?? null,
       expectedVersion,
+      nextContactId !== undefined,
+      nextContactId ?? null,
     ],
   );
   if (updated.rows.length === 0) {

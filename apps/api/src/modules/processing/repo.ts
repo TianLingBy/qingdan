@@ -58,6 +58,8 @@ export interface ProcessingOrderPage {
 export interface ProcessingOrderState {
   readonly id: string;
   readonly companyId: string;
+  /** 单头加工厂：改单换对接人时要拿它校验「同加工厂」（#306）。 */
+  readonly processorId: string;
   readonly status: ProcessingOrderStatus;
   readonly inputQty: string;
   readonly lossQty: string | null;
@@ -77,6 +79,9 @@ interface HeaderRow {
   order_no: string;
   processor_id: string;
   processor_name: string;
+  /** 下单对接人（#306）：可空；停用后名字仍回（LEFT JOIN 保留历史可读）。 */
+  processor_contact_id: string | null;
+  processor_contact_name: string | null;
   status: string;
   handler_id: string;
   output_product_id: string | null;
@@ -104,6 +109,7 @@ interface FeeRow {
 interface StateRow {
   id: string;
   company_id: string;
+  processor_id: string;
   status: string;
   input_qty: string | number;
   loss_qty: string | number | null;
@@ -122,6 +128,8 @@ const HEADER_COLUMNS = `o.id,
   o.order_no,
   o.processor_id,
   p.name AS processor_name,
+  o.processor_contact_id,
+  k.name AS processor_contact_name,
   o.status,
   o.handler_id,
   o.output_product_id,
@@ -140,7 +148,11 @@ const HEADER_FROM = `processing_order o
   JOIN processor p
     ON p.id = o.processor_id
    AND p.tenant_id = o.tenant_id
-   AND p.company_id = o.company_id`;
+   AND p.company_id = o.company_id
+  LEFT JOIN processor_contact k
+    ON k.id = o.processor_contact_id
+   AND k.tenant_id = o.tenant_id
+   AND k.company_id = o.company_id`;
 
 const FEE_COLUMNS = `f.order_id,
   f.fee_name,
@@ -169,6 +181,8 @@ function mapHeader(row: HeaderRow): Omit<ProcessingOrder, 'materialBatchIds' | '
     orderNo: row.order_no,
     processorId: row.processor_id,
     processorName: row.processor_name,
+    processorContactId: row.processor_contact_id,
+    processorContactName: row.processor_contact_name,
     status: row.status as ProcessingOrderStatus,
     handlerId: row.handler_id,
     outputProductId: row.output_product_id,
@@ -357,6 +371,7 @@ export async function loadProcessingOrderState(
   const result = await ctx.tx.query<StateRow>(
     `SELECT id,
             company_id,
+            processor_id,
             status,
             trim_scale(input_qty) AS input_qty,
             trim_scale(loss_qty) AS loss_qty,
@@ -378,6 +393,7 @@ export async function loadProcessingOrderState(
   return {
     id: row.id,
     companyId: row.company_id,
+    processorId: row.processor_id,
     status: row.status as ProcessingOrderStatus,
     inputQty: decimal(row.input_qty),
     lossQty: nullableDecimal(row.loss_qty),
@@ -659,6 +675,35 @@ async function assertProcessorInCompany(
   }
 }
 
+/**
+ * 下单对接人校验（#306）：必须**同加工厂 + 同公司 + 启用**，否则 422。
+ * 三条一起查（任一条不满足都是同一个用户错误），`details.field` 指回入参名。
+ */
+async function assertProcessorContactUsable(
+  ctx: ProcessingOrderRepoContext,
+  contactId: string,
+  processorId: string,
+  companyId: string,
+): Promise<void> {
+  const result = await ctx.tx.query(
+    `SELECT 1
+       FROM processor_contact
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = $3::uuid
+        AND processor_id = $4::uuid
+        AND status = '启用'`,
+    [contactId, ctx.tenantId, companyId, processorId],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      '对接人不存在、不属于该加工厂、跨公司或已停用',
+      { field: 'processorContactId', processorContactId: contactId },
+    );
+  }
+}
+
 /** 经手人必须存在且属于同一租户。 */
 async function assertHandlerInTenant(
   ctx: ProcessingOrderRepoContext,
@@ -803,6 +848,14 @@ export async function insertProcessingOrder(
 ): Promise<ProcessingOrder> {
   await assertProcessorInCompany(ctx, input.processorId, input.companyId);
   await assertHandlerInTenant(ctx, input.handlerId);
+  if (input.processorContactId !== undefined) {
+    await assertProcessorContactUsable(
+      ctx,
+      input.processorContactId,
+      input.processorId,
+      input.companyId,
+    );
+  }
   await assertMaterialBatchesInCompany(ctx, input.materialBatchIds, input.companyId);
 
   const lossQty = input.lossQty ?? null;
@@ -810,16 +863,18 @@ export async function insertProcessingOrder(
 
   await ctx.tx.query(
     `INSERT INTO processing_order
-       (id, tenant_id, company_id, order_no, processor_id, handler_id, output_product_id,
+       (id, tenant_id, company_id, order_no, processor_id, processor_contact_id,
+        handler_id, output_product_id,
         status, aux_materials, input_qty, loss_qty, sellable_qty, attribution_doc)
-     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7::uuid,
-             '进行中', $8, $9::amount, $10::amount, $11::amount, $12)`,
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7::uuid, $8::uuid,
+             '进行中', $9, $10::amount, $11::amount, $12::amount, $13)`,
     [
       input.id,
       ctx.tenantId,
       input.companyId,
       input.orderNo,
       input.processorId,
+      input.processorContactId ?? null,
       input.handlerId,
       input.outputProductId,
       input.auxMaterials ?? null,
@@ -877,12 +932,34 @@ export async function updateProcessingOrder(
     await calculateSellableQty(ctx, input.inputQty, current.lossQty);
   }
 
+  /**
+   * 对接人三态（#306）：传值=换人、传 null=清空、未传=不动；换加工厂未指定对接人时清空。
+   */
+  const nextContactId =
+    input.processorContactId !== undefined
+      ? input.processorContactId
+      : input.processorId !== undefined && input.processorId !== current.processorId
+        ? null
+        : undefined;
+  if (typeof nextContactId === 'string') {
+    await assertProcessorContactUsable(
+      ctx,
+      nextContactId,
+      input.processorId ?? current.processorId,
+      current.companyId,
+    );
+  }
+
   const params: unknown[] = [id, ctx.tenantId, [...ctx.companyIds], expectedVersion];
   const sets: string[] = ['version = version + 1'];
 
   if (input.processorId !== undefined) {
     params.push(input.processorId);
     sets.push(`processor_id = $${params.length}::uuid`);
+  }
+  if (nextContactId !== undefined) {
+    params.push(nextContactId);
+    sets.push(`processor_contact_id = $${params.length}::uuid`);
   }
   if (input.handlerId !== undefined) {
     params.push(input.handlerId);

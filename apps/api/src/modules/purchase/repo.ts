@@ -25,7 +25,7 @@ import { buildOrderBy } from '../../platform/db/order-by.js';
  *
  * - 隔离：所有查询都带 `tenant_id` + `company_id = ANY(可见公司集合)`，跨公司行等同不存在；
  * - 金额：全部保持 decimal 字符串，累加一律交给 SQL（SUM），本层不做浮点运算；
- * - 明细金额：`amount = qty × unit_price` 由 INSERT 的 SQL 表达式计算（契约 §5.1）；
+ * - 明细金额：S 退货款按批次锁价由服务端算（D105），其余单据 `amount = qty × unit_price` 由 INSERT 的 SQL 表达式计算（契约 §5.1）；
  * - 写：版本不匹配抛 `VERSION_CONFLICT`，查不到返回 `null`（由用例映射 404）；
  * - 取消：不物理删除（D21 / D47），只改状态；下游判定按库存流水的来源单据反查。
  *
@@ -100,6 +100,8 @@ export interface SupplierReturnPage {
 export interface PurchaseOrderState {
   readonly id: string;
   readonly companyId: string;
+  /** 单头供应商：改单换对接人时要拿它校验「同供应商」（#306）。 */
+  readonly supplierId: string;
   readonly status: PurchaseOrderStatus;
   readonly version: number;
 }
@@ -111,6 +113,9 @@ interface HeaderRow {
   order_no: string;
   supplier_id: string;
   supplier_name: string;
+  /** 下单对接人（#306）：可空；停用后名字仍回（LEFT JOIN 保留历史可读）。 */
+  supplier_contact_id: string | null;
+  supplier_contact_name: string | null;
   status: string;
   handler_id: string;
   goods_amount: string | number;
@@ -144,6 +149,7 @@ interface FeeRow {
 interface StateRow {
   id: string;
   company_id: string;
+  supplier_id: string;
   status: string;
   version: number;
 }
@@ -159,6 +165,8 @@ const HEADER_COLUMNS = `o.id,
   o.order_no,
   o.supplier_id,
   s.name AS supplier_name,
+  o.supplier_contact_id,
+  k.name AS supplier_contact_name,
   o.status,
   o.handler_id,
   trim_scale(o.goods_amount) AS goods_amount,
@@ -172,7 +180,11 @@ const HEADER_FROM = `purchase_order o
   JOIN supplier s
     ON s.id = o.supplier_id
    AND s.tenant_id = o.tenant_id
-   AND s.company_id = o.company_id`;
+   AND s.company_id = o.company_id
+  LEFT JOIN supplier_contact k
+    ON k.id = o.supplier_contact_id
+   AND k.tenant_id = o.tenant_id
+   AND k.company_id = o.company_id`;
 
 const LINE_COLUMNS = `l.id,
   l.line_no,
@@ -227,6 +239,8 @@ function mapHeader(row: HeaderRow): Omit<PurchaseOrder, 'lines' | 'fees'> {
     orderNo: row.order_no,
     supplierId: row.supplier_id,
     supplierName: row.supplier_name,
+    supplierContactId: row.supplier_contact_id,
+    supplierContactName: row.supplier_contact_name,
     status: row.status as PurchaseOrderStatus,
     handlerId: row.handler_id,
     goodsAmount: decimal(row.goods_amount),
@@ -459,7 +473,7 @@ export async function loadPurchaseOrderState(
   id: string,
 ): Promise<PurchaseOrderState | null> {
   const result = await ctx.tx.query<StateRow>(
-    `SELECT id, company_id, status, version
+    `SELECT id, company_id, supplier_id, status, version
        FROM purchase_order
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -471,6 +485,7 @@ export async function loadPurchaseOrderState(
   return {
     id: row.id,
     companyId: row.company_id,
+    supplierId: row.supplier_id,
     status: row.status as PurchaseOrderStatus,
     version: row.version,
   };
@@ -516,6 +531,35 @@ async function assertSupplierInCompany(
       supplierId,
       companyId,
     });
+  }
+}
+
+/**
+ * 下单对接人校验（#306）：必须**同供应商 + 同公司 + 启用**，否则 422。
+ * 三条一起查（任一条不满足都是同一个用户错误），`details.field` 指回入参名。
+ */
+async function assertSupplierContactUsable(
+  ctx: PurchaseOrderRepoContext,
+  contactId: string,
+  supplierId: string,
+  companyId: string,
+): Promise<void> {
+  const result = await ctx.tx.query(
+    `SELECT 1
+       FROM supplier_contact
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = $3::uuid
+        AND supplier_id = $4::uuid
+        AND status = '启用'`,
+    [contactId, ctx.tenantId, companyId, supplierId],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      '对接人不存在、不属于该供应商、跨公司或已停用',
+      { field: 'supplierContactId', supplierContactId: contactId },
+    );
   }
 }
 
@@ -673,6 +717,14 @@ export async function insertPurchaseOrder(
 ): Promise<PurchaseOrder> {
   await assertSupplierInCompany(ctx, input.supplierId, input.companyId);
   await assertHandlerInTenant(ctx, input.handlerId);
+  if (input.supplierContactId !== undefined) {
+    await assertSupplierContactUsable(
+      ctx,
+      input.supplierContactId,
+      input.supplierId,
+      input.companyId,
+    );
+  }
   await assertProductsInCompany(
     ctx,
     input.lines.map((line) => line.productId),
@@ -686,9 +738,18 @@ export async function insertPurchaseOrder(
 
   await ctx.tx.query(
     `INSERT INTO purchase_order
-       (id, tenant_id, company_id, order_no, supplier_id, handler_id, status)
-     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, '进行中')`,
-    [input.id, ctx.tenantId, input.companyId, input.orderNo, input.supplierId, input.handlerId],
+       (id, tenant_id, company_id, order_no, supplier_id, supplier_contact_id,
+        handler_id, status)
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7::uuid, '进行中')`,
+    [
+      input.id,
+      ctx.tenantId,
+      input.companyId,
+      input.orderNo,
+      input.supplierId,
+      input.supplierContactId ?? null,
+      input.handlerId,
+    ],
   );
   await insertLines(ctx, input.id, input.companyId, input.lines);
   await insertFees(ctx, input.id, input.companyId, input.fees);
@@ -731,6 +792,23 @@ export async function updatePurchaseOrder(
   if (input.handlerId !== undefined) {
     await assertHandlerInTenant(ctx, input.handlerId);
   }
+  /**
+   * 对接人三态（#306）：传值=换人、传 null=清空、未传=不动；换供应商未指定对接人时清空。
+   */
+  const nextContactId =
+    input.supplierContactId !== undefined
+      ? input.supplierContactId
+      : input.supplierId !== undefined && input.supplierId !== current.supplierId
+        ? null
+        : undefined;
+  if (typeof nextContactId === 'string') {
+    await assertSupplierContactUsable(
+      ctx,
+      nextContactId,
+      input.supplierId ?? current.supplierId,
+      current.companyId,
+    );
+  }
   if (input.lines !== undefined) {
     // D15：改单换明细同样不得引用他公司商品；校验放在任何写入之前，失败不留半张单。
     await assertProductsInCompany(
@@ -749,6 +827,7 @@ export async function updatePurchaseOrder(
     `UPDATE purchase_order
         SET supplier_id = COALESCE($4::uuid, supplier_id),
             handler_id = COALESCE($5::uuid, handler_id),
+            supplier_contact_id = CASE WHEN $7::boolean THEN $8::uuid ELSE supplier_contact_id END,
             version = version + 1
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -763,6 +842,8 @@ export async function updatePurchaseOrder(
       input.supplierId ?? null,
       input.handlerId ?? null,
       expectedVersion,
+      nextContactId !== undefined,
+      nextContactId ?? null,
     ],
   );
   if (updated.rows.length === 0) {
@@ -1252,9 +1333,14 @@ async function assertSupplierReturnBatches(
   const productByBatch = new Map(result.rows.map((row) => [row.id, row.product_id]));
   const missing = batchIds.filter((id) => !productByBatch.has(id));
   if (missing.length > 0) {
+    // 指到行：调用方要能直接告诉用户是哪一行明细要改（D105 的 422 定位口径）。
+    const lineIndex = input.lines.findIndex((line) =>
+      line.batchIds.some((id) => missing.includes(id)),
+    );
     throw new AppError('VALIDATION_FAILED', '批次不存在或不属于供应商退货公司', {
       batchIds: missing,
       companyId: input.companyId,
+      field: `lines.${lineIndex}.batchIds`,
     });
   }
 
@@ -1270,35 +1356,100 @@ async function assertSupplierReturnBatches(
   }
 }
 
-/**
- * 服务端计算应退金额：`SUM(qty × unit_price)` 全部交给 SQL，应用侧不转浮点。
- * 返回值用于 INSERT 单头；后续明细行金额用同一条乘积表达式落库。
- */
-async function aggregateSupplierReturnRefund(
-  ctx: PurchaseOrderRepoContext,
-  lines: readonly SupplierReturnLine[],
-): Promise<string> {
-  const values: string[] = [];
-  const params: unknown[] = [];
-  for (const line of lines) {
-    params.push(line.qty, line.unitPrice);
-    values.push(`($${params.length - 1}::amount, $${params.length}::amount)`);
-  }
-  const result = await ctx.tx.query<{ refund_amount: string | number; positive: boolean }>(
-    `SELECT trim_scale(COALESCE(SUM(qty * unit_price), 0)) AS refund_amount,
-            COALESCE(SUM(qty * unit_price), 0) > 0 AS positive
-       FROM (VALUES ${values.join(', ')}) AS line_amounts(qty, unit_price)`,
-    params,
-  );
-  const row = result.rows[0];
-  if (!row?.positive) {
-    throw new AppError('VALIDATION_FAILED', '应退金额必须大于 0（F4c）');
-  }
-  return decimal(row.refund_amount);
+interface SupplierReturnLineAmount {
+  /** 该行服务端算出的金额（Σ 各批份额 × 该批锁价）。 */
+  readonly amount: string;
+  /** 该行的回显单价 = 金额 ÷ 数量；单批次时即该批锁价，跨批次时是加权后的展示值。 */
+  readonly unitPrice: string;
 }
 
 /**
- * 新增供应商退货：客户端 `amount` / `refundAmount` 不落库，统一由服务端重算。
+ * 退款单价一律由服务端从批次锁价得出（D105）：客户端传的 `unitPrice` 只给前端做预估，
+ * 不参与金额计算——否则前端传 1 元就能把退款改成 1 元。
+ *
+ * 一行跨多个批次时，按「行数量均分到所引批次、余量末批承接」（与 D92 待执行占用同一口径）
+ * 逐批 `份额 × 锁价` 再求和；**不取平均价**——余量落在末批、各批锁价不同时，平均价会算出
+ * 另一个数。
+ *
+ * 锁价拿不到（批次不存在 / 不属于该公司 / `locked_unit_cost` 为 NULL）直接 422 并指到行：
+ * 退款金额此时没有可信来源，兜底成 0 或客户端价等于把错账悄悄写进财务账。
+ */
+async function computeSupplierReturnAmounts(
+  ctx: PurchaseOrderRepoContext,
+  companyId: string,
+  lines: readonly SupplierReturnLine[],
+): Promise<{ refundAmount: string; lineAmounts: SupplierReturnLineAmount[] }> {
+  // 同一行里重复引用同一批次时按一次算：金额与 qty 总量都只跟「实际涉及哪几批」有关。
+  const payload = JSON.stringify(
+    lines.map((line) => ({ qty: line.qty, batchIds: [...new Set(line.batchIds)] })),
+  );
+  const result = await ctx.tx.query<{
+    line_no: number;
+    amount: string | number;
+    unit_price: string | number;
+    refund_amount: string | number;
+    positive: boolean;
+    missing_cost: boolean;
+  }>(
+    `WITH input AS (
+       SELECT ord::int AS line_no,
+              (item ->> 'qty')::amount AS qty,
+              item -> 'batchIds' AS batch_ids
+         FROM jsonb_array_elements($3::jsonb) WITH ORDINALITY AS t(item, ord)
+     ), expanded AS (
+       SELECT line_no, qty, bid, idx,
+              count(*) OVER (PARTITION BY line_no) AS batch_count
+         FROM input,
+              LATERAL jsonb_array_elements_text(batch_ids) WITH ORDINALITY AS b(bid, idx)
+     ), weighted AS (
+       SELECT line_no, qty,
+              CASE WHEN idx < batch_count THEN trunc(qty / batch_count, 6)
+                   ELSE qty - trunc(qty / batch_count, 6) * (batch_count - 1) END AS share_qty,
+              cost.locked_unit_cost
+         FROM expanded
+         LEFT JOIN inventory_batch cost
+           ON cost.id = expanded.bid::uuid
+          AND cost.tenant_id = $1
+          AND cost.company_id = $2::uuid
+     ), totals AS (
+       SELECT line_no, qty,
+              trim_scale(COALESCE(SUM(share_qty * locked_unit_cost), 0)) AS amount,
+              COALESCE(bool_or(locked_unit_cost IS NULL), true) AS missing_cost
+         FROM weighted
+        GROUP BY line_no, qty
+     )
+     SELECT line_no,
+            amount,
+            trim_scale(CASE WHEN qty > 0 THEN round(amount / qty, 6) ELSE 0 END) AS unit_price,
+            trim_scale(SUM(amount) OVER ()) AS refund_amount,
+            SUM(amount) OVER () > 0 AS positive,
+            missing_cost
+       FROM totals
+      ORDER BY line_no`,
+    [ctx.tenantId, companyId, payload],
+  );
+
+  const rows = result.rows;
+  const lineAmounts = lines.map((_, index) => {
+    const row = rows.find((candidate) => candidate.line_no === index + 1);
+    if (!row || row.missing_cost) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `第 ${index + 1} 行退货明细引用的批次缺少锁价，无法确定退款金额`,
+        { field: `lines.${index}.batchIds`, lineNo: index + 1 },
+      );
+    }
+    return { amount: decimal(row.amount), unitPrice: decimal(row.unit_price) };
+  });
+  if (!rows[0]?.positive) {
+    throw new AppError('VALIDATION_FAILED', '应退金额必须大于 0（F4c）');
+  }
+  return { refundAmount: decimal(rows[0].refund_amount), lineAmounts };
+}
+
+/**
+ * 新增供应商退货：客户端 `amount` / `refundAmount` 不落库，统一由服务端重算；
+ * 单价同样以批次锁价为准，客户端 `unitPrice` 只用于前端预估（D105）。
  * 调用方必须在同一事务内先取 S 单号，并在事务成功后写审计（D16 / D51）。
  */
 export async function insertSupplierReturn(
@@ -1316,7 +1467,11 @@ export async function insertSupplierReturn(
     input.companyId,
   );
   await assertSupplierReturnBatches(ctx, input);
-  const refundAmount = await aggregateSupplierReturnRefund(ctx, input.lines);
+  const { refundAmount, lineAmounts } = await computeSupplierReturnAmounts(
+    ctx,
+    input.companyId,
+    input.lines,
+  );
 
   await ctx.tx.query(
     `INSERT INTO supplier_return
@@ -1335,11 +1490,12 @@ export async function insertSupplierReturn(
 
   for (const [index, line] of input.lines.entries()) {
     const lineId = uuidv7();
+    const amount = lineAmounts[index]!;
     await ctx.tx.query(
       `INSERT INTO supplier_return_line
          (id, tenant_id, company_id, return_id, line_no, product_id, qty, unit_price, amount)
        VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::uuid,
-               $7::amount, $8::amount, ($7::amount * $8::amount))`,
+               $7::amount, $8::amount, $9::amount)`,
       [
         lineId,
         ctx.tenantId,
@@ -1348,7 +1504,8 @@ export async function insertSupplierReturn(
         index + 1,
         line.productId,
         line.qty,
-        line.unitPrice,
+        amount.unitPrice,
+        amount.amount,
       ],
     );
     for (const batchId of [...new Set(line.batchIds)]) {

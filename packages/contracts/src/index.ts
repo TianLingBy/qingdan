@@ -4,6 +4,7 @@ export * from './products.js';
 export * from './customers.js';
 export * from './suppliers.js';
 export * from './processors.js';
+export * from './contacts.js';
 export * from './employees.js';
 export * from './positions.js';
 export * from './companies.js';

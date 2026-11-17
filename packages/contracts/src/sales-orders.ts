@@ -120,6 +120,13 @@ export const SalesOrderSchema = z.object({
   customerId: z.string(),
   /** 客户名只读回显，避免列表二次查询。 */
   customerName: z.string(),
+  /**
+   * 本次下单的对接人（#306）：可空——历史单、未指定对接人的单都没有。
+   * 对接人删除是「软停用」而非物理删，所以这里的历史引用永远读得到。
+   */
+  customerContactId: z.string().nullable().optional(),
+  /** 对接人姓名只读回显：软停用后仍回名字，历史单靠它认「这次是谁来下的单」。 */
+  customerContactName: z.string().nullable().optional(),
   status: SalesOrderStatusSchema,
   /** 经手人（负责人）；无权查看负责人（非老板/经理）时服务端返回 null（Issue #227）。 */
   handlerId: z.string().nullable(),
@@ -201,6 +208,11 @@ export const SalesOrderCreateInputSchema = z.object({
   customerId: z.string().uuid().optional(),
   /** 新客户草档（D100）：不传 `customerId` 时必填。归属公司取本单 `companyId`，前端不得指定。 */
   customerDraft: CustomerDraftSchema.optional(),
+  /**
+   * 下单对接人（#306）：选填。必须属于本单客户、同公司且状态「启用」，
+   * 否则用例层报 422（`details.field` 指回 `customerContactId`）。
+   */
+  customerContactId: z.string().uuid().optional(),
   handlerId: z.string().uuid(),
   lines: z.array(SalesOrderLineSchema).min(1, '销售单至少 1 行商品明细'),
   fees: z.array(SalesOrderFeeInputSchema).optional(),
@@ -215,6 +227,8 @@ export type SalesOrderCreateInput = z.infer<typeof SalesOrderCreateInputSchema>;
 export const SalesOrderUpdateInputSchema = z
   .object({
     customerId: z.string().uuid().optional(),
+    /** 换对接人（#306）：传 null 表示清空；校验口径同创建。 */
+    customerContactId: z.string().uuid().nullable().optional(),
     handlerId: z.string().uuid().optional(),
     lines: z.array(SalesOrderLineSchema).min(1).optional(),
     fees: z.array(SalesOrderFeeInputSchema).optional(),

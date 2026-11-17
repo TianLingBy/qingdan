@@ -174,6 +174,10 @@ export const ProcessingOrderSchema = z.object({
   processorId: z.string(),
   /** 加工厂名只读回显，避免列表二次查询。 */
   processorName: z.string(),
+  /** 本次下单的对接人（#306）：可空；软停用不影响历史单回显。 */
+  processorContactId: z.string().nullable().optional(),
+  /** 对接人姓名只读回显（软停用后仍回名字）。 */
+  processorContactName: z.string().nullable().optional(),
   /** 成品商品：开单时由契约保证必填；历史单为 null（#150 决策 A）。 */
   outputProductId: z.string().nullable(),
   status: ProcessingOrderStatusSchema,
@@ -302,6 +306,8 @@ export const ProcessingOrderCreateInputSchema = z
     processorId: z.string().uuid().optional(),
     /** 新加工厂草档（D100）：不传 `processorId` 时必填；公司取本单 `companyId`。 */
     processorDraft: ProcessorDraftSchema.optional(),
+    /** 下单对接人（#306）：选填；须属本单加工厂、同公司、状态「启用」，否则 422。 */
+    processorContactId: z.string().uuid().optional(),
     /** 成品商品：开单必填，完成时据此确定产出批次的商品（#150 决策 A）。 */
     outputProductId: z.string().uuid(),
     handlerId: z.string().uuid(),
@@ -330,6 +336,8 @@ export type ProcessingOrderCreateInput = z.infer<typeof ProcessingOrderCreateInp
 export const ProcessingOrderUpdateInputSchema = z
   .object({
     processorId: z.string().uuid().optional(),
+    /** 换对接人（#306）：传 null 表示清空；校验口径同创建。 */
+    processorContactId: z.string().uuid().nullable().optional(),
     /** 成品商品：可选修改（#150 决策 A）。 */
     outputProductId: z.string().uuid().optional(),
     handlerId: z.string().uuid().optional(),
