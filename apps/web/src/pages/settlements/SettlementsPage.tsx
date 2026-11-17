@@ -22,9 +22,11 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import { DetailHead, DetailMetaDot, DocMeta, DocPill } from '../../components/OrderDetailUI';
 import { allows, type ScopeAction } from '../../lib/access';
 import { MASKED_AMOUNT, formatMoney } from '../../lib/decimal';
 import { useEmployeeLabel } from '../../lib/employee-directory';
+import { resolveListState, type ListState } from '../../lib/list-state';
 import { describeWriteError, recoverFromStaleVersion } from '../../lib/write-error';
 import { authApi, authKeys } from '../auth/auth-api';
 import { CommissionRatesPanel } from './CommissionRatesPanel';
@@ -32,7 +34,7 @@ import {
   SETTLEMENT_SOURCE_LABEL,
   SETTLEMENT_STATES,
   SETTLEMENT_STATE_HINT,
-  SETTLEMENT_STATE_STYLE,
+  SETTLEMENT_STATE_TONE,
   commissionNote,
   confirmBlockedText,
   fetchSourceDocNo,
@@ -62,22 +64,30 @@ function formatDateTime(value: string): string {
   ).padStart(2, '0')}`;
 }
 
+/**
+ * 两态 → v0.13 `.st` 色档（映射在 api 层，颜色规则在 `app-v013.css`）。
+ *
+ * `待确认` 用 `bad`（红）是照视觉稿 `结算单C.html`：它不是「出错」，是**等财务动手**——
+ * 一张待确认的 C 单意味着钱还没落定，红一点才有人管。`已结算` 用 `ok`（绿）收尾。
+ */
 function StatusBadge({ status }: { readonly status: SettlementOrderStatus }) {
   return (
-    <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-        SETTLEMENT_STATE_STYLE[status]
-      }`}
+    <DocPill
+      label={status}
+      tone={SETTLEMENT_STATE_TONE[status]}
       title={SETTLEMENT_STATE_HINT[status]}
-    >
-      {status}
-    </span>
+    />
   );
+}
+
+/** 金额文本：无看价权限统一显示 `—`（D78），不用 0 顶替。 */
+function moneyText(value: string | null, canView: boolean): string {
+  return canView ? formatMoney(value) : MASKED_AMOUNT;
 }
 
 /** 金额单元格：无看价权限时统一显示 `—`（D78），不用 0 顶替。 */
 function Money({ value, canView }: { readonly value: string | null; readonly canView: boolean }) {
-  return <span className="font-mono text-xs">{canView ? formatMoney(value) : MASKED_AMOUNT}</span>;
+  return <span className="font-mono text-xs">{moneyText(value, canView)}</span>;
 }
 
 /* ------------------------------ 详情 ------------------------------ */
@@ -107,78 +117,80 @@ function DetailPanel({
   const loss = lossNote(order.grossProfit, order.relatedLossAmount);
 
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-mono text-sm text-slate-900">{order.orderNo}</h2>
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-            <StatusBadge status={order.status} />
+    <section className="card space-y-4 p-5">
+      <DetailHead
+        docLabel="结算单"
+        orderNo={order.orderNo}
+        pill={<StatusBadge status={order.status} />}
+        meta={
+          <>
             <span>{sourceDocText(order.sourceDocType, order.sourceDocId, sourceDocNo)}</span>
-            <span className="text-slate-300">|</span>
+            <DetailMetaDot />
             <span>生成 {formatDateTime(order.createdAt)}</span>
             {order.status === '已结算' ? (
               <>
-                <span className="text-slate-300">|</span>
+                <DetailMetaDot />
                 <span>结算 {formatDateTime(order.updatedAt)}</span>
               </>
             ) : null}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-sm text-slate-500 hover:text-slate-900"
-        >
-          关闭
-        </button>
-      </div>
+          </>
+        }
+        actions={
+          <button
+            type="button"
+            disabled={!canApprove || !order.confirmable.allowed || !canViewPrice || busy}
+            onClick={onConfirm}
+            className="btn btn-primary"
+            title={canApprove ? undefined : '当前身份没有 settlement.approve 权限'}
+          >
+            {busy ? '确认中…' : '确认结算'}
+          </button>
+        }
+        onClose={onClose}
+      />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="rounded-lg bg-slate-50 p-3">
-          <p className="text-xs text-slate-500">总售价</p>
-          <p className="mt-1">
-            <Money value={order.totalSaleAmount} canView={canViewPrice} />
-          </p>
-          <p className="mt-1 text-xs text-slate-500">总成本</p>
-          <p className="mt-1">
-            <Money value={order.totalCostAmount} canView={canViewPrice} />
-          </p>
-        </div>
-        <div className="rounded-lg bg-slate-50 p-3">
-          <p className="text-xs text-slate-500">毛利（总售价 − 总成本，D5）</p>
-          <p className="mt-1">
-            <Money value={order.grossProfit} canView={canViewPrice} />
-          </p>
-          <p className="mt-1 text-xs text-slate-500">毛利率</p>
-          <p className="mt-1 font-mono text-xs">
-            {canViewPrice ? formatRate(order.grossMarginRate) : MASKED_AMOUNT}
-          </p>
-        </div>
-        <div className="rounded-lg bg-slate-50 p-3">
-          <p className="text-xs text-slate-500">本单相关损失（D35）</p>
-          <p className="mt-1">
-            <Money value={order.relatedLossAmount} canView={canViewPrice} />
-          </p>
-          <p className="mt-1 text-xs text-slate-500">净毛利（毛利 − 相关损失，D33）</p>
-          <p className="mt-1">
-            <Money value={order.netProfit} canView={canViewPrice} />
-          </p>
-        </div>
-      </div>
+      <DocMeta
+        items={[
+          { label: '总售价', value: moneyText(order.totalSaleAmount, canViewPrice), tone: 'money' },
+          { label: '总成本', value: moneyText(order.totalCostAmount, canViewPrice), tone: 'money' },
+          {
+            label: '毛利（总售价 − 总成本，D5）',
+            value: moneyText(order.grossProfit, canViewPrice),
+            tone: 'money',
+          },
+          {
+            label: '毛利率',
+            value: canViewPrice ? formatRate(order.grossMarginRate) : MASKED_AMOUNT,
+            mono: true,
+          },
+          {
+            label: '本单相关损失（D35）',
+            value: moneyText(order.relatedLossAmount, canViewPrice),
+            mono: true,
+          },
+          {
+            label: '净毛利（毛利 − 相关损失，D33）',
+            value: moneyText(order.netProfit, canViewPrice),
+            tone: 'money',
+          },
+        ]}
+      />
 
       {loss ? <p className="text-xs text-slate-500">{loss}</p> : null}
 
-      <div className="rounded-lg border border-slate-200 p-3">
+      <section className="rounded-xl border border-slate-200 p-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-medium">提成（D36 / D77 ②）</h3>
-          <span className="text-[11px] text-slate-400">
+          <h3 className="text-sm font-semibold">提成（D36 / D77 ②）</h3>
+          <span className="text-xs text-slate-400">
             比例是<b>确认结算时的快照</b>，之后改比例不影响本单（D5④）
           </span>
         </div>
         <dl className="mt-2 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
           <div>
             <dt className="text-xs text-slate-500">提成比例快照</dt>
-            <dd className="mt-0.5 font-mono text-xs">{formatCommissionRate(order.commissionRateSnapshot)}</dd>
+            <dd className="mt-0.5 font-mono text-xs">
+              {formatCommissionRate(order.commissionRateSnapshot)}
+            </dd>
           </div>
           <div>
             <dt className="text-xs text-slate-500">提成金额</dt>
@@ -193,36 +205,26 @@ function DetailPanel({
             </dd>
           </div>
         </dl>
-        {note ? <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{note}</p> : null}
-        <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+        {note ? <p className="mt-2 text-xs leading-relaxed text-slate-400">{note}</p> : null}
+        <p className="mt-1 text-xs leading-relaxed text-slate-400">
           一期提成只是报表数字，不在本单发放（D11）。
         </p>
-      </div>
+      </section>
 
       {!canViewPrice ? (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           无「看价」权限：金额与提成均显示 {MASKED_AMOUNT}（D78），也不能确认结算——
           看不到毛利就确认结算，等于闭眼签字。
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          disabled={!canApprove || !order.confirmable.allowed || !canViewPrice || busy}
-          onClick={onConfirm}
-          className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
-          title={canApprove ? undefined : '当前身份没有 settlement.approve 权限'}
-        >
-          {busy ? '确认中…' : '确认结算'}
-        </button>
-        {blocked ? <span className="text-xs text-slate-500">{blocked}</span> : null}
-        {order.confirmable.allowed && !canApprove ? (
-          <span className="text-xs text-slate-500">确认结算需要 settlement.approve（审批动作，D52①）。</span>
-        ) : null}
-      </div>
+      {blocked || (order.confirmable.allowed && !canApprove) ? (
+        <p className="text-xs text-slate-500">
+          {blocked ?? '确认结算需要 settlement.approve（审批动作，D52①）。'}
+        </p>
+      ) : null}
 
-      <p className="text-[11px] leading-relaxed text-slate-400">
+      <p className="note">
         一期一单只结算一次（D19），不能部分结算；结算后<b>不可冲正、不可取消</b>，
         错账走 R 客户退货（D2③）。C 单是计算与结算凭证，商品明细以来源 E / N 单为准。
       </p>
@@ -363,6 +365,12 @@ export function SettlementsPage() {
 
   const rows = list.data?.items ?? [];
   const nextCursor = list.data?.nextCursor ?? null;
+  /** 列表四态（v0.13 `data-state`）：算一个字符串交给 DOM，渲染分支交给 CSS。 */
+  const listState: ListState = resolveListState({
+    isPending: list.isPending,
+    hasError: list.error !== null,
+    isEmpty: rows.length === 0,
+  });
   const detailOrder = detail.data;
 
   /**
@@ -392,21 +400,30 @@ export function SettlementsPage() {
 
   return (
     <section className="mx-auto max-w-7xl space-y-5">
-      <header className="flex flex-wrap items-start justify-between gap-3">
+      <div className="p-head">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">结算单 C</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">{PAGE_DESCRIPTION}</p>
+          <div className="eyebrow">结算单 C · 毛利与提成</div>
+          <h1>结算单 C</h1>
+          <p className="sub">{PAGE_DESCRIPTION}</p>
         </div>
-        {canCommission('read') ? (
-          <button
-            type="button"
-            onClick={() => setCommissionOpen((open) => !open)}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
-          >
-            {commissionOpen ? '收起提成比例配置' : '提成比例配置'}
-          </button>
-        ) : null}
-      </header>
+        <div className="actions">
+          {canCommission('read') ? (
+            <button
+              type="button"
+              onClick={() => setCommissionOpen((open) => !open)}
+              className="btn btn-ghost"
+            >
+              {commissionOpen ? '收起提成比例配置' : '提成比例配置'}
+            </button>
+          ) : null}
+          {/*
+            视觉稿这里还有「+ 新建」和「导出」两个按钮，**都没放**：
+            C 单没有 create 端点（草稿由 E / N 完成时生成，D19 / D29），
+            也没有列表导出端点（`exports.ts` 里只有 sales / purchase / inventory 三条）。
+            画出来就是点不动的假按钮。
+          */}
+        </div>
+      </div>
 
       {commissionOpen && canCommission('read') ? (
         <CommissionRatesPanel
@@ -416,13 +433,8 @@ export function SettlementsPage() {
         />
       ) : null}
 
-      <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        结算单<b>没有「新建」按钮</b>：草稿由 E 销售单 / N 内部交易单「已完成」时自动生成（D19 / D29）。
-        一期一单一次结算，结算后不可冲正、不可取消，错账走 R 退货（D2③）。
-      </p>
-
       {me.data && !canViewPrice ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           当前身份无「看价」权限，金额与提成都显示为 <b>{MASKED_AMOUNT}</b>（D78）。
           此时也不放开「确认结算」——看不到毛利就确认结算，等于闭眼签字。
         </p>
@@ -440,24 +452,36 @@ export function SettlementsPage() {
         </p>
       ) : null}
 
-      <div className="flex flex-wrap gap-3 rounded-xl border border-slate-200 bg-white p-4">
-        <select
-          value={status}
-          onChange={(event) => setStatus(event.target.value as '' | SettlementOrderStatus)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">全部状态</option>
+      {/* 工具条（v0.13）：两态用分段按钮，来源类型用下拉 */}
+      <div className="toolbar">
+        <div className="seg" role="group" aria-label="按状态筛选">
+          <button
+            type="button"
+            className={status === '' ? 'on' : undefined}
+            aria-pressed={status === ''}
+            onClick={() => setStatus('')}
+          >
+            全部状态
+          </button>
           {SETTLEMENT_STATES.map((item) => (
-            <option key={item} value={item}>
+            <button
+              key={item}
+              type="button"
+              className={status === item ? 'on' : undefined}
+              aria-pressed={status === item}
+              title={SETTLEMENT_STATE_HINT[item]}
+              onClick={() => setStatus(item)}
+            >
               {item}
-            </option>
+            </button>
           ))}
-        </select>
+        </div>
         <select
           value={sourceDocType}
           onChange={(event) =>
             setSourceDocType(event.target.value as '' | SettlementSourceDocType)
           }
+          aria-label="按来源单据类型筛选"
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
         >
           <option value="">全部来源</option>
@@ -470,49 +494,68 @@ export function SettlementsPage() {
         <input
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder="按单号搜索"
-          className="min-w-56 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          placeholder="搜索单号"
+          aria-label="搜索单号"
+          className="search"
         />
+        <span className="ml-auto text-sm" style={{ color: 'var(--text-3)' }}>
+          C 单不手工开：E / N 单完成时自动生成草稿（D19）
+        </span>
       </div>
 
       {staleNotice ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           {staleNotice}
         </p>
       ) : null}
       {actionError ? (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>
+        <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{actionError}</p>
       ) : null}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        {list.isPending ? (
-          <ListLoading label="正在加载结算单…" />
-        ) : list.error ? (
-          <ListError title="结算单加载失败" error={list.error} onRetry={() => void list.refetch()} />
-        ) : rows.length === 0 ? (
-          <ListEmpty
-            title="暂无结算单。结算单不手工开：先在销售单 E / 内部交易单 N 里把单据完成，系统会自动生成草稿（D19）。"
-          />
-        ) : (
-          <table className="w-full min-w-[1100px] text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+      {/*
+        列表（v0.13）：四态由 `data-state` 驱动，`tbody` 里三个状态行常驻。
+        视觉稿的「点表头排序」不做——`SettlementOrderListQuerySchema` 只有 cursor / limit，
+        没有 sort 参数，点下去只会静默无效（契约层面就不支持）。
+      */}
+      <div className="card" data-state={listState}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] text-left">
+            <thead>
               <tr>
-                <th className="px-4 py-3">单号</th>
-                <th className="px-4 py-3">来源单</th>
-                <th className="px-4 py-3">总售价</th>
-                <th className="px-4 py-3">总成本</th>
-                <th className="px-4 py-3">毛利</th>
-                <th className="px-4 py-3">毛利率</th>
-                <th className="px-4 py-3">净毛利</th>
-                <th className="px-4 py-3">提成</th>
-                <th className="px-4 py-3">状态</th>
-                <th className="px-4 py-3 text-right">操作</th>
+                <th>单号</th>
+                <th>来源单</th>
+                <th className="num">总售价</th>
+                <th className="num">总成本</th>
+                <th className="num">毛利</th>
+                <th className="num">毛利率</th>
+                <th className="num">提成</th>
+                <th>状态</th>
+                <th className="text-right">操作</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody data-state={listState}>
+              <tr className="st-tr st-loading">
+                <td colSpan={9}>
+                  <ListLoading label="正在加载结算单…" />
+                </td>
+              </tr>
+              <tr className="st-tr st-error">
+                <td colSpan={9}>
+                  <ListError
+                    title="结算单加载失败"
+                    error={list.error}
+                    onRetry={() => void list.refetch()}
+                  />
+                </td>
+              </tr>
+              <tr className="st-tr st-empty">
+                <td colSpan={9}>
+                  <ListEmpty title="暂无结算单。结算单不手工开：先在销售单 E / 内部交易单 N 里把单据完成，系统会自动生成草稿（D19）。" />
+                </td>
+              </tr>
               {rows.map((order: SettlementOrder) => (
-                <tr key={order.id} className="border-b border-slate-100 last:border-0">
-                  <td className="whitespace-nowrap px-4 py-3">
+                <tr key={order.id} className="r-row">
+                  <td className="whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => setDetailId(order.id)}
@@ -521,39 +564,33 @@ export function SettlementsPage() {
                       {order.orderNo}
                     </button>
                   </td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+                  <td className="whitespace-nowrap text-slate-600">
                     {sourceDocText(order.sourceDocType, order.sourceDocId, docNoOf(order))}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="num">
                     <Money value={order.totalSaleAmount} canView={canViewPrice} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="num">
                     <Money value={order.totalCostAmount} canView={canViewPrice} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="num">
                     <Money value={order.grossProfit} canView={canViewPrice} />
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs">
+                  <td className="num">
                     {canViewPrice ? formatRate(order.grossMarginRate) : MASKED_AMOUNT}
                   </td>
-                  <td className="px-4 py-3">
-                    <Money value={order.netProfit} canView={canViewPrice} />
-                  </td>
-                  <td className="px-4 py-3">
+                  <td className="num">
                     <Money value={order.commissionAmount} canView={canViewPrice} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <StatusBadge status={order.status} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDetailId(order.id)}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs"
-                      >
-                        详情
-                      </button>
+                      {/*
+                        单号本身就是「进详情」的入口，所以行内不再单独放「详情」按钮：
+                        C 单有 10 列，多一个按钮就把「操作」列挤出卡片（视觉稿也没这个按钮）。
+                      */}
                       <button
                         type="button"
                         disabled={
@@ -580,32 +617,39 @@ export function SettlementsPage() {
               ))}
             </tbody>
           </table>
-        )}
+        </div>
+        {/* 游标分页：没有总页数，只给「上一批 / 下一批」（同 N 单） */}
+        {pageIndex > 0 || nextCursor !== null ? (
+          <div className="pager">
+            <button
+              type="button"
+              disabled={pageIndex === 0}
+              onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
+            >
+              上一批
+            </button>
+            <span className="of">
+              第 {pageIndex + 1} 批{nextCursor === null ? ' · 已是最后一批' : ''}
+            </span>
+            <button
+              type="button"
+              disabled={!nextCursor}
+              onClick={() => {
+                if (!nextCursor) return;
+                setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
+                setPageIndex((index) => index + 1);
+              }}
+            >
+              下一批
+            </button>
+          </div>
+        ) : null}
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          disabled={pageIndex === 0}
-          onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          上一页
-        </button>
-        <span className="text-sm text-slate-500">第 {pageIndex + 1} 页</span>
-        <button
-          type="button"
-          disabled={!nextCursor}
-          onClick={() => {
-            if (!nextCursor) return;
-            setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
-            setPageIndex((index) => index + 1);
-          }}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          下一页
-        </button>
-      </div>
+      <p className="note">
+        结算单<b>没有「新建」按钮</b>：草稿由 E 销售单 / N 内部交易单「已完成」时自动生成（D19 / D29）。
+        一期一单一次结算，结算后不可冲正、不可取消，错账走 R 退货（D2③）。
+      </p>
 
       {detailId !== null ? (
         <>

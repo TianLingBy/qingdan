@@ -23,8 +23,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import {
+  DetailHead,
+  DetailMetaDot,
+  DocMeta,
+  DocPill,
+  LinesFooter,
+} from '../../components/OrderDetailUI';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useEmployeeLabel } from '../../lib/employee-directory';
+import { resolveListState, type ListState } from '../../lib/list-state';
 import {
   describeWriteError,
   isStaleVersionError,
@@ -44,7 +52,7 @@ import { extractIssues } from '../masterdata/masterdata-api';
 import {
   INTERNAL_TRADE_STATES,
   INTERNAL_TRADE_STATE_HINT,
-  INTERNAL_TRADE_STATE_STYLE,
+  INTERNAL_TRADE_STATE_TONE,
   batchLabelOf,
   batchOptionLabel,
   canEdit,
@@ -74,10 +82,6 @@ function errorText(error: unknown): string {
   return describeWriteError(error);
 }
 
-function shortId(id: string): string {
-  return id.slice(0, 8);
-}
-
 function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -88,16 +92,19 @@ function formatDateTime(value: string): string {
   ).padStart(2, '0')}`;
 }
 
+/**
+ * 四态 → v0.13 `.st` 色档（映射本身在 api 层，这里只负责渲染）。
+ *
+ * **在途单独一档（`transit` 蓝）**：它是 D68② 给 N 单加的中间态，和「进行中」长得一样
+ * 会让人分不清货到底出没出门。已取消用 `cancel`（灰 + 删除线），一眼看出是废单。
+ */
 function StatusBadge({ status }: { readonly status: InternalTradeOrderStatus }) {
   return (
-    <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-        INTERNAL_TRADE_STATE_STYLE[status]
-      }`}
+    <DocPill
+      label={status}
+      tone={INTERNAL_TRADE_STATE_TONE[status]}
       title={INTERNAL_TRADE_STATE_HINT[status]}
-    >
-      {status}
-    </span>
+    />
   );
 }
 
@@ -476,46 +483,32 @@ export function DetailPanel({
   const cancelReason = cancelDisabledReason(order.cancelable.reason);
 
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-mono text-sm text-slate-900">{order.orderNo}</h2>
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-            <StatusBadge status={order.status} />
+    <section className="card space-y-4 p-5">
+      <DetailHead
+        docLabel="内部交易单"
+        orderNo={order.orderNo}
+        pill={<StatusBadge status={order.status} />}
+        meta={
+          <>
             <span>{tradeRouteText(order)}</span>
-            <span className="text-slate-300">|</span>
+            <DetailMetaDot />
             <span>经手人 {employeeLabel(order.handlerId)}</span>
-            <span className="text-slate-300">|</span>
+            <DetailMetaDot />
             <span>开单 {formatDateTime(order.createdAt)}</span>
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-sm text-slate-500 hover:text-slate-900"
-        >
-          关闭
-        </button>
-      </div>
+          </>
+        }
+        onClose={onClose}
+      />
 
-      <dl className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-4">
-        <div>
-          <dt className="text-xs text-slate-500">内部价</dt>
-          <dd className="mt-0.5 font-mono">{formatMoney(order.internalPrice)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-slate-500">明细合计</dt>
-          <dd className="mt-0.5 font-mono">{formatMoney(lineTotal)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-slate-500">在途量</dt>
-          <dd className="mt-0.5 font-mono">{formatQty(order.inTransitQty)}</dd>
-        </div>
-        <div>
-          <dt className="text-xs text-slate-500">明细行数</dt>
-          <dd className="mt-0.5 font-mono">{order.lines.length}</dd>
-        </div>
-      </dl>
+      <DocMeta
+        columns={4}
+        items={[
+          { label: '内部价', value: formatMoney(order.internalPrice), tone: 'money' },
+          { label: '明细合计', value: formatMoney(lineTotal), tone: 'money' },
+          { label: '在途量', value: formatQty(order.inTransitQty), mono: true },
+          { label: '明细行数', value: `${order.lines.length} 行`, mono: true },
+        ]}
+      />
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-left text-sm">
@@ -523,16 +516,16 @@ export function DetailPanel({
             <tr>
               <th className="px-3 py-2">商品</th>
               <th className="px-3 py-2">批次（D22）</th>
-              <th className="px-3 py-2">数量</th>
-              <th className="px-3 py-2">单价</th>
-              <th className="px-3 py-2">金额</th>
+              <th className="px-3 py-2 num">数量</th>
+              <th className="px-3 py-2 num">单价</th>
+              <th className="px-3 py-2 num">金额</th>
             </tr>
           </thead>
           <tbody>
             {order.lines.map((line, index) => (
               <tr key={`${line.productId}-${index}`} className="border-b border-slate-100 last:border-0">
                 <td className="px-3 py-2">{productNameOf(products, line.productId)}</td>
-                <td className="px-3 py-2 font-mono text-[11px] text-slate-500">
+                <td className="px-3 py-2 text-slate-600">
                   {line.batchIds.map((id) => batchLabelOf(batches, id)).join(' / ')}
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">{formatQty(line.qty)}</td>
@@ -541,6 +534,11 @@ export function DetailPanel({
               </tr>
             ))}
           </tbody>
+          <LinesFooter
+            colSpan={4}
+            note={`共 ${order.lines.length} 行 · 数量合计 ${formatQty(totalLineQty(order.lines))}`}
+            sum={formatMoney(lineTotal)}
+          />
         </table>
       </div>
 
@@ -549,7 +547,7 @@ export function DetailPanel({
           type="button"
           disabled={!canUpdate || !canEdit(order.status)}
           onClick={onEdit}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-40"
+          className="btn btn-ghost"
           title={canEdit(order.status) ? undefined : '只有「进行中」能改单（D68②）'}
         >
           修改
@@ -559,7 +557,7 @@ export function DetailPanel({
             type="button"
             disabled={dispatchBusy}
             onClick={onDispatch}
-            className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+            className="btn btn-primary"
           >
             {dispatchBusy ? '发货中…' : '发货'}
           </button>
@@ -569,7 +567,7 @@ export function DetailPanel({
             type="button"
             disabled={revokeBusy}
             onClick={onStartRevoke}
-            className="rounded-lg border border-amber-300 px-3 py-2 text-sm text-amber-900 disabled:opacity-40"
+            className="btn btn-ghost"
           >
             撤销发货
           </button>
@@ -580,7 +578,7 @@ export function DetailPanel({
             disabled={!canReceive || receiveBusy}
             onClick={onReceive}
             title={!canReceive ? '当前身份没有 internal_trade.approve 权限' : undefined}
-            className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+            className="btn btn-primary"
           >
             到货确认
           </button>
@@ -596,7 +594,7 @@ export function DetailPanel({
           type="button"
           disabled={!canCancel || !order.cancelable.allowed || busy}
           onClick={onCancel}
-          className="rounded-lg border border-red-200 px-3 py-2 text-sm text-red-700 disabled:opacity-40"
+          className="btn danger ml-auto"
         >
           取消单据
         </button>
@@ -606,9 +604,9 @@ export function DetailPanel({
       </div>
 
       {revoking ? (
-        <div className="space-y-2 rounded-lg border border-rose-200 bg-rose-50 p-3">
-          <p className="text-sm font-medium text-rose-900">撤销发货</p>
-          <p className="text-xs text-rose-700">
+        <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-medium text-amber-900">撤销发货</p>
+          <p className="text-xs text-amber-800">
             撤销会把单据退回「进行中」并释放这笔在途占用（不转司）。
           </p>
           <div className="flex flex-wrap items-end gap-2">
@@ -626,19 +624,15 @@ export function DetailPanel({
               type="button"
               disabled={revokeBusy}
               onClick={onSubmitRevoke}
-              className="rounded-lg bg-rose-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+              className="btn btn-primary"
             >
               {revokeBusy ? '撤销中…' : '确认撤销'}
             </button>
-            <button
-              type="button"
-              onClick={onCancelRevoke}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600"
-            >
+            <button type="button" onClick={onCancelRevoke} className="btn btn-ghost">
               取消
             </button>
           </div>
-          {revokeError ? <p className="text-xs text-rose-700">{revokeError}</p> : null}
+          {revokeError ? <p className="text-xs text-amber-900">{revokeError}</p> : null}
         </div>
       ) : null}
 
@@ -700,6 +694,8 @@ export function confirmRevokeDispatch(
 export function InternalTradeOrdersPage() {
   const queryClient = useQueryClient();
   const me = useQuery({ queryKey: authKeys.me, queryFn: () => authApi.me(), retry: false });
+  /** 列表「经手人」列回显姓名，不再露 id 前 8 位（详情面板早就这么做了）。 */
+  const employeeLabel = useEmployeeLabel();
 
   const [status, setStatus] = useState<'' | InternalTradeOrderStatus>('');
   const [fromFilter, setFromFilter] = useState('');
@@ -1083,31 +1079,34 @@ export function InternalTradeOrdersPage() {
   const serverIssues = save.error instanceof ApiError ? extractIssues(save.error.details) : [];
   const rows = list.data?.items ?? [];
   const nextCursor = list.data?.nextCursor ?? null;
+  /** 列表四态（v0.13 `data-state`）：算一个字符串交给 DOM，渲染分支由 CSS 决定。 */
+  const listState: ListState = resolveListState({
+    isPending: list.isPending,
+    hasError: list.error !== null,
+    isEmpty: rows.length === 0,
+  });
   const detailOrder = detail.data;
   const meData = me.data;
 
   return (
     <section className="mx-auto max-w-7xl space-y-5">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+      <div className="p-head">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">内部交易单 N</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">{PAGE_DESCRIPTION}</p>
+          <div className="eyebrow">内部交易单 N · 公司间调拨</div>
+          <h1>内部交易单 N</h1>
+          <p className="sub">{PAGE_DESCRIPTION}</p>
         </div>
-        <button
-          type="button"
-          onClick={beginCreate}
-          disabled={!can('create') || myCompanyIds.length === 0}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-        >
-          新建内部交易单
-        </button>
-      </header>
-
-      <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        四态：进行中 → 在途 → 已完成（或已取消，D68②）。只有「进行中」能改单；
-        <b>发货（internal_trade.ship）已接入</b>——发货后进入「在途」并锁住批次可用量，撤销发货才释放；
-        <b>到货确认（D31）已接入</b>——确认后批次在同一事务转入接收公司、N 单置为已完成，不可撤销。
-      </p>
+        <div className="actions">
+          <button
+            type="button"
+            onClick={beginCreate}
+            disabled={!can('create') || myCompanyIds.length === 0}
+            className="btn btn-primary"
+          >
+            新建内部交易单
+          </button>
+        </div>
+      </div>
 
       {meData && !can('create') ? (
         <p className="text-xs text-slate-500">
@@ -1120,10 +1119,38 @@ export function InternalTradeOrdersPage() {
         </p>
       ) : null}
 
-      <div className="flex flex-wrap gap-3 rounded-xl border border-slate-200 bg-white p-4">
+      {/*
+        工具条（v0.13 `.toolbar` + `.seg`）：四态用分段按钮，比下拉少一次展开——
+        N 单最常看的是「在途」（货在路上、等对方确认），点一下就筛出来。
+        发出 / 接收公司仍是下拉：选项多、变化少。
+      */}
+      <div className="toolbar">
+        <div className="seg" role="group" aria-label="按状态筛选">
+          <button
+            type="button"
+            className={status === '' ? 'on' : undefined}
+            aria-pressed={status === ''}
+            onClick={() => setStatus('')}
+          >
+            全部状态
+          </button>
+          {INTERNAL_TRADE_STATES.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={status === item ? 'on' : undefined}
+              aria-pressed={status === item}
+              title={INTERNAL_TRADE_STATE_HINT[item]}
+              onClick={() => setStatus(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
         <select
           value={fromFilter}
           onChange={(event) => setFromFilter(event.target.value)}
+          aria-label="按发出公司筛选"
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
         >
           <option value="">全部发出公司</option>
@@ -1136,6 +1163,7 @@ export function InternalTradeOrdersPage() {
         <select
           value={toFilter}
           onChange={(event) => setToFilter(event.target.value)}
+          aria-label="按接收公司筛选"
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
         >
           <option value="">全部接收公司</option>
@@ -1145,24 +1173,16 @@ export function InternalTradeOrdersPage() {
             </option>
           ))}
         </select>
-        <select
-          value={status}
-          onChange={(event) => setStatus(event.target.value as '' | InternalTradeOrderStatus)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">全部状态</option>
-          {INTERNAL_TRADE_STATES.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
         <input
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder="按单号搜索"
-          className="min-w-56 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          placeholder="搜索单号"
+          aria-label="搜索单号"
+          className="search"
         />
+        <span className="ml-auto text-sm" style={{ color: 'var(--text-3)' }}>
+          「在途」= 货已锁走、对方还没确认到货（D68②）
+        </span>
       </div>
 
       {formOpen ? (
@@ -1229,36 +1249,51 @@ export function InternalTradeOrdersPage() {
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>
       ) : null}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        {list.isPending ? (
-          <ListLoading label="正在加载内部交易单…" />
-        ) : list.error ? (
-          <ListError
-            title="内部交易单加载失败"
-            error={list.error}
-            onRetry={() => void list.refetch()}
-          />
-        ) : rows.length === 0 ? (
-          <ListEmpty title="暂无内部交易单。可调整筛选条件，或用右上角「新建内部交易单」开第一张。" />
-        ) : (
-          <table className="w-full min-w-[1000px] text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+      {/*
+        列表（v0.13）。四态交给容器与 tbody 的 `data-state` 驱动，**不写 JSX 三元分支**：
+        `app-v013.css` 按 `tbody[data-state=…] > tr.st-tr.st-*` 显隐，状态切换时表头宽度不变。
+        数据行只带 `r-row`（**不带 `st-tr`**：`st-tr` 是状态行专用，默认 `display:none` 且 `td{padding:0}`）。
+      */}
+      <div className="card" data-state={listState}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[1000px] text-left">
+            <thead>
               <tr>
-                <th className="px-4 py-3">单号</th>
-                <th className="px-4 py-3">发出 → 接收</th>
-                <th className="px-4 py-3">数量</th>
-                <th className="px-4 py-3">内部价</th>
-                <th className="px-4 py-3">在途量</th>
-                <th className="px-4 py-3">状态</th>
-                <th className="px-4 py-3">经手人</th>
-                <th className="px-4 py-3">开单时间</th>
-                <th className="px-4 py-3 text-right">操作</th>
+                <th>单号</th>
+                <th>发出 → 接收</th>
+                <th className="num">数量</th>
+                <th className="num">内部价</th>
+                <th className="num">在途量</th>
+                <th>状态</th>
+                <th>经手人</th>
+                <th>开单时间</th>
+                <th className="text-right">操作</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody data-state={listState}>
+              {/* 三个状态行常驻：CSS 按 data-state 只显示其中一个，colSpan 必须等于表头列数 */}
+              <tr className="st-tr st-loading">
+                <td colSpan={9}>
+                  <ListLoading label="正在加载内部交易单…" />
+                </td>
+              </tr>
+              <tr className="st-tr st-error">
+                <td colSpan={9}>
+                  <ListError
+                    title="内部交易单加载失败"
+                    error={list.error}
+                    onRetry={() => void list.refetch()}
+                  />
+                </td>
+              </tr>
+              <tr className="st-tr st-empty">
+                <td colSpan={9}>
+                  <ListEmpty title="暂无内部交易单。可调整筛选条件，或用右上角「新建内部交易单」开第一张。" />
+                </td>
+              </tr>
               {rows.map((order: InternalTradeOrder) => (
-                <tr key={order.id} className="border-b border-slate-100 last:border-0">
-                  <td className="whitespace-nowrap px-4 py-3">
+                <tr key={order.id} className="r-row">
+                  <td className="whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => setDetailId(order.id)}
@@ -1267,18 +1302,18 @@ export function InternalTradeOrdersPage() {
                       {order.orderNo}
                     </button>
                   </td>
-                  <td className="px-4 py-3">{tradeRouteText(order)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{formatQty(totalLineQty(order.lines))}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{formatMoney(order.internalPrice)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{formatQty(order.inTransitQty)}</td>
-                  <td className="px-4 py-3">
+                  <td>{tradeRouteText(order)}</td>
+                  <td className="num">{formatQty(totalLineQty(order.lines))}</td>
+                  <td className="num">{formatMoney(order.internalPrice)}</td>
+                  <td className="num">{formatQty(order.inTransitQty)}</td>
+                  <td>
                     <StatusBadge status={order.status} />
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                    {order.handlerId ? shortId(order.handlerId) : '—'}
+                  <td className="text-slate-600">
+                    {order.handlerId ? employeeLabel(order.handlerId) : '—'}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{formatDateTime(order.createdAt)}</td>
-                  <td className="px-4 py-3">
+                  <td className="text-slate-600">{formatDateTime(order.createdAt)}</td>
+                  <td>
                     <div className="flex justify-end gap-2">
                       <button
                         type="button"
@@ -1310,32 +1345,44 @@ export function InternalTradeOrdersPage() {
               ))}
             </tbody>
           </table>
-        )}
+        </div>
+        {/*
+          游标分页（`PageQuerySchema` 只有 cursor/limit，没有 total）：
+          所以是「上一批 / 下一批」，**不画页码**——画了就是假的总页数。
+          只有一批时不渲染这条，免得用户以为还有下一页。
+        */}
+        {pageIndex > 0 || nextCursor !== null ? (
+          <div className="pager">
+            <button
+              type="button"
+              disabled={pageIndex === 0}
+              onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
+            >
+              上一批
+            </button>
+            <span className="of">
+              第 {pageIndex + 1} 批{nextCursor === null ? ' · 已是最后一批' : ''}
+            </span>
+            <button
+              type="button"
+              disabled={!nextCursor}
+              onClick={() => {
+                if (!nextCursor) return;
+                setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
+                setPageIndex((index) => index + 1);
+              }}
+            >
+              下一批
+            </button>
+          </div>
+        ) : null}
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          disabled={pageIndex === 0}
-          onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          上一页
-        </button>
-        <span className="text-sm text-slate-500">第 {pageIndex + 1} 页</span>
-        <button
-          type="button"
-          disabled={!nextCursor}
-          onClick={() => {
-            if (!nextCursor) return;
-            setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
-            setPageIndex((index) => index + 1);
-          }}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          下一页
-        </button>
-      </div>
+      <p className="note">
+        四态：进行中 → 在途 → 已完成（或已取消，D68②）。只有「进行中」能改单；
+        <b>发货（internal_trade.ship）</b>把单据推进「在途」并锁住发出公司批次的可用量，
+        撤销发货才释放；<b>到货确认（D31）</b>确认后批次在同一事务转入接收公司、N 单置为已完成，不可撤销。
+      </p>
 
       {detailId !== null ? (
         <>

@@ -150,12 +150,20 @@ export const INTERNAL_TRADE_STATES: readonly InternalTradeOrderStatus[] = [
   '已取消',
 ];
 
-export const INTERNAL_TRADE_STATE_STYLE: Readonly<Record<InternalTradeOrderStatus, string>> = {
-  进行中: 'bg-blue-50 text-blue-700',
-  /** `在途` 只存在于内部交易（D68②），单独给一档颜色，避免和进行中混淆。 */
-  在途: 'bg-amber-50 text-amber-800',
-  已完成: 'bg-emerald-50 text-emerald-700',
-  已取消: 'bg-slate-100 text-slate-500',
+/**
+ * 状态 → 颜色档（v0.13 的 `.st.now/ok/transit/cancel`）。
+ *
+ * 以前这里是 Tailwind 字符串（`bg-amber-50 text-amber-800`），两页各写一份、色调容易漂移；
+ * 现在统一成 v0.13 的语义档，颜色由 `styles/app-v013.css` 的 `.st` 规则给。
+ * `在途` 单独一档：它是 D68② 给 N 单加的中间态，和「进行中」同色会让人分不清货出没出门。
+ */
+export const INTERNAL_TRADE_STATE_TONE: Readonly<
+  Record<InternalTradeOrderStatus, 'now' | 'ok' | 'transit' | 'cancel'>
+> = {
+  进行中: 'now',
+  在途: 'transit',
+  已完成: 'ok',
+  已取消: 'cancel',
 };
 
 export const INTERNAL_TRADE_STATE_HINT: Readonly<Record<InternalTradeOrderStatus, string>> = {

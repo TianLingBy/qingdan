@@ -1677,8 +1677,12 @@ export function SalesOrdersPage() {
 
       {/*
         列表区（v0.13）。四态由容器与 tbody 上的 `data-state` 驱动，**不写 JSX 分支**：
-        `app-v013.css` 的 `[data-state] > .st-block` 与 `tbody[data-state="…"] > tr.st-tr.*`
+        `app-v013.css` 的 `[data-state] > .st-block` 与 `tbody[data-state="…"] > tr.st-tr.st-*`
         负责显隐，这样状态切换时表头宽度不变、列不会塌。
+
+        **数据行只带 `r-row`，不要带 `st-tr`**：`tbody > tr.st-tr` 是「默认隐藏、按状态显露」
+        的规则，`st-tr` 又带 `td{padding:0;border-bottom:none}`。数据行一旦也标 `st-tr`，
+        `filled` 状态下没有任何规则把它改回 `display:table-row`，整张表只剩表头（已修，见 #337）。
       */}
       <div className="card" data-state={listState}>
         <div className="overflow-x-auto">
@@ -1729,7 +1733,7 @@ export function SalesOrdersPage() {
                 </td>
               </tr>
               {rows.map((order) => (
-                <tr key={order.id} className="st-tr r-row">
+                <tr key={order.id} className="r-row">
                   <td className="px-4 py-3">
                     <button
                       type="button"
