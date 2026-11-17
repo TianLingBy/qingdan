@@ -73,6 +73,9 @@ describe('工作台待办契约（platform 模块 / workbench 功能域，D89）
       'customer_return_pending',
       'supplier_return_pending',
       'processing_pending',
+      // 第 7 条：预警类，权限点是 `inventory_qty.read` 而不是 `approve`（D89 补记 / D104）。
+      // 追加在末尾，不改动前 6 条的顺序 —— 前端按顺序渲染，挪位置等于改它们的视觉排序。
+      'inventory_alert',
     ]);
     for (const kind of TODO_KINDS) expect(kind).toMatch(/^[a-z][a-z0-9_]+$/);
   });

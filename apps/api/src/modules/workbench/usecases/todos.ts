@@ -2,6 +2,7 @@ import {
   AppError,
   TODO_KINDS,
   allowsScope,
+  type Action,
   type DomainKey,
   type TodoItem,
   type TodoKind,
@@ -43,8 +44,16 @@ interface TodoDefinition {
   readonly title: string;
   readonly hint: string;
   readonly routeId: string;
-  /** 该待办要求的权限域；调用者须持有该域 `approve`。 */
+  /** 该待办要求的权限域；调用者须持有该域的 `action`。 */
   readonly domain: DomainKey;
+  /**
+   * 该条目要求哪个动作；**不写等于 `approve`**。
+   *
+   * 只有 `inventory_alert` 显式写 `read`：前 6 条是「有一张单等你批」，
+   * 第 7 条是「有一批货快断了，你该知道」。仓管没有审批权，但他恰恰是最需要
+   * 看见这个数字的人；挂 `approve` 等于把预警从最该看见的人屏幕上拿掉。
+   */
+  readonly action?: Action;
   /** 计数 SQL；参数固定为 $1=tenantId、$2=companyIds、$3=employeeId（公司内全部的查询不用 $3）。 */
   readonly sql: string;
   /** 是否用 `$3` 按本人过滤。 */
@@ -141,6 +150,35 @@ const TODO_DEFINITIONS: readonly TodoDefinition[] = [
              AND status = '进行中'
              AND handler_id = $3::uuid`,
   },
+  {
+    kind: 'inventory_alert',
+    title: '低库存批次',
+    hint: '可见公司内按近 30 天出库速度算，撑不到 8 天的批次',
+    routeId: 'inventory',
+    domain: 'inventory_qty',
+    // 预警不是「等你批」，是「你该知道」：仓管没有审批权，却是最该看见的人。
+    action: 'read',
+    ownedByCaller: false,
+    /**
+     * 与 `GET /api/v1/inventory/alerts`（D104）同一口径：近 30 天日均出库 × 7 天覆盖
+     * ×（1 + 提前量 0.2）。这里写死 `1.2` 而不是读常量，是因为这条 SQL 只是计数，
+     * 接不出参数；两个数字若日后要各自可调，应改成把 `thresholdRatio` 作为 `$4` 传进来。
+     */
+    sql: `SELECT count(*)::int AS count
+            FROM inventory_batch b
+            JOIN (SELECT batch_id,
+                         SUM(-delta)::numeric / 30 AS avg_daily_out
+                    FROM inventory_flow
+                   WHERE tenant_id = $1
+                     AND company_id = ANY($2::uuid[])
+                     AND delta < 0
+                     AND occurred_at >= now() - interval '30 days'
+                   GROUP BY batch_id
+                  HAVING SUM(-delta) > 0) f ON f.batch_id = b.id
+           WHERE b.tenant_id = $1
+             AND b.company_id = ANY($2::uuid[])
+             AND b.available_qty < f.avg_daily_out * 7 * 1.2`,
+  },
 ];
 
 function requirePrincipal(request: FastifyRequest): Principal {
@@ -165,14 +203,14 @@ function requireWorkbenchRead(principal: Principal): void {
   }
 }
 
-/** 该域的 `approve` 是否存在：没有的条目直接 count=0 且不查库。 */
-function canApprove(principal: Principal, domain: DomainKey): boolean {
-  return allowsScope(principal.scope, domain, 'approve');
-}
-
-/** 至少持有一个候选域的 approve 才去查库；一个都没有 → 全部 count=0，仍返回 6 条。 */
-function hasAnyApprove(principal: Principal): boolean {
-  return TODO_DEFINITIONS.some((definition) => canApprove(principal, definition.domain));
+/**
+ * 这个条目该不该为这个调用者查库。
+ *
+ * 按定义里声明的动作判（不写 = `approve`）。以前是「有没有任何域的 approve」一刀切，
+ * 加了 `inventory_alert`（要 `read`）之后不再成立 —— 必须逐条判，否则仓管什么都看不到。
+ */
+function canQuery(principal: Principal, definition: TodoDefinition): boolean {
+  return allowsScope(principal.scope, definition.domain, definition.action ?? 'approve');
 }
 
 async function countPending(
@@ -209,12 +247,12 @@ export async function getWorkbenchTodos(
   const counts = new Map<TodoKind, number>(
     TODO_DEFINITIONS.map((definition) => [definition.kind, 0] as const),
   );
+  const eligible = TODO_DEFINITIONS.filter((definition) => canQuery(principal, definition));
 
-  if (hasAnyApprove(principal)) {
+  if (eligible.length > 0) {
     const queried = await withTenant(database, principal.tenantId, async (tx) => {
       const byKind = new Map<TodoKind, number>();
-      for (const definition of TODO_DEFINITIONS) {
-        if (!canApprove(principal, definition.domain)) continue;
+      for (const definition of eligible) {
         byKind.set(definition.kind, await countPending(tx, principal, definition));
       }
       return byKind;

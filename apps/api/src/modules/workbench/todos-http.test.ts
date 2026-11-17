@@ -465,17 +465,33 @@ describe('工作台待办 HTTP（PGlite + seed 演示租户）', () => {
     expect(without.json()).toMatchObject({ code: 'FORBIDDEN' });
   });
 
-  it('一个 approve 都没有：200 + 6 条全 count=0（不查库），与「有 approve 但全 0」同形状', async () => {
+  it('无任何 approve：只有预警那一条查库（它要 read），其余 6 条 count=0（不查库）', async () => {
     counting.reset();
     const noApprove = await fetchTodos(salesCookie, 'req-todos-sales-no-approve');
-    // 销售岗默认有 workbench.read，但没有任何域 approve → 不查库，仍返回统一形状。
-    expect(counting.countQueries()).toHaveLength(0);
+    // 销售岗默认有 workbench.read 与 inventory_qty.read、没有任何域 approve。
+    // 加第 7 条 inventory_alert（要 read 不要 approve）之前这里是「一条都不查」；
+    // 现在恰好多出这一条 —— 而这正是设计意图：仓管/销售没审批权，但必须看见低库存。
+    const queries = counting.countQueries();
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).toContain('inventory_batch');
     expect(noApprove.items.map((item) => item.kind)).toEqual([...TODO_KINDS]);
     expect(noApprove.items).toHaveLength(TODO_KINDS.length);
-    expect(noApprove.items.every((item) => item.count === 0)).toBe(true);
+    // 除预警外全 0（本 fixture 里也没有低库存批次）。
+    expect(
+      noApprove.items.filter((item) => item.kind !== 'inventory_alert').every((i) => i.count === 0),
+    ).toBe(true);
 
     const zeroApprove = await fetchTodos(zeroApproveCookie, 'req-todos-zero-approve');
-    expect(zeroApprove).toEqual(noApprove);
+    // 这个岗位有 workbench.read + supplier_return.approve，没有 inventory_qty.read：
+    // 只有供应商退货那一条查库，预警那条不查（两件事在同一次请求里各按自己的动作判）。
+    counting.reset();
+    const trulyNone = await fetchTodos(zeroApproveCookie, 'req-todos-zero-approve-2');
+    const zeroQueries = counting.countQueries();
+    expect(zeroQueries).toHaveLength(1);
+    expect(zeroQueries[0]).toContain('supplier_return');
+    expect(trulyNone.items).toHaveLength(TODO_KINDS.length);
+    expect(trulyNone.items.every((item) => item.count === 0)).toBe(true);
+    expect(zeroApprove.items.map((item) => item.kind)).toEqual(trulyNone.items.map((i) => i.kind));
   });
 
   it('跨两家公司各 1 条客户退货 → 给 2；5 个域 approve 的 count 查询 ≤ 6，不按公司翻倍', async () => {
@@ -522,12 +538,13 @@ describe('工作台待办 HTTP（PGlite + seed 演示租户）', () => {
     }
   });
 
-  it('只有 settlement.approve：6 个 kind 全返回、顺序固定，只有本人提成的结算单计 1', async () => {
+  it('只有 settlement.approve：全部 kind 全返回、顺序固定，只有本人提成的结算单计 1', async () => {
     const body = await fetchTodos(financeCookie, 'req-todos-finance');
 
     expect(body.items.map((item) => item.kind)).toEqual([...TODO_KINDS]);
-    expect(body.items).toHaveLength(6);
+    expect(body.items).toHaveLength(TODO_KINDS.length);
     expect(countOf(body.items, 'settlement_pending')).toBe(1);
+    // 财务岗预设里没有 inventory_qty.read（看 seed.ts 的 finance 段），所以连预警也不查。
     for (const kind of TODO_KINDS.filter((kind) => kind !== 'settlement_pending')) {
       expect(countOf(body.items, kind), kind).toBe(0);
     }
@@ -560,6 +577,63 @@ describe('工作台待办 HTTP（PGlite + seed 演示租户）', () => {
       hint: '你经手的加工单待验收',
       routeId: 'processing-orders',
     });
+  });
+
+  it('低库存预警进待办：可用量撑不到 8 天的批次计 1，仓管看得到、没 inventory_qty.read 的看不到', async () => {
+    // 造一批「进 10 件、30 天内出 60 件」的货：日均出库 2，8.4 天覆盖线 = 16.8，
+    // 可用量 10 < 16.8 → 进预警（与 GET /api/v1/inventory/alerts 同一口径，D104）。
+    const BATCH_ALERT = '01900000-0000-7000-8000-000000007501';
+    const BATCH_NORMAL = '01900000-0000-7000-8000-000000007502';
+    const PRODUCT_ALERT = '01900000-0000-7000-8000-000000007504';
+    await test.database.query(
+      `INSERT INTO product (id, tenant_id, company_id, name, unit)
+       VALUES ($1::uuid, $2, $3::uuid, $4, '件')`,
+      [PRODUCT_ALERT, DEMO_IDS.tenantId, DEMO_IDS.companyId, '待办预警测试商品'],
+    );
+    for (const [id, batchNo] of [
+      [BATCH_ALERT, 'T-BATCH-ALERT'],
+      [BATCH_NORMAL, 'T-BATCH-NORMAL'],
+    ] as const) {
+      await test.database.query(
+        `INSERT INTO inventory_batch
+           (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost,
+            inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty, custodian_id)
+         VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, '10.000000', '10', '0', '0', '0', $6::uuid)`,
+        [id, DEMO_IDS.tenantId, DEMO_IDS.companyId, PRODUCT_ALERT, batchNo, DEMO_IDS.ownerEmployeeId],
+      );
+    }
+    // 只有 ALERT 那批有出库流水；NORMAL 那批没有历史出库 → 不进预警（日均 0 无法算天数）。
+    const thirtyDaysAgo = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    await test.database.query(
+      `INSERT INTO inventory_flow
+         (id, tenant_id, company_id, batch_id, delta, source_doc_type, source_doc_id,
+          handled_by, occurred_at)
+       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, '-60', 'E', $5::uuid, $6::uuid, $7)`,
+      [
+        '01900000-0000-7000-8000-000000007503',
+        DEMO_IDS.tenantId,
+        DEMO_IDS.companyId,
+        BATCH_ALERT,
+        SALES_ORDER_DEMO,
+        DEMO_IDS.ownerEmployeeId,
+        thirtyDaysAgo,
+      ],
+    );
+
+    const owner = await fetchTodos(ownerCookie, 'req-todos-alert-owner');
+    expect(countOf(owner.items, 'inventory_alert')).toBe(1);
+    expect(owner.items.find((item) => item.kind === 'inventory_alert')).toMatchObject({
+      title: '低库存批次',
+      routeId: 'inventory',
+    });
+
+    // 销售岗有 inventory_qty.read → 也能看到（这正是加这一条的目的：没有审批权的人也该知道）。
+    const sales = await fetchTodos(salesCookie, 'req-todos-alert-sales');
+    expect(countOf(sales.items, 'inventory_alert')).toBe(1);
+
+    // 财务岗没有 inventory_qty.read → count=0，且这条不查库。
+    const finance = await fetchTodos(financeCookie, 'req-todos-alert-finance');
+    expect(countOf(finance.items, 'inventory_alert')).toBe(0);
   });
 
   it('响应不含任何金额字段（只给笔数，避免绕过 view_price）', async () => {
