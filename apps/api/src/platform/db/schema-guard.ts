@@ -36,6 +36,10 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // D94 / #328：在途可占用要求 available_qty 用“占用优先抵在途”的生成公式；
   // 缺这条会让在途批次一旦被占用就违反非负约束。
   '20261118000000_d94_transit_occupancy.sql',
+  // D101 / #101 发起侧：payment_request 表是「发起收款 → 待支付 → 入账」的载体，
+  // 发起 / 查单 / mock 确认三个端点都读写它；缺表 → 三条端点全 500。
+  '20261118010000_payment_requests.sql',
+  '20261118020000_payment_permission_domain.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

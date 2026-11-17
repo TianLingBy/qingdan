@@ -47,7 +47,7 @@ const ALL_DOMAINS = [
   'purchase', 'processing', 'sales', 'internal_trade', 'settlement', 'commission',
   'customer_return', 'supplier_return', 'stocktake', 'product', 'customer', 'supplier',
   'processor', 'inventory_qty', 'inventory_flow', 'stocktake_page', 'employee',
-  'permission', 'company', 'profit_report', 'audit', 'api_integration', 'workbench',
+  'permission', 'company', 'profit_report', 'audit', 'api_integration', 'workbench', 'payment',
 ] as const;
 
 const ALL_ACTIONS = ['read', 'create', 'update', 'approve', 'ship', 'delete', 'merge', 'view_price', 'view_handler', 'export'] as const;
@@ -138,6 +138,7 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('profit_report', ['read', 'export']),
       ...perms('audit', ['read']),
       ...perms('sales', ['read', 'view_price']),
+      ...perms('payment', ['read', 'create']),
       ...perms('workbench', ['read']),
     ],
   },
