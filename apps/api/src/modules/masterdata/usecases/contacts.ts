@@ -349,6 +349,8 @@ export async function getSummary(
       status: order.status,
       ...(withAmount ? { totalAmount: order.totalAmount } : {}),
       createdAt: order.createdAt,
+      contactId: order.contactId,
+      contactName: order.contactName,
     })),
     contacts: summary.contacts.map((contact) => presentContact(kind, contact)),
   };
