@@ -25,7 +25,7 @@ import { buildOrderBy } from '../../platform/db/order-by.js';
  *
  * - 隔离：所有查询都带 `tenant_id` + `company_id = ANY(可见公司集合)`，跨公司行等同不存在；
  * - 金额：全部保持 decimal 字符串，累加一律交给 SQL（SUM），本层不做浮点运算；
- * - 明细金额：`amount = qty × unit_price` 由 INSERT 的 SQL 表达式计算（契约 §5.1）；
+ * - 明细金额：S 退货款按批次锁价由服务端算（D105），其余单据 `amount = qty × unit_price` 由 INSERT 的 SQL 表达式计算（契约 §5.1）；
  * - 写：版本不匹配抛 `VERSION_CONFLICT`，查不到返回 `null`（由用例映射 404）；
  * - 取消：不物理删除（D21 / D47），只改状态；下游判定按库存流水的来源单据反查。
  *
@@ -1252,9 +1252,14 @@ async function assertSupplierReturnBatches(
   const productByBatch = new Map(result.rows.map((row) => [row.id, row.product_id]));
   const missing = batchIds.filter((id) => !productByBatch.has(id));
   if (missing.length > 0) {
+    // 指到行：调用方要能直接告诉用户是哪一行明细要改（D105 的 422 定位口径）。
+    const lineIndex = input.lines.findIndex((line) =>
+      line.batchIds.some((id) => missing.includes(id)),
+    );
     throw new AppError('VALIDATION_FAILED', '批次不存在或不属于供应商退货公司', {
       batchIds: missing,
       companyId: input.companyId,
+      field: `lines.${lineIndex}.batchIds`,
     });
   }
 
@@ -1270,35 +1275,100 @@ async function assertSupplierReturnBatches(
   }
 }
 
-/**
- * 服务端计算应退金额：`SUM(qty × unit_price)` 全部交给 SQL，应用侧不转浮点。
- * 返回值用于 INSERT 单头；后续明细行金额用同一条乘积表达式落库。
- */
-async function aggregateSupplierReturnRefund(
-  ctx: PurchaseOrderRepoContext,
-  lines: readonly SupplierReturnLine[],
-): Promise<string> {
-  const values: string[] = [];
-  const params: unknown[] = [];
-  for (const line of lines) {
-    params.push(line.qty, line.unitPrice);
-    values.push(`($${params.length - 1}::amount, $${params.length}::amount)`);
-  }
-  const result = await ctx.tx.query<{ refund_amount: string | number; positive: boolean }>(
-    `SELECT trim_scale(COALESCE(SUM(qty * unit_price), 0)) AS refund_amount,
-            COALESCE(SUM(qty * unit_price), 0) > 0 AS positive
-       FROM (VALUES ${values.join(', ')}) AS line_amounts(qty, unit_price)`,
-    params,
-  );
-  const row = result.rows[0];
-  if (!row?.positive) {
-    throw new AppError('VALIDATION_FAILED', '应退金额必须大于 0（F4c）');
-  }
-  return decimal(row.refund_amount);
+interface SupplierReturnLineAmount {
+  /** 该行服务端算出的金额（Σ 各批份额 × 该批锁价）。 */
+  readonly amount: string;
+  /** 该行的回显单价 = 金额 ÷ 数量；单批次时即该批锁价，跨批次时是加权后的展示值。 */
+  readonly unitPrice: string;
 }
 
 /**
- * 新增供应商退货：客户端 `amount` / `refundAmount` 不落库，统一由服务端重算。
+ * 退款单价一律由服务端从批次锁价得出（D105）：客户端传的 `unitPrice` 只给前端做预估，
+ * 不参与金额计算——否则前端传 1 元就能把退款改成 1 元。
+ *
+ * 一行跨多个批次时，按「行数量均分到所引批次、余量末批承接」（与 D92 待执行占用同一口径）
+ * 逐批 `份额 × 锁价` 再求和；**不取平均价**——余量落在末批、各批锁价不同时，平均价会算出
+ * 另一个数。
+ *
+ * 锁价拿不到（批次不存在 / 不属于该公司 / `locked_unit_cost` 为 NULL）直接 422 并指到行：
+ * 退款金额此时没有可信来源，兜底成 0 或客户端价等于把错账悄悄写进财务账。
+ */
+async function computeSupplierReturnAmounts(
+  ctx: PurchaseOrderRepoContext,
+  companyId: string,
+  lines: readonly SupplierReturnLine[],
+): Promise<{ refundAmount: string; lineAmounts: SupplierReturnLineAmount[] }> {
+  // 同一行里重复引用同一批次时按一次算：金额与 qty 总量都只跟「实际涉及哪几批」有关。
+  const payload = JSON.stringify(
+    lines.map((line) => ({ qty: line.qty, batchIds: [...new Set(line.batchIds)] })),
+  );
+  const result = await ctx.tx.query<{
+    line_no: number;
+    amount: string | number;
+    unit_price: string | number;
+    refund_amount: string | number;
+    positive: boolean;
+    missing_cost: boolean;
+  }>(
+    `WITH input AS (
+       SELECT ord::int AS line_no,
+              (item ->> 'qty')::amount AS qty,
+              item -> 'batchIds' AS batch_ids
+         FROM jsonb_array_elements($3::jsonb) WITH ORDINALITY AS t(item, ord)
+     ), expanded AS (
+       SELECT line_no, qty, bid, idx,
+              count(*) OVER (PARTITION BY line_no) AS batch_count
+         FROM input,
+              LATERAL jsonb_array_elements_text(batch_ids) WITH ORDINALITY AS b(bid, idx)
+     ), weighted AS (
+       SELECT line_no, qty,
+              CASE WHEN idx < batch_count THEN trunc(qty / batch_count, 6)
+                   ELSE qty - trunc(qty / batch_count, 6) * (batch_count - 1) END AS share_qty,
+              cost.locked_unit_cost
+         FROM expanded
+         LEFT JOIN inventory_batch cost
+           ON cost.id = expanded.bid::uuid
+          AND cost.tenant_id = $1
+          AND cost.company_id = $2::uuid
+     ), totals AS (
+       SELECT line_no, qty,
+              trim_scale(COALESCE(SUM(share_qty * locked_unit_cost), 0)) AS amount,
+              COALESCE(bool_or(locked_unit_cost IS NULL), true) AS missing_cost
+         FROM weighted
+        GROUP BY line_no, qty
+     )
+     SELECT line_no,
+            amount,
+            trim_scale(CASE WHEN qty > 0 THEN round(amount / qty, 6) ELSE 0 END) AS unit_price,
+            trim_scale(SUM(amount) OVER ()) AS refund_amount,
+            SUM(amount) OVER () > 0 AS positive,
+            missing_cost
+       FROM totals
+      ORDER BY line_no`,
+    [ctx.tenantId, companyId, payload],
+  );
+
+  const rows = result.rows;
+  const lineAmounts = lines.map((_, index) => {
+    const row = rows.find((candidate) => candidate.line_no === index + 1);
+    if (!row || row.missing_cost) {
+      throw new AppError(
+        'VALIDATION_FAILED',
+        `第 ${index + 1} 行退货明细引用的批次缺少锁价，无法确定退款金额`,
+        { field: `lines.${index}.batchIds`, lineNo: index + 1 },
+      );
+    }
+    return { amount: decimal(row.amount), unitPrice: decimal(row.unit_price) };
+  });
+  if (!rows[0]?.positive) {
+    throw new AppError('VALIDATION_FAILED', '应退金额必须大于 0（F4c）');
+  }
+  return { refundAmount: decimal(rows[0].refund_amount), lineAmounts };
+}
+
+/**
+ * 新增供应商退货：客户端 `amount` / `refundAmount` 不落库，统一由服务端重算；
+ * 单价同样以批次锁价为准，客户端 `unitPrice` 只用于前端预估（D105）。
  * 调用方必须在同一事务内先取 S 单号，并在事务成功后写审计（D16 / D51）。
  */
 export async function insertSupplierReturn(
@@ -1316,7 +1386,11 @@ export async function insertSupplierReturn(
     input.companyId,
   );
   await assertSupplierReturnBatches(ctx, input);
-  const refundAmount = await aggregateSupplierReturnRefund(ctx, input.lines);
+  const { refundAmount, lineAmounts } = await computeSupplierReturnAmounts(
+    ctx,
+    input.companyId,
+    input.lines,
+  );
 
   await ctx.tx.query(
     `INSERT INTO supplier_return
@@ -1335,11 +1409,12 @@ export async function insertSupplierReturn(
 
   for (const [index, line] of input.lines.entries()) {
     const lineId = uuidv7();
+    const amount = lineAmounts[index]!;
     await ctx.tx.query(
       `INSERT INTO supplier_return_line
          (id, tenant_id, company_id, return_id, line_no, product_id, qty, unit_price, amount)
        VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::uuid,
-               $7::amount, $8::amount, ($7::amount * $8::amount))`,
+               $7::amount, $8::amount, $9::amount)`,
       [
         lineId,
         ctx.tenantId,
@@ -1348,7 +1423,8 @@ export async function insertSupplierReturn(
         index + 1,
         line.productId,
         line.qty,
-        line.unitPrice,
+        amount.unitPrice,
+        amount.amount,
       ],
     );
     for (const batchId of [...new Set(line.batchIds)]) {

@@ -557,9 +557,9 @@ async function main(): Promise<void> {
     });
 
     // ---------------------------------------------------------------------
-    // S 供应商退货：完成扣减批次；退款额按批次锁价（不读商品当前单价）
+    // S 供应商退货：完成扣减批次；退款额按批次锁价（不读商品当前单价，也不读客户端单价）
     // ---------------------------------------------------------------------
-    await check('S 供应商退货完成 → 批次 −2，退款按批次锁价（改商品单价也影响不到）', async () => {
+    await check('S 供应商退货完成 → 批次 −2，退款按批次锁价（改商品单价、客户端乱填都影响不到）', async () => {
       assert(purchaseOrderId !== '', '前一步没建出 A 单');
       const target = purchaseBatches[0];
       assert(target !== undefined, '前一步没取到 A 单批次');
@@ -579,25 +579,46 @@ async function main(): Promise<void> {
               productId: PRODUCT_ID,
               batchIds: [target.batchId],
               qty: '2',
-              unitPrice: target.lockedUnitCost,
-              amount: '22',
+              // D105：客户端单价只作预估显示，服务端一律按批次锁价重算。
+              // 这里故意填 1 元，验证「退款金额不由客户端决定」。
+              unitPrice: '1',
+              amount: '2',
             },
           ],
-          refundAmount: '22',
+          refundAmount: '2',
         },
       });
       assert(created.statusCode === 201, `建 S 单返回 ${created.statusCode}：${created.body.slice(0, 300)}`);
-      const supplierReturn = created.json() as { id: string; version: number; status: string; refundAmount: string };
+      const supplierReturn = created.json() as {
+        id: string;
+        version: number;
+        status: string;
+        refundAmount: string;
+        lines: { unitPrice: string; amount: string }[];
+      };
       assert(supplierReturn.status === '进行中', `新 S 单状态期望「进行中」，实际「${supplierReturn.status}」`);
-      // 应退金额 = Σ 明细数量 × 单价，单价取的是**批次锁价 11**（D83 入库成本口径）。
+      // 应退金额 = Σ 明细数量 × 批次锁价；客户端传的 1 元不参与（D105）。
       const expectedRefund = 2 * Number(target.lockedUnitCost);
       assert(
         Number(supplierReturn.refundAmount) === expectedRefund,
         `S 单应退金额期望 ${expectedRefund}（2 × 批次锁价 ${target.lockedUnitCost}），实际 ${supplierReturn.refundAmount}`,
       );
       assert(
+        Number(supplierReturn.refundAmount) !== 2,
+        `S 单应退金额不能取客户端单价（1 × 2 = 2），实际 ${supplierReturn.refundAmount}`,
+      );
+      assert(
         Number(supplierReturn.refundAmount) !== 999 * 2,
         `S 单应退金额不应取商品当前单价（999 × 2 = 1998），实际 ${supplierReturn.refundAmount}`,
+      );
+      // 响应回显服务端实际使用的单价与金额，前端才看得见差异。
+      assert(
+        supplierReturn.lines[0]?.unitPrice === target.lockedUnitCost,
+        `S 单明细回显单价期望批次锁价 ${target.lockedUnitCost}，实际 ${supplierReturn.lines[0]?.unitPrice}`,
+      );
+      assert(
+        Number(supplierReturn.lines[0]?.amount) === expectedRefund,
+        `S 单明细回显金额期望 ${expectedRefund}，实际 ${supplierReturn.lines[0]?.amount}`,
       );
 
       // D92：建单即占用，完成时先释放占用再扣减。
