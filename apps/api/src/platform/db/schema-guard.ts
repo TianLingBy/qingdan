@@ -44,6 +44,10 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // D102 / #302 块 C 后半段：审核台直接读 masterdata_dedupe.matched_by，缺列 → 500；
   // 同时带的排序索引缺了不会 500，但按公司+类型+状态排队会退化成 Sort（不是索引级顺序）。
   '20261118030000_masterdata_dedupe_matched_by.sql',
+  // D103 / #302 块 D：合并端点写四张主数据表的 `merged_into_id`，并把被并档案置
+  // `dedupe_state='merged'`。缺了这一列 → 合并端点 500（写 merged_into_id 时列不存在），
+  // 而且是在「引用已经改写了一部分」的事务中途炸，用户只看到一个失败，不知道改没改成。
+  '20261118040000_masterdata_merged_into.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

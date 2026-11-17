@@ -67,13 +67,13 @@ function headerValue(request: FastifyRequest, name: string): string | undefined 
   return typeof value === 'string' ? value : undefined;
 }
 
-function requirePrincipal(request: FastifyRequest): Principal {
+export function requirePrincipal(request: FastifyRequest): Principal {
   const principal = request.principal;
   if (!principal) throw new AppError('UNAUTHENTICATED');
   return principal;
 }
 
-function requireDatabase(ctx: DedupeContext, operationId: string): Database {
+export function requireDatabase(ctx: DedupeContext, operationId: string): Database {
   const database = ctx.database;
   if (!database) {
     throw new AppError('NOT_IMPLEMENTED', `数据库未配置，${operationId} 不可用`, { operationId });
@@ -94,22 +94,25 @@ function readableKinds(principal: Principal): DedupeKind[] {
  *
  * 判定用 `merge` 而不是 `update`：「这两个要不要并成一个」就是合并主数据这个动作本身，
  * 判为不同是它的另一种结论；借 `update` 会让「能改客户电话的人」顺手把重复提示全部关掉（D102②）。
+ *
+ * 导出给块 D 的合并用例复用（`usecases/dedupe-merge.ts`）：合并与判不同是同一个权限点，
+ * 两处各写一份 `allowsScope` 迟早一边改了另一边没改。
  */
-function requireKindMerge(principal: Principal, kind: DedupeKind): void {
+export function requireKindMerge(principal: Principal, kind: DedupeKind): void {
   if (!allowsScope(principal.scope, kind, 'merge')) {
     throw new AppError('FORBIDDEN', `缺少 ${kind}.merge 权限`, { kind });
   }
 }
 
 /** D15：公司必须在调用者可见集合内；不在此集合 → 403，绝不降级成空列表。 */
-function assertCompanyVisible(principal: Principal, companyId: string): void {
+export function assertCompanyVisible(principal: Principal, companyId: string): void {
   if (!principal.companyIds.includes(companyId)) {
     throw new AppError('FORBIDDEN', '调用者对该公司的去重队列无权限', { companyId });
   }
 }
 
 /** AI 不得直接执行判定（D52① / D54⑥）。 */
-function assertHumanCredential(principal: Principal): void {
+export function assertHumanCredential(principal: Principal): void {
   if (principal.actorType === 'ai') {
     throw new AppError('AI_ACTION_FORBIDDEN', 'AI 不得直接判定主数据去重结果，需人类审批');
   }
@@ -131,7 +134,7 @@ function parseQuery(request: FastifyRequest): DedupeListQuery {
   return parsed.data;
 }
 
-function parsePairId(request: FastifyRequest): string {
+export function parsePairId(request: FastifyRequest): string {
   const params = request.params as { id?: unknown };
   const id = typeof params.id === 'string' ? params.id : '';
   if (!UUID_RE.test(id)) {
@@ -148,7 +151,7 @@ function parseDecision(body: unknown): DedupeDecisionInput {
   return parsed.data;
 }
 
-function auditEventOf(
+export function auditEventOf(
   request: FastifyRequest,
   principal: Principal,
   action: string,
@@ -278,6 +281,6 @@ export async function reopenDedupe(ctx: DedupeWriteContext): Promise<DedupeDecis
   return { id: outcome.id, state: outcome.state, decidedAt: outcome.decidedAt };
 }
 
-function repoContext(tx: SqlClient, principal: Principal): repo.DedupeRepoContext {
+export function repoContext(tx: SqlClient, principal: Principal): repo.DedupeRepoContext {
   return { tx, tenantId: principal.tenantId, companyIds: principal.companyIds };
 }
