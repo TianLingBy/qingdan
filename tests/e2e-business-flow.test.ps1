@@ -3,7 +3,7 @@
 # 本机没有 PostgreSQL 时自动跳过（打印 SKIP 并算一条通过的断言），CI 的
 # `integration (ubuntu-latest, PostgreSQL 18)` job 会带着 QINGDAN_TEST_DB 真正执行。
 #
-# 覆盖：登录 → 建 E 单 → 完成扣库存 → 生成 C 草稿 → 确认结算。
+# 覆盖：登录 → 建 E 单 → 出库扣库存 → 签收完成 → 生成 C 草稿 → 确认结算。
 # 未覆盖：`建 A 单 → 完成入库`（端点已实现，见 docs/local-acceptance-2026-11-12.md
 # 第三之二节的手工补测；这里还没接进来，库存仍由脚本造数提供）。
 #
