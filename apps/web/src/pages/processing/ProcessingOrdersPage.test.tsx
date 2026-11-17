@@ -20,6 +20,15 @@ import {
   validateDraft,
 } from './ProcessingOrdersPage';
 import { processingQueryKeys } from './processing-api';
+import {
+  buildShipInput,
+  receiveBlockedText,
+  revokeReasonError,
+  revokeShipBlockedText,
+  shipBlockedText,
+  validateShipDraft,
+  type ShipDraft,
+} from './ship-flow';
 
 const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
 const PRODUCT_ID = '00000000-0000-4000-8000-000000000101';
@@ -308,6 +317,8 @@ const FULL_ACTIONS = {
   canPrint: true,
   canCancel: true,
   canComplete: true,
+  canShip: true,
+  canReceive: true,
 };
 
 function renderDetailPanel(
@@ -324,13 +335,24 @@ function renderDetailPanel(
       canPrint={perms.canPrint ?? FULL_ACTIONS.canPrint}
       canCancel={perms.canCancel ?? FULL_ACTIONS.canCancel}
       canComplete={perms.canComplete ?? FULL_ACTIONS.canComplete}
+      canShip={perms.canShip ?? FULL_ACTIONS.canShip}
+      canReceive={perms.canReceive ?? FULL_ACTIONS.canReceive}
       canceling={false}
       completing={false}
+      shipping={false}
+      revoking={false}
+      receiving={false}
+      revokeReason=""
+      revokeError={null}
       onClose={() => undefined}
       onEdit={() => undefined}
       onCancel={() => undefined}
       onComplete={() => undefined}
       onPrint={() => undefined}
+      onShip={() => undefined}
+      onRevokeReasonChange={() => undefined}
+      onRevoke={() => undefined}
+      onReceive={() => undefined}
     />,
   );
 }
@@ -393,5 +415,107 @@ describe('加工单详情面板：按钮三态', () => {
   it('打印只需要 processing.read，不看单据状态（已取消也能补打）', () => {
     expect(printBlockedText(true)).toBeNull();
     expect(printBlockedText(false)).toBe('当前身份没有 processing.read 权限');
+  });
+});
+
+/* ------------------- D94 ②：发货 / 撤销发货 / 到货确认 ------------------- */
+
+describe('加工单详情面板：在途两步（D94 ②）', () => {
+  it('进行中 + 有 processing.ship：发货可点，撤销与到货确认置灰', () => {
+    const html = renderDetailPanel({ status: '进行中' });
+
+    expect(isDisabled(html, '发货')).toBe(false);
+    expect(isDisabled(html, '撤销发货')).toBe(true);
+    expect(isDisabled(html, '到货确认')).toBe(true);
+  });
+
+  it('在途 + 有 processing.ship：撤销可点，发货置灰', () => {
+    const html = renderDetailPanel({ status: '在途' });
+
+    expect(isDisabled(html, '撤销发货')).toBe(false);
+    expect(isDisabled(html, '发货')).toBe(true);
+    // 撤销原因输入只在「在途 + 有 ship」时出现
+    expect(html).toContain('撤销原因（必填，进审计）');
+  });
+
+  it('在途 + 有 processing.approve：到货确认可点', () => {
+    const html = renderDetailPanel({ status: '在途' });
+
+    expect(isDisabled(html, '到货确认')).toBe(false);
+  });
+
+  it('在途但只有 ship 权限（仓管）：到货确认置灰并说明缺 processing.approve', () => {
+    const html = renderDetailPanel({ status: '在途', canReceive: false, canComplete: false });
+
+    expect(isDisabled(html, '到货确认')).toBe(true);
+    expect(html).toContain('当前身份没有 processing.approve 权限');
+    // 撤销仍然可点：撤销与发货是同一个权限点
+    expect(isDisabled(html, '撤销发货')).toBe(false);
+  });
+});
+
+describe('加工单发货口径（ship-flow）', () => {
+  const DRAFT: ShipDraft = {
+    transitStage: 'finished',
+    transitTo: 'warehouse',
+    lossQty: '',
+    custodianId: '',
+    confirmFullLoss: false,
+  };
+
+  const detail = (overrides: Partial<ProcessingOrderDetail> = {}): ProcessingOrderDetail => ({
+    ...PANEL_ORDER,
+    ...overrides,
+  });
+
+  it('先权限后状态：缺 ship 权限时只说权限，状态不对时说状态', () => {
+    expect(shipBlockedText({ canShip: false, status: '进行中' })).toContain('processing.ship');
+    expect(shipBlockedText({ canShip: true, status: '进行中' })).toBeNull();
+    expect(shipBlockedText({ canShip: true, status: '在途' })).toContain('已经在途');
+    expect(shipBlockedText({ canShip: true, status: '已完成' })).toContain('只有「进行中」');
+    expect(revokeShipBlockedText({ canShip: false, status: '在途' })).toContain('processing.ship');
+    expect(revokeShipBlockedText({ canShip: true, status: '在途' })).toBeNull();
+    expect(revokeShipBlockedText({ canShip: true, status: '进行中' })).toContain('只有「在途」');
+    expect(receiveBlockedText({ canApprove: false, status: '在途' })).toContain(
+      'processing.approve',
+    );
+    expect(receiveBlockedText({ canApprove: true, status: '在途' })).toBeNull();
+    expect(receiveBlockedText({ canApprove: true, status: '进行中' })).toContain('还没发货');
+  });
+
+  it('撤销原因必填（trim 后 1–200 字）', () => {
+    expect(revokeReasonError('')).toContain('必须填写原因');
+    expect(revokeReasonError('   ')).toContain('必须填写原因');
+    expect(revokeReasonError('x'.repeat(201))).toContain('不能超过 200 字');
+    expect(revokeReasonError('仓库报错，货被退回')).toBeNull();
+  });
+
+  it('成品段必须填损耗量；料段绝不带 lossQty / custodianId（契约 superRefine 会拒绝）', () => {
+    expect(validateShipDraft(DRAFT, detail())[0]).toContain('成品段必须填损耗量');
+    expect(validateShipDraft({ ...DRAFT, lossQty: '4' }, detail())).toEqual([]);
+    expect(validateShipDraft({ ...DRAFT, lossQty: '501' }, detail())[0]).toContain('不能大于投入量');
+    expect(
+      validateShipDraft({ ...DRAFT, lossQty: '500' }, detail())[0],
+    ).toContain('确认全损耗');
+    expect(validateShipDraft({ ...DRAFT, lossQty: '500', confirmFullLoss: true }, detail())).toEqual(
+      [],
+    );
+
+    const materialsDraft: ShipDraft = {
+      ...DRAFT,
+      transitStage: 'materials',
+      lossQty: '4',
+      custodianId: 'e2',
+    };
+    expect(validateShipDraft(materialsDraft, detail())[0]).toContain('料段不填损耗');
+
+    expect(buildShipInput({ ...DRAFT, transitStage: 'materials', lossQty: '4', custodianId: 'e2' })).toEqual(
+      { transitStage: 'materials', transitTo: 'warehouse' },
+    );
+    expect(buildShipInput({ ...DRAFT, lossQty: '4' })).toEqual({
+      transitStage: 'finished',
+      transitTo: 'warehouse',
+      lossQty: '4',
+    });
   });
 });

@@ -24,9 +24,11 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
+import { fetchEmployees } from '../../api/platform';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useCompanyLabel } from '../../lib/company-directory';
+import { employeeDirectoryKey } from '../../lib/employee-directory';
 import {
   describeWriteError,
   isStaleVersionError,
@@ -56,6 +58,17 @@ import {
   processingQueryKeys,
   sellableQtyText,
 } from './processing-api';
+import { ProcessingShipDialog } from './ShipDialog';
+import {
+  buildShipInput,
+  emptyShipDraft,
+  receiveBlockedText,
+  revokeReasonError,
+  revokeShipBlockedText,
+  shipBlockedText,
+  validateShipDraft,
+  type ShipDraft,
+} from './ship-flow';
 
 const STATUS_STYLE: Readonly<Record<ProcessingOrderStatus, string>> = {
   进行中: 'bg-blue-50 text-blue-700',
@@ -732,13 +745,27 @@ interface DetailPanelProps {
   readonly canPrint: boolean;
   readonly canCancel: boolean;
   readonly canComplete: boolean;
+  /** 发货 / 撤销发货：`processing.ship`（D94 ② 的运输两步）。 */
+  readonly canShip: boolean;
+  /** 到货确认：`processing.approve`（验收动作，与发货是两拨人）。 */
+  readonly canReceive: boolean;
   readonly canceling: boolean;
   readonly completing: boolean;
+  readonly shipping: boolean;
+  readonly revoking: boolean;
+  readonly receiving: boolean;
+  /** 撤销原因：非受控在页面，面板只渲染与回传。 */
+  readonly revokeReason: string;
+  readonly revokeError: string | null;
   readonly onClose: () => void;
   readonly onEdit: () => void;
   readonly onCancel: () => void;
   readonly onComplete: () => void;
   readonly onPrint: () => void;
+  readonly onShip: () => void;
+  readonly onRevokeReasonChange: (value: string) => void;
+  readonly onRevoke: () => void;
+  readonly onReceive: () => void;
 }
 
 /**
@@ -782,13 +809,24 @@ export function DetailPanel({
   canPrint,
   canCancel,
   canComplete,
+  canShip,
+  canReceive,
   canceling,
   completing,
+  shipping,
+  revoking,
+  receiving,
+  revokeReason,
+  revokeError,
   onClose,
   onEdit,
   onCancel,
   onComplete,
   onPrint,
+  onShip,
+  onRevokeReasonChange,
+  onRevoke,
+  onReceive,
 }: DetailPanelProps) {
   const feeTotal = sumDecimal(order.fees.map((fee) => fee.amount));
   const lossText = order.lossQty === null ? '待验收填入' : formatQty(order.lossQty);
@@ -805,6 +843,10 @@ export function DetailPanel({
           : '当前状态不可取消';
   const editBlocked = editBlockedText({ canUpdate, canViewPrice, status: order.status });
   const printBlocked = printBlockedText(canPrint);
+  /** D94 ②：三个运输动作的禁用原因，口径全在 `ship-flow`（先权限后状态，只出一句）。 */
+  const shipBlocked = shipBlockedText({ canShip, status: order.status });
+  const revokeBlocked = revokeShipBlockedText({ canShip, status: order.status });
+  const receiveBlocked = receiveBlockedText({ canApprove: canReceive, status: order.status });
 
   return (
     <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -930,6 +972,33 @@ export function DetailPanel({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
+          onClick={onShip}
+          disabled={shipBlocked !== null || shipping}
+          className="rounded border border-amber-300 px-3 py-1.5 text-sm text-amber-800 disabled:opacity-40"
+          title={shipBlocked ?? undefined}
+        >
+          {shipping ? '提交中…' : '发货'}
+        </button>
+        <button
+          type="button"
+          onClick={onReceive}
+          disabled={receiveBlocked !== null || receiving}
+          className="rounded border border-sky-300 px-3 py-1.5 text-sm text-sky-800 disabled:opacity-40"
+          title={receiveBlocked ?? undefined}
+        >
+          {receiving ? '确认中…' : '到货确认'}
+        </button>
+        <button
+          type="button"
+          onClick={onRevoke}
+          disabled={revokeBlocked !== null || revoking}
+          className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-700 disabled:opacity-40"
+          title={revokeBlocked ?? undefined}
+        >
+          {revoking ? '撤销中…' : '撤销发货'}
+        </button>
+        <button
+          type="button"
           onClick={onComplete}
           disabled={order.status !== '进行中' || !canComplete || completing}
           className="rounded border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-40"
@@ -973,7 +1042,36 @@ export function DetailPanel({
         {!canCancel && order.cancelable.allowed && (
           <span className="text-xs text-slate-500">当前身份无取消权限（processing.delete）</span>
         )}
+        {/**
+         * 缺权限时一律把「缺哪个权限点」摆出来；状态不对时不重复喊——
+         * 按钮已经置灰，再写一句「当前是进行中」只是噪音。
+         */}
+        {!canShip && <span className="text-xs text-slate-500">{shipBlocked}</span>}
+        {!canReceive && order.status === '在途' && (
+          <span className="text-xs text-slate-500">{receiveBlocked}</span>
+        )}
       </div>
+
+      {/**
+       * 撤销原因只在「在途 + 有 processing.ship」时出现：撤销会是这里唯一能回退的路，
+       * 而回退会把单据打回「进行中」、清空在途分段，事后没人知道为什么，所以必须写原因
+       * （契约路由标了 `ai.reasonRequired`，原因走 `X-Reason` 头进审计）。
+       */}
+      {revokeBlocked === null && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={revokeReason}
+            onChange={(event) => onRevokeReasonChange(event.target.value)}
+            aria-label="撤销原因"
+            placeholder="撤销原因（必填，进审计）"
+            className="min-w-64 flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+          />
+          <span className="text-xs text-slate-500">
+            撤销后回到「进行中」，在途分段与去向清空，可重新发货。
+          </span>
+          {revokeError && <span className="w-full text-xs text-rose-700">{revokeError}</span>}
+        </div>
+      )}
     </section>
   );
 }
@@ -1013,6 +1111,13 @@ export function ProcessingOrdersPage() {
   const [completionLossQty, setCompletionLossQty] = useState('');
   const [completionConfirmFullLoss, setCompletionConfirmFullLoss] = useState(false);
   const [completionErrors, setCompletionErrors] = useState<string[]>([]);
+  /** D94 ②：发货弹层的目标单 + 草稿 + 校验错误（弹层字段多，不用 `confirm`）。 */
+  const [shippingOrder, setShippingOrder] = useState<ProcessingOrderDetail | null>(null);
+  const [shipDraft, setShipDraft] = useState<ShipDraft>(emptyShipDraft());
+  const [shipErrors, setShipErrors] = useState<string[]>([]);
+  /** 撤销原因：详情面板渲染、页面持有——面板里没有理由自己记住输入。 */
+  const [revokeReason, setRevokeReason] = useState('');
+  const [revokeError, setRevokeError] = useState<string | null>(null);
   const printUrlRef = useRef<string | null>(null);
 
   const processorsQuery = useQuery({
@@ -1027,6 +1132,25 @@ export function ProcessingOrdersPage() {
   });
   const processors = processorsQuery.data?.items ?? [];
   const products = productsQuery.data?.items ?? [];
+
+  /**
+   * 损失保管人下拉的数据源：发货弹层打开时才拉（`enabled`），拉不到就静默降级。
+   * 读员工要组织域权限，仓管通常没有 → 403；保管人只是选填，不该因为查不到就发不了货。
+   */
+  const custodiansQuery = useQuery({
+    queryKey: employeeDirectoryKey,
+    queryFn: async () => (await fetchEmployees()).items,
+    staleTime: 5 * 60_000,
+    retry: false,
+    enabled: shippingOrder !== null,
+  });
+  const custodians = useMemo(
+    () => (custodiansQuery.data ?? []).map((employee) => ({ id: employee.id, name: employee.name })),
+    [custodiansQuery.data],
+  );
+  const custodiansError = custodiansQuery.isError
+    ? '读不到员工名单（可能没有组织域权限）：损失保管人只能先不指定。'
+    : null;
 
   useEffect(() => {
     if (formCompanyId.length === 0 && companyIds[0]) setFormCompanyId(companyIds[0]);
@@ -1243,6 +1367,110 @@ export function ProcessingOrdersPage() {
     },
   });
 
+  /**
+   * 发货（D94 ②）：`进行中 → 在途`。
+   *
+   * 入参由 `buildShipInput` 按段裁字段——料段绝不带 `lossQty`（契约 `superRefine` 对
+   * 「料段带损耗」是报错，不是忽略）。撞版本冲突时把最新单接回弹层，让人看清再提交。
+   */
+  const shipOrder = useMutation({
+    mutationFn: (input: { readonly order: ProcessingOrderDetail; readonly draft: ShipDraft }) =>
+      processingApi.ship(input.order.id, buildShipInput(input.draft), input.order.version),
+    onSuccess: async (order) => {
+      setNotice(
+        `已发货：${order.orderNo} 转「在途」（${
+          order.transitStage === 'materials' ? '料段' : '成品段'
+        } · ${order.transitTo === 'customer' ? '直发客户' : '回仓'}）。到货确认后才算完成。`,
+      );
+      setShippingOrder(null);
+      setShipDraft(emptyShipDraft());
+      setShipErrors([]);
+      setActionError(null);
+      setStaleNotice(null);
+      await queryClient.invalidateQueries({ queryKey: ['processing-orders'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory', 'batches'] });
+    },
+    onError: async (error, input) => {
+      const fresh = await recoverFromStaleVersion(error, input.order.id, processingApi.detail);
+      if (!fresh) {
+        setShipErrors([describeWriteError(error, '发货失败，请稍后重试')]);
+        return;
+      }
+      setShipErrors([]);
+      if (fresh.status === '进行中') {
+        setStaleNotice(staleActionRetryText(fresh.version, '发货'));
+        setShippingOrder(fresh);
+      } else {
+        setStaleNotice(`这张单刚被别人更新为「${fresh.status}」（v${fresh.version}），不能再发货。`);
+        setShippingOrder(null);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['processing-orders'] });
+    },
+  });
+
+  /**
+   * 撤销发货：`在途 → 进行中`，原因走 `X-Reason` 头（契约没有 body schema）。
+   *
+   * 为什么原因必填：撤销会把在途分段与去向清空、单据打回「进行中」，属于把已发生的
+   * 物流动作作废；不给原因，审计里就只剩一条"谁撤的"，不知道为什么撤。
+   */
+  const revokeShip = useMutation({
+    mutationFn: (input: { readonly order: ProcessingOrderDetail; readonly reason: string }) =>
+      processingApi.shipRevoke(input.order.id, input.reason, input.order.version),
+    onSuccess: async (order) => {
+      setNotice(`已撤销发货：${order.orderNo} 回到「进行中」，在途分段已清空，可重新发货。`);
+      setRevokeReason('');
+      setRevokeError(null);
+      setActionError(null);
+      setStaleNotice(null);
+      await queryClient.invalidateQueries({ queryKey: ['processing-orders'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory', 'batches'] });
+    },
+    onError: async (error, input) => {
+      const fresh = await recoverFromStaleVersion(error, input.order.id, processingApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '撤销发货失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(
+        fresh.status === '在途'
+          ? staleActionRetryText(fresh.version, '撤销发货')
+          : `这张单刚被别人更新为「${fresh.status}」（v${fresh.version}），已无货可撤。`,
+      );
+      await queryClient.invalidateQueries({ queryKey: ['processing-orders'] });
+    },
+  });
+
+  /**
+   * 到货确认：`在途 → 已完成`。权限是 `processing.approve`——验收要认损耗、落产出批次，
+   * 与「把货交出去」不是同一件事，所以和 `processing.ship` 拆成两个权限点。
+   */
+  const receiveOrder = useMutation({
+    mutationFn: (order: ProcessingOrderDetail) => processingApi.receive(order.id, order.version),
+    onSuccess: async (order) => {
+      setNotice(`已到货确认：${order.orderNo} 转为「已完成」。`);
+      setActionError(null);
+      setStaleNotice(null);
+      await queryClient.invalidateQueries({ queryKey: ['processing-orders'] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory', 'batches'] });
+    },
+    onError: async (error, order) => {
+      const fresh = await recoverFromStaleVersion(error, order.id, processingApi.detail);
+      if (!fresh) {
+        setActionError(describeWriteError(error, '到货确认失败，请稍后重试'));
+        return;
+      }
+      setActionError(null);
+      setStaleNotice(
+        fresh.status === '在途'
+          ? staleActionRetryText(fresh.version, '到货确认')
+          : `这张单刚被别人更新为「${fresh.status}」（v${fresh.version}），没有可确认的到货。`,
+      );
+      await queryClient.invalidateQueries({ queryKey: ['processing-orders'] });
+    },
+  });
+
   const print = useMutation({
     mutationFn: (id: string) => processingApi.print(id),
     onSuccess: (doc) => {
@@ -1287,8 +1515,80 @@ export function ProcessingOrdersPage() {
     completeOrder.reset();
   };
 
-  const beginEdit = (order: ProcessingOrderDetail) => {
-    setEditing(order);
+  /** 打开「发货」弹层。入口统一走 `withFreshDetail`，拿到的必须是别人刚改过也不怕的最新单。 */
+  const beginShip = (order: ProcessingOrderDetail) => {
+    setShippingOrder(order);
+    setShipDraft(emptyShipDraft());
+    setShipErrors([]);
+    setRevokeError(null);
+    setActionError(null);
+    setStaleNotice(null);
+    setFormOpen(false);
+    shipOrder.reset();
+  };
+
+  const resetShip = () => {
+    setShippingOrder(null);
+    setShipDraft(emptyShipDraft());
+    setShipErrors([]);
+    shipOrder.reset();
+  };
+
+  /**
+   * 点击时才重新校验（不只依赖按钮 `disabled`）：列表与详情可能是旧的，别人刚发过货 /
+   * 撤销过，用户手上这份状态已经不成立。这里再用最新单对象算一次，不成立就说明原因。
+   */
+  const shipBlockedNow = (order: ProcessingOrderDetail): string | null =>
+    shipBlockedText({ canShip: can('ship'), status: order.status });
+
+  const submitShip = () => {
+    if (!shippingOrder) return;
+    const blocked = shipBlockedNow(shippingOrder);
+    if (blocked) {
+      setShipErrors([blocked]);
+      return;
+    }
+    const errors = validateShipDraft(shipDraft, shippingOrder);
+    setShipErrors(errors);
+    if (errors.length > 0) return;
+    shipOrder.mutate({ order: shippingOrder, draft: shipDraft });
+  };
+
+  /** 撤销发货：状态、权限、原因三道都在点击时重算一次。 */
+  const askRevoke = (order: ProcessingOrderDetail) => {
+    const blocked = revokeShipBlockedText({ canShip: can('ship'), status: order.status });
+    if (blocked) {
+      setActionError(blocked);
+      return;
+    }
+    const error = revokeReasonError(revokeReason);
+    if (error) {
+      setRevokeError(error);
+      return;
+    }
+    setRevokeError(null);
+    setActionError(null);
+    revokeShip.mutate({ order, reason: revokeReason.trim() });
+  };
+
+  /** 到货确认：不可逆（直接转「已完成」），所以过一道 `confirm`。 */
+  const askReceive = (order: ProcessingOrderDetail) => {
+    const blocked = receiveBlockedText({ canApprove: can('approve'), status: order.status });
+    if (blocked) {
+      setActionError(blocked);
+      return;
+    }
+    if (
+      globalThis.confirm?.(`确认「${order.orderNo}」的货已到？确认后转为「已完成」，不可撤销。`) ===
+      false
+    ) {
+      return;
+    }
+    setActionError(null);
+    receiveOrder.mutate(order);
+  };
+
+  const beginEdit = (order: ProcessingOrderDetail) => {    setEditing(order);
     setFormProcessorId(order.processorId);
     setFormOutputProductId(order.outputProductId ?? '');
     setMaterials(
@@ -1372,9 +1672,12 @@ export function ProcessingOrdersPage() {
       </header>
 
       <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        「完成 / 验收」需要 <code className="font-mono">processing.approve</code>：损耗量只填一次，
-        系统按 D5 扣减材料、生成产出批次并锁价。可售量为 0 时必须二次确认全损耗；
-        提交带强 <code className="font-mono">If-Match</code>，版本冲突会提示并同步最新状态。
+        「发货」需要 <code className="font-mono">processing.ship</code>，「到货确认」需要{' '}
+        <code className="font-mono">processing.approve</code>：两步之间单据是「在途」，可以
+        撤销发货回「进行中」。到货确认后按 D5 扣减材料、生成产出批次并锁价。
+        「完成 / 验收」是一次性走完的老路径（<code className="font-mono">processing.approve</code>），损耗量只填一次，可售量为 0
+        时必须二次确认全损耗；提交带强 <code className="font-mono">If-Match</code>，版本冲突会
+        提示并同步最新状态。
       </p>
 
       {meData && !canViewPrice && (
@@ -1427,6 +1730,7 @@ export function ProcessingOrdersPage() {
         >
           <option value="">全部状态</option>
           <option value="进行中">进行中</option>
+          <option value="在途">在途</option>
           <option value="已完成">已完成</option>
           <option value="已取消">已取消</option>
         </select>
@@ -1663,16 +1967,32 @@ export function ProcessingOrdersPage() {
               canPrint={can('read')}
               canCancel={can('delete')}
               canComplete={can('approve')}
+              canShip={can('ship')}
+              canReceive={can('approve')}
               canceling={cancelOrder.isPending}
               completing={completeOrder.isPending}
+              shipping={shipOrder.isPending}
+              revoking={revokeShip.isPending}
+              receiving={receiveOrder.isPending}
+              revokeReason={revokeReason}
+              revokeError={revokeError}
               onClose={() => {
                 setDetailId(null);
                 setCompletingOrder(null);
+                setRevokeReason('');
+                setRevokeError(null);
               }}
               onEdit={() => beginEdit(detailOrder)}
               onCancel={() => askCancel(detailOrder)}
               onComplete={() => void withFreshDetail(detailOrder.id, beginComplete)}
               onPrint={() => print.mutate(detailOrder.id)}
+              onShip={() => void withFreshDetail(detailOrder.id, beginShip)}
+              onRevokeReasonChange={(value) => {
+                setRevokeReason(value);
+                setRevokeError(null);
+              }}
+              onRevoke={() => void withFreshDetail(detailOrder.id, askRevoke)}
+              onReceive={() => void withFreshDetail(detailOrder.id, askReceive)}
             />
           )}
         </>
@@ -1715,6 +2035,24 @@ export function ProcessingOrdersPage() {
             });
           }}
           onCancel={resetCompletion}
+        />
+      )}
+
+      {shippingOrder && (
+        <ProcessingShipDialog
+          orderNo={shippingOrder.orderNo}
+          inputQty={shippingOrder.inputQty}
+          draft={shipDraft}
+          errors={shipErrors}
+          custodians={custodians}
+          custodiansError={custodiansError}
+          busy={shipOrder.isPending}
+          onChange={(patch) => {
+            setShipDraft((draft) => ({ ...draft, ...patch }));
+            setShipErrors([]);
+          }}
+          onClose={resetShip}
+          onSubmit={submitShip}
         />
       )}
     </section>
