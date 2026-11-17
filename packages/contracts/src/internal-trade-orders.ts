@@ -27,17 +27,9 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - 写操作必记审计（D51）；普通读不记（D54 ②）。
  *
  * 本批明确不做（写进契约，防止后续顺手加端点）：
- * - **不做「发货 / 在途」端点**：进入在途要按 D31 锁定批次可用量（在途占用），依赖 inventory 写能力；
- * - **不做「到货确认 / 转司」端点**：转司要在同一事务里改批次 `company_id` 并解锁在途占用（D22 / D31 / D68③），
- *   同样依赖 inventory 写能力；
  * - **不做内部定价规则表**：一期内部价手工填（D68①），系统不按成本价 / 加成自动算；
  * - **不做 N 单完成自动生成 C 单草稿**（D29，与 E 单同规则）：等结算模块落地后再加。
  */
-
-/** decimal 字符串（D54 `numeric(18,6)`：最多 12 位整数 + 6 位小数，可负）。 */
-const DecimalString = z
-  .string()
-  .regex(/^-?\d{1,12}(\.\d{1,6})?$/, '必须是 decimal 字符串（最多 6 位小数，D54）');
 
 /** 非负 decimal 字符串：数量 / 单价 / 金额 / 内部价 / 在途量（D54 `numeric(18,6)`）。 */
 const NonNegativeDecimal = z
@@ -84,13 +76,28 @@ export type InternalTradeBatchIds = z.infer<typeof InternalTradeBatchIdsSchema>;
 /**
  * 商品明细（§1 / D22）：`amount = qty × unitPrice` 由实现侧计算并落库，契约层只校验类型。
  */
-export const InternalTradeOrderLineSchema = z.object({
+/** 写入用商品明细：金额必填（与下面可能被脱敏的实体 schema 分开，D79）。 */
+export const InternalTradeOrderLineInputSchema = z.object({
   productId: z.string().uuid(),
   /** 引用**发出公司**批次（D22），至少 1 条。 */
   batchIds: InternalTradeBatchIdsSchema,
   qty: NonNegativeDecimal,
   unitPrice: NonNegativeDecimal,
   amount: NonNegativeDecimal,
+});
+export type InternalTradeOrderLineInput = z.infer<typeof InternalTradeOrderLineInputSchema>;
+
+/**
+ * 商品明细**实体视图**（D79）：无 `internal_trade.view_price` 时金额字段返回 `null`。
+ *
+ * 入参（开单 / 改单）仍用上面的 `InternalTradeOrderLineInputSchema`，
+ * 保证「写的时候必须填金额、读的时候可能看不到金额」两件事互不干扰。
+ */
+export const InternalTradeOrderLineSchema = InternalTradeOrderLineInputSchema.extend({
+  /** 单价；无 `internal_trade.view_price` 时为 null（D79）。 */
+  unitPrice: NonNegativeDecimal.nullable(),
+  /** 行金额（`qty × unitPrice`）；无看价权限时为 null（D79）。 */
+  amount: NonNegativeDecimal.nullable(),
 });
 export type InternalTradeOrderLine = z.infer<typeof InternalTradeOrderLineSchema>;
 
@@ -113,11 +120,11 @@ export const InternalTradeOrderSchema = z.object({
   /** 单号（服务端按 D16 生成，格式 `N-<公司码4>-<日期8>-<流水4>`）。 */
   orderNo: z.string(),
   status: InternalTradeOrderStatusSchema,
-  /** 经手人。 */
-  handlerId: z.string(),
+  /** 经手人（负责人）；无权查看负责人（非老板/经理）时服务端返回 null（Issue #227）。 */
+  handlerId: z.string().nullable(),
   lines: z.array(InternalTradeOrderLineSchema),
-  /** 内部价：制单人手填，系统不自动算（D68①）；decimal 字符串（D54）。 */
-  internalPrice: NonNegativeDecimal,
+  /** 内部价：制单人手填，系统不自动算（D68①）；decimal 字符串（D54）；**无 `internal_trade.view_price` 时为 null**（D79）。 */
+  internalPrice: NonNegativeDecimal.nullable(),
   /** 在途量：发货后锁定、到货确认后解锁（D22 / D31）；decimal 字符串（D54）。 */
   inTransitQty: NonNegativeDecimal,
   /** 乐观锁版本：写接口用强 ETag `"<version>"`（D60③ 同款）。 */
@@ -167,7 +174,7 @@ export const InternalTradeOrderCreateInputSchema = z.object({
   fromCompanyId: z.string().uuid(),
   toCompanyId: z.string().uuid(),
   handlerId: z.string().uuid(),
-  lines: z.array(InternalTradeOrderLineSchema).min(1, 'N 单至少 1 行商品明细'),
+  lines: z.array(InternalTradeOrderLineInputSchema).min(1, 'N 单至少 1 行商品明细'),
   internalPrice: NonNegativeDecimal,
 });
 export type InternalTradeOrderCreateInput = z.infer<typeof InternalTradeOrderCreateInputSchema>;
@@ -181,20 +188,45 @@ export type InternalTradeOrderCreateInput = z.infer<typeof InternalTradeOrderCre
 export const InternalTradeOrderUpdateInputSchema = z
   .object({
     handlerId: z.string().uuid().optional(),
-    lines: z.array(InternalTradeOrderLineSchema).min(1).optional(),
+    lines: z.array(InternalTradeOrderLineInputSchema).min(1).optional(),
     internalPrice: NonNegativeDecimal.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: '至少修改一个字段' });
 export type InternalTradeOrderUpdateInput = z.infer<typeof InternalTradeOrderUpdateInputSchema>;
 
+/** 到货确认是危险写操作，要求显式确认，避免误触发批次转司（D22 / D31 / #196）。 */
+export const InternalTradeOrderReceiveInputSchema = z.object({
+  confirm: z.literal(true),
+});
+export type InternalTradeOrderReceiveInput = z.infer<typeof InternalTradeOrderReceiveInputSchema>;
+
+/** 确认发货是危险写操作，要求显式确认，避免误触发批次在途占用（D22 / D31 / D68③）。 */
+export const InternalTradeOrderDispatchInputSchema = z.object({
+  confirm: z.literal(true),
+});
+export type InternalTradeOrderDispatchInput = z.infer<typeof InternalTradeOrderDispatchInputSchema>;
+
 /**
- * internal-trade 模块 N 内部交易单端点（5 条，第二批第一批切）。
+ * 撤销发货是异常回退，要求显式确认 + 必填原因（D68②）。
+ * `reason` 必填且原样落审计（changeSummary.reason）——没有理由就不是撤销。
+ */
+export const InternalTradeOrderDispatchRevokeInputSchema = z.object({
+  confirm: z.literal(true),
+  reason: z.string().trim().min(1).max(200),
+});
+export type InternalTradeOrderDispatchRevokeInput = z.infer<
+  typeof InternalTradeOrderDispatchRevokeInputSchema
+>;
+
+/**
+ * internal-trade 模块 N 内部交易单端点（8 条，含发货 / 撤销发货与到货确认）。
  *
  * operationId 以 `internal_trade` 开头（与功能域同名，registry 校验要求）；
- * 权限 scope 仍按功能域推导为 `internal_trade.read/create/update/delete`（D44）。
+ * 权限 scope 仍按功能域推导（D44）：读 `read`、写 `create`、编 `update`、删 `delete`，
+ * 发货 / 撤销发货走专属动作 `ship`（出，D4 八动作之一），不与 `update` 混用。
  * 审计：写操作必记（D51）；普通读不记（D54 ②）。
- * AI：开单属业务动作默认禁止；修改允许；取消属危险动作，默认禁止且必须给原因（D52① / D54 ⑥）。
- * 并发：update / cancel 强制 If-Match 强 ETag。
+ * AI：开单属业务动作默认禁止；修改允许；取消 / 发货 / 撤销发货 / 到货确认属危险动作，默认禁止且必须给原因（D52① / D54 ⑥）。
+ * 并发：update / cancel / dispatch / dispatch_revoke / receive 强制 If-Match 强 ETag。
  * 取消：按四态映射后复用 `canCancel` / `assertCancelable`（D21 / D68②）。
  */
 export const INTERNAL_TRADE_ORDER_ROUTES: readonly RouteDef[] = [
@@ -260,6 +292,48 @@ export const INTERNAL_TRADE_ORDER_ROUTES: readonly RouteDef[] = [
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,
+    response: { status: 200, schema: InternalTradeOrderSchema },
+  }),
+  defineRoute({
+    module: 'internal-trade',
+    operationId: 'internal_trade.order.dispatch',
+    method: 'POST',
+    path: '/api/v1/internal-trade-orders/{id}/dispatch',
+    domain: 'internal_trade',
+    action: 'ship',
+    summary: '确认发货：N 单进入在途，锁定发出公司批次可用量（D22 / D31 / D68③）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    request: { body: InternalTradeOrderDispatchInputSchema },
+    response: { status: 200, schema: InternalTradeOrderSchema },
+  }),
+  defineRoute({
+    module: 'internal-trade',
+    operationId: 'internal_trade.order.dispatch_revoke',
+    method: 'POST',
+    path: '/api/v1/internal-trade-orders/{id}/dispatch-revoke',
+    domain: 'internal_trade',
+    action: 'ship',
+    summary: '撤销发货：N 单退回进行中，释放在途占用（保留审计）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    request: { body: InternalTradeOrderDispatchRevokeInputSchema },
+    response: { status: 200, schema: InternalTradeOrderSchema },
+  }),
+  defineRoute({
+    module: 'internal-trade',
+    operationId: 'internal_trade.order.receive',
+    method: 'POST',
+    path: '/api/v1/internal-trade-orders/{id}/receive',
+    domain: 'internal_trade',
+    action: 'approve',
+    summary: '确认 N 单到货并将占用批次转入接收公司（审批动作；D22 / D31 / D68③ / D86）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    request: { body: InternalTradeOrderReceiveInputSchema },
     response: { status: 200, schema: InternalTradeOrderSchema },
   }),
 ];

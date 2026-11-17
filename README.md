@@ -42,9 +42,12 @@ docs/                  OpenAPI 说明书、ADR、spike 与模块模板；`docs/m
 
 ## 本地运行
 
+> 完整环境说明与新成员上手步骤见 [`docs/DEV-SETUP.md`](docs/DEV-SETUP.md)；下面是速查。
+
 ```powershell
 # 后端（默认 http://127.0.0.1:3000/api/v1）
 $env:DATABASE_URL = 'postgres://postgres:postgres@127.0.0.1:5432/qingdan_dev'
+$env:PUBLIC_BASE_URL = 'http://localhost:5173'   # 必设：否则 Web 端写操作全部 403（见 DEV-SETUP §4）
 pnpm -C apps/api migrate
 pnpm -C apps/api seed
 pnpm -C apps/api dev
@@ -78,9 +81,9 @@ pnpm openapi
 | P1 | `inventory` | 批次、库存数量、库存流水、盘点调整、成本更正 |
 | P2 | `purchase` | A 采购单 + S 供应商退货 |
 | P2 | `processing` | B 加工单 + 损失记录 |
-| P3 | `sales` | E 销售单 + 收款记录 + 在线支付 + R 客户退货 |
+| P3 | `sales` | E 销售单 + 收款记录 + 在线支付（见独立 `payment` 模块）+ R 客户退货 |
 | P3 | `internal-trade` | N 内部交易单 + 内部定价 |
-| P4 | `settlement` | C 结算单 + 提成 + 利润报表 |
+| P4 | `settlement` | C 结算单 + 提成 + 利润报表（见独立 `report` 模块） |
 
 ## 许可
 

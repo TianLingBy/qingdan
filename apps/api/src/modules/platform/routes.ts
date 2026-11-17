@@ -14,8 +14,14 @@ import type { AppConfig } from '../../platform/config.js';
 import type { Database } from '../../platform/db/client.js';
 import { requestIdFor } from '../../platform/http/request-id.js';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
+import { SmsNotConfiguredError, type SmsSender } from '../../platform/sms/tencent.js';
 import { createApiToken, listApiTokens, revokeApiToken } from './usecases/api-tokens.js';
 import { listAuditLogs } from './usecases/audit-logs.js';
+import {
+  createCompany,
+  listCompanies,
+  updateCompany,
+} from './usecases/companies.js';
 import {
   createEmployee,
   disableEmployee,
@@ -25,8 +31,17 @@ import {
 import { login } from './usecases/login.js';
 import { logout } from './usecases/logout.js';
 import { me } from './usecases/me.js';
+import { sendLoginCode } from './usecases/send-code.js';
+import {
+  createPosition,
+  disablePosition,
+  listPositions,
+  updatePosition,
+} from './usecases/positions.js';
 import { updatePermissionOverrides } from './usecases/permission-overrides.js';
+import { getSettingsOverview } from './usecases/settings-overview.js';
 import { getCompanySubscription, updateCompanySubscription } from './usecases/subscription.js';
+import { getWorkbenchTodos } from '../workbench/usecases/todos.js';
 
 /**
  * platform 端点挂载。
@@ -46,6 +61,8 @@ export interface PlatformRoutesOptions {
   readonly version: string;
   /** 应用配置（登录验证码 / 会话 TTL / 环境）。 */
   readonly config: AppConfig;
+  /** 短信发送器；测试可注入假实现，未配置时用会抛错的占位实现。 */
+  readonly smsSender: SmsSender;
 }
 
 let cachedDocument: OpenApiDocument | undefined;
@@ -71,6 +88,7 @@ function requireDatabase(instance: FastifyInstance, route: RouteDef): Database {
 
 const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'platform.auth.login': 'session',
+  'platform.code.send': 'login_code',
   'platform.auth.logout': 'session',
   'platform.audit.read': 'audit_log',
   'platform.token.create': 'api_token',
@@ -80,6 +98,11 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'platform.employee.create': 'employee',
   'platform.employee.update': 'employee',
   'platform.employee.disable': 'employee',
+  'platform.company.create': 'company',
+  'platform.company.update': 'company',
+  'platform.position.create': 'position',
+  'platform.position.update': 'position',
+  'platform.position.delete': 'position',
   'billing.subscription.update': 'company',
 };
 
@@ -114,6 +137,21 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
     // 拒绝会绕过失败审计。
     'platform.auth.login': ({ app: instance, request, reply }) =>
       login({ database: instance.database, config: options.config, request, reply }),
+    'platform.code.send': ({ app: instance, request }) =>
+      sendLoginCode({
+        database: instance.database,
+        config: options.config,
+        smsSender: options.smsSender,
+        request,
+      }).catch((error: unknown) => {
+        // 生产环境短信未配置：明确 501，别让用户以为是验证码错。
+        if (error instanceof SmsNotConfiguredError) {
+          throw new AppError('NOT_IMPLEMENTED', error.message, {
+            operationId: 'platform.code.send',
+          });
+        }
+        throw error;
+      }),
     'platform.auth.logout': ({ app: instance, request, reply }) =>
       logout({ database: instance.database, config: options.config, request, reply }),
     'platform.auth.me': ({ app: instance, request }) => me({ database: instance.database, request }),
@@ -135,6 +173,28 @@ export function registerPlatformRoutes(app: FastifyInstance, options: PlatformRo
       listAuditLogs({ database: instance.database, request }),
     'platform.permission.update': ({ app: instance, request, reply }) =>
       updatePermissionOverrides({ database: instance.database, request, reply }),
+    'platform.company.list': ({ app: instance, request }) =>
+      listCompanies({ database: instance.database, request }),
+    'platform.company.create': ({ app: instance, request, reply }) =>
+      createCompany({ database: instance.database, request, reply }),
+    'platform.company.update': ({ app: instance, request, reply }) =>
+      updateCompany({ database: instance.database, request, reply }),
+    'platform.position.list': ({ app: instance, request }) =>
+      listPositions({ database: instance.database, request }),
+    'platform.position.create': ({ app: instance, request, reply }) =>
+      createPosition({ database: instance.database, request, reply }),
+    'platform.position.update': ({ app: instance, request, reply }) =>
+      updatePosition({ database: instance.database, request, reply }),
+    'platform.position.delete': ({ app: instance, request, reply }) =>
+      disablePosition({ database: instance.database, request, reply }),
+    // 设置中心概览（D93 / #298）：只读聚合；缺 company.read 由用例返回 403。
+    'platform.settings.overview': ({ app: instance, request }) =>
+      getSettingsOverview({ database: instance.database, request }),
+    // 工作台待办（D89 / #289）：归属 platform（跨模块只读聚合），用例在 modules/workbench。
+    'workbench.todos.read': ({ app: instance, request, route }) => {
+      requireDatabase(instance, route);
+      return getWorkbenchTodos({ database: instance.database, request });
+    },
     'billing.subscription.read': async ({ app: instance, request, route }) => {
       const database = requireDatabase(instance, route);
       const principal = request.principal;

@@ -56,7 +56,7 @@ export function verifyAlipayCallback({
   }
 
   const content = buildAlipaySignContent(form);
-  let verified = false;
+  let verified: boolean;
   try {
     verified = cryptoVerify(
       'RSA-SHA256',

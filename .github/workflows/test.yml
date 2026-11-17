@@ -76,19 +76,11 @@ jobs:
 
       - name: 并发 / 锁 / 取号（真 PG）
         shell: pwsh
-        if: hashFiles('tests/db-concurrency.test.ps1') != ''
         run: pwsh -NoProfile -File ./tests/db-concurrency.test.ps1
 
       - name: 业务流 e2e（真 PG）
         shell: pwsh
-        if: hashFiles('tests/e2e-business-flow.test.ps1') != ''
         run: pwsh -NoProfile -File ./tests/e2e-business-flow.test.ps1
-
-      - name: 说明（db-concurrency.test.ps1 尚未落地）
-        if: hashFiles('tests/db-concurrency.test.ps1') == ''
-        run: |
-          echo "tests/db-concurrency.test.ps1 不存在：L3 integration 测试待该文件落地后由上面的步骤自动启用。"
-          echo "本 job 目前只验证 postgres:18 服务与依赖安装可用。"
 
   e2e:
     name: e2e (ubuntu-latest, PostgreSQL 18)

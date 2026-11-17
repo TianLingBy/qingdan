@@ -2,6 +2,7 @@ import {
   AppError,
   encodeCursor,
   type CursorPayload,
+  type ProcessingMaterialInput,
   type ProcessingOrder,
   type ProcessingOrderCreateInput,
   type ProcessingOrderFee,
@@ -48,13 +49,16 @@ export interface ProcessingOrderPage {
   readonly nextCursor: string | null;
 }
 
-/** 修改 / 取消前读取的最小状态（含可售量重算所需的投入量与损耗量）。 */
+/** 修改 / 取消 / 详情读取的状态（含完成后的产出批次与损失快照）。 */
 export interface ProcessingOrderState {
   readonly id: string;
   readonly companyId: string;
   readonly status: ProcessingOrderStatus;
   readonly inputQty: string;
   readonly lossQty: string | null;
+  readonly outputBatchId: string | null;
+  readonly lossAmount: string | null;
+  readonly updatedAt: string;
   readonly version: number;
 }
 
@@ -67,6 +71,7 @@ interface HeaderRow {
   processor_name: string;
   status: string;
   handler_id: string;
+  output_product_id: string | null;
   aux_materials: string | null;
   input_qty: string | number;
   loss_qty: string | number | null;
@@ -92,6 +97,9 @@ interface StateRow {
   status: string;
   input_qty: string | number;
   loss_qty: string | number | null;
+  output_batch_id: string | null;
+  loss_amount: string | number | null;
+  updated_at: Date | string;
   version: number;
 }
 
@@ -103,6 +111,7 @@ const HEADER_COLUMNS = `o.id,
   p.name AS processor_name,
   o.status,
   o.handler_id,
+  o.output_product_id,
   o.aux_materials,
   trim_scale(o.input_qty) AS input_qty,
   trim_scale(o.loss_qty) AS loss_qty,
@@ -147,6 +156,7 @@ function mapHeader(row: HeaderRow): Omit<ProcessingOrder, 'materialBatchIds' | '
     processorName: row.processor_name,
     status: row.status as ProcessingOrderStatus,
     handlerId: row.handler_id,
+    outputProductId: row.output_product_id,
     auxMaterials: row.aux_materials,
     inputQty: decimal(row.input_qty),
     lossQty: nullableDecimal(row.loss_qty),
@@ -191,12 +201,16 @@ async function queryHeader(
 async function queryMaterialBatchIds(
   ctx: ProcessingOrderRepoContext,
   orderIds: readonly string[],
-): Promise<Map<string, string[]>> {
-  const grouped = new Map<string, string[]>();
+): Promise<Map<string, ProcessingMaterialInput[]>> {
+  const grouped = new Map<string, ProcessingMaterialInput[]>();
   if (orderIds.length === 0) return grouped;
 
-  const result = await ctx.tx.query<{ order_id: string; batch_id: string }>(
-    `SELECT order_id, batch_id
+  const result = await ctx.tx.query<{
+    order_id: string;
+    batch_id: string;
+    qty: string | number;
+  }>(
+    `SELECT order_id, batch_id, qty
        FROM processing_order_material_batch
       WHERE tenant_id = $1
         AND order_id = ANY($2::uuid[])
@@ -204,9 +218,9 @@ async function queryMaterialBatchIds(
     [ctx.tenantId, [...orderIds]],
   );
   for (const row of result.rows) {
-    const ids = grouped.get(row.order_id) ?? [];
-    ids.push(row.batch_id);
-    grouped.set(row.order_id, ids);
+    const rows = grouped.get(row.order_id) ?? [];
+    rows.push({ batchId: row.batch_id, qty: decimal(row.qty) });
+    grouped.set(row.order_id, rows);
   }
   return grouped;
 }
@@ -318,7 +332,7 @@ export async function getProcessingOrder(
   };
 }
 
-/** 修改 / 取消前读取状态；跨公司等同不存在。 */
+/** 修改 / 取消 / 详情读取状态；跨公司等同不存在。 */
 export async function loadProcessingOrderState(
   ctx: ProcessingOrderRepoContext,
   id: string,
@@ -329,6 +343,9 @@ export async function loadProcessingOrderState(
             status,
             trim_scale(input_qty) AS input_qty,
             trim_scale(loss_qty) AS loss_qty,
+            output_batch_id,
+            trim_scale(loss_amount) AS loss_amount,
+            updated_at,
             version
        FROM processing_order
       WHERE id = $1::uuid
@@ -344,6 +361,9 @@ export async function loadProcessingOrderState(
     status: row.status as ProcessingOrderStatus,
     inputQty: decimal(row.input_qty),
     lossQty: nullableDecimal(row.loss_qty),
+    outputBatchId: row.output_batch_id,
+    lossAmount: nullableDecimal(row.loss_amount),
+    updatedAt: toDate(row.updated_at).toISOString(),
     version: row.version,
   };
 }
@@ -368,6 +388,54 @@ export async function hasDirectDownstream(
     [ctx.tenantId, state.companyId, state.id],
   );
   return result.rows[0]?.exists === true;
+}
+
+export async function completeProcessingOrder(
+  ctx: ProcessingOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+  input: {
+    readonly lossQty: string;
+    readonly sellableQty: string;
+    readonly outputBatchId: string | null;
+    readonly materialCostAmount: string;
+    readonly lossAmount: string;
+    readonly partialLossAmount: string;
+  },
+): Promise<ProcessingOrder | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE processing_order
+        SET status = '已完成',
+            loss_qty = $1::amount,
+            sellable_qty = $2::amount,
+            output_batch_id = $3::uuid,
+            material_cost_amount = $4::amount,
+            loss_amount = $5::amount,
+            partial_loss_amount = $6::amount,
+            version = version + 1
+      WHERE id = $7::uuid
+        AND tenant_id = $8
+        AND company_id = ANY($9::uuid[])
+        AND version = $10
+        AND status = '进行中'
+      RETURNING id`,
+    [
+      input.lossQty,
+      input.sellableQty,
+      input.outputBatchId,
+      input.materialCostAmount,
+      input.lossAmount,
+      input.partialLossAmount,
+      id,
+      ctx.tenantId,
+      [...ctx.companyIds],
+      expectedVersion,
+    ],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '加工单已被并发修改或不是进行中状态');
+  }
+  return getProcessingOrder(ctx, id);
 }
 
 /** 加工厂必须存在，但必须与单头同公司（D15）。 */
@@ -409,10 +477,10 @@ async function assertHandlerInTenant(
 /** 材料投入批次必须属于加工单公司（D22）；去重后一次查询。 */
 async function assertMaterialBatchesInCompany(
   ctx: ProcessingOrderRepoContext,
-  batchIds: readonly string[],
+  materialBatchIds: readonly ProcessingMaterialInput[],
   companyId: string,
 ): Promise<void> {
-  const unique = [...new Set(batchIds)];
+  const unique = [...new Set(materialBatchIds.map((row) => row.batchId))];
   const result = await ctx.tx.query<{ id: string }>(
     `SELECT id
        FROM inventory_batch
@@ -460,14 +528,22 @@ async function insertMaterialBatches(
   ctx: ProcessingOrderRepoContext,
   orderId: string,
   companyId: string,
-  batchIds: readonly string[],
+  materialBatchIds: readonly ProcessingMaterialInput[],
 ): Promise<void> {
-  for (const [index, batchId] of batchIds.entries()) {
+  for (const [index, material] of materialBatchIds.entries()) {
     await ctx.tx.query(
       `INSERT INTO processing_order_material_batch
-         (id, tenant_id, company_id, order_id, line_no, batch_id)
-       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::uuid)`,
-      [uuidv7(), ctx.tenantId, companyId, orderId, index + 1, batchId],
+         (id, tenant_id, company_id, order_id, line_no, batch_id, qty)
+       VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5, $6::uuid, $7::amount)`,
+      [
+        uuidv7(),
+        ctx.tenantId,
+        companyId,
+        orderId,
+        index + 1,
+        material.batchId,
+        material.qty,
+      ],
     );
   }
 }
@@ -535,10 +611,10 @@ export async function insertProcessingOrder(
 
   await ctx.tx.query(
     `INSERT INTO processing_order
-       (id, tenant_id, company_id, order_no, processor_id, handler_id,
+       (id, tenant_id, company_id, order_no, processor_id, handler_id, output_product_id,
         status, aux_materials, input_qty, loss_qty, sellable_qty, attribution_doc)
-     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid,
-             '进行中', $7, $8::amount, $9::amount, $10::amount, $11)`,
+     VALUES ($1::uuid, $2, $3::uuid, $4, $5::uuid, $6::uuid, $7::uuid,
+             '进行中', $8, $9::amount, $10::amount, $11::amount, $12)`,
     [
       input.id,
       ctx.tenantId,
@@ -546,6 +622,7 @@ export async function insertProcessingOrder(
       input.orderNo,
       input.processorId,
       input.handlerId,
+      input.outputProductId,
       input.auxMaterials ?? null,
       input.inputQty,
       lossQty,
@@ -611,6 +688,10 @@ export async function updateProcessingOrder(
   if (input.handlerId !== undefined) {
     params.push(input.handlerId);
     sets.push(`handler_id = $${params.length}::uuid`);
+  }
+  if (input.outputProductId !== undefined) {
+    params.push(input.outputProductId);
+    sets.push(`output_product_id = $${params.length}::uuid`);
   }
   if (input.inputQty !== undefined) {
     params.push(input.inputQty);

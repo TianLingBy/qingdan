@@ -38,7 +38,7 @@ describe('payment repo（PGlite）', () => {
     test = await createTestDatabase();
     await test.database.transaction(async (tx) => {
       await tx.query(
-        `INSERT INTO tenant (id, name, plan, status) VALUES ($1::uuid, '支付测试租户', '基础版', '启用')`,
+        `INSERT INTO tenant (id, name, status) VALUES ($1::uuid, '支付测试租户', '启用')`,
         [TENANT_ID],
       );
       await tx.query(

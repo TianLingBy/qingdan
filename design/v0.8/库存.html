@@ -1,0 +1,482 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" class="no-js">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 库存</title>
+<script>try{var m=location.search.match(/[?&]theme=(moss|mist|bronze|paper)/);var t=m?m[1]:localStorage.getItem("qd-theme");if(t&&t!=="moss")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="tokens.css">
+<style>
+/* ============================================================
+   轻单 v0.8 · 库存页
+   v0.5 改动（对应《UI 改进建议》）：
+   - 批次卡片墙接入四态：空态 / 骨架屏 / 错误态（?state=empty|loading|error）
+   - 眉标统一 .eyebrow，面包屑统一 .crumb
+   - hover 快捷操作（查看单据 / 补货）保留，并修掉卡片底部被按钮压住的问题
+   ============================================================ */
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--sans);font-size:13.5px;line-height:1.65;color:var(--text-1);
+  background:var(--bg-0);-webkit-font-smoothing:antialiased;min-height:100vh;
+  display:flex;
+}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--accent-light);outline-offset:3px;border-radius:4px}
+::selection{background:rgba(var(--accent-rgb), .32);color:var(--text-1)}
+
+/* ============================================================ 主内容 */
+.main{flex:1;min-width:0;overflow-y:auto}
+.topbar{
+  position:sticky;top:0;z-index:10;
+  background:var(--topbar-bg);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line-1);
+  padding:0 36px;height:52px;display:flex;align-items:center;gap:16px;
+}
+.topbar-right{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-3)}
+
+.wrap{max-width:1060px;margin:0 auto;padding:36px 36px 60px}
+
+/* 页头 */
+.head{display:flex;align-items:flex-end;gap:14px;margin-bottom:6px}
+.head h1{font-size:32px;font-weight:620;letter-spacing:-.032em;line-height:1.08;color:var(--text-1)}
+.sub{font-size:12.5px;color:var(--text-3);max-width:44em;margin-bottom:24px}
+
+/* 分仓 tabs */
+.wh{display:flex;align-items:center;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+.wh button{
+  height:30px;padding:0 13px;border-radius:var(--r-pill);border:1px solid var(--line-2);
+  font-size:12px;color:var(--text-3);background:var(--surf-1);
+  transition:background var(--d-1),border-color var(--d-1),color var(--d-1),transform 70ms;
+}
+.wh button:hover:not(.on){border-color:var(--line-3);color:var(--text-1)}
+.wh button:active{transform:scale(.985)}
+.wh button.on{background:var(--accent-deep);border-color:var(--accent);color:var(--bg-0);font-weight:550}
+.wh .sum{margin-left:auto;font-size:12px;color:var(--text-3)}
+.wh .sum b{color:var(--text-1);font-weight:600}
+
+/* 水位总览 */
+.vessel{
+  border:1px solid var(--line-2);border-radius:var(--r-card);padding:20px 22px;
+  background:var(--bg-2);box-shadow:var(--sh-1),var(--sh-inset);
+  margin-bottom:20px;
+}
+.vessel-top{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.vessel-top h2{font-size:13.5px;font-weight:600;color:var(--text-1)}
+.vessel-top .num{margin-left:auto;font-size:12px;color:var(--text-3);font-family:var(--mono)}
+
+/* 三段水位条 */
+.bar{display:flex;height:10px;border-radius:var(--r-pill);overflow:hidden;background:rgba(var(--text-rgb), .05)}
+.bar i{display:block;height:100%;transform-origin:left center}
+.bar i[data-grow]{transform:scaleX(0)}
+.bar i[data-grow].is-in{transform:scaleX(1);transition:transform var(--d-4) var(--ease-out) var(--gd,120ms)}
+.bar .s1{background:linear-gradient(90deg,var(--accent-light),var(--accent))}
+.bar .s2{
+  background:repeating-linear-gradient(90deg,
+    rgba(var(--accent-rgb), .5) 0px,rgba(var(--accent-rgb), .5) 2px,
+    rgba(var(--accent-rgb), .22) 2px,rgba(var(--accent-rgb), .22) 5px);
+}
+.bar .s3{
+  background:repeating-linear-gradient(45deg,
+    rgba(var(--accent-2-rgb), .4) 0px,rgba(var(--accent-2-rgb), .4) 2px,
+    rgba(var(--accent-2-rgb), .18) 2px,rgba(var(--accent-2-rgb), .18) 6px);
+}
+.legend{display:flex;gap:18px;margin-top:12px;font-size:11px;color:var(--text-3)}
+.legend span{display:flex;align-items:center;gap:5px}
+.legend em{width:8px;height:8px;border-radius:2px;font-style:normal}
+.legend .l1{background:linear-gradient(90deg,var(--accent-light),var(--accent))}
+.legend .l2{background:repeating-linear-gradient(90deg,rgba(var(--accent-rgb), .5) 0px,rgba(var(--accent-rgb), .5) 2px,rgba(var(--accent-rgb), .22) 2px,rgba(var(--accent-rgb), .22) 5px)}
+.legend .l3{background:repeating-linear-gradient(45deg,rgba(var(--accent-2-rgb), .4) 0px,rgba(var(--accent-2-rgb), .4) 2px,rgba(var(--accent-2-rgb), .18) 2px,rgba(var(--accent-2-rgb), .18) 6px)}
+
+/* 卡片墙 */
+.wall{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+
+.batchcard{
+  position:relative;border:1px solid var(--line-2);border-radius:var(--r-card);
+  padding:20px 18px 16px;background:var(--bg-2);
+  box-shadow:var(--sh-1),var(--sh-inset);
+  transition:transform var(--d-3) var(--ease-out),box-shadow var(--d-3) var(--ease-out),
+             border-color var(--d-3),background var(--d-3);
+  overflow:hidden;
+}
+.batchcard::before{
+  content:"";position:absolute;left:18px;right:18px;top:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(var(--text-rgb), .12),transparent);pointer-events:none;
+}
+.batchcard:hover{transform:translateY(-3px);box-shadow:var(--sh-2);border-color:var(--line-3)}
+.batchcard:hover{padding-bottom:52px}
+.batchcard.warn{border-color:rgba(var(--accent-rgb), .28);background:rgba(var(--accent-rgb), .04)}
+
+/* hover 操作按钮 */
+.card-actions{
+  position:absolute;right:12px;bottom:12px;
+  display:flex;gap:6px;
+  opacity:0;transform:translateY(4px);
+  transition:opacity var(--d-2) var(--ease-out),transform var(--d-2) var(--ease-out);
+  pointer-events:none;
+}
+.batchcard:hover .card-actions{opacity:1;transform:translateY(0);pointer-events:auto}
+.card-action{
+  height:26px;padding:0 10px;border-radius:var(--r-control);font-size:11px;font-weight:500;
+  border:1px solid var(--line-3);background:var(--bg-3);color:var(--text-2);
+  display:flex;align-items:center;gap:5px;
+  transition:background var(--d-1),border-color var(--d-1),color var(--d-1);
+  cursor:pointer;
+}
+.card-action:hover{background:var(--accent-deep);border-color:var(--accent);color:var(--bg-0)}
+.card-action svg{stroke:currentColor;fill:none;stroke-width:1.5}
+
+.batchcard .top{display:flex;align-items:center;gap:7px;margin-bottom:10px}
+.batchcard .code{
+  font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.04em;
+  color:var(--accent-light);background:rgba(var(--accent-rgb), .12);
+  padding:2px 7px;border-radius:var(--r-tag);border:1px solid rgba(var(--accent-rgb), .18);
+}
+.batchcard .tag{margin-left:auto;font-size:10px;color:var(--text-3);font-family:var(--mono)}
+.batchcard h3{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin-bottom:2px;color:var(--text-1)}
+.batchcard .spec{font-size:11px;color:var(--text-3);margin-bottom:14px}
+
+/* 水位条（单卡片） */
+.level{position:relative;height:5px;border-radius:var(--r-pill);background:rgba(var(--text-rgb), .06);overflow:hidden;margin-bottom:9px}
+.level i{position:absolute;left:0;top:0;bottom:0;border-radius:var(--r-pill);
+  background:linear-gradient(90deg,var(--accent-light),var(--accent));transform-origin:left center}
+.level i[data-grow]{transform:scaleX(0)}
+.level i[data-grow].is-in{transform:scaleX(1);transition:transform var(--d-4) var(--ease-out) var(--gd,120ms)}
+.level.low i{background:linear-gradient(90deg,rgba(var(--text-rgb), .55),rgba(var(--text-rgb), .30))}
+
+.qty{display:flex;align-items:baseline;gap:5px;font-size:11.5px;color:var(--text-3)}
+.qty b{font-size:19px;font-weight:620;color:var(--text-1);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.qty em{font-style:normal;margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--text-3)}
+.level.low ~ .qty em{color:var(--accent-light);font-weight:600}
+
+.mini{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:14px;padding-top:12px;
+  border-top:1px solid var(--line-1);
+}
+.mini div span{display:block;font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--text-3);margin-bottom:2px}
+.mini div b{font-size:12px;font-weight:520;font-variant-numeric:tabular-nums;color:var(--text-2)}
+
+/* 预警条 */
+.alert{
+  margin-top:20px;display:flex;align-items:center;gap:12px;
+  border:1px solid rgba(var(--accent-rgb), .24);
+  border-left:3px solid var(--accent);
+  border-radius:var(--r-panel);padding:14px 16px;
+  font-size:12.5px;color:var(--text-2);
+  background:rgba(var(--accent-rgb), .06);
+}
+.alert b{color:var(--text-1);font-weight:600}
+.alert .go{margin-left:auto;color:var(--accent-light);font-weight:520;white-space:nowrap;
+  transition:color var(--d-1)}
+.alert .go:hover{color:var(--text-1)}
+
+/* 骨架卡片 */
+.sk-card{
+  border:1px solid var(--line-1);border-radius:var(--r-card);background:var(--bg-2);
+  padding:20px 18px 16px;
+}
+
+@media(max-width:1024px){.wall{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:768px){
+  .sidebar{display:none}
+  .wrap{padding:24px 20px 48px}
+  .wall{grid-template-columns:1fr}
+  .topbar{padding:0 20px}
+  .head h1{font-size:26px}
+}
+</style>
+<link rel="stylesheet" href="components.css">
+<script src="motion.js"></script>
+</head>
+<body data-aura>
+<div class="qd-veil"></div>
+<div class="qd-field" aria-hidden="true"></div>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sb-brand">
+    <div class="sb-mark">轻</div>
+    <div class="sb-name">轻单<small>Qingdan</small></div>
+  </div>
+  <nav class="sb-nav">
+    <a href="工作台.html" class="sb-link">
+      <svg width="15" height="15" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+      工作台
+    </a>
+    <a href="单据.html" class="sb-link">
+      <svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 2h8v12H4z"/><path d="M6 6h4M6 9h4M6 12h2"/></svg>
+      单据
+      <span class="badge">3</span>
+    </a>
+    <a href="库存.html" class="sb-link on">
+      <svg width="15" height="15" viewBox="0 0 16 16"><path d="M2 5l6-3 6 3v6l-6 3-6-3z"/><path d="M8 2v12M2 5l6 3 6-3"/></svg>
+      库存
+    </a>
+    <a href="报表.html" class="sb-link">
+      <svg width="15" height="15" viewBox="0 0 16 16"><path d="M2 12l4-5 3 3 5-7"/></svg>
+      报表
+    </a>
+  </nav>
+  <div class="sb-foot">
+    <div class="sb-avatar">何</div>
+    <div class="sb-user"><b>何XX</b><small>演示公司</small></div>
+  </div>
+</aside>
+
+<!-- 主内容 -->
+<div class="main">
+  <header class="topbar">
+    <nav class="crumb">
+      <a href="工作台.html">轻单</a>
+      <span class="sep">/</span>
+      <span class="cur">库存</span>
+      <span class="sep">·</span>
+      <span>演示公司</span>
+    </nav>
+    <div class="topbar-right">2026.11.11</div>
+  </header>
+
+  <div class="wrap">
+    <div class="head" data-reveal="fade">
+      <h1>库存</h1>
+      <span class="eyebrow">inventory · batches</span>
+    </div>
+    <p class="sub" data-reveal="fade">
+      每个批次是一张卡片：入库多少、引用多少、还剩多少、能不能卖。悬停卡片可快速操作。
+    </p>
+
+    <div class="wh" data-reveal="fade">
+      <button class="on">全部仓库</button>
+      <button>主仓</button>
+      <button>冷库 A 区</button>
+      <button>委外（北仓）</button>
+      <div class="sum">批次 <b>12</b> · 可用库存 <b class="num">8,420</b> 件</div>
+    </div>
+
+    <!-- 批次卡片墙 + 水位总览：四态 -->
+    <div data-state="filled">
+      <div class="st-block st-filled">
+        <!-- 库存水位总览（属于数据区，空/加载/错误时一起收起） -->
+        <section class="vessel">
+          <div class="vessel-top">
+            <h2>库存水位</h2>
+            <span class="eyebrow">stock level</span>
+            <span class="num">总入库 12,600 · 已引用 4,180 · 在途 620</span>
+          </div>
+          <div class="bar">
+            <i class="s1" data-grow style="width:52%"></i>
+            <i class="s2" data-grow style="width:24%"></i>
+            <i class="s3" data-grow style="width:12%"></i>
+          </div>
+          <div class="legend">
+            <span><em class="l1"></em>可用 8,420</span>
+            <span><em class="l2"></em>已引用 4,180</span>
+            <span><em class="l3"></em>在途 / 待执行 620</span>
+          </div>
+        </section>
+
+        <div class="wall">
+
+          <article class="batchcard" data-reveal="scale">
+            <div class="top"><span class="code">B-2026-1088</span><span class="tag">11-10 入库</span></div>
+            <h3>红富士苹果</h3>
+            <div class="spec">10kg/箱 · 规格 80# · 锁价 ¥42.50/箱</div>
+            <div class="level"><i data-grow style="width:68%"></i></div>
+            <div class="qty"><b class="num">218</b>箱 可用<em>可用率 68%</em></div>
+            <div class="mini">
+              <div><span>入库</span><b class="num">320</b></div>
+              <div><span>已引用</span><b class="num">102</b></div>
+              <div><span>保管人</span><b>赵刚</b></div>
+              <div><span>成本</span><b class="num">¥12,880</b></div>
+            </div>
+            <div class="card-actions">
+              <button class="card-action">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M4 2h8v12H4z"/><path d="M6 7h4M6 10h2"/></svg>
+                查看单据
+              </button>
+              <button class="card-action">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>
+                补货
+              </button>
+            </div>
+          </article>
+
+          <article class="batchcard" data-reveal="scale">
+            <div class="top"><span class="code">B-2026-1087</span><span class="tag">11-09 入库</span></div>
+            <h3>砂糖橘</h3>
+            <div class="spec">15kg/箱 · 规格 一级 · 锁价 ¥58.00/箱</div>
+            <div class="level"><i data-grow style="width:34%"></i></div>
+            <div class="qty"><b class="num">61</b>箱 可用<em>可用率 34%</em></div>
+            <div class="mini">
+              <div><span>入库</span><b class="num">180</b></div>
+              <div><span>已引用</span><b class="num">119</b></div>
+              <div><span>保管人</span><b>赵刚</b></div>
+              <div><span>成本</span><b class="num">¥10,440</b></div>
+            </div>
+            <div class="card-actions">
+              <button class="card-action">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M4 2h8v12H4z"/><path d="M6 7h4M6 10h2"/></svg>
+                查看单据
+              </button>
+              <button class="card-action">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>
+                补货
+              </button>
+            </div>
+          </article>
+
+          <article class="batchcard warn" data-reveal="scale">
+            <div class="top"><span class="code">B-2026-1086</span><span class="tag">11-09 入库</span></div>
+            <h3>瓦楞纸箱 5 层</h3>
+            <div class="spec">标准箱 · 锁价 ¥2.35/个</div>
+            <div class="level low"><i data-grow style="width:11%"></i></div>
+            <div class="qty"><b class="num">220</b>个 可用<em>低于安全线</em></div>
+            <div class="mini">
+              <div><span>入库</span><b class="num">2,000</b></div>
+              <div><span>已引用</span><b class="num">1,780</b></div>
+              <div><span>保管人</span><b>李强</b></div>
+              <div><span>成本</span><b class="num">¥4,700</b></div>
+            </div>
+            <div class="card-actions">
+              <button class="card-action">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M4 2h8v12H4z"/><path d="M6 7h4M6 10h2"/></svg>
+                查看单据
+              </button>
+              <button class="card-action" style="border-color:var(--accent);color:var(--accent-light)">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>
+                立即补货
+              </button>
+            </div>
+          </article>
+
+          <article class="batchcard" data-reveal="scale">
+            <div class="top"><span class="code">B-2026-1085</span><span class="tag">11-08 入库</span></div>
+            <h3>有机肥 40kg</h3>
+            <div class="spec">40kg/袋 · 锁价 ¥96.00/袋</div>
+            <div class="level"><i data-grow style="width:55%"></i></div>
+            <div class="qty"><b class="num">33</b>袋 可用<em>可用率 55%</em></div>
+            <div class="mini">
+              <div><span>入库</span><b class="num">60</b></div>
+              <div><span>已引用</span><b class="num">27</b></div>
+              <div><span>保管人</span><b>李强</b></div>
+              <div><span>成本</span><b class="num">¥5,760</b></div>
+            </div>
+            <div class="card-actions">
+              <button class="card-action">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M4 2h8v12H4z"/><path d="M6 7h4M6 10h2"/></svg>
+                查看单据
+              </button>
+              <button class="card-action">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>
+                补货
+              </button>
+            </div>
+          </article>
+
+          <article class="batchcard" data-reveal="scale">
+            <div class="top"><span class="code">B-2026-1084</span><span class="tag">11-07 入库</span></div>
+            <h3>冷冻鸡胸肉</h3>
+            <div class="spec">2kg/袋 · 冷库 A 区 · 锁价 ¥31.20/袋</div>
+            <div class="level"><i data-grow style="width:82%"></i></div>
+            <div class="qty"><b class="num">1,640</b>袋 可用<em>可用率 82%</em></div>
+            <div class="mini">
+              <div><span>入库</span><b class="num">2,000</b></div>
+              <div><span>已引用</span><b class="num">360</b></div>
+              <div><span>保管人</span><b>王芳</b></div>
+              <div><span>成本</span><b class="num">¥62,400</b></div>
+            </div>
+            <div class="card-actions">
+              <button class="card-action">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M4 2h8v12H4z"/><path d="M6 7h4M6 10h2"/></svg>
+                查看单据
+              </button>
+              <button class="card-action">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>
+                补货
+              </button>
+            </div>
+          </article>
+
+          <article class="batchcard warn" data-reveal="scale">
+            <div class="top"><span class="code">B-2026-1083</span><span class="tag">11-06 入库</span></div>
+            <h3>标签贴纸 · 定制</h3>
+            <div class="spec">5000 张/卷 · 锁价 ¥0.42/张</div>
+            <div class="level"><i data-grow style="width:46%"></i></div>
+            <div class="qty"><b class="num">2,300</b>张 可用<em>可用率 46%</em></div>
+            <div class="mini">
+              <div><span>入库</span><b class="num">5,000</b></div>
+              <div><span>已引用</span><b class="num">2,700</b></div>
+              <div><span>保管人</span><b>王芳</b></div>
+              <div><span>成本</span><b class="num">¥2,100</b></div>
+            </div>
+            <div class="card-actions">
+              <button class="card-action">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M4 2h8v12H4z"/><path d="M6 7h4M6 10h2"/></svg>
+                查看单据
+              </button>
+              <button class="card-action" style="border-color:var(--accent);color:var(--accent-light)">
+                <svg width="11" height="11" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>
+                立即补货
+              </button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <!-- 空态 -->
+      <div class="st-block st-empty">
+        <div class="st-box">
+          <div class="st-ico">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+              <path d="M2 5l6-3 6 3v6l-6 3-6-3z"/><path d="M8 2v12M2 5l6 3 6-3"/>
+            </svg>
+          </div>
+          <div class="st-title">这个仓库还没有批次</div>
+          <div class="st-desc">出清之后库位是空的。新建一张采购单入库，第一个批次就会出现在这里。</div>
+          <div class="st-actions">
+            <a class="st-btn primary" href="#">新建采购单</a>
+            <a class="st-btn" href="单据.html">看入库单</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 骨架屏 -->
+      <div class="st-block st-loading">
+        <div class="wall">
+          <div class="sk-card"><div class="sk sk-line w40"></div><div class="sk sk-line w80"></div><div class="sk sk-line w60"></div><div class="sk sk-line w80" style="height:6px"></div><div class="sk sk-line w40"></div></div>
+          <div class="sk-card"><div class="sk sk-line w40"></div><div class="sk sk-line w80"></div><div class="sk sk-line w60"></div><div class="sk sk-line w80" style="height:6px"></div><div class="sk sk-line w40"></div></div>
+          <div class="sk-card"><div class="sk sk-line w40"></div><div class="sk sk-line w80"></div><div class="sk sk-line w60"></div><div class="sk sk-line w80" style="height:6px"></div><div class="sk sk-line w40"></div></div>
+        </div>
+      </div>
+
+      <!-- 错误态 -->
+      <div class="st-block st-error">
+        <div class="st-box st-error">
+          <div class="st-ico">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+              <path d="M8 3v6M8 12v.5"/><circle cx="8" cy="8" r="6"/>
+            </svg>
+          </div>
+          <div class="st-title">库存批次加载失败</div>
+          <div class="st-desc">没有拿到批次数据。重试一次；如果还是失败，先看单据页确认最近的入库有没有成功。</div>
+          <div class="st-actions">
+            <button class="st-btn primary">重试</button>
+            <a class="st-btn" href="单据.html">去单据页</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 预警条 -->
+    <div class="alert" data-reveal>
+      <span style="font-size:14px;color:var(--accent)">⚠</span>
+      <span><b>2 个批次低于安全线</b>：瓦楞纸箱、标签贴纸。建议今天下单补货，或把在途的 <b>N-0012</b> 到货确认后释放。</span>
+      <a class="go" href="单据.html">去看看 →</a>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

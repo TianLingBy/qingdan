@@ -1,4 +1,8 @@
-import type { ProcessingOrder, ProcessingOrderDetail } from '@qingdan/contracts';
+import type {
+  ProcessingOrder,
+  ProcessingOrderCompleteResult,
+  ProcessingOrderDetail,
+} from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../app.js';
@@ -15,7 +19,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  *   - update / cancel 必须带 If-Match；缺失 428、弱 ETag / 旧版本 409；
  *   - 已完成不可改、不可取消（422）；有下游不可取消（409）；
  *   - materialBatchIds 为空 / D39 负数费用 → 422；
- *   - D52① AI 凭证开单 / 取消 → 403 AI_ACTION_FORBIDDEN；
+ *   - D52① AI 凭证开单 / 修改 / 取消 → 403 AI_ACTION_FORBIDDEN；
  *   - 写操作成功审计落 audit_log（D51），普通读不记。
  */
 
@@ -90,8 +94,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
-        materialBatchIds: [BATCH_ID],
+        materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',
         auxMaterials: '纸箱',
         fees: [FEE],
@@ -147,9 +152,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     );
     await test.database.query(
       `INSERT INTO processor
-         (id, tenant_id, company_id, processor_no, name, contact_name, status)
-       VALUES ($1, $2, $3, NULL, 'HTTP加工厂', '王五', '启用'),
-              ($4, $2, $5, NULL, 'HTTP二司加工厂', '赵六', '启用')
+         (id, tenant_id, company_id, processor_no, name, contact_name)
+       VALUES ($1, $2, $3, NULL, 'HTTP加工厂', '王五'),
+              ($4, $2, $5, NULL, 'HTTP二司加工厂', '赵六')
        ON CONFLICT (id) DO NOTHING`,
       [
         PROCESSOR_ID,
@@ -161,9 +166,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, 'HTTP材料', '{}', '件', '启用'),
-              ($4, $2, $5, NULL, 'HTTP二司材料', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, 'HTTP材料', '{}', '件'),
+              ($4, $2, $5, NULL, 'HTTP二司材料', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [
         PRODUCT_ID,
@@ -237,8 +242,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
-        materialBatchIds: [BATCH_ID],
+        materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',
         fees: [FEE],
       },
@@ -249,7 +255,10 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
 
   it('开单 → 201 + B 单号 + decimal 字符串 + 强 ETag；详情占位；审计落库', async () => {
     const response = await createOrder(nextRequestId('create-ok'), {
-      materialBatchIds: [BATCH_ID, BATCH_2_ID],
+      materialBatchIds: [
+        { batchId: BATCH_ID, qty: '100.000000' },
+        { batchId: BATCH_2_ID, qty: '0.500000' },
+      ],
       inputQty: '100.5',
       lossQty: '0.5',
       attributionDoc: 'N-0001-20261105-0001',
@@ -277,7 +286,10 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       processorName: 'HTTP加工厂',
       handlerId: DEMO_IDS.ownerEmployeeId,
       status: '进行中',
-      materialBatchIds: [BATCH_ID, BATCH_2_ID],
+      materialBatchIds: [
+        { batchId: BATCH_ID, qty: '100.000000' },
+        { batchId: BATCH_2_ID, qty: '0.500000' },
+      ],
       inputQty: '100.5',
       lossQty: '0.5',
       sellableQty: '100',
@@ -325,12 +337,62 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(reads.rows[0]?.count).toBe('0');
   });
 
+  it('完成后重新 GET 详情：回读真实产出批次与损失记录', async () => {
+    const created = await createOne(nextRequestId('detail-complete'));
+    const completed = await app.inject({
+      method: 'POST',
+      url: `/api/v1/processing-orders/${created.id}/complete`,
+      headers: writeHeaders(ownerCookie, 'req-processing-complete-detail', {
+        'if-match': '"1"',
+      }),
+      payload: { lossQty: '4' },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.headers.etag).toBe('"2"');
+    const result = completed.json() as ProcessingOrderCompleteResult;
+    expect(result.outputBatch?.qty).toBe('96');
+
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/processing-orders/${created.id}`,
+      headers: readHeaders(ownerCookie, 'req-processing-complete-detail-read'),
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.headers.etag).toBe('"2"');
+    expect(detail.json()).toMatchObject({
+      outputBatchId: result.outputBatch?.id,
+      lossRecord: {
+        lossQty: '4',
+        amount: '34',
+      },
+      cancelable: { allowed: false, reason: 'already_completed' },
+    });
+
+    const outside = await app.inject({
+      method: 'GET',
+      url: `/api/v1/processing-orders/${created.id}`,
+      headers: readHeaders(outsideCookie, 'req-processing-complete-detail-outside'),
+    });
+    expect(outside.statusCode).toBe(404);
+  });
+
   it('materialBatchIds 空 / 负数费用 → 422；跨公司加工厂 / 批次 → 422；详情 / 列表隔离', async () => {
     const noBatches = await createOrder(nextRequestId('no-batches'), {
       materialBatchIds: [],
     });
     expect(noBatches.statusCode).toBe(422);
     expect(noBatches.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    // 同一批次两行 → 拒绝并点明材料行号（完成时会按行重复扣减）。
+    const duplicateBatch = await createOrder(nextRequestId('duplicate-batch'), {
+      materialBatchIds: [
+        { batchId: BATCH_ID, qty: '50.000000' },
+        { batchId: BATCH_ID, qty: '50.000000' },
+      ],
+    });
+    expect(duplicateBatch.statusCode).toBe(422);
+    expect(duplicateBatch.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(JSON.stringify(duplicateBatch.json())).toContain('材料第 2 行');
 
     const badFee = await createOrder(nextRequestId('bad-fee'), {
       fees: [
@@ -353,7 +415,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(crossProcessor.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
 
     const crossBatch = await createOrder(nextRequestId('cross-batch'), {
-      materialBatchIds: ['01900000-0000-7000-8000-000000002424'],
+      materialBatchIds: [
+        { batchId: '01900000-0000-7000-8000-000000002424', qty: '100.000000' },
+      ],
     });
     expect(crossBatch.statusCode).toBe(422);
     expect(crossBatch.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
@@ -388,7 +452,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       nextCursor: string | null;
     };
     expect(page.items.map((item) => item.id)).toEqual([created.id]);
-    expect(page.items[0]?.materialBatchIds).toEqual([BATCH_ID]);
+    expect(page.items[0]?.materialBatchIds).toEqual([
+      { batchId: BATCH_ID, qty: '100.000000' },
+    ]);
     expect(page.nextCursor).toBeNull();
   });
 
@@ -440,6 +506,25 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       details: { field: 'fees' },
     });
 
+    // 改单同样不允许同一批次出现两行。
+    const duplicateBatch = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/processing-orders/${created.id}`,
+      headers: writeHeaders(ownerCookie, 'req-processing-update-duplicate-batch', {
+        'if-match': '"1"',
+      }),
+      payload: {
+        materialBatchIds: [
+          { batchId: BATCH_2_ID, qty: '10.000000' },
+          { batchId: BATCH_2_ID, qty: '10.000000' },
+        ],
+        inputQty: '20',
+      },
+    });
+    expect(duplicateBatch.statusCode).toBe(422);
+    expect(duplicateBatch.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(JSON.stringify(duplicateBatch.json())).toContain('材料第 2 行');
+
     const unchanged = await app.inject({
       method: 'GET',
       url: `/api/v1/processing-orders/${created.id}`,
@@ -455,7 +540,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
         'if-match': '"1"',
       }),
       payload: {
-        materialBatchIds: [BATCH_2_ID],
+        materialBatchIds: [{ batchId: BATCH_2_ID, qty: '20.000000' }],
         inputQty: '20',
         auxMaterials: null,
         fees: [FEE],
@@ -465,7 +550,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(ok.headers.etag).toBe('"2"');
     expect(ok.json()).toMatchObject({
       version: 2,
-      materialBatchIds: [BATCH_2_ID],
+      materialBatchIds: [{ batchId: BATCH_2_ID, qty: '20.000000' }],
       inputQty: '20',
       lossQty: '2',
       sellableQty: '18',
@@ -581,7 +666,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(completedCancel.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 
-  it('D52①：AI 凭证开单 / 取消 → 403 AI_ACTION_FORBIDDEN', async () => {
+  it('D52①：AI 凭证开单 / 修改 / 取消 → 403 AI_ACTION_FORBIDDEN', async () => {
     const tokenResponse = await app.inject({
       method: 'POST',
       url: '/api/v1/api-tokens',
@@ -589,7 +674,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         name: 'HTTP Processing AI Token',
         employeeId: DEMO_IDS.ownerEmployeeId,
-        scope: [{ domain: 'processing', actions: ['read', 'create', 'delete'] }],
+        scope: [{ domain: 'processing', actions: ['read', 'create', 'update', 'delete'] }],
       },
     });
     expect(tokenResponse.statusCode).toBe(201);
@@ -606,8 +691,9 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
-        materialBatchIds: [BATCH_ID],
+        materialBatchIds: [{ batchId: BATCH_ID, qty: '10.000000' }],
         inputQty: '10',
         fees: [FEE],
       },
@@ -618,6 +704,22 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     });
 
     const target = await createOne(nextRequestId('ai-cancel'));
+    const updateForbidden = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/processing-orders/${target.id}`,
+      headers: {
+        authorization: `Bearer ${secret}`,
+        'x-reason': 'HTTP 测试 AI 修改加工单',
+        'if-match': '"1"',
+        'x-request-id': 'req-processing-ai-update',
+      },
+      payload: { auxMaterials: 'AI 修改' },
+    });
+    expect(updateForbidden.statusCode).toBe(403);
+    expect(updateForbidden.json()).toMatchObject({
+      code: 'AI_ACTION_FORBIDDEN',
+    });
+
     const cancelForbidden = await app.inject({
       method: 'POST',
       url: `/api/v1/processing-orders/${target.id}/cancel`,
@@ -633,10 +735,18 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       code: 'AI_ACTION_FORBIDDEN',
     });
 
-    const row = await test.database.query<{ status: string }>(
-      'SELECT status FROM processing_order WHERE id = $1',
+    const row = await test.database.query<{
+      status: string;
+      version: number;
+      aux_materials: string | null;
+    }>(
+      'SELECT status, version, aux_materials FROM processing_order WHERE id = $1',
       [target.id],
     );
-    expect(row.rows[0]?.status).toBe('进行中');
+    expect(row.rows[0]).toMatchObject({
+      status: '进行中',
+      version: 1,
+      aux_materials: '纸箱',
+    });
   });
 });

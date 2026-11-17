@@ -2,6 +2,12 @@ import { AppError, ROUTES, etagOf, routesOfModule, type RouteDef } from '@qingda
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
 import { getBatch, listBatches } from './usecases/batches.js';
+import {
+  approveCostAdjustment,
+  createCostAdjustment,
+  listCostAdjustments,
+  rejectCostAdjustment,
+} from './usecases/cost-adjustments.js';
 import { listFlows } from './usecases/flows.js';
 import {
   approveStocktake,
@@ -9,10 +15,12 @@ import {
   createStocktakeIncrease,
   getStocktake,
   listStocktakes,
+  rejectStocktake,
 } from './usecases/stocktakes.js';
 
 /**
- * inventory 端点：首批只读 3 条（Issue #49）+ 盘点调整 I 5 条（D71：盘盈/盘亏拆两条）。
+ * inventory 端点：首批只读 3 条（Issue #49）+ 盘点调整 I 6 条（D71：盘盈/盘亏拆两条，
+ * 另含审批 / 驳回）。
  *
  * 全部端点由用例完成权限、公司隔离与查询；本层只做 operationId 分派和 ETag。
  * **不要在这里直接写 SQL 或改批次数字**——库存写入只能经单据用例调用 inventory
@@ -83,6 +91,50 @@ export function registerInventoryRoutes(app: FastifyInstance): void {
       });
       reply.header('ETag', etagOf(detail.version));
       return detail;
+    },
+    'stocktake.reject': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const stocktake = await rejectStocktake({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(stocktake.version));
+      return stocktake;
+    },
+    'inventory.cost.adjustment.create': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const adjustment = await createCostAdjustment({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(adjustment.version));
+      return adjustment;
+    },
+    'inventory.cost.adjustment.history.read': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listCostAdjustments({ database: instance.database, request });
+    },
+    'inventory.cost.adjustment.approve': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const adjustment = await approveCostAdjustment({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(adjustment.version));
+      return adjustment;
+    },
+    'inventory.cost.adjustment.reject': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      const adjustment = await rejectCostAdjustment({
+        database: instance.database,
+        request,
+        reply,
+      });
+      reply.header('ETag', etagOf(adjustment.version));
+      return adjustment;
     },
   };
 

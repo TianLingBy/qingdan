@@ -16,6 +16,7 @@ import {
   confirmSettlementOrder,
   getSettlementOrder,
   listSettlementOrders,
+  unsettleSettlementOrder,
 } from './settlement-orders.js';
 
 /**
@@ -37,6 +38,7 @@ interface FakeRequestInput {
   readonly query?: Record<string, unknown>;
   readonly headers?: Record<string, string>;
   readonly auditReason?: string | null;
+  readonly body?: unknown;
 }
 
 function makeRequest(input: FakeRequestInput): FastifyRequest {
@@ -45,6 +47,7 @@ function makeRequest(input: FakeRequestInput): FastifyRequest {
     params: input.params ?? {},
     query: input.query ?? {},
     headers: input.headers ?? {},
+    body: input.body,
     ip: '127.0.0.1',
     auditSource: 'web',
     auditReason: input.auditReason ?? null,
@@ -146,6 +149,9 @@ describe('settlement C 结算单用例（PGlite + seed 演示租户）', () => {
     };
   }
 
+  /** 撤销结算与确认同构（D88）：body 是必填原因与 confirm 护栏。 */
+  const unsettleCtx = confirmCtx;
+
   async function insertDraft(input: DraftInput): Promise<void> {
     const status = input.status ?? '待确认';
     const relatedLossAmount = input.relatedLossAmount ?? '5';
@@ -156,10 +162,11 @@ describe('settlement C 结算单用例（PGlite + seed 演示租户）', () => {
           status, total_sale_amount, total_cost_amount, gross_profit,
           gross_margin_rate, related_loss_amount,
           related_loss_amount_snapshot, net_profit,
-          commission_rate_snapshot, commission_amount, version)
+          commission_rate_snapshot, commission_amount, version, settled_at)
        VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6::uuid, $7,
                '100', '70', '30', '0.3', $8::amount, $9::amount, $10::amount,
-               '0.05', '1.5', $11)`,
+               '0.05', '1.5', $11,
+               CASE WHEN $7 = '已结算' THEN now() ELSE NULL END)`,
       [
         input.id,
         DEMO_IDS.tenantId,
@@ -405,31 +412,260 @@ describe('settlement C 结算单用例（PGlite + seed 演示租户）', () => {
     ]);
   });
 
-  it('确认响应同样按看价脱敏：有 approve 但无 view_price 时金额为 null（D78）', async () => {
+  it('确认：有 approve + view_price 可正常确认（P0-13）', async () => {
     const id = '01900000-0000-7000-8000-000000008901';
     await insertDraft({
       id,
       orderNo: 'C-0001-20261107-0901',
       sourceDocId: '01900000-0000-7000-8000-000000008902',
     });
-    const noViewPrice: ScopeMatrix = [
-      { domain: 'settlement', actions: ['read', 'approve'] },
-    ];
 
     const confirmed = await confirmSettlementOrder(
       confirmCtx(
         id,
-        { scope: noViewPrice },
+        {},
         { headers: { 'if-match': '"1"' }, auditReason: '财务复核确认' },
       ).ctx,
     );
 
     expect(confirmed.status).toBe('已结算');
-    expect(confirmed.totalSaleAmount).toBeNull();
-    expect(confirmed.grossProfit).toBeNull();
-    expect(confirmed.netProfit).toBeNull();
-    expect(confirmed.commissionAmount).toBeNull();
-    // 比例不是金额，不脱敏；本单无归属人 → 快照 0（D77 ③）。
-    expect(confirmed.commissionRateSnapshot).toBe('0');
+    expect(confirmed.version).toBe(2);
+    expect(confirmed.totalSaleAmount).toBe('100');
+    expect(confirmed.netProfit).toBe('25');
+  });
+
+  it('确认：缺少 settlement.view_price 时 403，且不落状态与成功审计（P0-13）', async () => {
+    const id = '01900000-0000-7000-8000-000000008903';
+    await insertDraft({
+      id,
+      orderNo: 'C-0001-20261107-0903',
+      sourceDocId: '01900000-0000-7000-8000-000000008904',
+    });
+    const approveOnly: ScopeMatrix = [
+      { domain: 'settlement', actions: ['read', 'approve'] },
+    ];
+
+    await expect(
+      confirmSettlementOrder(
+        confirmCtx(
+          id,
+          { scope: approveOnly },
+          { headers: { 'if-match': '"1"' }, auditReason: '财务复核确认' },
+        ).ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      message: '缺少 settlement.view_price 权限',
+    });
+
+    const state = await test.database.query<{ status: string; version: number }>(
+      `SELECT status, version FROM settlement_order WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(state.rows[0]).toEqual({ status: '待确认', version: 1 });
+
+    const audits = await test.database.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM audit_log
+        WHERE object_id = $1
+          AND action = 'settlement.order.confirm'`,
+      [id],
+    );
+    expect(audits.rows[0]?.count).toBe('0');
+  });
+
+  it('撤销：If-Match / approve / view_price / AI / reason 校验；清空快照并留审计；可再次确认', async () => {
+    const id = '01900000-0000-7000-8000-000000008a01';
+    await insertDraft({
+      id,
+      orderNo: 'C-0001-20261108-0a01',
+      sourceDocId: '01900000-0000-7000-8000-000000008a02',
+      status: '已结算',
+    });
+    await test.database.query(
+      `UPDATE settlement_order SET commission_owner_id = $1::uuid
+        WHERE id = $2::uuid`,
+      [DEMO_IDS.ownerEmployeeId, id],
+    );
+    const body = { confirm: true, reason: '财务复核发现错单' };
+    const approveOnly: ScopeMatrix = [
+      { domain: 'settlement', actions: ['read', 'approve'] },
+    ];
+
+    await expectAppError(
+      unsettleSettlementOrder(unsettleCtx(id, {}, { body }).ctx),
+      'PRECONDITION_REQUIRED',
+    );
+    await expect(
+      unsettleSettlementOrder(
+        unsettleCtx(id, { scope: READ_ONLY_SCOPE }, { body, headers: { 'if-match': '"1"' } })
+          .ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', message: '缺少 settlement.approve 权限' });
+    await expect(
+      unsettleSettlementOrder(
+        unsettleCtx(id, { scope: approveOnly }, { body, headers: { 'if-match': '"1"' } }).ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', message: '缺少 settlement.view_price 权限' });
+    await expectAppError(
+      unsettleSettlementOrder(
+        unsettleCtx(id, {}, { body, headers: { 'if-match': '"9"' } }).ctx,
+      ),
+      'VERSION_CONFLICT',
+    );
+    await expectAppError(
+      unsettleSettlementOrder(
+        unsettleCtx(
+          id,
+          aiPrincipal(),
+          { body, headers: { 'if-match': '"1"' }, auditReason: null },
+        ).ctx,
+      ),
+      'VALIDATION_FAILED',
+    );
+    await expectAppError(
+      unsettleSettlementOrder(
+        unsettleCtx(
+          id,
+          aiPrincipal(),
+          {
+            body,
+            headers: { 'if-match': '"1"' },
+            auditReason: 'AI 尝试撤销结算',
+          },
+        ).ctx,
+      ),
+      'AI_ACTION_FORBIDDEN',
+    );
+    await expectAppError(
+      unsettleSettlementOrder(
+        unsettleCtx(
+          id,
+          {},
+          { body: { confirm: true }, headers: { 'if-match': '"1"' } },
+        ).ctx,
+      ),
+      'VALIDATION_FAILED',
+    );
+
+    const unsettleCall = unsettleCtx(
+      id,
+      {},
+      { body, headers: { 'if-match': '"1"' } },
+    );
+    const unsettled = await unsettleSettlementOrder(unsettleCall.ctx);
+    expect(unsettleCall.state.headers.ETag).toBe('"2"');
+    expect(unsettled).toMatchObject({
+      id,
+      status: '待确认',
+      version: 2,
+      relatedLossAmount: null,
+      netProfit: null,
+      commissionRateSnapshot: null,
+      commissionAmount: null,
+    });
+
+    const row = await test.database.query<{
+      status: string;
+      settled_at: Date | null;
+      related_loss_amount: string | null;
+      net_profit: string | null;
+    }>(
+      `SELECT status, settled_at, related_loss_amount, net_profit
+         FROM settlement_order WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(row.rows[0]?.status).toBe('待确认');
+    expect(row.rows[0]?.settled_at).toBeNull();
+    expect(row.rows[0]?.related_loss_amount).toBeNull();
+    expect(row.rows[0]?.net_profit).toBeNull();
+
+    const audits = await test.database.query<{
+      action: string;
+      changes: Record<string, unknown>;
+    }>(
+      `SELECT action, changes
+         FROM audit_log
+        WHERE object_id = $1
+          AND action = 'settlement.order.unsettle'
+          AND result = 'success'`,
+      [id],
+    );
+    expect(audits.rows).toHaveLength(1);
+    expect(audits.rows[0]?.changes).toMatchObject({
+      beforeStatus: '已结算',
+      afterStatus: '待确认',
+      version: 2,
+      reason: '财务复核发现错单',
+      // 快照原值必须留在审计里：撤销不等于没发生过（D88）。
+      relatedLossAmount: '5',
+      netProfit: '25',
+      commissionRateSnapshot: '0.05',
+      commissionAmount: '1.5',
+    });
+
+    // 不锁死：撤销后可再次确认，且提成按**当时**配置重新快照（D77 ③ / D88）。
+    await test.database.query(
+      `INSERT INTO commission_rate
+         (id, tenant_id, company_id, employee_id, rate, effective_from, created_by)
+       VALUES ('01900000-0000-7000-8000-000000008a03', $1, $2::uuid, $3::uuid,
+               '0.1', CURRENT_DATE, $3::uuid)`,
+      [DEMO_IDS.tenantId, DEMO_IDS.companyId, DEMO_IDS.ownerEmployeeId],
+    );
+    const reconfirmed = await confirmSettlementOrder(
+      confirmCtx(
+        id,
+        {},
+        { headers: { 'if-match': '"2"' }, auditReason: '重新确认' },
+      ).ctx,
+    );
+    expect(reconfirmed).toMatchObject({
+      status: '已结算',
+      version: 3,
+      relatedLossAmount: '0',
+      netProfit: '30',
+      commissionRateSnapshot: '0.1',
+      commissionAmount: '3',
+    });
+  });
+
+  it('撤销：对「待确认」单返回 422，不改状态、不落成功审计', async () => {
+    const id = '01900000-0000-7000-8000-000000008b01';
+    await insertDraft({
+      id,
+      orderNo: 'C-0001-20261108-0b01',
+      sourceDocId: '01900000-0000-7000-8000-000000008b02',
+    });
+
+    await expect(
+      unsettleSettlementOrder(
+        unsettleCtx(
+          id,
+          {},
+          {
+            body: { confirm: true, reason: '误撤销' },
+            headers: { 'if-match': '"1"' },
+          },
+        ).ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      message: '结算单尚未结算，无需撤销',
+    });
+
+    const state = await test.database.query<{ status: string; version: number }>(
+      `SELECT status, version FROM settlement_order WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(state.rows[0]).toEqual({ status: '待确认', version: 1 });
+
+    const audits = await test.database.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM audit_log
+        WHERE object_id = $1
+          AND action = 'settlement.order.unsettle'`,
+      [id],
+    );
+    expect(audits.rows[0]?.count).toBe('0');
   });
 });

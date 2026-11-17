@@ -1,14 +1,18 @@
+import { registerServices, resetServices } from '../../../platform/services/registry.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 import {
   AppError,
   type ScopeMatrix,
   type SupplierReturn,
 } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
 import { createTestDatabase, type TestDatabase } from '../../../testing/pglite.js';
 import {
+  cancelSupplierReturn,
+  completeSupplierReturn,
   createSupplierReturn,
   getSupplierReturn,
   listSupplierReturns,
@@ -35,7 +39,7 @@ const PURCHASE_ORDER_ID = '01900000-0000-7000-8000-000000000531';
 const SECOND_PURCHASE_ORDER_ID = '01900000-0000-7000-8000-000000000532';
 
 const FULL_SCOPE: ScopeMatrix = [
-  { domain: 'supplier_return', actions: ['read', 'create'] },
+  { domain: 'supplier_return', actions: ['read', 'create', 'approve', 'delete'] },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [
   { domain: 'supplier_return', actions: ['read'] },
@@ -179,6 +183,7 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
   beforeAll(async () => {
     test = await createTestDatabase();
     await seed(test.database);
+    registerServices(inventoryServices);
 
     await test.database.query(
       `INSERT INTO company (id, tenant_id, name, code, level, status)
@@ -192,8 +197,8 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
     ] as const) {
       await test.database.query(
         `INSERT INTO supplier
-           (id, tenant_id, company_id, supplier_no, name, supplied_materials, status)
-         VALUES ($1, $2, $3, NULL, $4, '{}', '启用')
+           (id, tenant_id, company_id, supplier_no, name, supplied_materials)
+         VALUES ($1, $2, $3, NULL, $4, '{}')
          ON CONFLICT (id) DO NOTHING`,
         [id, DEMO_IDS.tenantId, companyId, name],
       );
@@ -204,8 +209,8 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
     ] as const) {
       await test.database.query(
         `INSERT INTO product
-           (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-         VALUES ($1, $2, $3, NULL, $4, '{}', '件', '启用')
+           (id, tenant_id, company_id, product_no, name, aliases, unit)
+         VALUES ($1, $2, $3, NULL, $4, '{}', '件')
          ON CONFLICT (id) DO NOTHING`,
         [id, DEMO_IDS.tenantId, DEMO_IDS.companyId, name],
       );
@@ -243,7 +248,7 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
         `INSERT INTO inventory_batch
            (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost,
             inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty, custodian_id)
-         VALUES ($1, $2, $3, $4, $5, '10', '20', '0', '0', '0', $6)`,
+         VALUES ($1, $2, $3, $4, $5, '10', '10000', '0', '0', '0', $6)`,
         [
           id,
           DEMO_IDS.tenantId,
@@ -257,7 +262,18 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
   });
 
   afterAll(async () => {
+    resetServices();
     await test.database.close();
+  });
+
+  beforeEach(async () => {
+    await test.database.query(
+      `UPDATE inventory_batch
+          SET inbound_qty = 10000,
+              pending_execution_qty = 0,
+              referenced_qty = 0,
+              in_transit_qty = 0`,
+    );
   });
 
   it('登记退货：201、S 单号、金额由 SQL 计算 / 聚合、审计落库', async () => {
@@ -292,7 +308,7 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
       action: string;
       object_type: string;
       result: string;
-      changes: { refundAmount?: string };
+      changes: { refundAmount?: string; pendingReservations?: unknown };
     }>(
       `SELECT action, object_type, result, changes
          FROM audit_log
@@ -306,6 +322,10 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
       result: 'success',
     });
     expect(audit.rows[0]?.changes.refundAmount).toBe('29.5');
+    expect(audit.rows[0]?.changes.pendingReservations).toEqual([
+      { batchId: BATCH_ID, qty: '2', pendingAfter: '2', availableAfter: '9998' },
+      { batchId: BATCH_2_ID, qty: '3', pendingAfter: '3', availableAfter: '9997' },
+    ]);
   });
 
   it('列表 / 详情：按原 A 单、状态、单号过滤；跨公司不可见；普通读不记审计', async () => {
@@ -421,4 +441,182 @@ describe('purchase S 供应商退货用例（PGlite + seed 演示租户）', () 
     );
     expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
   });
+  async function finish(id: string, version = 1) {
+    const request = makeRequest({ principal: principal(), params: { id } });
+    request.headers['if-match'] = `"${version}"`;
+    return completeSupplierReturn({
+      database: test.database, request,
+      reply: { header() { return this; } } as unknown as FastifyReply,
+    });
+  }
+
+  async function cancel(id: string, version = 1) {
+    const request = makeRequest({ principal: principal(), params: { id } });
+    request.headers['if-match'] = `"${version}"`;
+    return cancelSupplierReturn({
+      database: test.database,
+      request,
+      reply: { header() { return this; } } as unknown as FastifyReply,
+    });
+  }
+
+  async function stock() {
+    return (await test.database.query(
+      `SELECT id, inbound_qty::text, locked_unit_cost::text FROM inventory_batch ORDER BY id`,
+    )).rows;
+  }
+
+  it('完成：库存与流水同事务、成本不变、完成审计、拒绝重复完成', async () => {
+    const order = await createOne();
+    const before = await stock();
+    const completed = await finish(order.id);
+    expect(completed).toMatchObject({ status: '已完成', version: 2 });
+    const after = await stock();
+    const oldBatch = before.find(row => row.id === BATCH_ID)!;
+    const newBatch = after.find(row => row.id === BATCH_ID)!;
+    expect(Number(newBatch.inbound_qty) - Number(oldBatch.inbound_qty)).toBe(-2);
+    expect(newBatch.locked_unit_cost).toBe(oldBatch.locked_unit_cost);
+    const flows = await test.database.query(
+      `SELECT delta::text, source_doc_type FROM inventory_flow WHERE source_doc_id = $1`, [order.id],
+    );
+    expect(flows.rows).toHaveLength(2);
+    expect(flows.rows.map(row => Number(row.delta))).toContain(-2);
+    expect(flows.rows.every(row => row.source_doc_type === 'S')).toBe(true);
+    await expectAppError(finish(order.id), 'VERSION_CONFLICT');
+    await expectAppError(finish(order.id, 2), 'VALIDATION_FAILED');
+    expect(await stock()).toEqual(after);
+    const audit = await test.database.query<{ action: string; changes: Record<string, unknown> }>(
+      `SELECT action, changes FROM audit_log WHERE object_id = $1 AND action = 'supplier_return.complete'`, [order.id],
+    );
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0]?.changes).toMatchObject({
+      pendingReleases: [
+        { batchId: BATCH_ID, qty: '2', pendingAfter: '0' },
+        { batchId: BATCH_2_ID, qty: '3', pendingAfter: '0' },
+      ],
+    });
+    const finishedBatches = await test.database.query<{
+      id: string;
+      pending_execution_qty: string;
+      available_qty: string;
+    }>(
+      `SELECT id::text AS id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty,
+              trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(finishedBatches.rows).toEqual([
+      { id: BATCH_ID, pending_execution_qty: '0', available_qty: '9998' },
+      { id: BATCH_2_ID, pending_execution_qty: '0', available_qty: '9997' },
+    ]);
+  });
+
+  it('建单即占待执行量，取消释放且只写一条取消审计', async () => {
+    const order = await createOne();
+    const pending = await test.database.query<{
+      batch_id: string;
+      pending_execution_qty: string;
+      available_qty: string;
+    }>(
+      `SELECT id AS batch_id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty,
+              trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(pending.rows).toEqual([
+      { batch_id: BATCH_ID, pending_execution_qty: '2', available_qty: '9998' },
+      { batch_id: BATCH_2_ID, pending_execution_qty: '3', available_qty: '9997' },
+    ]);
+
+    const cancelled = await cancel(order.id);
+    expect(cancelled).toMatchObject({ status: '已取消', version: 2 });
+    const released = await test.database.query<{ pending_execution_qty: string }>(
+      `SELECT trim_scale(pending_execution_qty) AS pending_execution_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(released.rows.map((row) => row.pending_execution_qty)).toEqual(['0', '0']);
+    const audit = await test.database.query<{ action: string; changes: Record<string, unknown> }>(
+      `SELECT action, changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'supplier_return.cancel'`,
+      [order.id],
+    );
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0]?.changes).toMatchObject({
+      pendingReleases: [
+        { batchId: BATCH_ID, qty: '2', pendingAfter: '0' },
+        { batchId: BATCH_2_ID, qty: '3', pendingAfter: '0' },
+      ],
+    });
+  });
+
+  it('第二行待执行占用不足：第一行释放、流水及单据状态全部回滚', async () => {
+    const order = await createOne({ lines: [CREATE_BODY.lines[0], { ...CREATE_BODY.lines[1], qty: '9999' }] });
+    const before = await stock();
+    const pendingBefore = await test.database.query<{
+      id: string;
+      pending_execution_qty: string;
+    }>(
+      `SELECT id::text AS id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(pendingBefore.rows.map((row) => row.pending_execution_qty)).toEqual(['2', '9999']);
+
+    // 第二行占用记录被人为压少 1；第一行已释放后第二行失败，必须整单回滚。
+    await test.database.query(
+      `UPDATE inventory_batch SET pending_execution_qty = 9998 WHERE id = $1::uuid`,
+      [BATCH_2_ID],
+    );
+    await expectAppError(finish(order.id), 'VERSION_CONFLICT');
+    expect(await stock()).toEqual(before);
+    const pendingAfter = await test.database.query<{
+      id: string;
+      pending_execution_qty: string;
+    }>(
+      `SELECT id::text AS id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(pendingAfter.rows).toEqual([
+      { id: BATCH_ID, pending_execution_qty: '2' },
+      { id: BATCH_2_ID, pending_execution_qty: '9998' },
+    ]);
+    expect(await getSupplierReturn(readCtx({}, { params: { id: order.id } }))).toMatchObject({ status: '进行中', version: 1 });
+    expect((await test.database.query(`SELECT id FROM inventory_flow WHERE source_doc_id = $1`, [order.id])).rows).toEqual([]);
+  });
+
+  it.each([
+    [undefined, 'PRECONDITION_REQUIRED'],
+    ['', 'PRECONDITION_REQUIRED'],
+    ['1', 'VERSION_CONFLICT'],
+    ['"1""', 'VERSION_CONFLICT'],
+    ['W/"1"', 'VERSION_CONFLICT'],
+  ])('拒绝非法 If-Match %s 且无库存副作用', async (header, code) => {
+    const order = await createOne();
+    const before = await stock();
+    const request = makeRequest({ principal: principal(), params: { id: order.id } });
+    request.headers['if-match'] = header;
+    await expectAppError(completeSupplierReturn({
+      database: test.database, request,
+      reply: { header() { return this; } } as unknown as FastifyReply,
+    }), code);
+    expect(await stock()).toEqual(before);
+  });
+
 });

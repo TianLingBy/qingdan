@@ -1,3 +1,5 @@
+import { registerServices, resetServices } from '../../../platform/services/registry.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 import {
   AppError,
   type CustomerReturn,
@@ -7,12 +9,14 @@ import {
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Principal } from '../../../platform/auth/principal.js';
+import { computeAuthz } from '../../../platform/authz/service.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
 import {
   createTestDatabase,
   type TestDatabase,
 } from '../../../testing/pglite.js';
 import {
+  completeCustomerReturn,
   createCustomerReturn,
   getCustomerReturn,
   listCustomerReturns,
@@ -23,12 +27,17 @@ const CUSTOMER_ID = '01900000-0000-7000-8000-000000006101';
 const PRODUCT_ID = '01900000-0000-7000-8000-000000006111';
 const BATCH_ID = '01900000-0000-7000-8000-000000006121';
 const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000006131';
+/** 自定义岗位（preset_key IS NULL）员工：权限只来自岗位授权。 */
+const CUSTOM_POSITION_ID = '01900000-0000-7000-8000-000000006141';
+const CUSTOM_EMPLOYEE_ID = '01900000-0000-7000-8000-000000006151';
+/** 分到「老板」预设岗位、但个人覆盖撤销 customer_return.create 的员工。 */
+const OWNER_POSITION_EMPLOYEE_ID = '01900000-0000-7000-8000-000000006152';
 
 const SALES_SCOPE: ScopeMatrix = [
   { domain: 'sales', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
 ];
 const RETURN_WRITE_SCOPE: ScopeMatrix = [
-  { domain: 'customer_return', actions: ['read', 'create'] },
+  { domain: 'customer_return', actions: ['read', 'create', 'approve'] },
 ];
 const RETURN_READ_SCOPE: ScopeMatrix = [
   { domain: 'customer_return', actions: ['read'] },
@@ -195,6 +204,7 @@ describe('sales R 客户退货用例（PGlite + seed 演示租户）', () => {
   beforeAll(async () => {
     test = await createTestDatabase();
     await seed(test.database);
+    registerServices(inventoryServices);
     await test.database.query(
       `INSERT INTO company (id, tenant_id, name, code, level, status)
        VALUES ($1, $2, '退货二司', '0002', 1, '启用')
@@ -203,15 +213,15 @@ describe('sales R 客户退货用例（PGlite + seed 演示租户）', () => {
     );
     await test.database.query(
       `INSERT INTO customer
-         (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, NULL, '退货测试客户', '启用')
+         (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, NULL, '退货测试客户')
        ON CONFLICT (id) DO NOTHING`,
       [CUSTOMER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '退货测试商品', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '退货测试商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
@@ -229,9 +239,78 @@ describe('sales R 客户退货用例（PGlite + seed 演示租户）', () => {
         DEMO_IDS.ownerEmployeeId,
       ],
     );
+    // 自定义岗位（preset_key IS NULL）+ 岗位授予 customer_return.read/create。
+    // 旧实现按 preset_key 白名单放行，这个岗位必被 403；改后只认权限点。
+    await test.database.query(
+      `INSERT INTO position (id, tenant_id, name, kind, is_system, scope, status, preset_key)
+       VALUES ($1, $2, '退货专员', '自定义', false, '公司级', '启用', NULL)
+       ON CONFLICT (id) DO NOTHING`,
+      [CUSTOM_POSITION_ID, DEMO_IDS.tenantId],
+    );
+    await test.database.query(
+      `INSERT INTO position_permission (tenant_id, position_id, domain, action, granted)
+       VALUES ($1, $2, 'customer_return', 'read', true),
+              ($1, $2, 'customer_return', 'create', true)
+       ON CONFLICT (position_id, domain, action) DO UPDATE SET granted = true`,
+      [DEMO_IDS.tenantId, CUSTOM_POSITION_ID],
+    );
+    await test.database.query(
+      `INSERT INTO employee (id, tenant_id, employee_no, phone, name, status, is_owner)
+       VALUES ($1, $2, '000098', '10000000098', '退货专员', '在职', false)
+       ON CONFLICT (id) DO NOTHING`,
+      [CUSTOM_EMPLOYEE_ID, DEMO_IDS.tenantId],
+    );
+    await test.database.query(
+      `INSERT INTO employee_company_position (tenant_id, employee_id, company_id, position_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (employee_id, company_id, position_id) DO NOTHING`,
+      [
+        DEMO_IDS.tenantId,
+        CUSTOM_EMPLOYEE_ID,
+        DEMO_IDS.companyId,
+        CUSTOM_POSITION_ID,
+      ],
+    );
+
+    // 老板预设岗位 + 个人覆盖撤销 customer_return.create：岗位名不再能绕过权限点。
+    const ownerPosition = await test.database.query<{ id: string }>(
+      `SELECT id FROM position WHERE tenant_id = $1 AND preset_key = 'owner'`,
+      [DEMO_IDS.tenantId],
+    );
+    const ownerPositionId = ownerPosition.rows[0]?.id;
+    if (!ownerPositionId) throw new Error('seed 缺少老板预设岗位');
+    await test.database.query(
+      `INSERT INTO employee (id, tenant_id, employee_no, phone, name, status, is_owner)
+       VALUES ($1, $2, '000099', '10000000099', '老板岗员工', '在职', false)
+       ON CONFLICT (id) DO NOTHING`,
+      [OWNER_POSITION_EMPLOYEE_ID, DEMO_IDS.tenantId],
+    );
+    await test.database.query(
+      `INSERT INTO employee_company_position (tenant_id, employee_id, company_id, position_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (employee_id, company_id, position_id) DO NOTHING`,
+      [
+        DEMO_IDS.tenantId,
+        OWNER_POSITION_EMPLOYEE_ID,
+        DEMO_IDS.companyId,
+        ownerPositionId,
+      ],
+    );
+    await test.database.query(
+      `INSERT INTO employee_permission_override
+         (tenant_id, employee_id, domain, action, granted, operator_id)
+       VALUES ($1, $2, 'customer_return', 'create', false, $3)
+       ON CONFLICT (employee_id, domain, action) DO UPDATE SET granted = false`,
+      [
+        DEMO_IDS.tenantId,
+        OWNER_POSITION_EMPLOYEE_ID,
+        DEMO_IDS.ownerEmployeeId,
+      ],
+    );
   });
 
   afterAll(async () => {
+    resetServices();
     await test?.database.close();
   });
 
@@ -319,7 +398,80 @@ describe('sales R 客户退货用例（PGlite + seed 演示租户）', () => {
     expect(customerReturn.lines).toEqual([]);
   });
 
-  it('D47 岗位、权限、公司隔离、批次归属、AI 与只读角色均拒绝', async () => {
+  it('自定义岗位授予 customer_return.create → 能建单（不再按 preset_key 放行）', async () => {
+    const authz = await computeAuthz(test.database, {
+      employeeId: CUSTOM_EMPLOYEE_ID,
+      tenantId: DEMO_IDS.tenantId,
+    });
+    if (!authz) throw new Error('自定义岗位员工权限解析失败');
+    const order = await createOrder();
+    const { customerReturn, statusCode } = await createReturn(
+      order.id,
+      {},
+      {
+        actorId: CUSTOM_EMPLOYEE_ID,
+        employeeId: CUSTOM_EMPLOYEE_ID,
+        credentialId: 'custom-position-return-session-test',
+        companyIds: authz.companyIds,
+        scope: authz.scope,
+      },
+    );
+    expect(statusCode).toBe(201);
+    expect(customerReturn).toMatchObject({
+      companyId: DEMO_IDS.companyId,
+      originalSalesOrderId: order.id,
+      status: '进行中',
+    });
+  });
+
+  it('老板预设岗位但撤销 customer_return.create → 403 且理由为缺权限点', async () => {
+    const authz = await computeAuthz(test.database, {
+      employeeId: OWNER_POSITION_EMPLOYEE_ID,
+      tenantId: DEMO_IDS.tenantId,
+    });
+    if (!authz) throw new Error('老板岗员工权限解析失败');
+    const order = await createOrder();
+    const payload = {
+      companyId: DEMO_IDS.companyId,
+      originalSalesOrderId: order.id,
+      returnType: '退货退款',
+      refundMode: '原路退款',
+      lines: [
+        {
+          productId: PRODUCT_ID,
+          batchIds: [BATCH_ID],
+          qty: '1',
+          unitPrice: '10',
+          amount: '10',
+        },
+      ],
+      refundAmount: '10',
+    };
+    const { ctx } = writeCtx(payload, {
+      actorId: OWNER_POSITION_EMPLOYEE_ID,
+      employeeId: OWNER_POSITION_EMPLOYEE_ID,
+      credentialId: 'owner-position-return-session-test',
+      companyIds: authz.companyIds,
+      scope: authz.scope,
+    });
+    const error = await createCustomerReturn(ctx).catch(
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({
+      code: 'FORBIDDEN',
+      message: '缺少 customer_return.create 权限',
+    });
+    const persisted = await test.database.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM customer_return
+        WHERE original_sales_order_id = $1`,
+      [order.id],
+    );
+    expect(persisted.rows[0]?.count).toBe('0');
+  });
+
+  it('权限、公司隔离、批次归属、AI 与只读角色均拒绝', async () => {
     const order = await createOrder();
     const payload = {
       companyId: DEMO_IDS.companyId,
@@ -338,16 +490,6 @@ describe('sales R 客户退货用例（PGlite + seed 演示租户）', () => {
       refundAmount: '10',
     };
 
-    await expectAppError(
-      createCustomerReturn(
-        writeCtx(payload, {
-          actorId: DEMO_IDS.salesEmployeeId,
-          employeeId: DEMO_IDS.salesEmployeeId,
-          credentialId: 'sales-return-session-test',
-        }).ctx,
-      ),
-      'FORBIDDEN',
-    );
     await expectAppError(
       createCustomerReturn(
         writeCtx(payload, { scope: RETURN_READ_SCOPE }).ctx,
@@ -400,4 +542,72 @@ describe('sales R 客户退货用例（PGlite + seed 演示租户）', () => {
     );
     expect(persisted.rows[0]?.count).toBe('0');
   });
+  async function finish(id: string, version = 1) {
+    const request = makeRequest({ principal: principal(), params: { id } });
+    request.headers['if-match'] = `"${version}"`;
+    return completeCustomerReturn({
+      database: test.database, request,
+      reply: { header() { return this; } } as unknown as FastifyReply,
+    });
+  }
+
+  async function stock() {
+    return (await test.database.query(
+      `SELECT id, inbound_qty::text, locked_unit_cost::text FROM inventory_batch ORDER BY id`,
+    )).rows;
+  }
+
+  it('完成：库存与流水同事务、成本不变、完成审计、拒绝重复完成', async () => {
+    const order = (await createReturn((await createOrder()).id)).customerReturn;
+    const before = await stock();
+    const completed = await finish(order.id);
+    expect(completed).toMatchObject({ status: '已完成', version: 2 });
+    const after = await stock();
+    const oldBatch = before.find(row => row.id === BATCH_ID)!;
+    const newBatch = after.find(row => row.id === BATCH_ID)!;
+    expect(Number(newBatch.inbound_qty) - Number(oldBatch.inbound_qty)).toBe(2);
+    expect(newBatch.locked_unit_cost).toBe(oldBatch.locked_unit_cost);
+    const flows = await test.database.query(
+      `SELECT delta::text, source_doc_type FROM inventory_flow WHERE source_doc_id = $1`, [order.id],
+    );
+    expect(flows.rows).toHaveLength(1);
+    expect(flows.rows.map(row => Number(row.delta))).toContain(2);
+    expect(flows.rows.every(row => row.source_doc_type === 'R')).toBe(true);
+    await expectAppError(finish(order.id), 'VERSION_CONFLICT');
+    await expectAppError(finish(order.id, 2), 'VALIDATION_FAILED');
+    expect(await stock()).toEqual(after);
+    const audit = await test.database.query(
+      `SELECT action FROM audit_log WHERE object_id = $1 AND action = 'customer_return.complete'`, [order.id],
+    );
+    expect(audit.rows).toHaveLength(1);
+  });
+
+  it('仅退款完成不改变库存且不生成流水', async () => {
+    const { customerReturn: order } = await createReturn((await createOrder()).id, {
+      returnType: '仅退款', onlyRefundKind: '减成交额', lines: [],
+    });
+    const before = await stock();
+    expect(await finish(order.id)).toMatchObject({ status: '已完成', version: 2 });
+    expect(await stock()).toEqual(before);
+    expect((await test.database.query(`SELECT id FROM inventory_flow WHERE source_doc_id = $1`, [order.id])).rows).toEqual([]);
+  });
+
+  it.each([
+    [undefined, 'PRECONDITION_REQUIRED'],
+    ['', 'PRECONDITION_REQUIRED'],
+    ['1', 'VERSION_CONFLICT'],
+    ['"1""', 'VERSION_CONFLICT'],
+    ['W/"1"', 'VERSION_CONFLICT'],
+  ])('拒绝非法 If-Match %s 且无库存副作用', async (header, code) => {
+    const order = (await createReturn((await createOrder()).id)).customerReturn;
+    const before = await stock();
+    const request = makeRequest({ principal: principal(), params: { id: order.id } });
+    request.headers['if-match'] = header;
+    await expectAppError(completeCustomerReturn({
+      database: test.database, request,
+      reply: { header() { return this; } } as unknown as FastifyReply,
+    }), code);
+    expect(await stock()).toEqual(before);
+  });
+
 });

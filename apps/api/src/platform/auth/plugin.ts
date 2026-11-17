@@ -37,6 +37,7 @@ export const PUBLIC_PATHS: ReadonlySet<string> = new Set(['/api/v1/health', '/ap
  * 有效 Cookie 的 CSRF 约束（D59⑧）不因此放宽 —— 同源校验仍会执行。
  */
 export const OPTIONAL_AUTH_PATHS: ReadonlySet<string> = new Set([
+  '/api/v1/auth/code',
   '/api/v1/auth/login',
   '/api/v1/auth/logout',
 ]);

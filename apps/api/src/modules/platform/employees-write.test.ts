@@ -179,7 +179,7 @@ describe('platform 员工管理写端点（PGlite + seed 演示租户）', () =>
   it('create：手机号被其他企业占用 → 403 + 提示联系原企业管理员（D14）', async () => {
     // 直接落一个「其他租户」占用同一手机号（测试库以属主连接直写，绕 RLS）。
     await test.database.query(
-      `INSERT INTO tenant (id, name, plan, status) VALUES ($1, '另一家企业', '基础版', '启用')`,
+      `INSERT INTO tenant (id, name, status) VALUES ($1, '另一家企业', '启用')`,
       ['01900000-0000-7000-8000-00000000aa01'],
     );
     await test.database.query(

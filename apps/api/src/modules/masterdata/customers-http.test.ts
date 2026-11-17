@@ -14,7 +14,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  *   - create 201、detail 200，均回强 ETag `"<version>"`；update/delete 必须带 If-Match；
  *   - D49 keyword 只匹配名称/联系人/联系电话，不按 customer_no 检索；
  *   - D63 账期整数天且 >= 0：负数 422，0 合法；
- *   - D52① 停用属危险动作：AI 凭证 403 AI_ACTION_FORBIDDEN 且状态不变。
+ *   - D52① 删除属危险动作：AI 凭证 403 AI_ACTION_FORBIDDEN 且实体仍在。
  */
 
 const PUBLIC_BASE_URL = 'https://qingdan.example';
@@ -180,7 +180,6 @@ describe('masterdata 客户 HTTP（PGlite + seed 演示租户）', () => {
       contactName: 'HTTP联系人',
       contactPhone: '13500001111',
       creditTermDays: 30,
-      status: '启用',
       version: 1,
     });
 
@@ -310,8 +309,8 @@ describe('masterdata 客户 HTTP（PGlite + seed 演示租户）', () => {
     expect(replay.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
   });
 
-  it('delete：软停用（status=停用、详情仍可读），成功后回新 ETag', async () => {
-    const created = await createOne('HTTP软删客户');
+  it('delete：物理删除（行移除、详情 404），成功后回 ETag', async () => {
+    const created = await createOne('HTTP删除客户');
 
     const missing = await app.inject({
       method: 'DELETE',
@@ -327,16 +326,44 @@ describe('masterdata 客户 HTTP（PGlite + seed 演示租户）', () => {
       headers: writeHeaders(ownerCookie, 'req-cust-delete-ok', { 'if-match': '"1"' }),
     });
     expect(deleted.statusCode).toBe(200);
-    expect(deleted.headers.etag).toBe('"2"');
-    expect(deleted.json()).toMatchObject({ status: '停用', version: 2 });
+    expect(deleted.headers.etag).toBe('"1"');
+    expect(deleted.json()).toMatchObject({ id: created.id, name: 'HTTP删除客户', version: 1 });
 
     const detail = await app.inject({
       method: 'GET',
       url: `/api/v1/customers/${created.id}`,
       headers: readHeaders(ownerCookie, 'req-cust-delete-detail'),
     });
+    expect(detail.statusCode).toBe(404);
+    expect(detail.json()).toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('删除被销售单引用的客户 → 409 STATE_CONFLICT + reason=HAS_REFERENCES', async () => {
+    const created = await createOne('HTTP被引用客户');
+    await test.database.query(
+      `INSERT INTO sales_order (id, tenant_id, company_id, order_no, customer_id, handler_id)
+       VALUES ('01900000-0000-7000-8000-0000000000c1', $1, $2, 'HTTP-REF-SO-001', $3, $4)`,
+      [DEMO_IDS.tenantId, DEMO_IDS.companyId, created.id, DEMO_IDS.ownerEmployeeId],
+    );
+
+    const blocked = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/customers/${created.id}`,
+      headers: writeHeaders(ownerCookie, 'req-cust-delete-referenced', { 'if-match': '"1"' }),
+    });
+    expect(blocked.statusCode).toBe(409);
+    const body = blocked.json() as { code: string; message: string; details?: { reason?: string } };
+    expect(body.code).toBe('STATE_CONFLICT');
+    expect(body.details?.reason).toBe('HAS_REFERENCES');
+    expect(body.message).toContain('还有单据在用');
+
+    // 被引用时删除失败，客户仍在。
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/customers/${created.id}`,
+      headers: readHeaders(ownerCookie, 'req-cust-delete-referenced-detail'),
+    });
     expect(detail.statusCode).toBe(200);
-    expect((detail.json() as Customer).status).toBe('停用');
   });
 
   it('D15：跨公司不可见——详情 404、列表为空、创建到不可见公司 403', async () => {
@@ -388,7 +415,7 @@ describe('masterdata 客户 HTTP（PGlite + seed 演示租户）', () => {
     expect((salesList.json() as { items: Customer[] }).items).toHaveLength(0);
   });
 
-  it('D52①：AI 凭证停用客户 → 403 AI_ACTION_FORBIDDEN，客户状态不变', async () => {
+  it('D52①：AI 凭证删除客户 → 403 AI_ACTION_FORBIDDEN，客户仍在', async () => {
     const tokenResponse = await app.inject({
       method: 'POST',
       url: '/api/v1/api-tokens',
@@ -416,10 +443,10 @@ describe('masterdata 客户 HTTP（PGlite + seed 演示租户）', () => {
     expect(forbidden.statusCode).toBe(403);
     expect(forbidden.json()).toMatchObject({ code: 'AI_ACTION_FORBIDDEN' });
 
-    const row = await test.database.query<{ status: string }>(
-      'SELECT status FROM customer WHERE id = $1',
+    const row = await test.database.query<{ id: string }>(
+      'SELECT id FROM customer WHERE id = $1',
       [created.id],
     );
-    expect(row.rows[0]?.status).toBe('启用');
+    expect(row.rows).toHaveLength(1);
   });
 });

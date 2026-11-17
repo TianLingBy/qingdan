@@ -4,6 +4,7 @@ import { defineRoute, type RouteDef } from './registry.js';
 import { ApiTokenCreatedSchema, ApiTokenSchema, EmployeeSummarySchema } from './entities.js';
 import { AuditLogSchema } from './audit.js';
 import { ScopeMatrixSchema } from './authz.js';
+import { WorkbenchEntryListSchema } from './workbench.js';
 import { PageQuerySchema, pageSchema } from './pagination.js';
 import { PRODUCT_ROUTES } from './products.js';
 import { CUSTOMER_ROUTES } from './customers.js';
@@ -14,6 +15,7 @@ import { POSITION_ROUTES } from './positions.js';
 import { COMPANY_ROUTES } from './companies.js';
 import { INVENTORY_ROUTES } from './inventory.js';
 import { STOCKTAKE_ROUTES } from './stocktakes.js';
+import { COST_ADJUSTMENT_ROUTES } from './cost-adjustments.js';
 import { SALES_ORDER_ROUTES } from './sales-orders.js';
 import { SALES_RECEIPT_ROUTES } from './sales-receipts.js';
 import { CUSTOMER_RETURN_ROUTES } from './customer-returns.js';
@@ -26,6 +28,9 @@ import { COMMISSION_RATE_ROUTES } from './commission-rates.js';
 import { PRINT_ROUTES } from './prints.js';
 import { PAYMENT_ROUTES } from './payments.js';
 import { BILLING_ROUTES } from './billings.js';
+import { PROFIT_REPORT_ROUTES } from './profit-report.js';
+import { WORKBENCH_TODO_ROUTES } from './todos.js';
+import { SETTINGS_ROUTES } from './settings.js';
 
 /**
  * 端点注册表（全量真源）。
@@ -46,12 +51,23 @@ const LoginOutput = z.object({
   tenantId: z.string(),
   displayName: z.string(),
 });
+/** 发登录验证码：只需手机号；是否真的发短信由服务端环境与配置决定。 */
+const SendCodeInput = z.object({
+  phone: z.string().min(6).max(32),
+});
+const SendCodeOutput = z.object({
+  sent: z.literal(true),
+});
 const MeOutput = z.object({
   employeeId: z.string(),
   tenantId: z.string(),
   displayName: z.string(),
+  /** 老板 / 员工身份位（Issue #227）：老板 = `employee.is_owner`，由账号属性决定，非前端角色切换。 */
+  isOwner: z.boolean(),
   companyIds: z.array(z.string()),
   scope: ScopeMatrixSchema,
+  /** 后端按身份 scope 现算的工作台入口清单；员工看不到的入口不在返回体里。 */
+  entries: WorkbenchEntryListSchema,
 });
 
 const CreateApiTokenInput = z.object({
@@ -108,12 +124,24 @@ export const ROUTES: readonly RouteDef[] = [
     publicAccess: true,
   }),
   defineRoute({
+    operationId: 'platform.code.send',
+    method: 'POST',
+    path: '/api/v1/auth/code',
+    domain: 'employee',
+    action: 'read',
+    summary: '发送登录验证码（同号 60 秒一条、每天最多 10 条）',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid' },
+    request: { body: SendCodeInput },
+    response: { status: 200, schema: SendCodeOutput },
+  }),
+  defineRoute({
     operationId: 'platform.auth.login',
     method: 'POST',
     path: '/api/v1/auth/login',
     domain: 'employee',
     action: 'read',
-    summary: '手机号 + 验证码登录（一期不发码，账号由后台/初始化脚本创建）',
+    summary: '手机号 + 验证码登录（验证码由 /auth/code 下发，非生产固定码直通）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid' },
     request: { body: LoginInput },
@@ -228,6 +256,8 @@ export const ROUTES: readonly RouteDef[] = [
   ...INVENTORY_ROUTES,
   // —— inventory 模块：盘点调整 I 4 条（list/create/detail/approve，契约第一批 §4 / D47）——
   ...STOCKTAKE_ROUTES,
+  // —— inventory 模块：成本更正 4 条（提交/历史/审批/驳回，Issue #163 / D70）——
+  ...COST_ADJUSTMENT_ROUTES,
   // —— sales 模块：E 销售单首批 5 条（list/create/detail/update/cancel，契约第一批 §3.3）——
   ...SALES_ORDER_ROUTES,
   // —— sales 模块：收款记录 2 条（list/create，契约第一批 §6 / D24/D34/D40）——
@@ -252,6 +282,12 @@ export const ROUTES: readonly RouteDef[] = [
   ...PAYMENT_ROUTES,
   // —— billing：平台订阅 2 条（读 / 运营调整，一期仅契约）——
   ...BILLING_ROUTES,
+  // —— platform：工作台待办 1 条（D89 / #289；域 = workbench，跨模块只读聚合）——
+  ...WORKBENCH_TODO_ROUTES,
+  // —— platform：设置中心概览 1 条（D93 / #298；本块只做概览）——
+  ...SETTINGS_ROUTES,
+  // —— report 模块：利润报表 2 条（D43 / #97，Issue #164）——
+  ...PROFIT_REPORT_ROUTES,
 ];
 
 export const ROUTE_PARAM = IdParam;

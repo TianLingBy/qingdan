@@ -17,8 +17,12 @@ import tailwindcss from '@tailwindcss/vite';
 /** D56②：构建目标 = Chromium/Edge 111 级别。 */
 export const WEB_BUILD_TARGET = ['chrome111', 'edge111'] as const;
 
-/** docs/DEV-SETUP.md §4：dev 时 /api 代理到本地 api（3000）。 */
-export const WEB_API_PROXY_TARGET = 'http://127.0.0.1:3000';
+/**
+ * docs/DEV-SETUP.md §4：dev 时 /api 代理到本地 api（默认 3000）。
+ * 本机 3000 常被其他服务占用时，可用 `WEB_API_PROXY_TARGET=http://127.0.0.1:3100` 覆盖。
+ */
+export const WEB_API_PROXY_TARGET =
+  process.env.WEB_API_PROXY_TARGET ?? 'http://127.0.0.1:3000';
 
 /**
  * 代理前缀必须带尾斜杠：写成 '/api' 会把页面路由 `/api-integration` 也代理走
@@ -40,7 +44,9 @@ export default defineConfig({
     proxy: {
       [WEB_API_PROXY_PREFIX]: {
         target: WEB_API_PROXY_TARGET,
-        changeOrigin: true,
+        // 保留浏览器 Host：后端 D59⑧ 的同源 CSRF 校验按 Host 推断期望 Origin，
+        // 改成 true（转发成 127.0.0.1:3100）会让带 Cookie 的 POST（如退出登录）403。
+        changeOrigin: false,
       },
     },
   },

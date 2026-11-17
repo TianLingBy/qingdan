@@ -101,9 +101,9 @@ describe('销售单列表导出 CSV', () => {
     await seed(test.database);
     await test.database.query(
       `INSERT INTO customer
-         (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, NULL, '导出客户一', '启用'),
-              ($4, $2, $3, NULL, $5, '启用')
+         (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, NULL, '导出客户一'),
+              ($4, $2, $3, NULL, $5)
        ON CONFLICT (id) DO NOTHING`,
       [
         CUSTOMER_A_ID,
@@ -115,8 +115,8 @@ describe('销售单列表导出 CSV', () => {
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '导出测试商品', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '导出测试商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
@@ -248,5 +248,35 @@ describe('销售单列表导出 CSV', () => {
 
     const doc = response.json() as PrintDocument;
     expect(doc.content).toContain('"导出,客户""二"""');
+  });
+
+  it('AI 凭证导出 → 403 AI_ACTION_FORBIDDEN；人类凭证同一路径仍 200', async () => {
+    const tokenResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/api-tokens',
+      headers: writeHeaders(ownerCookie, 'req-export-ai-token'),
+      payload: {
+        name: 'HTTP Sales Export AI Token',
+        employeeId: DEMO_IDS.ownerEmployeeId,
+        scope: [{ domain: 'sales', actions: ['read', 'export'] }],
+      },
+    });
+    expect(tokenResponse.statusCode).toBe(201);
+    const { secret } = tokenResponse.json() as { secret: string };
+
+    const aiExport = await app.inject({
+      method: 'GET',
+      url: '/api/v1/sales-orders/export',
+      headers: {
+        authorization: `Bearer ${secret}`,
+        'x-reason': 'AI 尝试导出销售单',
+        'x-request-id': 'req-export-ai',
+      },
+    });
+    expect(aiExport.statusCode).toBe(403);
+    expect(aiExport.json()).toMatchObject({ code: 'AI_ACTION_FORBIDDEN' });
+
+    const humanExport = await exportCsv(ownerCookie, 'req-export-human-after-ai');
+    expect(humanExport.statusCode).toBe(200);
   });
 });

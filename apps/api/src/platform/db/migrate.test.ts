@@ -68,6 +68,39 @@ describe('纯 SQL 迁移 runner（PGlite / 内存 PG18）', () => {
     expect(result.rows[0]).toMatchObject({ numeric_precision: 18, numeric_scale: 6 });
   });
 
+  it('processing 单保留完成时的材料成本与损失金额快照', async () => {
+    const result = await test.database.query<{ column_name: string; is_nullable: string }>(
+      `SELECT column_name, is_nullable
+       FROM information_schema.columns
+       WHERE table_name = 'processing_order'
+         AND column_name IN ('material_cost_amount', 'loss_amount')
+       ORDER BY column_name`,
+    );
+    expect(result.rows).toEqual([
+      { column_name: 'loss_amount', is_nullable: 'YES' },
+      { column_name: 'material_cost_amount', is_nullable: 'YES' },
+    ]);
+  });
+
+  it('结算单快照列可空（20261116043000_settlement_orders_unsettle.sql / D88）：撤销结算才能清空快照', async () => {
+    const result = await test.database.query<{ column_name: string; is_nullable: string }>(
+      `SELECT column_name, is_nullable
+         FROM information_schema.columns
+        WHERE table_name = 'settlement_order'
+          AND column_name IN (
+            'related_loss_amount', 'net_profit',
+            'commission_rate_snapshot', 'commission_amount'
+          )
+        ORDER BY column_name`,
+    );
+    expect(result.rows).toEqual([
+      { column_name: 'commission_amount', is_nullable: 'YES' },
+      { column_name: 'commission_rate_snapshot', is_nullable: 'YES' },
+      { column_name: 'net_profit', is_nullable: 'YES' },
+      { column_name: 'related_loss_amount', is_nullable: 'YES' },
+    ]);
+  });
+
   it('核心表已开 RLS + FORCE RLS，并有 tenant_isolation 策略', async () => {
     const tables = await test.database.query<{
       relname: string;

@@ -246,7 +246,7 @@ describe('settlement C 结算单 HTTP（PGlite + seed 演示租户）', () => {
       payload: {
         name: 'Settlement AI Token',
         employeeId: DEMO_IDS.ownerEmployeeId,
-        scope: [{ domain: 'settlement', actions: ['read', 'approve'] }],
+        scope: [{ domain: 'settlement', actions: ['read', 'approve', 'view_price'] }],
       },
     });
     expect(tokenResponse.statusCode).toBe(201);
@@ -361,5 +361,296 @@ describe('settlement C 结算单 HTTP（PGlite + seed 演示租户）', () => {
       [id],
     );
     expect(Number(failures.rows[0]?.count)).toBeGreaterThanOrEqual(4);
+  });
+
+  it('确认：有 approve 但无 settlement.view_price 时 403，状态不推进（P0-13）', async () => {
+    const id = '01900000-0000-7000-8000-000000009601';
+    await insertDraft({
+      id,
+      orderNo: 'C-0001-20261107-0601',
+      sourceDocId: '01900000-0000-7000-8000-000000009602',
+    });
+
+    // 经理岗默认只有 settlement.read：这里补授 approve，但不授 view_price。
+    await test.database.query(
+      `INSERT INTO position_permission (tenant_id, position_id, domain, action, granted)
+       VALUES ($1, '01900000-0000-7000-8000-000000000012', 'settlement', 'approve', true)`,
+      [DEMO_IDS.tenantId],
+    );
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/v1/settlement-orders/${id}/confirm`,
+      headers: writeHeaders(
+        managerCookie,
+        'req-settlement-confirm-no-view-price',
+        { 'if-match': '"1"', 'x-reason': '经理尝试确认结算' },
+      ),
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      code: 'FORBIDDEN',
+      message: '缺少 settlement.view_price 权限',
+    });
+
+    const state = await test.database.query<{ status: string }>(
+      `SELECT status FROM settlement_order WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(state.rows[0]?.status).toBe('待确认');
+  });
+
+  it('撤销：If-Match / approve / view_price / reason / AI 校验（422 / 428 / 409 / 403）', async () => {
+    const id = '01900000-0000-7000-8000-000000009b01';
+    await insertDraft({
+      id,
+      orderNo: 'C-0001-20261108-0b01',
+      sourceDocId: '01900000-0000-7000-8000-000000009b02',
+    });
+    const url = `/api/v1/settlement-orders/${id}/unsettle`;
+    const body = { confirm: true, reason: '财务复核发现错单' };
+    // 经理岗补授 approve 但不授 view_price（上一个用例已插；这里兜底防止用例顺序变化）。
+    await test.database.query(
+      `INSERT INTO position_permission (tenant_id, position_id, domain, action, granted)
+       VALUES ($1, '01900000-0000-7000-8000-000000000012', 'settlement', 'approve', true)
+       ON CONFLICT DO NOTHING`,
+      [DEMO_IDS.tenantId],
+    );
+
+    const missingIfMatch = await app.inject({
+      method: 'POST',
+      url,
+      headers: writeHeaders(ownerCookie, 'req-settlement-unsettle-428'),
+      payload: body,
+    });
+    expect(missingIfMatch.statusCode).toBe(428);
+    expect(missingIfMatch.json()).toMatchObject({ code: 'PRECONDITION_REQUIRED' });
+
+    const missingReason = await app.inject({
+      method: 'POST',
+      url,
+      headers: writeHeaders(ownerCookie, 'req-settlement-unsettle-reason', {
+        'if-match': '"1"',
+      }),
+      payload: { confirm: true },
+    });
+    expect(missingReason.statusCode).toBe(422);
+    expect(missingReason.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const stale = await app.inject({
+      method: 'POST',
+      url,
+      headers: writeHeaders(ownerCookie, 'req-settlement-unsettle-409', {
+        'if-match': '"9"',
+      }),
+      payload: body,
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
+
+    const noApprove = await app.inject({
+      method: 'POST',
+      url,
+      headers: writeHeaders(warehouseCookie, 'req-settlement-unsettle-403', {
+        'if-match': '"1"',
+      }),
+      payload: body,
+    });
+    expect(noApprove.statusCode).toBe(403);
+    expect(noApprove.json()).toMatchObject({ code: 'FORBIDDEN' });
+
+    // 经理岗已被上一个用例补授 settlement.approve，但没有 settlement.view_price。
+    const noViewPrice = await app.inject({
+      method: 'POST',
+      url,
+      headers: writeHeaders(managerCookie, 'req-settlement-unsettle-no-view-price', {
+        'if-match': '"1"',
+      }),
+      payload: body,
+    });
+    expect(noViewPrice.statusCode).toBe(403);
+    expect(noViewPrice.json()).toMatchObject({
+      code: 'FORBIDDEN',
+      message: '缺少 settlement.view_price 权限',
+    });
+
+    const tokenResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/api-tokens',
+      headers: writeHeaders(ownerCookie, 'req-settlement-unsettle-ai-token'),
+      payload: {
+        name: 'Settlement Unsettle AI Token',
+        employeeId: DEMO_IDS.ownerEmployeeId,
+        scope: [{ domain: 'settlement', actions: ['read', 'approve', 'view_price'] }],
+      },
+    });
+    expect(tokenResponse.statusCode).toBe(201);
+    const { secret } = tokenResponse.json() as { secret: string };
+
+    const aiWithoutReason = await app.inject({
+      method: 'POST',
+      url,
+      headers: {
+        authorization: `Bearer ${secret}`,
+        'if-match': '"1"',
+        'x-request-id': 'req-settlement-unsettle-ai-no-reason',
+      },
+      payload: body,
+    });
+    expect(aiWithoutReason.statusCode).toBe(422);
+    expect(aiWithoutReason.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const aiForbidden = await app.inject({
+      method: 'POST',
+      url,
+      headers: {
+        authorization: `Bearer ${secret}`,
+        'if-match': '"1"',
+        'x-reason': 'AI 尝试撤销结算',
+        'x-request-id': 'req-settlement-unsettle-ai-forbidden',
+      },
+      payload: body,
+    });
+    expect(aiForbidden.statusCode).toBe(403);
+    expect(aiForbidden.json()).toMatchObject({ code: 'AI_ACTION_FORBIDDEN' });
+
+    const state = await test.database.query<{ status: string; version: number }>(
+      `SELECT status, version FROM settlement_order WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(state.rows[0]).toEqual({ status: '待确认', version: 1 });
+  });
+
+  it('撤销：待确认单 422；已结算单 200 清空快照、留审计、可再次确认', async () => {
+    const draftId = '01900000-0000-7000-8000-000000009c01';
+    await insertDraft({
+      id: draftId,
+      orderNo: 'C-0001-20261108-0c01',
+      sourceDocId: '01900000-0000-7000-8000-000000009c02',
+    });
+    const draftUnsettle = await app.inject({
+      method: 'POST',
+      url: `/api/v1/settlement-orders/${draftId}/unsettle`,
+      headers: writeHeaders(ownerCookie, 'req-settlement-unsettle-draft', {
+        'if-match': '"1"',
+      }),
+      payload: { confirm: true, reason: '误操作' },
+    });
+    expect(draftUnsettle.statusCode).toBe(422);
+    expect(draftUnsettle.json()).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      message: '结算单尚未结算，无需撤销',
+    });
+
+    const id = '01900000-0000-7000-8000-000000009d01';
+    await insertDraft({
+      id,
+      orderNo: 'C-0001-20261108-0d01',
+      sourceDocId: '01900000-0000-7000-8000-000000009d02',
+    });
+    // 模拟一张已确认、已冻结快照的结算单。
+    await test.database.query(
+      `UPDATE settlement_order
+          SET status = '已结算',
+              settled_at = now(),
+              related_loss_amount_snapshot = related_loss_amount,
+              commission_owner_id = $2::uuid
+        WHERE id = $1::uuid`,
+      [id, DEMO_IDS.ownerEmployeeId],
+    );
+    const url = `/api/v1/settlement-orders/${id}/unsettle`;
+
+    const response = await app.inject({
+      method: 'POST',
+      url,
+      headers: writeHeaders(ownerCookie, 'req-settlement-unsettle-ok', {
+        'if-match': '"1"',
+        'x-reason': '财务复核发现错单',
+      }),
+      payload: { confirm: true, reason: '财务复核发现错单' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers.etag).toBe('"2"');
+    expect(response.json()).toMatchObject({
+      id,
+      status: '待确认',
+      version: 2,
+      relatedLossAmount: null,
+      netProfit: null,
+      commissionRateSnapshot: null,
+      commissionAmount: null,
+    });
+
+    const row = await test.database.query<{
+      status: string;
+      settled_at: Date | null;
+      related_loss_amount_snapshot: string | null;
+    }>(
+      `SELECT status, settled_at, related_loss_amount_snapshot
+         FROM settlement_order WHERE id = $1::uuid`,
+      [id],
+    );
+    expect(row.rows[0]?.status).toBe('待确认');
+    expect(row.rows[0]?.settled_at).toBeNull();
+    expect(row.rows[0]?.related_loss_amount_snapshot).toBeNull();
+
+    const audit = await test.database.query<{
+      action: string;
+      result: string;
+      reason: string | null;
+      changes: Record<string, unknown>;
+    }>(
+      `SELECT action, result, reason, changes
+         FROM audit_log
+        WHERE object_id = $1
+          AND action = 'settlement.order.unsettle'`,
+      [id],
+    );
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0]).toMatchObject({
+      action: 'settlement.order.unsettle',
+      result: 'success',
+      reason: '财务复核发现错单',
+      changes: {
+        beforeStatus: '已结算',
+        afterStatus: '待确认',
+        version: 2,
+        reason: '财务复核发现错单',
+        relatedLossAmount: '5',
+        netProfit: '25',
+        commissionRateSnapshot: '0.05',
+        commissionAmount: '1.5',
+      },
+    });
+
+    // 不锁死：撤销后可再次确认，提成按当时配置重新快照（D77 ③ / D88）。
+    await test.database.query(
+      `INSERT INTO commission_rate
+         (id, tenant_id, company_id, employee_id, rate, effective_from, created_by)
+       VALUES ('01900000-0000-7000-8000-000000009d03', $1, $2::uuid, $3::uuid,
+               '0.1', CURRENT_DATE, $3::uuid)
+       ON CONFLICT (tenant_id, company_id, employee_id, effective_from)
+       DO UPDATE SET rate = EXCLUDED.rate`,
+      [DEMO_IDS.tenantId, DEMO_IDS.companyId, DEMO_IDS.ownerEmployeeId],
+    );
+    const reconfirmed = await app.inject({
+      method: 'POST',
+      url: `/api/v1/settlement-orders/${id}/confirm`,
+      headers: writeHeaders(ownerCookie, 'req-settlement-reconfirm-ok', {
+        'if-match': '"2"',
+        'x-reason': '重新确认',
+      }),
+    });
+    expect(reconfirmed.statusCode).toBe(200);
+    expect(reconfirmed.headers.etag).toBe('"3"');
+    expect(reconfirmed.json()).toMatchObject({
+      id,
+      status: '已结算',
+      version: 3,
+      relatedLossAmount: '0',
+      netProfit: '30',
+      commissionRateSnapshot: '0.1',
+      commissionAmount: '3',
+    });
   });
 });

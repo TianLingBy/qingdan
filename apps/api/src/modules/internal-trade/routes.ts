@@ -7,24 +7,27 @@ import {
 } from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
+import { maskHandlerId, maskHandlerIdInPage } from '../../platform/authz/handler-mask.js';
 import {
   cancelInternalTradeOrder,
   createInternalTradeOrder,
+  dispatchInternalTradeOrder,
   getInternalTradeOrder,
   listInternalTradeOrders,
+  receiveInternalTradeOrder,
+  revokeDispatchInternalTradeOrder,
   updateInternalTradeOrder,
 } from './usecases/internal-trade-orders.js';
 
 /**
- * internal-trade 模块（契约第二批 §1 / §3 N 内部交易单首批 5 条）。
+ * internal-trade 模块（契约第二批 §1 / §3 N 内部交易单首批 + 到货确认）。
  *
  * 按 operationId 注入全部已登记用例。注意：
  * - N 单是**独立四态** `进行中 / 在途 / 已完成 / 已取消`（D68②），不复用 `HEADER_STATES`；
  * - 取消按四态映射后复用 `assertCancelable`（D21）：`internalTradeHeaderState(status)`；
  * - 内部价由制单人手填、系统不自动算（D68①）；一期不做内部定价规则表（D45）；
  * - 明细只能引用**发出公司**批次（D22），`batchIds` 至少 1 条；
- * - 本批**不登记**「发货 / 在途」「到货确认 / 转司」端点：
- *   转司要改批次 `company_id` 并解锁在途占用（D22 / D31 / D68③），依赖 inventory 写能力；
+ * - 发货 / 撤销发货已登记（dispatch / dispatch_revoke），到货确认已接入 inventory 转司端口（D22 / D31 / D68③）；
  * - 本批**不登记** N 单完成自动生成 C 单草稿（D29，等结算模块）。
  */
 
@@ -32,6 +35,9 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'internal_trade.order.create': 'internal_trade_order',
   'internal_trade.order.update': 'internal_trade_order',
   'internal_trade.order.cancel': 'internal_trade_order',
+  'internal_trade.order.dispatch': 'internal_trade_order',
+  'internal_trade.order.dispatch_revoke': 'internal_trade_order',
+  'internal_trade.order.receive': 'internal_trade_order',
 };
 
 /** 无数据库时保持骨架语义：501 + operationId。 */
@@ -57,10 +63,11 @@ export function registerInternalTradeRoutes(app: FastifyInstance): void {
       route,
     }) => {
       assertDatabaseConfigured(instance, route);
-      return await listInternalTradeOrders({
+      const page = await listInternalTradeOrders({
         database: instance.database,
         request,
       });
+      return maskHandlerIdInPage(page, request.principal);
     },
     'internal_trade.order.create': async ({
       app: instance,
@@ -89,7 +96,7 @@ export function registerInternalTradeRoutes(app: FastifyInstance): void {
         request,
       });
       reply.header('ETag', etagOf(detail.version));
-      return detail;
+      return maskHandlerId(detail, request.principal);
     },
     'internal_trade.order.update': async ({
       app: instance,
@@ -112,6 +119,45 @@ export function registerInternalTradeRoutes(app: FastifyInstance): void {
     }) => {
       assertDatabaseConfigured(instance, route);
       return await cancelInternalTradeOrder({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+    'internal_trade.order.dispatch': async ({
+      app: instance,
+      request,
+      reply,
+      route,
+    }) => {
+      assertDatabaseConfigured(instance, route);
+      return await dispatchInternalTradeOrder({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+    'internal_trade.order.dispatch_revoke': async ({
+      app: instance,
+      request,
+      reply,
+      route,
+    }) => {
+      assertDatabaseConfigured(instance, route);
+      return await revokeDispatchInternalTradeOrder({
+        database: instance.database,
+        request,
+        reply,
+      });
+    },
+    'internal_trade.order.receive': async ({
+      app: instance,
+      request,
+      reply,
+      route,
+    }) => {
+      assertDatabaseConfigured(instance, route);
+      return await receiveInternalTradeOrder({
         database: instance.database,
         request,
         reply,

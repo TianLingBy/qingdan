@@ -33,7 +33,14 @@ export interface AuthzResult {
   readonly companyIds: readonly string[];
   /** 已含个人覆盖与 token scope 交集的生效权限。 */
   readonly scope: ScopeMatrix;
+  /** 是否老板（employee.is_owner）；供 /auth/me 下发身份位（Issue #227）。 */
+  readonly isOwner: boolean;
+  /** 是否可看单据「负责人」字段：由权限点 `view_handler`（按单据域）决定，不按岗位判定（Issue #227 / 权限模型铁律）。 */
+  readonly canViewHandler: boolean;
 }
+
+/** 承载「负责人 / 经手人」字段的单据域；任一域持 view_handler 即可见负责人。 */
+const HANDLER_SCOPE_DOMAINS = ['sales', 'purchase', 'processing', 'internal_trade'] as const;
 
 interface PermissionRow {
   domain: string;
@@ -126,7 +133,14 @@ export async function computeAuthz(db: SqlClient, input: AuthzInput): Promise<Au
         tenantId: input.tenantId,
       });
     }
-    return { companyIds, scope: parsedOwner.data };
+    return {
+      companyIds,
+      scope: parsedOwner.data,
+      isOwner: true,
+      canViewHandler: HANDLER_SCOPE_DOMAINS.some((domain) =>
+        allowsScope(parsedOwner.data, domain, 'view_handler'),
+      ),
+    };
   }
 
   const byDomain = new Map<string, string[]>();
@@ -163,5 +177,12 @@ export async function computeAuthz(db: SqlClient, input: AuthzInput): Promise<Au
     });
   }
 
-  return { companyIds, scope: parsed.data };
+  return {
+    companyIds,
+    scope: parsed.data,
+    isOwner: false,
+    canViewHandler: HANDLER_SCOPE_DOMAINS.some((domain) =>
+      allowsScope(parsed.data, domain, 'view_handler'),
+    ),
+  };
 }

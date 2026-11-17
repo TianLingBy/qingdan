@@ -17,9 +17,9 @@ import { PageQuerySchema, pageSchema } from './pagination.js';
  * - 写操作必记审计（D51）；普通读不记（D54 ②）；**登记冲正单据属危险动作，
  *   AI 默认禁止且必须给原因**（D52① / D54 ⑥）。
  *
- * 本批明确不做（等后续批次）：
- * - **不做状态流转 / 完成 / 取消端点**：无关税 / 付款冲减的实现由后续批次落地；
- * - **不做 update / delete**：冲正单据只追加（D47）。
+ * 本批明确不做：
+ * - **不做 update**：冲正单据只追加（D47）；
+ * - 取消只做状态流转并释放待执行占用，不物理删除。
  */
 
 /** 非负 decimal 字符串：数量 / 单价 / 金额（D54 `numeric(18,6)`）。 */
@@ -107,14 +107,35 @@ export const SupplierReturnListQuerySchema = PageQuerySchema.extend({
 });
 
 /**
- * purchase 模块 S 供应商退货端点（3 条，契约第一批 §4）。
+ * purchase 模块 S 供应商退货端点（5 条）。
  *
- * 权限：查询 `supplier_return.read`；登记 `supplier_return.create`（scope = domain.action，D44）。
- * 审计：普通读不记（D54 ②）；登记退货记 write（D51）。
+ * 权限：查询 `supplier_return.read`；登记 `supplier_return.create`；完成 `supplier_return.approve`；
+ * 取消 `supplier_return.delete`（scope = domain.action，D44）。
+ * 审计：普通读不记（D54 ②）；登记、完成、取消记 write（D51）。
  * AI：**登记冲正单据属危险动作，默认禁止且必须给原因**（D52① / D54 ⑥）。
  * 冲正不物理删除（D47）；F4c 只做退钱，不抵下次货款 / 不换货补发。
  */
 export const SUPPLIER_RETURN_ROUTES: readonly RouteDef[] = [
+  defineRoute({
+    module: 'purchase', operationId: 'supplier_return.complete', method: 'POST',
+    path: '/api/v1/supplier-returns/{id}/complete', domain: 'supplier_return', action: 'approve',
+    summary: '确认供应商退货并出库（审批动作）', audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true }, requiresIfMatch: true,
+    request: {}, response: { status: 200, schema: SupplierReturnSchema },
+  }),
+  defineRoute({
+    module: 'purchase',
+    operationId: 'supplier_return.cancel',
+    method: 'POST',
+    path: '/api/v1/supplier-returns/{id}/cancel',
+    domain: 'supplier_return',
+    action: 'delete',
+    summary: '取消进行中的供应商退货并释放待执行库存占用',
+    audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true },
+    requiresIfMatch: true,
+    response: { status: 200, schema: SupplierReturnSchema },
+  }),
   defineRoute({
     module: 'purchase',
     operationId: 'supplier_return.list.read',

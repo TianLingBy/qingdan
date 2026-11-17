@@ -1,15 +1,19 @@
 import { AppError, ROUTES, etagOf, routesOfModule, type RouteDef } from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
+import { maskHandlerId, maskHandlerIdInPage } from '../../platform/authz/handler-mask.js';
 import {
   cancelPurchaseOrder,
+  completePurchaseOrder,
   createPurchaseOrder,
   getPurchaseOrder,
   listPurchaseOrders,
   updatePurchaseOrder,
 } from './usecases/purchase-orders.js';
 import {
+  cancelSupplierReturn,
   createSupplierReturn,
+  completeSupplierReturn,
   getSupplierReturn,
   listSupplierReturns,
 } from './usecases/supplier-returns.js';
@@ -32,7 +36,10 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'purchase.order.create': 'purchase_order',
   'purchase.order.update': 'purchase_order',
   'purchase.order.cancel': 'purchase_order',
+  'purchase.order.complete': 'purchase_order',
   'supplier_return.create': 'supplier_return',
+  'supplier_return.complete': 'supplier_return',
+  'supplier_return.cancel': 'supplier_return',
 };
 
 /**
@@ -50,7 +57,8 @@ export function registerPurchaseRoutes(app: FastifyInstance): void {
   const handlers: RouteHandlers = {
     'purchase.order.list.read': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);
-      return await listPurchaseOrders({ database: instance.database, request });
+      const page = await listPurchaseOrders({ database: instance.database, request });
+      return maskHandlerIdInPage(page, request.principal);
     },
     'purchase.order.create': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
@@ -62,7 +70,7 @@ export function registerPurchaseRoutes(app: FastifyInstance): void {
       assertDatabaseConfigured(instance, route);
       const detail = await getPurchaseOrder({ database: instance.database, request });
       reply.header('ETag', etagOf(detail.version));
-      return detail;
+      return maskHandlerId(detail, request.principal);
     },
     'purchase.order.update': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
@@ -71,6 +79,10 @@ export function registerPurchaseRoutes(app: FastifyInstance): void {
     'purchase.order.cancel': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
       return await cancelPurchaseOrder({ database: instance.database, request, reply });
+    },
+    'purchase.order.complete': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await completePurchaseOrder({ database: instance.database, request, reply });
     },
     'supplier_return.list.read': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);
@@ -91,6 +103,12 @@ export function registerPurchaseRoutes(app: FastifyInstance): void {
       const supplierReturn = await getSupplierReturn({ database: instance.database, request });
       reply.header('ETag', etagOf(supplierReturn.version));
       return supplierReturn;
+    },
+    'supplier_return.complete': async ({ app: instance, request, reply }) =>
+      completeSupplierReturn({ database: instance.database, request, reply }),
+    'supplier_return.cancel': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await cancelSupplierReturn({ database: instance.database, request, reply });
     },
   };
 

@@ -5,6 +5,7 @@ import {
   type InternalTradeOrder,
   type InternalTradeOrderCreateInput,
   type InternalTradeOrderLine,
+  type InternalTradeOrderLineInput,
   type InternalTradeOrderStatus,
   type InternalTradeOrderUpdateInput,
 } from '@qingdan/contracts';
@@ -99,6 +100,12 @@ interface CompanyRow {
 interface BatchRow {
   id: string;
   product_id: string;
+}
+
+interface DispatchBatchRow {
+  id: string;
+  batch_no: string;
+  available_qty: string | number;
 }
 
 const HEADER_COLUMNS = `o.id,
@@ -336,6 +343,27 @@ export async function loadInternalTradeOrderState(
   };
 }
 
+export async function listBatchIdsForOrder(
+  ctx: InternalTradeOrderRepoContext,
+  orderId: string,
+): Promise<readonly string[]> {
+  const result = await ctx.tx.query<{ batch_id: string }>(
+    `SELECT DISTINCT b.batch_id::text AS batch_id
+       FROM internal_trade_order_line_batch b
+       JOIN internal_trade_order_line l
+         ON l.id = b.order_line_id
+        AND l.tenant_id = b.tenant_id
+       JOIN internal_trade_order o
+         ON o.id = l.order_id
+        AND o.tenant_id = l.tenant_id
+      WHERE b.tenant_id = $1
+        AND l.order_id = $2::uuid
+        AND b.company_id = o.from_company_id`,
+    [ctx.tenantId, orderId],
+  );
+  return result.rows.map((row) => row.batch_id);
+}
+
 /**
  * 直接下游判定（D21）：以 N 单为来源的库存流水存在，即视为下游已发生。
  * 发货 / 在途占用与到货转司端点不在本批范围，但历史 / 并发写入的流水仍须阻止取消。
@@ -408,7 +436,7 @@ async function assertHandlerInTenant(
 /** 只允许引用发出公司的批次，且每行的批次商品必须与该行商品一致（D22）。 */
 async function assertBatchesBelongToFromCompany(
   ctx: InternalTradeOrderRepoContext,
-  lines: readonly InternalTradeOrderLine[],
+  lines: readonly InternalTradeOrderLineInput[],
   fromCompanyId: string,
 ): Promise<void> {
   const batchIds = [...new Set(lines.flatMap((line) => line.batchIds))];
@@ -456,7 +484,7 @@ async function insertLines(
   ctx: InternalTradeOrderRepoContext,
   orderId: string,
   fromCompanyId: string,
-  lines: readonly InternalTradeOrderLine[],
+  lines: readonly InternalTradeOrderLineInput[],
 ): Promise<void> {
   for (const [index, line] of lines.entries()) {
     const lineId = uuidv7();
@@ -672,5 +700,208 @@ export async function cancelInternalTradeOrder(
     );
   }
 
+  return getInternalTradeOrder(ctx, id);
+}
+
+export async function receiveInternalTradeOrder(
+  ctx: InternalTradeOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<InternalTradeOrder | null> {
+  const current = await loadInternalTradeOrderState(ctx, id);
+  if (!current) return null;
+  if (current.version !== expectedVersion) {
+    throw new AppError(
+      'VERSION_CONFLICT',
+      '内部交易单版本与 If-Match 不一致，请重新读取后重试',
+      { expected: expectedVersion, current: current.version },
+    );
+  }
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE internal_trade_order
+        SET status = '已完成',
+            in_transit_qty = 0,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND to_company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '在途'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '只有在途状态的内部交易单可以确认到货');
+  }
+  return getInternalTradeOrder(ctx, id);
+}
+
+/**
+ * 发货占用（D22 / D31 / D68③）：锁定发出公司批次（FOR UPDATE）、校验可用量
+ * 并逐个累加 `in_transit_qty`。`quantities` 已按批次聚合去重，数量为正 decimal 字符串。
+ * 可用量不足抛 VERSION_CONFLICT；批次缺失 / 归属不符抛 NOT_FOUND。
+ */
+export async function occupyBatchesForDispatch(
+  ctx: InternalTradeOrderRepoContext,
+  fromCompanyId: string,
+  quantities: readonly { batchId: string; qty: string }[],
+): Promise<void> {
+  if (quantities.length === 0) {
+    throw new AppError('VALIDATION_FAILED', '内部交易单没有可发货的批次');
+  }
+  const batchIds = quantities.map((item) => item.batchId);
+  const locked = await ctx.tx.query<DispatchBatchRow>(
+    `SELECT id, batch_no, trim_scale(available_qty) AS available_qty
+       FROM inventory_batch
+      WHERE tenant_id = $1
+        AND company_id = $2::uuid
+        AND id = ANY($3::uuid[])
+      FOR UPDATE`,
+    [ctx.tenantId, fromCompanyId, batchIds],
+  );
+  if (locked.rows.length !== batchIds.length) {
+    throw new AppError('NOT_FOUND', '存在不存在或不属于发出公司的库存批次', {
+      companyId: fromCompanyId,
+    });
+  }
+
+  const availableById = new Map(
+    locked.rows.map((row) => [row.id, String(row.available_qty)]),
+  );
+  const batchNoById = new Map(locked.rows.map((row) => [row.id, row.batch_no]));
+  for (const { batchId, qty } of quantities) {
+    const available = availableById.get(batchId);
+    const guard = await ctx.tx.query<{ enough: boolean }>(
+      `SELECT $1::amount <= $2::amount AS enough`,
+      [qty, available],
+    );
+    if (!guard.rows[0]?.enough) {
+      // N 单发货占用在途量，走自己的入库守卫而不是 stock-flow 的盘点调整；
+      // #269 要求四类业务动作各自说清动作与批次，文案在此对齐。
+      const batchNo = batchNoById.get(batchId);
+      throw new AppError(
+        'VERSION_CONFLICT',
+        `内部交易发货后批次可用量将为负（批次 ${batchNo}）`,
+        {
+          batchId,
+          batchNo,
+          requestedQty: qty,
+          availableQty: available,
+        },
+      );
+    }
+  }
+
+  for (const { batchId, qty } of quantities) {
+    await ctx.tx.query(
+      `UPDATE inventory_batch
+          SET in_transit_qty = in_transit_qty + $1::amount
+        WHERE id = $2::uuid
+          AND tenant_id = $3
+          AND company_id = $4::uuid`,
+      [qty, batchId, ctx.tenantId, fromCompanyId],
+    );
+  }
+}
+
+/** 确认发货：把「进行中」N 单推进「在途」并写回在途量（D22 / D31 / D68③）。 */
+export async function dispatchInternalTradeOrder(
+  ctx: InternalTradeOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+  inTransitQty: string,
+): Promise<InternalTradeOrder | null> {
+  const current = await loadInternalTradeOrderState(ctx, id);
+  if (!current) return null;
+  if (current.version !== expectedVersion) {
+    throw new AppError(
+      'VERSION_CONFLICT',
+      '内部交易单版本与 If-Match 不一致，请重新读取后重试',
+      { expected: expectedVersion, current: current.version },
+    );
+  }
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE internal_trade_order
+        SET status = '在途',
+            in_transit_qty = $4::amount,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND from_company_id = ANY($3::uuid[])
+        AND version = $5
+        AND status = '进行中'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], inTransitQty, expectedVersion],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '内部交易单已被并发修改，请重新读取后重试');
+  }
+  return getInternalTradeOrder(ctx, id);
+}
+
+/**
+ * 撤销发货释放（D22 / D31 / D68③）：与 `occupyBatchesForDispatch` 完全同一算法，
+ * 把已占用的批次在途量逐条回退。`quantities` 已按批次聚合去重，数量为正 decimal 字符串。
+ * 在途量不足以释放（数据被别处动过）抛 VERSION_CONFLICT，绝不允许减成负数。
+ */
+export async function releaseBatchesForRevoke(
+  ctx: InternalTradeOrderRepoContext,
+  fromCompanyId: string,
+  quantities: readonly { batchId: string; qty: string }[],
+): Promise<void> {
+  if (quantities.length === 0) {
+    throw new AppError('VALIDATION_FAILED', '内部交易单没有可释放的批次');
+  }
+  for (const { batchId, qty } of quantities) {
+    const released = await ctx.tx.query<{ id: string }>(
+      `UPDATE inventory_batch
+          SET in_transit_qty = in_transit_qty - $1::amount
+        WHERE id = $2::uuid
+          AND tenant_id = $3
+          AND company_id = $4::uuid
+          AND in_transit_qty >= $1::amount
+        RETURNING id`,
+      [qty, batchId, ctx.tenantId, fromCompanyId],
+    );
+    if (released.rows.length === 0) {
+      throw new AppError('VERSION_CONFLICT', '批次在途量不足以释放，无法撤销发货', {
+        batchId,
+        releaseQty: qty,
+      });
+    }
+  }
+}
+
+/** 撤销发货：把「在途」N 单退回「进行中」并清空在途量（D22 / D31 / D68③）。 */
+export async function revokeDispatchInternalTradeOrder(
+  ctx: InternalTradeOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<InternalTradeOrder | null> {
+  const current = await loadInternalTradeOrderState(ctx, id);
+  if (!current) return null;
+  if (current.version !== expectedVersion) {
+    throw new AppError(
+      'VERSION_CONFLICT',
+      '内部交易单版本与 If-Match 不一致，请重新读取后重试',
+      { expected: expectedVersion, current: current.version },
+    );
+  }
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE internal_trade_order
+        SET status = '进行中',
+            in_transit_qty = 0,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND from_company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '在途'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('NOT_FOUND', '内部交易单不存在或已不在途');
+  }
   return getInternalTradeOrder(ctx, id);
 }

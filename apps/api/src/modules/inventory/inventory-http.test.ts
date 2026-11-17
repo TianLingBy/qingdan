@@ -40,6 +40,10 @@ const STOCKTAKE_DETAIL_ID = '01900000-0000-7000-8000-000000000252';
 const STOCKTAKE_APPROVE_ID = '01900000-0000-7000-8000-000000000253';
 const STOCKTAKE_SHORTAGE_ID = '01900000-0000-7000-8000-000000000254';
 const STOCKTAKE_TIGHT_ID = '01900000-0000-7000-8000-000000000255';
+const STOCKTAKE_REJECT_ID = '01900000-0000-7000-8000-000000000256';
+const STOCKTAKE_REJECT_APPROVED_ID = '01900000-0000-7000-8000-000000000257';
+const STOCK_BATCH_REJECT_ID = '01900000-0000-7000-8000-000000000246';
+const STOCK_BATCH_REJECT_APPROVED_ID = '01900000-0000-7000-8000-000000000247';
 
 function readHeaders(cookie: string, requestId: string): Record<string, string> {
   return { cookie, 'x-request-id': requestId };
@@ -78,8 +82,8 @@ async function insertProduct(
 ): Promise<void> {
   await test.database.query(
     `INSERT INTO product
-       (id, tenant_id, company_id, product_no, name, aliases, specification, unit, status)
-     VALUES ($1, $2, $3, $4, $5, '{}', NULL, '件', '启用')`,
+       (id, tenant_id, company_id, product_no, name, aliases, specification, unit)
+     VALUES ($1, $2, $3, $4, $5, '{}', NULL, '件')`,
     [id, DEMO_IDS.tenantId, companyId, productNo, name],
   );
 }
@@ -250,6 +254,21 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       method: 'POST',
       url: `/api/v1/stocktakes/${id}/approve`,
       headers: writeHeaders(cookie, requestId, extra),
+    });
+  }
+
+  async function rejectStocktakeRequest(
+    cookie: string,
+    requestId: string,
+    id: string,
+    payload: Record<string, unknown>,
+    extra: Record<string, string> = {},
+  ) {
+    return app.inject({
+      method: 'POST',
+      url: `/api/v1/stocktakes/${id}/reject`,
+      headers: writeHeaders(cookie, requestId, extra),
+      payload,
     });
   }
 
@@ -1003,15 +1022,20 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       { 'if-match': '"1"' },
     );
     expect(insufficient.statusCode).toBe(409);
-    expect(insufficient.json()).toMatchObject({
+    const insufficientBody = insufficient.json() as { code: string; message: string };
+    expect(insufficientBody).toMatchObject({
       code: 'VERSION_CONFLICT',
       details: {
         reason: 'insufficient_available_qty',
         batchId: STOCK_BATCH_TIGHT_ID,
+        batchNo: 'HTTP-STOCK-TIGHT',
         availableQty: '2',
         delta: '-10',
       },
     });
+    // #269：盘点保留「盘亏调整」口吻，并带批次号便于定位。
+    expect(insufficientBody.message).toContain('盘亏调整');
+    expect(insufficientBody.message).toContain('HTTP-STOCK-TIGHT');
 
     const tightStocktake = await test.database.query<{ status: string; version: number }>(
       `SELECT status, version FROM inventory_stocktake WHERE id = $1::uuid`,
@@ -1038,6 +1062,268 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       [STOCKTAKE_TIGHT_ID],
     );
     expect(tightFlows.rows[0]?.count).toBe('0');
+  });
+
+  it('盘点驳回：必须留原因、不动库存、已批准不可驳回，「已驳回」不再死态', async () => {
+    await insertBatch(test, {
+      id: STOCK_BATCH_REJECT_ID,
+      companyId: DEMO_IDS.companyId,
+      productId: PRODUCT_1_ID,
+      batchNo: 'HTTP-STOCK-REJECT',
+      inboundQty: '40',
+      referencedQty: '5',
+      inTransitQty: '0',
+      pendingExecutionQty: '0',
+    });
+    await insertBatch(test, {
+      id: STOCK_BATCH_REJECT_APPROVED_ID,
+      companyId: DEMO_IDS.companyId,
+      productId: PRODUCT_2_ID,
+      batchNo: 'HTTP-STOCK-REJECT-APPROVED',
+      inboundQty: '20',
+      referencedQty: '0',
+      inTransitQty: '0',
+      pendingExecutionQty: '0',
+    });
+    await insertStocktakeRow(test, {
+      id: STOCKTAKE_REJECT_ID,
+      companyId: DEMO_IDS.companyId,
+      stocktakeNo: 'I-0001-20261105-0401',
+      batchId: STOCK_BATCH_REJECT_ID,
+      bookQty: '40',
+      actualQty: '45',
+    });
+    await insertStocktakeRow(test, {
+      id: STOCKTAKE_REJECT_APPROVED_ID,
+      companyId: DEMO_IDS.companyId,
+      stocktakeNo: 'I-0001-20261105-0402',
+      batchId: STOCK_BATCH_REJECT_APPROVED_ID,
+      bookQty: '20',
+      actualQty: '21',
+      status: '已批准',
+      approverId: DEMO_IDS.ownerEmployeeId,
+      version: 2,
+    });
+
+    const reasonBody = { confirm: true, reason: '依据不足' };
+
+    const missingIfMatch = await rejectStocktakeRequest(
+      ownerCookie,
+      'req-stocktake-reject-428',
+      STOCKTAKE_REJECT_ID,
+      reasonBody,
+    );
+    expect(missingIfMatch.statusCode).toBe(428);
+    expect(missingIfMatch.json()).toMatchObject({ code: 'PRECONDITION_REQUIRED' });
+
+    const noPermission = await rejectStocktakeRequest(
+      warehouseCookie,
+      'req-stocktake-reject-403',
+      STOCKTAKE_REJECT_ID,
+      reasonBody,
+      { 'if-match': '"1"' },
+    );
+    expect(noPermission.statusCode).toBe(403);
+    expect(noPermission.json()).toMatchObject({ code: 'FORBIDDEN' });
+
+    const missingReason = await rejectStocktakeRequest(
+      ownerCookie,
+      'req-stocktake-reject-no-reason',
+      STOCKTAKE_REJECT_ID,
+      { confirm: true },
+      { 'if-match': '"1"' },
+    );
+    expect(missingReason.statusCode).toBe(422);
+    expect(missingReason.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const missingConfirm = await rejectStocktakeRequest(
+      ownerCookie,
+      'req-stocktake-reject-no-confirm',
+      STOCKTAKE_REJECT_ID,
+      { reason: '依据不足' },
+      { 'if-match': '"1"' },
+    );
+    expect(missingConfirm.statusCode).toBe(422);
+    expect(missingConfirm.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const stale = await rejectStocktakeRequest(
+      ownerCookie,
+      'req-stocktake-reject-stale',
+      STOCKTAKE_REJECT_ID,
+      reasonBody,
+      { 'if-match': '"9"' },
+    );
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ code: 'VERSION_CONFLICT' });
+
+    // 已批准是终态：驳回必须失败，且不是 404 / 500。
+    const approvedCannotReject = await rejectStocktakeRequest(
+      ownerCookie,
+      'req-stocktake-reject-approved',
+      STOCKTAKE_REJECT_APPROVED_ID,
+      reasonBody,
+      { 'if-match': '"2"' },
+    );
+    expect(approvedCannotReject.statusCode).toBe(422);
+    const approvedBody = approvedCannotReject.json() as { code: string; message: string };
+    expect(approvedBody).toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(approvedBody.message).toContain('已批准');
+
+    const aiToken = await createAiToken('req-stocktake-reject-ai-token');
+    const aiWithoutReason = await app.inject({
+      method: 'POST',
+      url: `/api/v1/stocktakes/${STOCKTAKE_REJECT_ID}/reject`,
+      headers: {
+        authorization: `Bearer ${aiToken}`,
+        'if-match': '"1"',
+        'x-request-id': 'req-stocktake-reject-ai-no-reason',
+      },
+      payload: reasonBody,
+    });
+    expect(aiWithoutReason.statusCode).toBe(422);
+    expect(aiWithoutReason.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const aiForbidden = await app.inject({
+      method: 'POST',
+      url: `/api/v1/stocktakes/${STOCKTAKE_REJECT_ID}/reject`,
+      headers: {
+        authorization: `Bearer ${aiToken}`,
+        'if-match': '"1"',
+        'x-reason': 'AI 尝试驳回盘点',
+        'x-request-id': 'req-stocktake-reject-ai-forbidden',
+      },
+      payload: reasonBody,
+    });
+    expect(aiForbidden.statusCode).toBe(403);
+    expect(aiForbidden.json()).toMatchObject({ code: 'AI_ACTION_FORBIDDEN' });
+
+    const rejected = await rejectStocktakeRequest(
+      ownerCookie,
+      'req-stocktake-reject-ok',
+      STOCKTAKE_REJECT_ID,
+      { confirm: true, reason: '  盘点依据不足  ' },
+      { 'if-match': '"1"' },
+    );
+    expect(rejected.statusCode).toBe(200);
+    expect(rejected.headers.etag).toBe('"2"');
+    expect(rejected.json()).toMatchObject({
+      id: STOCKTAKE_REJECT_ID,
+      status: '已驳回',
+      rejectReason: '盘点依据不足',
+      approverId: DEMO_IDS.ownerEmployeeId,
+      version: 2,
+    } satisfies Partial<Stocktake>);
+
+    const stored = await test.database.query<{
+      status: string;
+      reject_reason: string | null;
+      version: number;
+    }>(
+      `SELECT status, reject_reason, version
+         FROM inventory_stocktake
+        WHERE id = $1::uuid`,
+      [STOCKTAKE_REJECT_ID],
+    );
+    expect(stored.rows[0]).toEqual({
+      status: '已驳回',
+      reject_reason: '盘点依据不足',
+      version: 2,
+    });
+
+    // 驳回不动库存：批次数量 / 版本不变，且不写任何库存流水。
+    const batch = await test.database.query<{
+      inbound_qty: string;
+      available_qty: string;
+      version: number;
+    }>(
+      `SELECT trim_scale(inbound_qty) AS inbound_qty,
+              trim_scale(available_qty) AS available_qty,
+              version
+         FROM inventory_batch
+        WHERE id = $1::uuid`,
+      [STOCK_BATCH_REJECT_ID],
+    );
+    expect(batch.rows[0]).toEqual({ inbound_qty: '40', available_qty: '35', version: 1 });
+
+    const flows = await test.database.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM inventory_flow
+        WHERE source_doc_id = $1::uuid`,
+      [STOCKTAKE_REJECT_ID],
+    );
+    expect(flows.rows[0]?.count).toBe('0');
+
+    const audit = await test.database.query<{
+      action: string;
+      result: string;
+      reason: string | null;
+      change_reason: string | null;
+    }>(
+      `SELECT action,
+              result,
+              reason,
+              changes->>'reason' AS change_reason
+         FROM audit_log
+        WHERE object_id = $1
+          AND result = 'success'`,
+      [STOCKTAKE_REJECT_ID],
+    );
+    expect(audit.rows).toEqual([
+      {
+        action: 'stocktake.reject',
+        result: 'success',
+        reason: null,
+        change_reason: '盘点依据不足',
+      },
+    ]);
+
+    // 列表 / 详情都带 rejectReason，approvable 明确「已驳回」。
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/stocktakes/${STOCKTAKE_REJECT_ID}`,
+      headers: readHeaders(ownerCookie, 'req-stocktake-reject-detail'),
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({
+      status: '已驳回',
+      rejectReason: '盘点依据不足',
+      approvable: { allowed: false, reason: 'already_rejected' },
+    } satisfies Partial<StocktakeDetail>);
+
+    const rejectedList = await listStocktakesRequest(
+      ownerCookie,
+      'req-stocktake-reject-list',
+      `?companyId=${DEMO_IDS.companyId}&status=${encodeURIComponent('已驳回')}`,
+    );
+    expect(rejectedList.statusCode).toBe(200);
+    expect(
+      (rejectedList.json() as { items: Stocktake[] }).items.find(
+        (item) => item.id === STOCKTAKE_REJECT_ID,
+      ),
+    ).toMatchObject({ status: '已驳回', rejectReason: '盘点依据不足' });
+
+    // 已驳回是终态：再驳回 422；再审批 409 already_rejected（原 dead branch 已可达）。
+    const repeatedReject = await rejectStocktakeRequest(
+      ownerCookie,
+      'req-stocktake-reject-repeated',
+      STOCKTAKE_REJECT_ID,
+      reasonBody,
+      { 'if-match': '"2"' },
+    );
+    expect(repeatedReject.statusCode).toBe(422);
+    expect(repeatedReject.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const approveRejected = await approveStocktakeRequest(
+      ownerCookie,
+      'req-stocktake-reject-then-approve',
+      STOCKTAKE_REJECT_ID,
+      { 'if-match': '"2"' },
+    );
+    expect(approveRejected.statusCode).toBe(409);
+    expect(approveRejected.json()).toMatchObject({
+      code: 'VERSION_CONFLICT',
+      details: { reason: 'already_rejected', status: '已驳回' },
+    });
   });
 
   it('迁移 0017：应用角色只有 SELECT/INSERT/UPDATE，且 FORCE RLS 开启', async () => {

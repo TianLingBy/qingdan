@@ -8,15 +8,18 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
+import { registerServices } from '../../../platform/services/registry.js';
 import {
   createTestDatabase,
   type TestDatabase,
 } from '../../../testing/pglite.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 import {
   cancelSalesOrder,
   createSalesOrder,
   getSalesOrder,
   listSalesOrders,
+  shipSalesOrder,
   updateSalesOrder,
 } from './sales-orders.js';
 
@@ -33,9 +36,13 @@ const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000003103';
 const FLOW_ID = '01900000-0000-7000-8000-000000003131';
 
 const FULL_SCOPE: ScopeMatrix = [
-  { domain: 'sales', actions: ['read', 'create', 'update', 'delete', 'view_price'] },
+  { domain: 'sales', actions: ['read', 'create', 'update', 'ship', 'delete', 'view_price'] },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'sales', actions: ['read', 'view_price'] }];
+/** D85 的对照组：能改单（update）、能看价，但没有 ship。 */
+const UPDATE_ONLY_SCOPE: ScopeMatrix = [
+  { domain: 'sales', actions: ['read', 'update', 'view_price'] },
+];
 
 const LINE = {
   productId: PRODUCT_ID,
@@ -176,6 +183,7 @@ describe('sales 销售单用例（PGlite + seed 演示租户）', () => {
   }
 
   beforeAll(async () => {
+    registerServices(inventoryServices);
     test = await createTestDatabase();
     await seed(test.database);
     await test.database.query(
@@ -186,9 +194,9 @@ describe('sales 销售单用例（PGlite + seed 演示租户）', () => {
     );
     await test.database.query(
       `INSERT INTO customer
-         (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, NULL, '用例客户', '启用'),
-              ($4, $2, $5, NULL, '二司客户', '启用')
+         (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, NULL, '用例客户'),
+              ($4, $2, $5, NULL, '二司客户')
        ON CONFLICT (id) DO NOTHING`,
       [
         CUSTOMER_ID,
@@ -200,9 +208,9 @@ describe('sales 销售单用例（PGlite + seed 演示租户）', () => {
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '用例商品', '{}', '件', '启用'),
-              ($4, $2, $5, NULL, '二司商品', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '用例商品', '{}', '件'),
+              ($4, $2, $5, NULL, '二司商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [
         PRODUCT_ID,
@@ -236,6 +244,66 @@ describe('sales 销售单用例（PGlite + seed 演示租户）', () => {
 
   afterAll(async () => {
     await test.database.close();
+  });
+
+  it('建单按批次占用待执行量，取消精确释放', async () => {
+    const created = await createOne();
+    const pending = await test.database.query<{
+      id: string;
+      pending_execution_qty: string;
+      available_qty: string;
+    }>(
+      `SELECT id::text AS id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty,
+              trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_A_ID, BATCH_B_ID]],
+    );
+    expect(pending.rows).toEqual([
+      { id: BATCH_A_ID, pending_execution_qty: '1', available_qty: '999' },
+      { id: BATCH_B_ID, pending_execution_qty: '1', available_qty: '999' },
+    ]);
+
+    const { ctx } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"1"' },
+    });
+    const cancelled = await cancelSalesOrder(ctx);
+    expect(cancelled).toMatchObject({ status: '已取消', version: 2 });
+    const released = await test.database.query<{ pending_execution_qty: string }>(
+      `SELECT trim_scale(pending_execution_qty) AS pending_execution_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_A_ID, BATCH_B_ID]],
+    );
+    expect(released.rows.map((row) => row.pending_execution_qty)).toEqual(['0', '0']);
+    const createAudit = await test.database.query<{ changes: Record<string, unknown> }>(
+      `SELECT changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'sales.order.create'`,
+      [created.id],
+    );
+    expect(createAudit.rows[0]?.changes).toMatchObject({
+      pendingReservations: [
+        { batchId: BATCH_A_ID, qty: '1', pendingAfter: '1' },
+        { batchId: BATCH_B_ID, qty: '1', pendingAfter: '1' },
+      ],
+    });
+    const audit = await test.database.query<{ changes: Record<string, unknown> }>(
+      `SELECT changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'sales.order.cancel'`,
+      [created.id],
+    );
+    expect(audit.rows[0]?.changes).toMatchObject({
+      pendingReleases: [
+        { batchId: BATCH_A_ID, qty: '1', pendingAfter: '0' },
+        { batchId: BATCH_B_ID, qty: '1', pendingAfter: '0' },
+      ],
+    });
   });
 
   it('开单：E 单号、SQL 金额聚合、行成本下限、费用与审计落库', async () => {
@@ -556,6 +624,30 @@ describe('sales 销售单用例（PGlite + seed 演示租户）', () => {
       [created.id],
     );
     expect(audit.rows[0]?.count).toBe('2');
+  });
+
+  it('出库：只有 sales.update 时 403（D85：能改单不等于能出库）', async () => {
+    const order = await createOne({ fees: [] });
+
+    await expectAppError(
+      shipSalesOrder(
+        writeCtx(
+          { scope: UPDATE_ONLY_SCOPE },
+          {
+            params: { id: order.id },
+            headers: { 'if-match': '"1"' },
+          },
+        ).ctx,
+      ),
+      'FORBIDDEN',
+    );
+
+    // 拒绝发生在写入前：状态与版本都不变。
+    const detail = (await getSalesOrder(
+      readCtx({}, { params: { id: order.id } }),
+    )) as SalesOrderDetail;
+    expect(detail.status).toBe('进行中');
+    expect(detail.version).toBe(order.version);
   });
 
   it('取消：D21 有下游 / 已完成拒绝，AI 禁止；成功置已取消并记审计', async () => {

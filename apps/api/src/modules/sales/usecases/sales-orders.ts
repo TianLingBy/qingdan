@@ -27,10 +27,14 @@ import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import {
+  batchDirectoryPort,
+  productDirectoryPort,
   settlementDraftPort,
   stockFlowPort,
+  type StockReservationLine,
 } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
+import type { SalesOrderPrintLabels } from '../services/customer-copy.js';
 import {
   maskSalesOrderAmounts,
   maskSalesOrderDetailAmounts,
@@ -39,7 +43,7 @@ import {
 /**
  * 销售单 E 用例（D15 / D16 / D20 / D21 / D22 / D39 / D51 / D52 / D54）。
  *
- * - 权限：sales.read|create|update|delete；
+ * - 权限：sales.read|create|update|ship|delete；
  * - 公司隔离：读改删由 repo 带可见公司集合，跨公司等同不存在；
  * - 单号：创建时在业务事务内取 E 号；
  * - 金额：decimal 字符串；商品行金额与单头合计由 SQL 计算 / 聚合；
@@ -109,7 +113,7 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create' | 'update' | 'delete' | 'export',
+  action: 'read' | 'create' | 'update' | 'ship' | 'delete' | 'export',
 ): void {
   if (!allowsScope(principal.scope, 'sales', action)) {
     throw new AppError('FORBIDDEN', `缺少 sales.${action} 权限`);
@@ -124,7 +128,7 @@ function assertCompanyVisible(principal: Principal, companyId: string): void {
   }
 }
 
-/** 契约里开单与取消均为 ai.policy=forbid；修改允许。 */
+/** 契约里开单 / 取消 / 打印 / 导出均为 ai.policy=forbid；修改允许。 */
 function assertHumanCredential(principal: Principal, action: string): void {
   if (principal.actorType === 'ai') {
     throw new AppError(
@@ -314,6 +318,7 @@ function exportDateStamp(now: Date): string {
  * - 权限：`sales.export`；数据范围仍走列表同款租户 + 可见公司过滤；
  * - 不分页：一次取全部符合条件行，超过 5000 行报 400（不静默截断）；
  * - 金额按 `sales.view_price` 脱敏：无权限时金额列留空，并加一行 CSV 注释说明；
+ * - AI 凭证禁止直接导出（契约 `sales.order.export` 为 `ai.policy=forbid`，D52①）；
  * - 成功必记 `action='export'` 审计；失败由 route-mount 统一补 fail 审计。
  */
 export async function exportSalesOrders(
@@ -322,6 +327,7 @@ export async function exportSalesOrders(
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.export');
   requireScope(principal, 'export');
+  assertHumanCredential(principal, '导出销售单列表');
   const query = parseListQuery(ctx.request);
   const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
 
@@ -347,7 +353,7 @@ export async function exportSalesOrders(
     order.createdAt.slice(0, 10),
     order.customerName,
     order.status,
-    order.handlerId,
+    order.handlerId ?? '',
     sumQty(order.lines),
     canViewPrice && order.totalAmount !== null
       ? formatAmount2(order.totalAmount)
@@ -437,6 +443,8 @@ export interface SalesOrderPrintSource {
   /** 已按看价权限脱敏的详情（无权限时金额为 null）。 */
   readonly detail: SalesOrderDetail;
   readonly companyName: string;
+  /** 打印用展示文案：商品名 / 批次号（D70 端口取数，取不到时渲染层退回短 id）。 */
+  readonly labels: SalesOrderPrintLabels;
 }
 
 /**
@@ -444,13 +452,43 @@ export interface SalesOrderPrintSource {
  *
  * 与详情端点共用装配与公司可见性逻辑；金额仍按 `sales.view_price` 脱敏，
  * 由渲染层把 null 显示为「—」。公司名暂无跨模块端口，只读 `company.name`。
+ * AI 凭证禁止直接打印（契约 `sales.order.print` 为 `ai.policy=forbid`，D52①）。
  */
+/**
+ * 打印展示文案（商品名 / 批次号）：走 D70 端口，未注册端口时退回空表，
+ * 由渲染层显示短 id——打印不能因为端口没接线就 500。
+ */
+async function loadPrintLabels(
+  tx: SqlClient,
+  tenantId: string,
+  detail: SalesOrderDetail,
+): Promise<SalesOrderPrintLabels> {
+  const productIds = [...new Set(detail.lines.map((line) => line.productId))];
+  const batchIds = [...new Set(detail.lines.flatMap((line) => line.batchIds))];
+  try {
+    const [products, batches] = await Promise.all([
+      productDirectoryPort().lookupProducts(tx, { tenantId, productIds }),
+      batchDirectoryPort().lookupBatchNos(tx, { tenantId, batchIds }),
+    ]);
+    return {
+      productName: Object.fromEntries(products.map((item) => [item.id, item.name])),
+      batchNo: Object.fromEntries(batches.map((item) => [item.id, item.batchNo])),
+    };
+  } catch (error) {
+    if (error instanceof AppError && error.code === 'NOT_IMPLEMENTED') {
+      return { productName: {}, batchNo: {} };
+    }
+    throw error;
+  }
+}
+
 export async function getSalesOrderForPrint(
   ctx: SalesOrderContext,
 ): Promise<SalesOrderPrintSource> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.print');
   requireScope(principal, 'read');
+  assertHumanCredential(principal, '打印销售单');
   const id = parseOrderId(ctx.request);
 
   const source = await withTenant(database, principal.tenantId, async (tx) => {
@@ -464,9 +502,11 @@ export async function getSalesOrderForPrint(
       [detail.companyId, principal.tenantId],
     );
     // 销售单可见即公司必然存在；缺失时退回公司 id，避免打印 500。
+    const labels = await loadPrintLabels(tx, principal.tenantId, detail);
     return {
       detail,
       companyName: company.rows[0]?.name ?? detail.companyId,
+      labels,
     };
   });
   if (!source) throw new AppError('NOT_FOUND', '销售单不存在');
@@ -475,6 +515,7 @@ export async function getSalesOrderForPrint(
   return {
     detail: maskSalesOrderDetailAmounts(source.detail, canViewPrice),
     companyName: source.companyName,
+    labels: source.labels,
   };
 }
 
@@ -507,6 +548,14 @@ export async function createSalesOrder(
       id,
       orderNo,
     });
+    const reservation = await stockFlowPort().reservePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: created.companyId,
+      sourceDocType: 'E',
+      sourceDocId: created.id,
+      handledBy: principal.employeeId,
+      lines: reservationLines(created.lines),
+    });
     audit.companyId = created.companyId;
     audit.changeSummary = {
       orderNo: created.orderNo,
@@ -515,6 +564,7 @@ export async function createSalesOrder(
       totalAmount: created.totalAmount,
       lineCount: created.lines.length,
       feeCount: created.fees.length,
+      pendingReservations: reservation.lines,
     };
     return created;
   });
@@ -606,8 +656,19 @@ export async function cancelSalesOrder(
     afterStatus: '已取消',
   });
   const order = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const current = await repo.getSalesOrder(context, id);
+    if (!current) throw new AppError('NOT_FOUND', '销售单不存在');
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: current.companyId,
+      sourceDocType: 'E',
+      sourceDocId: current.id,
+      handledBy: principal.employeeId,
+      lines: reservationLines(current.lines),
+    });
     const cancelled = await repo.cancelSalesOrder(
-      repoContext(tx, principal),
+      context,
       id,
       expectedVersion,
     );
@@ -617,6 +678,7 @@ export async function cancelSalesOrder(
       beforeStatus: state.status,
       afterStatus: cancelled.status,
       version: cancelled.version,
+      pendingReleases: released.lines,
     };
     return cancelled;
   });
@@ -649,28 +711,45 @@ function fromMicro(micro: bigint): string {
   return negative ? `-${body}` : body;
 }
 
+function reservationLines(
+  lines: readonly { readonly batchIds: readonly string[]; readonly qty: string }[],
+): StockReservationLine[] {
+  return lines.flatMap((line) => {
+    const qty = toMicro(line.qty);
+    const count = BigInt(line.batchIds.length);
+    const base = qty / count;
+    const remainder = qty - base * count;
+    return line.batchIds.map((batchId, index) => ({
+      batchId,
+      qty: fromMicro(index === line.batchIds.length - 1 ? base + remainder : base),
+    }));
+  });
+}
+
 /**
- * 完成销售单（D72）：扣减批次可用量 + 生成 C 单草稿，同一事务。
+ * 销售出库（D72 / D85）：扣减批次可用量 + 生成 C 单草稿，同一事务。
  *
- * - 权限 `sales.update`；AI 默认禁止（会锁定库存与结算额）；
- * - 仅「进行中」可完成；If-Match 强 ETag；
+ * - 端点 `sales.order.ship` = 原 `sales.order.complete` 改名（销售单没有「出货后再确认」这一步，
+ *   完成即出库；D85）；权限 `sales.ship`，与 `sales.update` 分离——能改单不等于能出库；
+ * - AI 默认禁止（会锁定库存与结算额）；
+ * - 仅「进行中」可出库；If-Match 强 ETag；
  * - 库存扣减粒度：**按行全量扣减，批次间均分，除不尽的余量由最后一个批次承接**（D72）；
  * - C 草稿：总售价 = 单据总金额（含费用行），总成本 = Σ(行数量 × 行加权平均批次成本)；
  *   本单相关损失与提成比例本期取 `0`（D35 损失归集、D5④ 提成配置尚未落地，见 D72 ③④）。
  */
-export async function completeSalesOrder(
+export async function shipSalesOrder(
   ctx: SalesOrderWriteContext,
 ): Promise<SalesOrder> {
   const principal = requirePrincipal(ctx.request);
-  const database = requireDatabase(ctx, 'sales.order.complete');
-  requireScope(principal, 'update');
-  assertHumanCredential(principal, '完成销售单（会锁定库存与结算额）');
+  const database = requireDatabase(ctx, 'sales.order.ship');
+  requireScope(principal, 'ship');
+  assertHumanCredential(principal, '销售出库（会锁定库存与结算额）');
 
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
   const handledBy = principal.employeeId;
 
-  const audit = auditEventOf(ctx.request, principal, 'sales.order.complete', id, {
+  const audit = auditEventOf(ctx.request, principal, 'sales.order.ship', id, {
     beforeStatus: '进行中',
     afterStatus: '已完成',
   });
@@ -682,7 +761,7 @@ export async function completeSalesOrder(
     if (source.order.status !== '进行中') {
       throw new AppError(
         'VALIDATION_FAILED',
-        '只有「进行中」的销售单可完成，已完成/已取消不可再次完成',
+        '只有「进行中」的销售单可出库，已完成/已取消不可再次出库',
         { status: source.order.status },
       );
     }
@@ -710,6 +789,17 @@ export async function completeSalesOrder(
       });
     }
 
+    // A 案（#286）：完成时先释放本单建单占用，再按原口径扣减入库量。
+    // 两步在同一事务内落地，避免 pending 占用与入库扣减对同一批货重复计算。
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: source.order.companyId,
+      sourceDocType: 'E',
+      sourceDocId: id,
+      handledBy,
+      lines: reservationLines(source.lines),
+    });
+
     for (const flow of stockFlows) {
       await stockFlowPort().applyAdjustment(tx, {
         tenantId: principal.tenantId,
@@ -734,7 +824,7 @@ export async function completeSalesOrder(
       commissionRateSnapshot: '0',
       commissionAmount: '0',
       // D77 ②：提成归属人 = 来源单负责人；比例在结算确认时按配置解析并快照。
-      commissionOwnerId: source.order.handlerId,
+      commissionOwnerId: source.order.handlerId!,
       createdBy: handledBy,
       requestId: requestIdFor(ctx.request),
     });
@@ -748,6 +838,7 @@ export async function completeSalesOrder(
       afterStatus: completed.status,
       version: completed.version,
       stockFlowCount: stockFlows.length,
+      pendingReleases: released.lines,
       settlementOrderId: draft.id,
       settlementOrderNo: draft.orderNo,
       // 写路径读真实金额（脱敏只作用于响应，D79）；null 仅可能来自响应侧类型。
@@ -755,7 +846,7 @@ export async function completeSalesOrder(
       totalCostAmount: fromMicro(totalCostMicro),
       commissionRateSnapshot: '0',
       relatedLossAmount: '0',
-      commissionOwnerId: source.order.handlerId,
+      commissionOwnerId: source.order.handlerId!,
       placeholders: ['relatedLossAmount', 'commissionRateSnapshot'],
     };
     return completed;

@@ -32,6 +32,20 @@ function validationDetails(error: FastifyError): { issues: ValidationIssue[] } {
   return { issues };
 }
 
+/**
+ * 数据库级 D15 触发器违规（migrations/0027）：SQLSTATE 23514 + 消息前缀 `D15:`。
+ * 只认这个前缀，避免把其它 check 约束违规误报成 422。
+ */
+export function isD15Violation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return (
+    candidate.code === '23514' &&
+    typeof candidate.message === 'string' &&
+    candidate.message.startsWith('D15:')
+  );
+}
+
 export function registerErrorHandling(app: FastifyInstance): void {
   app.setNotFoundHandler((request: FastifyRequest, reply: FastifyReply) => {
     const body = new AppError('NOT_FOUND', `路由不存在：${request.method} ${request.url}`).toBody(
@@ -62,6 +76,15 @@ export function registerErrorHandling(app: FastifyInstance): void {
       reply
         .status(422)
         .send(new AppError('VALIDATION_FAILED', '请求格式不合法').toBody(requestId));
+      return;
+    }
+
+    // 数据库级业务约束（D15 触发器）：业务层已被 repo 拦下，这里兜住绕过业务层的入口。
+    if (isD15Violation(error)) {
+      request.log.warn({ err: error, requestId }, '数据库级 D15 校验拦截');
+      reply
+        .status(422)
+        .send(new AppError('VALIDATION_FAILED', '商品不属于该采购单所在公司').toBody(requestId));
       return;
     }
 

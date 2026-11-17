@@ -7,10 +7,12 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Principal } from '../../../platform/auth/principal.js';
 import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
+import { registerServices } from '../../../platform/services/registry.js';
 import {
   createTestDatabase,
   type TestDatabase,
 } from '../../../testing/pglite.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 import { createSalesOrder } from './sales-orders.js';
 import {
   createSalesReceipt,
@@ -151,6 +153,7 @@ describe('sales 收款记录用例（PGlite + seed 演示租户）', () => {
   }
 
   beforeAll(async () => {
+    registerServices(inventoryServices);
     test = await createTestDatabase();
     await seed(test.database);
     await test.database.query(
@@ -161,15 +164,15 @@ describe('sales 收款记录用例（PGlite + seed 演示租户）', () => {
     );
     await test.database.query(
       `INSERT INTO customer
-         (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, NULL, '收款测试客户', '启用')
+         (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, NULL, '收款测试客户')
        ON CONFLICT (id) DO NOTHING`,
       [CUSTOMER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '收款测试商品', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '收款测试商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );

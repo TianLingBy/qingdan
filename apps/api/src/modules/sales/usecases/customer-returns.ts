@@ -17,14 +17,14 @@ import type { Principal } from '../../../platform/auth/principal.js';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
+import { stockFlowPort } from '../../../platform/services/registry.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import * as repo from '../repo.js';
 
 /**
  * R 客户退货用例（D36 / D40 / D47 / D51 / D52.1 / D54）。
  *
- * - 权限：`customer_return.read|create`；
- * - D47：录入由老板、经理或财务岗位完成，服务端按当前岗位重新校验；
+ * - 权限：只认权限点不看岗位（D44 / AGENTS.md 权限铁律）——录入需 `customer_return.create`；
  * - 隔离：所有读写带 tenant_id + 可见公司集合，跨公司等同不存在；
  * - 单号：创建时在同一事务内取 `R-<公司码4>-<日期8>-<流水4>`；
  * - 金额：明细金额由 SQL 计算，应退金额按 amount 域规范化，保持 decimal 字符串；
@@ -37,6 +37,18 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type MutableAuditEvent = { -readonly [K in keyof AuditEvent]: AuditEvent[K] };
+
+const MICRO = 1_000_000n;
+function toMicro(value: string): bigint {
+  const [whole, fraction = ''] = value.split('.');
+  return BigInt(whole ?? '0') * MICRO + BigInt(fraction.padEnd(6, '0'));
+}
+function fromMicro(value: bigint): string {
+  const sign = value < 0n ? '-' : '';
+  const raw = value < 0n ? -value : value;
+  const fraction = (raw % MICRO).toString().padStart(6, '0').replace(/0+$/, '');
+  return `${sign}${raw / MICRO}${fraction ? `.${fraction}` : ''}`;
+}
 
 export interface CustomerReturnContext {
   readonly database: Database | null;
@@ -88,7 +100,7 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create',
+  action: 'read' | 'create' | 'approve',
 ): void {
   if (!allowsScope(principal.scope, 'customer_return', action)) {
     throw new AppError('FORBIDDEN', `缺少 customer_return.${action} 权限`);
@@ -184,6 +196,7 @@ function auditEventOf(
   principal: Principal,
   objectId: string,
   changeSummary: Record<string, unknown>,
+  action: 'customer_return.create' | 'customer_return.complete' = 'customer_return.create',
 ): MutableAuditEvent {
   return {
     tenantId: principal.tenantId,
@@ -192,7 +205,7 @@ function auditEventOf(
     actorId: principal.actorId,
     credentialId: principal.credentialId,
     source: request.auditSource,
-    action: 'customer_return.create',
+    action,
     objectType: OBJECT_TYPE,
     objectId,
     changeSummary,
@@ -202,6 +215,27 @@ function auditEventOf(
     userAgent: headerValue(request, 'user-agent') ?? null,
     reason: request.auditReason,
   };
+}
+
+/** 强 ETag `"<version>"`；缺失 → 428，格式非法或超出安全整数 → 409。 */
+function parseIfMatchVersion(request: FastifyRequest): number {
+  const raw = headerValue(request, 'if-match');
+  if (raw === undefined || raw.trim() === '') {
+    throw new AppError(
+      'PRECONDITION_REQUIRED',
+      '该操作必须携带 If-Match（强 ETag "<version>"）',
+    );
+  }
+  const match = /^"([0-9]+)"$/.exec(raw.trim());
+  const version = match ? Number(match[1]) : Number.NaN;
+  if (!match || !Number.isSafeInteger(version)) {
+    throw new AppError(
+      'VERSION_CONFLICT',
+      'If-Match 格式不合法，应为强 ETag "<version>"',
+      { ifMatch: raw },
+    );
+  }
+  return version;
 }
 
 /** R 客户退货列表（普通读，不记审计）。 */
@@ -234,7 +268,7 @@ export async function getCustomerReturn(
   return customerReturn;
 }
 
-/** 登记 R 客户退货：201 + 同事务取号 / D47 岗位校验 / 审计（D51）。 */
+/** 登记 R 客户退货：201 + 同事务取号 / 权限点校验 / 审计（D51）。 */
 export async function createCustomerReturn(
   ctx: CustomerReturnWriteContext,
 ): Promise<CustomerReturn> {
@@ -265,19 +299,6 @@ export async function createCustomerReturn(
 
   const created = await withAudit(database, audit, async (tx) => {
     const context = repoContext(tx, principal);
-    const approvalAllowed = await repo.hasCustomerReturnApprovalPosition(
-      context,
-      principal.employeeId,
-      input.companyId,
-    );
-    if (!approvalAllowed) {
-      throw new AppError(
-        'FORBIDDEN',
-        'D47：客户退货仅允许老板、经理或财务岗位录入',
-        { companyId: input.companyId },
-      );
-    }
-
     const returnNo = await takeDocumentNo(tx, 'R', input.companyId, new Date());
     const customerReturn = await repo.insertCustomerReturn(context, {
       ...input,
@@ -305,4 +326,43 @@ export async function createCustomerReturn(
 
   ctx.reply.status(201);
   return created;
+}
+
+export async function completeCustomerReturn(ctx: CustomerReturnWriteContext): Promise<CustomerReturn> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'customer_return.complete');
+  requireScope(principal, 'approve');
+  assertHumanCreation(principal, ctx.request.auditReason);
+  const id = parseCustomerReturnId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const audit = auditEventOf(ctx.request, principal, id, { beforeStatus: '进行中', afterStatus: '已完成' }, 'customer_return.complete');
+  return withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const order = await repo.getCustomerReturn(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '客户退货单不存在');
+    if (order.version !== expectedVersion) throw new AppError('VERSION_CONFLICT', '客户退货单版本与 If-Match 不一致');
+    if (order.status !== '进行中') throw new AppError('VALIDATION_FAILED', '只有进行中的客户退货单可以完成');
+    if (order.returnType === '退货退款') {
+      for (const line of order.lines) {
+        const qtyMicro = toMicro(line.qty);
+        const count = BigInt(line.batchIds.length);
+        const base = qtyMicro / count;
+        const remainder = qtyMicro - base * count;
+        for (const [index, batchId] of line.batchIds.entries()) {
+          const share = index === line.batchIds.length - 1 ? base + remainder : base;
+          if (share === 0n) continue;
+          await stockFlowPort().applyAdjustment(tx, {
+            tenantId: principal.tenantId, companyId: order.companyId, batchId,
+            delta: fromMicro(share), sourceDocType: 'R', sourceDocId: id, handledBy: principal.employeeId,
+          });
+        }
+      }
+    }
+    const completed = await repo.completeCustomerReturn(context, id, expectedVersion);
+    if (!completed) throw new AppError('NOT_FOUND', '客户退货单不存在');
+    audit.companyId = completed.companyId;
+    audit.changeSummary = { beforeStatus: order.status, afterStatus: completed.status, version: completed.version };
+    ctx.reply.header('ETag', `"${completed.version}"`);
+    return completed;
+  });
 }

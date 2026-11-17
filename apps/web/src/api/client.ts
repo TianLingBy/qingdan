@@ -50,6 +50,17 @@ export interface ApiRequestOptions {
   idempotencyKey?: string;
   /** 写操作的原因说明（AI / 危险动作必须带，D52）。 */
   reason?: string;
+  /**
+   * 成功响应的元信息回调（2xx 才调用）。
+   * 204 无响应体的端点（如权限覆盖 PATCH 回 `ETag` 头）靠它拿到响应头。
+   */
+  responseMeta?: (meta: ResponseMeta) => void;
+}
+
+/** 成功响应的元信息：状态码 + 响应头（只读）。 */
+export interface ResponseMeta {
+  readonly status: number;
+  readonly headers: Headers;
 }
 
 export interface ApiClientOptions {
@@ -251,6 +262,9 @@ export class ApiClient {
         headers: finalHeaders,
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: combinedSignal,
+        // 会话走 HttpOnly Cookie（D59⑦），脚本读不到也就不带 Authorization：
+        // 必须显式 include，部署到与 API 不同源时才不会丢会话。
+        credentials: 'include',
       });
     } catch (error) {
       // 网络层失败不是统一错误体，归一为 ApiError，避免调用方拿到原生 TypeError。
@@ -280,9 +294,12 @@ export class ApiClient {
     }
 
     if (response.status === 204) {
+      options.responseMeta?.({ status: response.status, headers: response.headers });
       return undefined as T;
     }
-    return (await readPayload(response)) as T;
+    const payload = (await readPayload(response)) as T;
+    options.responseMeta?.({ status: response.status, headers: response.headers });
+    return payload;
   }
 
   get<T>(path: string, options: Omit<ApiRequestOptions, 'method' | 'body'> = {}): Promise<T> {

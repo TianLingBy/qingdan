@@ -11,11 +11,14 @@ import { DEMO_IDS, seed } from '../../../platform/db/seed.js';
 import { createTestDatabase, type TestDatabase } from '../../../testing/pglite.js';
 import {
   cancelProcessingOrder,
+  completeProcessingOrder,
   createProcessingOrder,
   getProcessingOrder,
   listProcessingOrders,
   updateProcessingOrder,
 } from './processing-orders.js';
+import { registerServices } from '../../../platform/services/registry.js';
+import { inventoryServices } from '../../inventory/services/ports.js';
 
 /**
  * 加工单 B 用例 / 数据访问（D15 / D16 / D21 / D39 / D51 / D52 / D54）。
@@ -34,7 +37,7 @@ const OTHER_COMPANY_ID = '01900000-0000-7000-8000-000000001103';
 const FLOW_ID = '01900000-0000-7000-8000-000000001131';
 
 const FULL_SCOPE: ScopeMatrix = [
-  { domain: 'processing', actions: ['read', 'create', 'update', 'delete'] },
+  { domain: 'processing', actions: ['read', 'create', 'update', 'delete', 'approve'] },
 ];
 const READ_ONLY_SCOPE: ScopeMatrix = [{ domain: 'processing', actions: ['read'] }];
 
@@ -154,8 +157,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       body: {
         companyId: DEMO_IDS.companyId,
         processorId: PROCESSOR_ID,
+        outputProductId: PRODUCT_ID,
         handlerId: DEMO_IDS.ownerEmployeeId,
-        materialBatchIds: [BATCH_ID],
+        materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
         inputQty: '100',
         auxMaterials: '纸箱',
         fees: [FEE],
@@ -170,6 +174,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
   }
 
   beforeAll(async () => {
+    registerServices({ ...inventoryServices });
     test = await createTestDatabase();
     await seed(test.database);
     await test.database.query(
@@ -180,9 +185,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     );
     await test.database.query(
       `INSERT INTO processor
-         (id, tenant_id, company_id, processor_no, name, contact_name, status)
-       VALUES ($1, $2, $3, NULL, '用例加工厂', '王五', '启用'),
-              ($4, $2, $5, NULL, '二司加工厂', '赵六', '启用')
+         (id, tenant_id, company_id, processor_no, name, contact_name)
+       VALUES ($1, $2, $3, NULL, '用例加工厂', '王五'),
+              ($4, $2, $5, NULL, '二司加工厂', '赵六')
        ON CONFLICT (id) DO NOTHING`,
       [
         PROCESSOR_ID,
@@ -194,9 +199,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '用例材料', '{}', '件', '启用'),
-              ($4, $2, $5, NULL, '二司材料', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '用例材料', '{}', '件'),
+              ($4, $2, $5, NULL, '二司材料', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [
         PRODUCT_ID,
@@ -210,9 +215,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       `INSERT INTO inventory_batch
          (id, tenant_id, company_id, product_id, batch_no, locked_unit_cost,
           inbound_qty, referenced_qty, in_transit_qty, pending_execution_qty, custodian_id)
-       VALUES ($1, $2, $3, $4, 'B-UNIT-001', '10', '1000', '0', '0', '0', $5),
-              ($6, $2, $3, $4, 'B-UNIT-002', '11', '1000', '0', '0', '0', $5),
-              ($7, $2, $8, $9, 'B-UNIT-OTHER', '12', '1000', '0', '0', '0', $5)
+       VALUES ($1, $2, $3, $4, 'B-UNIT-001', '10', '100000', '0', '0', '0', $5),
+              ($6, $2, $3, $4, 'B-UNIT-002', '11', '100000', '0', '0', '0', $5),
+              ($7, $2, $8, $9, 'B-UNIT-OTHER', '12', '100000', '0', '0', '0', $5)
        ON CONFLICT (id) DO NOTHING`,
       [
         BATCH_ID,
@@ -232,9 +237,275 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     await test.database.close();
   });
 
+  it('建单按材料行占用待执行量，取消释放', async () => {
+    const created = await createOne({
+      materialBatchIds: [{ batchId: BATCH_ID, qty: '100.000000' }],
+      inputQty: '100',
+    });
+    const pending = await test.database.query<{
+      id: string;
+      pending_execution_qty: string;
+      available_qty: string;
+    }>(
+      `SELECT id::text AS id,
+              trim_scale(pending_execution_qty) AS pending_execution_qty,
+              trim_scale(available_qty) AS available_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(pending.rows).toEqual([
+      { id: BATCH_ID, pending_execution_qty: '100', available_qty: '99900' },
+      { id: BATCH_2_ID, pending_execution_qty: '0', available_qty: '100000' },
+    ]);
+
+    const { ctx } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"1"' },
+    });
+    const cancelled = await cancelProcessingOrder(ctx);
+    expect(cancelled).toMatchObject({ status: '已取消', version: 2 });
+    const released = await test.database.query<{ pending_execution_qty: string }>(
+      `SELECT trim_scale(pending_execution_qty) AS pending_execution_qty
+         FROM inventory_batch
+        WHERE id = ANY($1::uuid[])
+        ORDER BY id`,
+      [[BATCH_ID, BATCH_2_ID]],
+    );
+    expect(released.rows.map((row) => row.pending_execution_qty)).toEqual(['0', '0']);
+    const createAudit = await test.database.query<{ changes: Record<string, unknown> }>(
+      `SELECT changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'processing.order.create'`,
+      [created.id],
+    );
+    expect(createAudit.rows[0]?.changes).toMatchObject({
+      pendingReservations: [
+        { batchId: BATCH_ID, qty: '100', pendingAfter: '100' },
+      ],
+    });
+    const audit = await test.database.query<{ changes: Record<string, unknown> }>(
+      `SELECT changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'processing.order.cancel'`,
+      [created.id],
+    );
+    expect(audit.rows[0]?.changes).toMatchObject({
+      pendingReleases: [
+        { batchId: BATCH_ID, qty: '100', pendingAfter: '0' },
+      ],
+    });
+  });
+
+  it('完成：全损耗需要确认，写入快照并生成 C 草稿', async () => {
+    const created = await createOne();
+    const { ctx, state } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"1"' },
+      body: { lossQty: '100', confirmFullLoss: true },
+    });
+    const completed = await completeProcessingOrder(ctx);
+
+    expect(completed).toMatchObject({
+      id: created.id,
+      status: '已完成',
+      lossQty: '100',
+      sellableQty: '0',
+      outputBatch: null,
+      lossRecord: { lossQty: '100' },
+    });
+    expect(state.headers.ETag).toBe('"2"');
+    const snapshot = await test.database.query<{ material_cost_amount: string; loss_amount: string }>(
+      `SELECT trim_scale(material_cost_amount) AS material_cost_amount,
+              trim_scale(loss_amount) AS loss_amount
+         FROM processing_order WHERE id = $1`,
+      [created.id],
+    );
+    expect(snapshot.rows[0]).toEqual({
+      material_cost_amount: '1000',
+      loss_amount: '1100',
+    });
+
+    const detail = await getProcessingOrder(
+      readCtx({}, { params: { id: created.id } }),
+    );
+    expect(detail.outputBatchId).toBeNull();
+    expect(detail.lossRecord).toEqual({
+      lossQty: '100',
+      amount: '1100',
+      recordedAt: detail.updatedAt,
+    });
+  });
+
+  it('完成：扣减材料批次、生成产出批次与流水、完成审计（#99 B 链路）', async () => {
+    const created = await createOne();
+    const available = async (batchId: string): Promise<number> => {
+      const result = await test.database.query<{ available_qty: string }>(
+        `SELECT trim_scale(available_qty) AS available_qty
+           FROM inventory_batch WHERE id = $1::uuid`,
+        [batchId],
+      );
+      return Number(result.rows[0]?.available_qty);
+    };
+    const before = await available(BATCH_ID);
+
+    const { ctx, state } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"1"' },
+      body: { lossQty: '4' },
+    });
+    const completed = await completeProcessingOrder(ctx);
+
+    expect(completed).toMatchObject({ status: '已完成', lossQty: '4', sellableQty: '96' });
+    expect(completed.outputBatch).toMatchObject({ qty: '96' });
+    expect(state.headers.ETag).toBe('"2"');
+    // 建单占用 100 使可用量少 100；完成先释放占用再扣 100，净值不变。
+    expect(await available(BATCH_ID)).toBe(before);
+
+    const flows = (
+      await test.database.query(
+        `SELECT trim_scale(f.delta)::text AS delta,
+                f.source_doc_type,
+                b.product_id::text AS product_id
+           FROM inventory_flow f
+           JOIN inventory_batch b ON b.id = f.batch_id
+          WHERE f.source_doc_id = $1
+          ORDER BY f.delta`,
+        [created.id],
+      )
+    ).rows as { delta: string; source_doc_type: string; product_id: string }[];
+    expect(flows.map((row) => Number(row.delta))).toEqual([-100, 96]);
+    expect(flows.every((row) => row.source_doc_type === 'B')).toBe(true);
+
+    const output = (
+      await test.database.query(
+        `SELECT trim_scale(inbound_qty)::text AS qty,
+                trim_scale(locked_unit_cost)::text AS cost,
+                custodian_id::text AS custodian
+           FROM inventory_batch WHERE id = $1::uuid`,
+        [completed.outputBatch?.id],
+      )
+    ).rows[0] as { qty: string; cost: string; custodian: string };
+    expect(Number(output.qty)).toBe(96);
+    // 材料 100×10 + 加工费 100 = 1100，摊到 96 件。
+    expect(Number(output.cost)).toBeCloseTo(1100 / 96, 6);
+    expect(output.custodian).toBe(DEMO_IDS.ownerEmployeeId);
+
+    const audit = await test.database.query<{ action: string; changes: Record<string, unknown> }>(
+      `SELECT action, changes
+         FROM audit_log
+        WHERE object_id = $1 AND action = 'processing.order.complete'`,
+      [created.id],
+    );
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0]?.changes).toMatchObject({
+      pendingReleases: [
+        { batchId: BATCH_ID, qty: '100', pendingAfter: '0' },
+      ],
+    });
+
+    const detail = await getProcessingOrder(
+      readCtx({}, { params: { id: created.id } }),
+    );
+    expect(detail.outputBatchId).toBe(completed.outputBatch?.id);
+    expect(detail.lossRecord).toEqual({
+      lossQty: '4',
+      amount: '44',
+      recordedAt: detail.updatedAt,
+    });
+  });
+
+  it('完成：无损耗时不生成损失记录，产出批次仍可回读', async () => {
+    const created = await createOne();
+    const { ctx } = writeCtx({}, {
+      params: { id: created.id },
+      headers: { 'if-match': '"1"' },
+      body: { lossQty: '0' },
+    });
+    const completed = await completeProcessingOrder(ctx);
+
+    const detail = await getProcessingOrder(
+      readCtx({}, { params: { id: created.id } }),
+    );
+    expect(detail.outputBatchId).toBe(completed.outputBatch?.id);
+    expect(detail.lossRecord).toBeNull();
+  });
+
+  it('待执行占用不足：整单拒绝，材料未扣且不生成流水 / 产出批次（#99 B 回滚）', async () => {
+    const created = await createOne();
+    const before = (
+      await test.database.query<{
+        inbound_qty: string;
+        referenced_qty: string;
+        pending_execution_qty: string;
+      }>(
+        `SELECT trim_scale(inbound_qty) AS inbound_qty,
+                trim_scale(referenced_qty) AS referenced_qty,
+                trim_scale(pending_execution_qty) AS pending_execution_qty
+           FROM inventory_batch WHERE id = $1::uuid`,
+        [BATCH_ID],
+      )
+    ).rows[0]!;
+
+    // 人为破坏本单占用记录：完成时释放 100 失败，整笔事务回滚。
+    await test.database.query(
+      `UPDATE inventory_batch
+          SET pending_execution_qty = 1
+        WHERE id = $1::uuid`,
+      [BATCH_ID],
+    );
+    let failure: unknown;
+    try {
+      const { ctx } = writeCtx({}, {
+        params: { id: created.id },
+        headers: { 'if-match': '"1"' },
+        body: { lossQty: '4' },
+      });
+      failure = await completeProcessingOrder(ctx).catch((error: unknown) => error);
+    } finally {
+      await test.database.query(
+        `UPDATE inventory_batch
+            SET referenced_qty = $1::amount,
+                pending_execution_qty = $2::amount
+          WHERE id = $3::uuid`,
+        [before.referenced_qty, before.pending_execution_qty, BATCH_ID],
+      );
+    }
+    // #269：加工领料必须说「加工领料」，并带批次标识，不能沿用盘点口吻。
+    expect(failure).toBeInstanceOf(AppError);
+    expect(failure).toMatchObject({ code: 'VERSION_CONFLICT' });
+    const failureMessage = (failure as AppError).message;
+    expect(failureMessage).toContain('加工领料前待执行占用不足');
+    expect(failureMessage).toContain('B-UNIT-001');
+    expect(failureMessage).not.toContain('盘亏');
+
+    const batch = (
+      await test.database.query<{ inbound_qty: string }>(
+        `SELECT trim_scale(inbound_qty) AS inbound_qty
+           FROM inventory_batch WHERE id = $1::uuid`,
+        [BATCH_ID],
+      )
+    ).rows[0]!;
+    expect(batch.inbound_qty).toBe(before.inbound_qty);
+    const flows = await test.database.query(
+      `SELECT id FROM inventory_flow WHERE source_doc_id = $1::uuid`,
+      [created.id],
+    );
+    expect(flows.rows).toEqual([]);
+    const state = await test.database.query<{ status: string }>(
+      `SELECT status FROM processing_order WHERE id = $1::uuid`,
+      [created.id],
+    );
+    expect(state.rows[0]?.status).toBe('进行中');
+  });
+
   it('开单：B 单号、材料批次、费用、损耗 / 可售量、审计均落库', async () => {
     const created = await createOne({
-      materialBatchIds: [BATCH_ID, BATCH_2_ID],
+      materialBatchIds: [
+        { batchId: BATCH_ID, qty: '60.000000' },
+        { batchId: BATCH_2_ID, qty: '40.000000' },
+      ],
       inputQty: '100',
       lossQty: '4',
       attributionDoc: 'E-0001-20261105-0001',
@@ -248,7 +519,10 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     expect(created.processorName).toBe('用例加工厂');
     expect(created.status).toBe('进行中');
     expect(created.version).toBe(1);
-    expect(created.materialBatchIds).toEqual([BATCH_ID, BATCH_2_ID]);
+    expect(created.materialBatchIds).toEqual([
+      { batchId: BATCH_ID, qty: '60.000000' },
+      { batchId: BATCH_2_ID, qty: '40.000000' },
+    ]);
     expect(created.fees).toEqual([
       FEE,
       { feeName: '运杂费', qty: '2', unitPrice: '5.5', amount: '11', remark: null },
@@ -291,6 +565,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
             materialBatchIds: [],
             inputQty: '1',
@@ -307,8 +582,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: [BATCH_ID],
+            materialBatchIds: [{ batchId: BATCH_ID, qty: '5.000000' }],
             inputQty: '5',
             lossQty: '6',
             fees: [FEE],
@@ -326,8 +602,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: OTHER_COMPANY_ID,
             processorId: PROCESSOR_2_ID,
+            outputProductId: PRODUCT_2_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: [BATCH_ID],
+            materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
             fees: [FEE],
           },
@@ -342,8 +619,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_2_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: [BATCH_ID],
+            materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
             fees: [FEE],
           },
@@ -358,8 +636,11 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: ['01900000-0000-7000-8000-000000001123'],
+            materialBatchIds: [
+              { batchId: '01900000-0000-7000-8000-000000001123', qty: '1.000000' },
+            ],
             inputQty: '1',
             fees: [FEE],
           },
@@ -376,8 +657,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: [BATCH_ID],
+            materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
             fees: [FEE],
           },
@@ -392,8 +674,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           body: {
             companyId: DEMO_IDS.companyId,
             processorId: PROCESSOR_ID,
+            outputProductId: PRODUCT_ID,
             handlerId: DEMO_IDS.ownerEmployeeId,
-            materialBatchIds: [BATCH_ID],
+            materialBatchIds: [{ batchId: BATCH_ID, qty: '1.000000' }],
             inputQty: '1',
             fees: [FEE],
           },
@@ -442,7 +725,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     expect(reads.rows[0]?.count).toBe('0');
   });
 
-  it('修改：If-Match 必填、版本冲突、仅进行中、替换批次 / 费用；AI 修改放行', async () => {
+  it('修改：If-Match 必填、版本冲突、仅进行中、替换批次 / 费用；AI 修改禁止', async () => {
     const created = await createOne({ lossQty: '4' });
 
     await expectAppError(
@@ -488,12 +771,14 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       readCtx({}, { params: { id: created.id } }),
     );
     expect(unchanged.fees).toEqual(created.fees);
+    expect(unchanged.outputBatchId).toBeNull();
+    expect(unchanged.lossRecord).toBeNull();
 
     const { ctx, state } = writeCtx({}, {
       params: { id: created.id },
       headers: { 'if-match': '"1"' },
       body: {
-        materialBatchIds: [BATCH_2_ID],
+        materialBatchIds: [{ batchId: BATCH_2_ID, qty: '120.000000' }],
         inputQty: '120',
         auxMaterials: null,
         attributionDoc: 'N-0001-20261105-0002',
@@ -503,7 +788,9 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     const updated = await updateProcessingOrder(ctx);
     expect(state.headers.ETag).toBe('"2"');
     expect(updated.version).toBe(2);
-    expect(updated.materialBatchIds).toEqual([BATCH_2_ID]);
+    expect(updated.materialBatchIds).toEqual([
+      { batchId: BATCH_2_ID, qty: '120.000000' },
+    ]);
     expect(updated.inputQty).toBe('120');
     expect(updated.lossQty).toBe('4');
     expect(updated.sellableQty).toBe('116');
@@ -513,7 +800,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       { feeName: '运杂费', qty: '1', unitPrice: '8', amount: '8', remark: null },
     ]);
 
-    // 契约 ai.policy=allow：AI 普通编辑可以落库。
+    // 契约 ai.policy=forbid：AI 直接改加工单一律拒绝，且不落库。
     const aiUpdate = writeCtx({}, {
       principal: aiPrincipal(),
       auditReason: 'AI 修改加工单备注',
@@ -521,9 +808,12 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       headers: { 'if-match': '"2"' },
       body: { auxMaterials: 'AI 修改' },
     });
-    const aiUpdated = await updateProcessingOrder(aiUpdate.ctx);
-    expect(aiUpdated.auxMaterials).toBe('AI 修改');
-    expect(aiUpdated.version).toBe(3);
+    await expectAppError(updateProcessingOrder(aiUpdate.ctx), 'AI_ACTION_FORBIDDEN');
+    const afterAi = await getProcessingOrder(
+      readCtx({}, { params: { id: created.id } }),
+    );
+    expect(afterAi.auxMaterials).toBeNull();
+    expect(afterAi.version).toBe(2);
 
     const completed = await createOne();
     await test.database.query(
@@ -549,7 +839,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           AND result = 'success'`,
       [created.id],
     );
-    expect(audit.rows[0]?.count).toBe('2');
+    expect(audit.rows[0]?.count).toBe('1');
   });
 
   it('取消：D21 有下游 / 已完成拒绝，AI 禁止；成功置已取消并记审计', async () => {

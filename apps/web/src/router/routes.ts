@@ -104,11 +104,33 @@ export const ROUTE_TABLE = [
 export type RouteEntry = (typeof ROUTE_TABLE)[number];
 export type RoutePath = RouteEntry['path'];
 
-/** 按功能域分组，供左侧导航渲染。 */
-export function routesByDomain(): readonly { domain: Domain; routes: readonly RouteEntry[] }[] {
+/**
+ * 设置中心（#300 / `docs/design-settings-center.md` §4.2.4）。
+ *
+ * 它**不属于 22 页业务 IA**，所以刻意不放进 `ROUTE_TABLE`：
+ * `routes.test.ts` 锁的是「prototype-v0 §2 的 22 页」，把系统工具页混进去会让那条硬约束失真。
+ * 路由由 `router.tsx` 单独注册，导航由 `components/nav` 固定插到「系统」组首位。
+ */
+export const SETTINGS_ROUTE = {
+  id: 'settings',
+  path: '/settings',
+  page: '设置中心',
+  domain: '系统',
+  title: '设置中心',
+} as const satisfies RouteSpec;
+
+/**
+ * 按功能域分组，供左侧导航渲染。
+ * 传 `routes` 可只分组「当前身份可见」的子集（工作台与导航共用同一套 scope 过滤）。
+ * 用 `RouteSpec` 而不是 `RouteEntry` 接收参数，是为了让 `SETTINGS_ROUTE` 这类
+ * 「不在 22 页表里、但需要出现在导航」的系统页也能复用同一分组逻辑。
+ */
+export function routesByDomain(
+  routes: readonly RouteSpec[] = ROUTE_TABLE,
+): readonly { domain: Domain; routes: readonly RouteSpec[] }[] {
   return NAV_DOMAINS.map((domain) => ({
     domain,
-    routes: ROUTE_TABLE.filter((route) => route.domain === domain),
+    routes: routes.filter((route) => route.domain === domain),
   })).filter((group) => group.routes.length > 0);
 }
 

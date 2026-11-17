@@ -632,8 +632,8 @@ export async function createEmployee(ctx: EmployeeWriteContext): Promise<Employe
       }
 
       await assertPhoneAvailable(tx, input.phone, principal.tenantId, undefined);
-      const companies = await validateCompanies(tx, input.companyIds, principal.tenantId);
-      const positions = await validatePositions(tx, input.positionIds, principal.tenantId);
+      await validateCompanies(tx, input.companyIds, principal.tenantId);
+      await validatePositions(tx, input.positionIds, principal.tenantId);
       const employeeNo = await takeEmployeeNo(tx, principal.tenantId);
       const id = newEmployeeId;
 

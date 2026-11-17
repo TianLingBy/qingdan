@@ -1,5 +1,6 @@
 import {
   AppError,
+  ProcessingOrderCompleteBodySchema,
   ProcessingOrderCreateInputSchema,
   ProcessingOrderListQuerySchema,
   ProcessingOrderUpdateInputSchema,
@@ -15,6 +16,8 @@ import {
   type ProcessingOrderDetail,
   type ProcessingOrderStatus,
   type ProcessingOrderUpdateInput,
+  type ProcessingOrderCompleteResult,
+  type ProcessingMaterialInput,
 } from '@qingdan/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { v7 as uuidv7 } from 'uuid';
@@ -24,6 +27,11 @@ import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database, SqlClient } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
+import {
+  stockBatchInspectionPort,
+  stockFlowPort,
+  type StockReservationLine,
+} from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
 
 /**
@@ -34,7 +42,7 @@ import * as repo from '../repo.js';
  * - 单号（D16）：创建时在业务事务内取号，格式 `B-<公司码4>-<日期8>-<流水4>`；
  * - 数量 / 金额（D54）：一律 decimal 字符串；可售量由 SQL 计算；
  * - 审计（D51）：create / update / cancel 与业务同事务写；普通读不写；
- * - AI（D52①）：开单 / 取消默认拒绝，修改允许；
+ * - AI（D52①）：开单 / 修改 / 取消 / 完成一律拒绝 AI 直接执行；
  * - 取消（D21）：复用 `assertCancelable`，完成后不可取消，有下游先取消下游。
  */
 
@@ -89,11 +97,37 @@ function requireDatabase(
 
 function requireScope(
   principal: Principal,
-  action: 'read' | 'create' | 'update' | 'delete',
+  action: 'read' | 'create' | 'update' | 'delete' | 'approve',
 ): void {
   if (!allowsScope(principal.scope, 'processing', action)) {
     throw new AppError('FORBIDDEN', `缺少 processing.${action} 权限`);
   }
+}
+
+function parseCompleteInput(body: unknown) {
+  const parsed = ProcessingOrderCompleteBodySchema.safeParse(body);
+  if (!parsed.success) throw new AppError('VALIDATION_FAILED', '请求体不合法', { issues: issuesOf(parsed.error) });
+  return parsed.data;
+}
+
+const SCALE = 1_000_000n;
+function micros(value: string): bigint {
+  const [whole, fraction = ''] = value.split('.');
+  return BigInt(whole ?? '0') * SCALE + BigInt(fraction.padEnd(6, '0'));
+}
+function decimal(value: bigint): string {
+  const whole = value / SCALE;
+  const fraction = (value % SCALE).toString().padStart(6, '0').replace(/0+$/, '');
+  return fraction ? whole.toString() + '.' + fraction : whole.toString();
+}
+
+function processingReservationLines(
+  materials: readonly ProcessingMaterialInput[],
+): StockReservationLine[] {
+  return materials.map((material) => ({
+    batchId: material.batchId,
+    qty: material.qty,
+  }));
 }
 
 function assertCompanyVisible(principal: Principal, companyId: string): void {
@@ -102,7 +136,7 @@ function assertCompanyVisible(principal: Principal, companyId: string): void {
   }
 }
 
-/** 契约里开单与取消均为 `ai.policy = forbid`；修改允许。 */
+/** 契约里开单 / 修改 / 取消 / 完成均为 `ai.policy = forbid`。 */
 function assertHumanCredential(principal: Principal, action: string): void {
   if (principal.actorType === 'ai') {
     throw new AppError('AI_ACTION_FORBIDDEN', `AI 不得直接${action}，需人类审批`);
@@ -251,7 +285,7 @@ export async function listProcessingOrders(
   );
 }
 
-/** 加工单详情（普通读，不记审计）；补产出批次占位、损失记录占位与取消判定。 */
+/** 加工单详情（普通读，不记审计）；回读完成后的产出批次、损失快照与取消判定。 */
 export async function getProcessingOrder(
   ctx: ProcessingOrderContext,
 ): Promise<ProcessingOrderDetail> {
@@ -271,9 +305,19 @@ export async function getProcessingOrder(
     );
     return {
       ...order,
-      /** 本批无「验收 / 完成」端点，产出批次与损失记录均保持占位。 */
-      outputBatchId: null,
-      lossRecord: null,
+      outputBatchId: state.outputBatchId,
+      /**
+       * 只有完成时落了 `loss_amount`、且损耗量大于 0 才返回损失记录。
+       * 创建时可预填 lossQty，但那时尚未验收，不能凭它伪造损失金额。
+       */
+      lossRecord:
+        state.lossQty !== null && micros(state.lossQty) > 0n && state.lossAmount !== null
+          ? {
+              lossQty: state.lossQty,
+              amount: state.lossAmount,
+              recordedAt: state.updatedAt,
+            }
+          : null,
       cancelable: canCancel(order.status, downstream),
     };
   });
@@ -282,15 +326,18 @@ export async function getProcessingOrder(
 }
 
 /**
- * 加工单打印取数（普通读，不记审计）：详情实体 + 公司名。
- * processing 无 `view_price` 脱敏口径，金额与数量按实体原样返回。
+ * 加工单打印取数（普通读，不记审计）：详情实体 + 公司名 + 看价判定。
+ *
+ * 看价（D27）：`processing.read` 即可打印，价格列由 `processing.view_price` 决定是否脱敏；
+ * 无权限不 403、不删记录，只把单价 / 金额渲染成「—」，数量与批次号照常输出。
  */
 export async function getProcessingOrderForPrint(
   ctx: ProcessingOrderContext,
-): Promise<{ order: ProcessingOrder; companyName: string }> {
+): Promise<{ order: ProcessingOrder; companyName: string; canViewPrice: boolean }> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'processing.order.print');
   requireScope(principal, 'read');
+  const canViewPrice = allowsScope(principal.scope, 'processing', 'view_price');
   const id = parseOrderId(ctx.request);
 
   const source = await withTenant(database, principal.tenantId, async (tx) => {
@@ -310,7 +357,7 @@ export async function getProcessingOrderForPrint(
     };
   });
   if (!source) throw new AppError('NOT_FOUND', '加工单不存在');
-  return source;
+  return { ...source, canViewPrice };
 }
 
 /** 开加工单：201 + 同事务取 B 单号 / 审计（D16 / D51）。 */
@@ -342,6 +389,14 @@ export async function createProcessingOrder(
       id,
       orderNo,
     });
+    const reservation = await stockFlowPort().reservePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: created.companyId,
+      sourceDocType: 'B',
+      sourceDocId: created.id,
+      handledBy: principal.employeeId,
+      lines: processingReservationLines(created.materialBatchIds),
+    });
     audit.companyId = created.companyId;
     audit.changeSummary = {
       orderNo: created.orderNo,
@@ -352,6 +407,7 @@ export async function createProcessingOrder(
       lossQty: created.lossQty,
       sellableQty: created.sellableQty,
       feeCount: created.fees.length,
+      pendingReservations: reservation.lines,
     };
     return created;
   });
@@ -367,6 +423,7 @@ export async function updateProcessingOrder(
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'processing.order.update');
   requireScope(principal, 'update');
+  assertHumanCredential(principal, '修改加工单');
 
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -438,8 +495,19 @@ export async function cancelProcessingOrder(
     afterStatus: '已取消',
   });
   const order = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const current = await repo.getProcessingOrder(context, id);
+    if (!current) throw new AppError('NOT_FOUND', '加工单不存在');
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: current.companyId,
+      sourceDocType: 'B',
+      sourceDocId: current.id,
+      handledBy: principal.employeeId,
+      lines: processingReservationLines(current.materialBatchIds),
+    });
     const cancelled = await repo.cancelProcessingOrder(
-      repoContext(tx, principal),
+      context,
       id,
       expectedVersion,
     );
@@ -449,10 +517,122 @@ export async function cancelProcessingOrder(
       beforeStatus: state.status,
       afterStatus: cancelled.status,
       version: cancelled.version,
+      pendingReleases: released.lines,
     };
     return cancelled;
   });
 
   ctx.reply.header('ETag', etagOf(order.version));
   return order;
+}
+
+export async function completeProcessingOrder(
+  ctx: ProcessingOrderWriteContext,
+): Promise<ProcessingOrderCompleteResult> {
+  const principal = requirePrincipal(ctx.request);
+  const database = requireDatabase(ctx, 'processing.order.complete');
+  requireScope(principal, 'approve');
+  assertHumanCredential(principal, '完成加工单');
+  const id = parseOrderId(ctx.request);
+  const expectedVersion = parseIfMatchVersion(ctx.request);
+  const input = parseCompleteInput(ctx.request.body);
+  const audit = auditEventOf(ctx.request, principal, 'processing.order.complete', id, {
+    beforeStatus: '进行中',
+    afterStatus: '已完成',
+  });
+
+  const result = await withAudit(database, audit, async (tx) => {
+    const context = repoContext(tx, principal);
+    const state = await repo.loadProcessingOrderState(context, id);
+    if (!state) throw new AppError('NOT_FOUND', '加工单不存在');
+    if (state.version !== expectedVersion) throw new AppError('VERSION_CONFLICT', '加工单版本与 If-Match 不一致', { expected: expectedVersion, current: state.version });
+    if (state.status !== '进行中') throw new AppError('VALIDATION_FAILED', '只有进行中的加工单可以完成');
+    const order = await repo.getProcessingOrder(context, id);
+    if (!order) throw new AppError('NOT_FOUND', '加工单不存在');
+    const loss = micros(input.lossQty);
+    const inputQty = micros(order.inputQty);
+    if (loss > inputQty) throw new AppError('VALIDATION_FAILED', '损耗量不能大于投入量');
+    const sellable = inputQty - loss;
+    if (sellable === 0n && input.confirmFullLoss !== true) throw new AppError('VALIDATION_FAILED', '全损耗必须二次确认 confirmFullLoss=true');
+
+    const batches = await stockBatchInspectionPort().inspectBatches(tx, {
+      tenantId: principal.tenantId,
+      companyId: order.companyId,
+      batchIds: order.materialBatchIds.map((row) => row.batchId),
+    });
+    const costs = new Map(batches.map((row) => [row.batchId, row.lockedUnitCost]));
+    let materialCost = 0n;
+    const released = await stockFlowPort().releasePending(tx, {
+      tenantId: principal.tenantId,
+      companyId: order.companyId,
+      sourceDocType: 'B',
+      sourceDocId: id,
+      handledBy: principal.employeeId,
+      lines: processingReservationLines(order.materialBatchIds),
+    });
+    for (const material of order.materialBatchIds) {
+      const cost = costs.get(material.batchId);
+      if (!cost) throw new AppError('NOT_FOUND', '材料批次不存在');
+      materialCost += micros(material.qty) * micros(cost) / SCALE;
+      await stockFlowPort().applyAdjustment(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        batchId: material.batchId,
+        delta: decimal(-micros(material.qty)),
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+      });
+    }
+    const fees = order.fees.reduce((sum, fee) => sum + micros(fee.amount), 0n);
+    const totalCost = materialCost + fees;
+    const lossAmount = sellable === 0n ? totalCost : totalCost * loss / inputQty;
+    let outputBatchId: string | null = null;
+    let outputBatch: ProcessingOrderCompleteResult['outputBatch'] = null;
+    if (sellable > 0n) {
+      if (!order.outputProductId) {
+        throw new AppError('VALIDATION_FAILED', '加工单缺少成品商品，无法生成产出批次');
+      }
+      const unitCost = decimal(totalCost * SCALE / sellable);
+      const created = await stockFlowPort().createBatch(tx, {
+        tenantId: principal.tenantId,
+        companyId: order.companyId,
+        productId: order.outputProductId,
+        qty: decimal(sellable),
+        lockedUnitCost: unitCost,
+        custodianId: input.custodianId ?? order.handlerId!,
+        sourceDocType: 'B',
+        sourceDocId: id,
+        handledBy: principal.employeeId,
+      });
+      outputBatchId = created.batchId;
+      outputBatch = { id: created.batchId, batchNo: created.batchNo, qty: decimal(sellable), lockedUnitCost: unitCost };
+    }
+    const completed = await repo.completeProcessingOrder(context, id, expectedVersion, {
+      lossQty: input.lossQty,
+      sellableQty: decimal(sellable),
+      outputBatchId,
+      materialCostAmount: decimal(materialCost),
+      lossAmount: decimal(lossAmount),
+      partialLossAmount: decimal(sellable === 0n ? 0n : lossAmount),
+    });
+    if (!completed) throw new AppError('NOT_FOUND', '加工单不存在');
+    audit.companyId = completed.companyId;
+    audit.changeSummary = {
+      beforeStatus: '进行中',
+      afterStatus: '已完成',
+      outputBatchId,
+      pendingReleases: released.lines,
+    };
+    return {
+      id,
+      status: '已完成',
+      lossQty: input.lossQty,
+      sellableQty: decimal(sellable),
+      outputBatch,
+      lossRecord: { lossQty: input.lossQty, description: sellable === 0n ? '全损耗' : '加工验收损耗' },
+    } satisfies ProcessingOrderCompleteResult;
+  });
+  ctx.reply.header('ETag', etagOf(expectedVersion + 1));
+  return result;
 }

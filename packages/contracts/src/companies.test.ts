@@ -99,13 +99,29 @@ describe('公司契约（platform / company 功能域，D16/D44）', () => {
     expect(z.globalRegistry.get(CompanySchema)?.id).toBe('Company');
 
     const keys = Object.keys(CompanySchema.shape).sort();
-    expect(keys).toEqual(['id', 'tenantId', 'code', 'name', 'version', 'createdAt', 'updatedAt'].sort());
+    expect(keys).toEqual(
+      [
+        'id',
+        'tenantId',
+        'code',
+        'name',
+        // B2 / #298：公司扩展资料四列（全可空、不 backfill）。
+        'address',
+        'contactPhone',
+        'taxNo',
+        'logoUrl',
+        'version',
+        'createdAt',
+        'updatedAt',
+      ].sort(),
+    );
 
     const doc = buildOpenApiDocument(ROUTES);
     const company = doc.components.schemas.Company as { properties: Record<string, unknown> };
     expect(company).toBeDefined();
     expect(company.properties).toHaveProperty('code');
     expect(company.properties).toHaveProperty('version');
+    expect(company.properties).toHaveProperty('address');
   });
 
   it('OpenAPI 发射出公司端点与 x-module / x-scope / x-mcp-tool 标记', () => {

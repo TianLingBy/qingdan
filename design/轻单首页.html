@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 QINGDAN · 首页</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background:
+      radial-gradient(900px 600px at 78% 18%, rgba(255,255,255,0.08), transparent 60%),
+      linear-gradient(135deg, #17181a 0%, #0b0b0c 55%, #131315 100%);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px; color: #171717;
+  }
+
+  /* ===== 应用窗口（与登录页同款） ===== */
+  .window {
+    width: min(1200px, 100%); height: min(760px, 100%);
+    background: #fff; border-radius: 10px; overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+    border: 1px solid rgba(255,255,255,.14);
+    display: flex; flex-direction: column;
+  }
+  .titlebar {
+    height: 38px; background: #141414; color: #d9d9d9;
+    display: flex; align-items: center; flex: none; user-select: none;
+  }
+  .titlebar .app { display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: 12.5px; }
+  .titlebar .app .logo {
+    width: 18px; height: 18px; border-radius: 5px; background: #fafafa; color: #0a0a0a;
+    font-weight: 700; font-size: 11px; display: flex; align-items: center; justify-content: center;
+  }
+  .titlebar .controls { margin-left: auto; display: flex; height: 100%; }
+  .titlebar .controls span {
+    width: 46px; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #c9c9c9; cursor: default; transition: background .12s;
+  }
+  .titlebar .controls span:hover { background: rgba(255,255,255,.08); }
+  .titlebar .controls span.close:hover { background: #c42b1c; color: #fff; }
+
+  /* ===== 顶部导航栏 ===== */
+  .topnav {
+    flex: none; height: 56px; background: #fff; border-bottom: 1px solid #e5e5e5;
+    display: flex; align-items: center; padding: 0 24px; position: relative; z-index: 10;
+  }
+  /* 左侧：Logo + 轻单（纯品牌展示，不可点击） */
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    color: #0a0a0a; border-radius: 6px; padding: 6px 8px; margin-left: -8px;
+  }
+  .brand .logo {
+    width: 26px; height: 26px; border-radius: 7px; background: #0a0a0a; color: #fff;
+    font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: center;
+  }
+  .brand .name { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+
+  /* 右侧：主导航 Tab + 用户区 */
+  .nav-right { margin-left: auto; display: flex; align-items: center; height: 100%; }
+  .nav-tabs { display: flex; align-items: center; height: 100%; margin-right: 20px; }
+  .nav-tabs a {
+    position: relative; display: flex; align-items: center; height: 100%;
+    padding: 0 16px; font-size: 14px; color: #525252; text-decoration: none; cursor: pointer;
+    transition: color .15s;
+  }
+  .nav-tabs a:hover { color: #0a0a0a; }
+  .nav-tabs a.active { color: #0a0a0a; font-weight: 600; }
+  .nav-tabs a.active::after {
+    content: ''; position: absolute; left: 14px; right: 14px; bottom: 0;
+    height: 2px; background: #0a0a0a; border-radius: 1px;
+  }
+
+  /* 用户头像 + 菜单 */
+  .user { position: relative; }
+  .user-btn {
+    display: flex; align-items: center; gap: 10px; cursor: pointer;
+    border: 0; background: transparent; padding: 6px 8px; border-radius: 8px;
+    font-family: inherit; transition: background .15s;
+  }
+  .user-btn:hover { background: #f5f5f5; }
+  .user-btn .avatar {
+    width: 32px; height: 32px; border-radius: 50%; background: #0a0a0a; color: #fff;
+    font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+  }
+  .user-btn .who { text-align: left; line-height: 1.3; }
+  .user-btn .who b { display: block; font-size: 13.5px; font-weight: 600; color: #0a0a0a; }
+  .user-btn .who span { font-size: 11.5px; color: #737373; }
+  .user-btn .arrow { font-size: 10px; color: #737373; transition: transform .15s; }
+  .user.open .arrow { transform: rotate(180deg); }
+
+  /* 下拉菜单 */
+  .menu {
+    position: absolute; top: calc(100% + 8px); right: 0; min-width: 180px;
+    background: #fff; border: 1px solid #e5e5e5; border-radius: 10px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.14); padding: 6px;
+    opacity: 0; transform: translateY(-6px); pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .user.open .menu { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .menu .menu-head { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; margin-bottom: 6px; }
+  .menu .menu-head b { display: block; font-size: 14px; color: #0a0a0a; }
+  .menu .menu-head span { font-size: 12px; color: #737373; }
+  .menu .item {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    border: 0; background: transparent; font-family: inherit;
+    padding: 9px 12px; border-radius: 7px; font-size: 13.5px; color: #404040;
+    cursor: pointer; text-decoration: none; transition: background .12s, color .12s;
+  }
+  .menu .item:hover { background: #f5f5f5; color: #0a0a0a; }
+  .menu .item.danger:hover { background: #fef2f2; color: #dc2626; }
+
+  /* ===== 主区：首页内容（按轻单首页线框图） ===== */
+  .main { flex: 1; background: #fafafa; overflow-y: auto; }
+  .main::-webkit-scrollbar { width: 6px; }
+  .main::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
+  .main-inner { max-width: 1040px; margin: 0 auto; padding: 28px 28px 32px; }
+
+  /* 指标卡 */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .card {
+    background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 16px 18px;
+    transition: box-shadow .15s, transform .15s;
+  }
+  .card:hover { box-shadow: 0 8px 20px rgba(0,0,0,.08); transform: translateY(-2px); }
+  .card .label { font-size: 12.5px; color: #737373; }
+  .card .num { margin-top: 8px; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; color: #0a0a0a; }
+  .kpis-hint { margin: 10px 2px 0; font-size: 12px; color: #a3a3a3; }
+
+  /* 快捷操作 */
+  .quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 22px; }
+  .btn {
+    height: 44px; border-radius: 8px; font-size: 14px; font-family: inherit; cursor: pointer;
+    border: 1px solid #d4d4d4; background: #fff; color: #171717;
+    transition: transform .15s, background .15s, box-shadow .15s, border-color .15s;
+  }
+  .btn:hover { background: #f5f5f5; border-color: #a3a3a3; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn.primary {
+    background: #0a0a0a; border-color: #0a0a0a; color: #fff; font-weight: 600; letter-spacing: .02em;
+  }
+  .btn.primary:hover { background: #262626; border-color: #262626; box-shadow: 0 8px 18px rgba(0,0,0,.18); }
+
+  /* 待办区 */
+  .todo-panel { margin-top: 22px; border: 1px solid #e5e5e5; border-radius: 10px; background: #fff; padding: 18px 20px; }
+  .todo-panel h3 { font-size: 14px; font-weight: 600; color: #0a0a0a; }
+  .todo-panel h3 .tag { font-weight: 400; font-size: 12px; color: #a3a3a3; margin-left: 8px; }
+  .todo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 14px; }
+  .todo-item {
+    border: 1px solid #f0f0f0; border-radius: 8px; padding: 14px 16px; cursor: pointer;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .todo-item:hover { border-color: #a3a3a3; box-shadow: 0 4px 12px rgba(0,0,0,.06); }
+  .todo-item .t-label { font-size: 13px; font-weight: 500; color: #171717; }
+  .todo-item .t-num { margin-top: 6px; font-size: 20px; font-weight: 600; color: #0a0a0a; }
+  .todo-item .t-hint { margin-top: 4px; font-size: 11.5px; color: #a3a3a3; }
+
+  /* 其它模块占位（非首页 Tab） */
+  .placeholder { display: none; height: 100%; align-items: center; justify-content: center; text-align: center; color: #a3a3a3; }
+  .placeholder.show { display: flex; }
+  .placeholder .mark {
+    width: 52px; height: 52px; margin: 0 auto 16px; border-radius: 12px;
+    border: 1px solid #d4d4d4; background: #fff; color: #0a0a0a;
+    font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+  }
+  .placeholder b { display: block; font-size: 15px; color: #525252; margin-bottom: 6px; }
+  .placeholder p { font-size: 12.5px; line-height: 1.6; }
+
+  @media (max-width: 900px) {
+    .cards, .quick { grid-template-columns: repeat(2, 1fr); }
+    .todo-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    .window { height: 100%; }
+    .user-btn .who { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="window">
+    <div class="titlebar">
+      <div class="app"><span class="logo">单</span>轻单 QINGDAN</div>
+      <div class="controls"><span>&#x2500;</span><span>&#x25A1;</span><span class="close">&#x2715;</span></div>
+    </div>
+
+    <!-- 顶部导航栏 -->
+    <header class="topnav">
+      <!-- 1. 左侧：Logo + 轻单（品牌展示） -->
+      <div class="brand">
+        <span class="logo">单</span>
+        <span class="name">轻单</span>
+      </div>
+
+      <!-- 2. 右侧：主导航 Tab + 用户头像/菜单 -->
+      <div class="nav-right">
+        <nav class="nav-tabs">
+          <a class="active">首页</a>
+          <a>订单</a>
+          <a>仓库</a>
+          <a>客户</a>
+          <a>数据分析</a>
+        </nav>
+
+        <div class="user" id="user">
+          <button type="button" class="user-btn" id="user-btn">
+            <span class="avatar">莲</span>
+            <span class="who"><b>莲花鱼</b><span>董事长</span></span>
+            <span class="arrow">&#9662;</span>
+          </button>
+          <div class="menu" id="menu">
+            <div class="menu-head"><b>莲花鱼</b><span>董事长</span></div>
+            <a class="item" href="轻单首页.html">查看子公司</a>
+            <a class="item danger" href="轻单登录页.html">退出登录</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主区：首页内容（按轻单首页线框图） -->
+    <main class="main">
+      <!-- 首页 Tab：指标卡 + 快捷操作 + 待办区 -->
+      <div id="home-content">
+        <div class="main-inner">
+          <div class="cards">
+            <div class="card"><div class="label">成本与毛利</div><div class="num">¥ —</div></div>
+            <div class="card"><div class="label">提成</div><div class="num">¥ —</div></div>
+            <div class="card"><div class="label">订单量 / 销售额</div><div class="num">—</div></div>
+            <div class="card"><div class="label">实物库存</div><div class="num">—</div></div>
+          </div>
+          <p class="kpis-hint">看板按权限显示：管理员全量 / 主账号看 / 员工〔授权〕/ 下级员工不可见 · 实物库存不含「在途」</p>
+
+          <div class="quick">
+            <button type="button" class="btn primary">+ 新建订单</button>
+            <button type="button" class="btn">加工 / 入库</button>
+            <button type="button" class="btn">查库存</button>
+            <button type="button" class="btn">员工与授权</button>
+          </div>
+
+          <div class="todo-panel">
+            <h3>待办区<span class="tag">数据为演示样例，接口接线后替换</span></h3>
+            <div class="todo-grid">
+              <div class="todo-item">
+                <div class="t-label">未结单的订单</div>
+                <div class="t-num">3</div>
+                <div class="t-hint">点击进入订单列表查看</div>
+              </div>
+              <div class="todo-item">
+                <div class="t-label">待审商品名称</div>
+                <div class="t-num">2</div>
+                <div class="t-hint">新名称需审核后生效</div>
+              </div>
+              <div class="todo-item">
+                <div class="t-label">待合并客户</div>
+                <div class="t-num">1</div>
+                <div class="t-hint">疑似重复档案待合并</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 其它模块占位 -->
+      <div class="placeholder" id="placeholder">
+        <div>
+          <div class="mark" id="ph-mark">单</div>
+          <b id="ph-title">订单</b>
+          <p id="ph-desc">该模块页面将在这里展示</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script>
+  // 用户菜单：点击头像开合，点击外部关闭
+  var user = document.getElementById('user');
+  document.getElementById('user-btn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    user.classList.toggle('open');
+  });
+  document.addEventListener('click', function () { user.classList.remove('open'); });
+  document.getElementById('menu').addEventListener('click', function (e) { e.stopPropagation(); });
+
+  // 主导航 Tab：首页显示真实内容，其余模块显示占位
+  var MODULES = {
+    '订单': { mark: '单', desc: '采购 / 加工 / 销售 / 内部交易 / 结算 / 冲正，单据模块将在这里展示' },
+    '仓库': { mark: '仓', desc: '库存数量 / 库存流水 / 盘点，仓库模块将在这里展示' },
+    '客户': { mark: '客', desc: '客户与供应商资料、累计交易，客户模块将在这里展示' },
+    '数据分析': { mark: '析', desc: '经营数据统计与分析报表，数据分析模块将在这里展示' }
+  };
+  var tabs = document.querySelectorAll('.nav-tabs a');
+  var homeContent = document.getElementById('home-content');
+  var placeholder = document.getElementById('placeholder');
+  var phMark = document.getElementById('ph-mark');
+  var phTitle = document.getElementById('ph-title');
+  var phDesc = document.getElementById('ph-desc');
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      tabs.forEach(function (x) { x.classList.remove('active'); });
+      tab.classList.add('active');
+      var name = tab.textContent.trim();
+      var mod = MODULES[name];
+      if (name === '首页') {
+        homeContent.style.display = '';
+        placeholder.classList.remove('show');
+      } else if (mod) {
+        homeContent.style.display = 'none';
+        phMark.textContent = mod.mark;
+        phTitle.textContent = name;
+        phDesc.textContent = mod.desc;
+        placeholder.classList.add('show');
+      }
+    });
+  });
+</script>
+</body>
+</html>

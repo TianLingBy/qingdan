@@ -1,4 +1,8 @@
-import type { SalesOrder, SalesOrderDetail } from '@qingdan/contracts';
+import type {
+  SalesOrder,
+  SalesOrderDetail,
+  SalesReceipt,
+} from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../../app.js';
@@ -19,11 +23,14 @@ const PUBLIC_BASE_URL = 'https://qingdan.example';
 const OWNER_PHONE = '10000000001'; // 老板：含所有 view_price
 const MANAGER_PHONE = '10000000002'; // 经理：各域只 read，无 view_price
 const SALES_PHONE = '10000000003'; // 销售：sales 含 view_price
+const COLLECTOR_PHONE = '10000000005'; // 收款专员：sales read+update，无 view_price
 
 const CUSTOMER_ID = '01900000-0000-7000-8000-000000007101';
 const PRODUCT_ID = '01900000-0000-7000-8000-000000007111';
 const BATCH_A_ID = '01900000-0000-7000-8000-000000007121';
 const BATCH_B_ID = '01900000-0000-7000-8000-000000007122';
+const COLLECTOR_POSITION_ID = '01900000-0000-7000-8000-000000007131';
+const COLLECTOR_EMPLOYEE_ID = '01900000-0000-7000-8000-000000007141';
 
 function readHeaders(
   cookie: string,
@@ -60,7 +67,26 @@ describe('sales 金额脱敏 + 敏感读审计（PGlite + seed 演示租户）',
   let ownerCookie: string;
   let managerCookie: string;
   let salesCookie: string;
+  let collectorCookie: string;
   let orderId: string;
+
+  async function createReceipt(
+    cookie: string,
+    amount: string,
+    requestId: string,
+  ) {
+    return app.inject({
+      method: 'POST',
+      url: `/api/v1/sales-orders/${orderId}/receipts`,
+      headers: writeHeaders(cookie, requestId),
+      payload: {
+        direction: '收款',
+        amount,
+        method: '线下转账',
+        occurredAt: '2026-11-05T02:00:00.000Z',
+      },
+    });
+  }
 
   async function detailOf(
     cookie: string,
@@ -104,15 +130,15 @@ describe('sales 金额脱敏 + 敏感读审计（PGlite + seed 演示租户）',
     await seed(test.database);
     await test.database.query(
       `INSERT INTO customer
-         (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, NULL, '脱敏测试客户', '启用')
+         (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, NULL, '脱敏测试客户')
        ON CONFLICT (id) DO NOTHING`,
       [CUSTOMER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '脱敏测试商品', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '脱敏测试商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
@@ -133,6 +159,39 @@ describe('sales 金额脱敏 + 敏感读审计（PGlite + seed 演示租户）',
       ],
     );
 
+    // 只有 sales.read + sales.update、没有 view_price 的收款操作员：
+    // 复现「能追加收款、但按 D79 不应看到金额」的权限组合。
+    await test.database.query(
+      `INSERT INTO position (id, tenant_id, name, kind, is_system, scope, status, preset_key)
+       VALUES ($1, $2, '收款专员', '自定义', false, '公司级', '启用', NULL)
+       ON CONFLICT (id) DO NOTHING`,
+      [COLLECTOR_POSITION_ID, DEMO_IDS.tenantId],
+    );
+    await test.database.query(
+      `INSERT INTO position_permission (tenant_id, position_id, domain, action, granted)
+       VALUES ($1, $2, 'sales', 'read', true),
+              ($1, $2, 'sales', 'update', true)
+       ON CONFLICT (position_id, domain, action) DO UPDATE SET granted = true`,
+      [DEMO_IDS.tenantId, COLLECTOR_POSITION_ID],
+    );
+    await test.database.query(
+      `INSERT INTO employee (id, tenant_id, employee_no, phone, name, status, is_owner)
+       VALUES ($1, $2, '000097', $3, '收款专员', '在职', false)
+       ON CONFLICT (id) DO NOTHING`,
+      [COLLECTOR_EMPLOYEE_ID, DEMO_IDS.tenantId, COLLECTOR_PHONE],
+    );
+    await test.database.query(
+      `INSERT INTO employee_company_position (tenant_id, employee_id, company_id, position_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (employee_id, company_id, position_id) DO NOTHING`,
+      [
+        DEMO_IDS.tenantId,
+        COLLECTOR_EMPLOYEE_ID,
+        DEMO_IDS.companyId,
+        COLLECTOR_POSITION_ID,
+      ],
+    );
+
     app = buildApp({
       config: testConfig({ publicBaseUrl: PUBLIC_BASE_URL }),
       database: test.database,
@@ -142,6 +201,11 @@ describe('sales 金额脱敏 + 敏感读审计（PGlite + seed 演示租户）',
     ownerCookie = await login(app, OWNER_PHONE, 'req-mask-login-owner');
     managerCookie = await login(app, MANAGER_PHONE, 'req-mask-login-manager');
     salesCookie = await login(app, SALES_PHONE, 'req-mask-login-sales');
+    collectorCookie = await login(
+      app,
+      COLLECTOR_PHONE,
+      'req-mask-login-collector',
+    );
 
     const created = await app.inject({
       method: 'POST',
@@ -253,5 +317,50 @@ describe('sales 金额脱敏 + 敏感读审计（PGlite + seed 演示租户）',
     const item = items.find((entry) => entry.id === orderId);
     expect(item?.totalAmount).toBe('41');
     expect(await amountDetailAudits(orderId)).toBe(before);
+  });
+
+  it('有看价：追加收款 201，响应金额为真实数字', async () => {
+    const response = await createReceipt(
+      ownerCookie,
+      '88.88',
+      'req-mask-owner-receipt',
+    );
+    expect(response.statusCode).toBe(201);
+    expect((response.json() as SalesReceipt).amount).toBe('88.88');
+  });
+
+  it('无看价但有 sales.update：追加收款 201，响应金额为 null 且不含真实金额', async () => {
+    const response = await createReceipt(
+      collectorCookie,
+      '4321.98',
+      'req-mask-collector-receipt',
+    );
+    expect(response.statusCode).toBe(201);
+    const receipt = response.json() as SalesReceipt;
+    expect(receipt.amount).toBeNull();
+    expect(response.body).not.toContain('4321.98');
+
+    // 脱敏只作用于响应：落库仍是真实金额（写路径计算不看 view_price）。
+    const stored = await test.database.query<{ amount: string }>(
+      `SELECT trim_scale(amount)::text AS amount
+         FROM sales_receipt
+        WHERE id = $1`,
+      [receipt.id],
+    );
+    expect(stored.rows[0]?.amount).toBe('4321.98');
+  });
+
+  it('无看价：收款记录列表金额为 null，且不含真实金额', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/v1/sales-orders/${orderId}/receipts`,
+      headers: readHeaders(managerCookie, 'req-mask-manager-receipts'),
+    });
+    expect(response.statusCode).toBe(200);
+    const receipts = response.json() as SalesReceipt[];
+    expect(receipts).toHaveLength(2);
+    for (const receipt of receipts) expect(receipt.amount).toBeNull();
+    expect(response.body).not.toContain('88.88');
+    expect(response.body).not.toContain('4321.98');
   });
 });

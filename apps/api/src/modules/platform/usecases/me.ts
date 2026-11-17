@@ -1,11 +1,13 @@
-import { AppError, type ScopeMatrix } from '@qingdan/contracts';
+import { AppError, type ScopeMatrix, type WorkbenchEntry } from '@qingdan/contracts';
 import type { FastifyRequest } from 'fastify';
 import { withTenant } from '../../../platform/auth/tenant-context.js';
 import type { Database } from '../../../platform/db/client.js';
+import { computeWorkbenchEntries } from '../workbench-entries.js';
 
 /**
- * 当前身份（D52.1②）：权限每请求现算，`companyIds` / `scope` 直接取自已解析的 principal；
- * `displayName` 按请求租户上下文从 employee 表读取。
+ * 当前身份（D52.1② / Issue #227）：权限每请求现算，`companyIds` / `scope` / `isOwner`
+ * 直接取自已解析的 principal；`displayName` 按请求租户上下文从 employee 表读取；
+ * `entries` 为后端按 scope 现算的工作台入口清单（前端不再自行推导）。
  */
 
 export interface MeContext {
@@ -17,8 +19,10 @@ export interface MeResult {
   readonly employeeId: string;
   readonly tenantId: string;
   readonly displayName: string;
+  readonly isOwner: boolean;
   readonly companyIds: string[];
   readonly scope: ScopeMatrix;
+  readonly entries: readonly WorkbenchEntry[];
 }
 
 interface EmployeeNameRow {
@@ -49,7 +53,9 @@ export async function me(ctx: MeContext): Promise<MeResult> {
     employeeId: principal.employeeId,
     tenantId: principal.tenantId,
     displayName: row.name,
+    isOwner: principal.isOwner,
     companyIds: [...principal.companyIds],
     scope: principal.scope,
+    entries: computeWorkbenchEntries(principal.scope),
   };
 }

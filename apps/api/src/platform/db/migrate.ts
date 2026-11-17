@@ -42,7 +42,7 @@ export async function loadMigrationFiles(dir: string = MIGRATIONS_DIR): Promise<
   try {
     entries = await readdir(dir);
   } catch (error) {
-    throw new Error(`迁移目录不可读：${dir}（${String(error)}）`);
+    throw new Error(`迁移目录不可读：${dir}（${String(error)}）`, { cause: error });
   }
   const files = entries.filter((name) => name.endsWith('.sql')).sort((a, b) => a.localeCompare(b));
   const loaded: MigrationFile[] = [];

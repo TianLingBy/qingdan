@@ -178,7 +178,6 @@ describe('masterdata 加工厂 + 报价记录（PGlite + seed 演示租户）', 
     expect(created.companyId).toBe(DEMO_IDS.companyId);
     expect(created.processorNo).toBe('P-001');
     expect(created.contactName).toBe('王师傅');
-    expect(created.status).toBe('启用');
     expect(created.version).toBe(1);
 
     const detail = await getProcessor(readCtx({}, { params: { id: created.id } }));
@@ -204,7 +203,6 @@ describe('masterdata 加工厂 + 报价记录（PGlite + seed 演示租户）', 
       'processor_no',
       'name',
       'contact_name',
-      'status',
       'version',
       'created_at',
       'updated_at',
@@ -270,14 +268,8 @@ describe('masterdata 加工厂 + 报价记录（PGlite + seed 演示租户）', 
     expect(wildcard.items).toHaveLength(0);
   });
 
-  it('状态过滤与游标分页：两页无重叠', async () => {
+  it('游标分页：两页无重叠', async () => {
     for (const name of ['分页甲加工厂', '分页乙加工厂', '分页丙加工厂']) await createOne({ name });
-    await createOne({ name: '分页停用加工厂', status: '停用' });
-
-    const enabled = await listProcessors(readCtx({}, { query: { status: '启用' } }));
-    expect(enabled.items.every((item) => item.status === '启用')).toBe(true);
-    const disabled = await listProcessors(readCtx({}, { query: { status: '停用' } }));
-    expect(disabled.items.every((item) => item.status === '停用')).toBe(true);
 
     const first = await listProcessors(readCtx({}, { query: { limit: 2 } }));
     expect(first.items).toHaveLength(2);
@@ -424,37 +416,40 @@ describe('masterdata 加工厂 + 报价记录（PGlite + seed 演示租户）', 
     expect(state.headers.ETag).toBe('"2"');
   });
 
-  it('软删除：status 置「停用」、版本 +1，行仍在（不物理删除）', async () => {
-    const created = await createOne({ name: '待停用加工厂' });
+  it('物理删除：行被移除，之后按 id 读 → 404', async () => {
+    const created = await createOne({ name: '待删除加工厂' });
     const { ctx, state } = writeCtx(
       {},
       { params: { id: created.id }, headers: { 'if-match': '"1"' } },
     );
     const deleted = await deleteProcessor(ctx);
 
-    expect(deleted.status).toBe('停用');
-    expect(deleted.version).toBe(2);
-    expect(state.headers.ETag).toBe('"2"');
+    expect(deleted.id).toBe(created.id);
+    expect(deleted.version).toBe(1);
+    expect(state.headers.ETag).toBe('"1"');
 
-    const row = await test.database.query<{ status: string; version: number }>(
-      'SELECT status, version FROM processor WHERE id = $1',
+    const row = await test.database.query<{ id: string }>(
+      'SELECT id FROM processor WHERE id = $1',
       [created.id],
     );
-    expect(row.rows).toHaveLength(1);
-    expect(row.rows[0]).toMatchObject({ status: '停用', version: 2 });
+    expect(row.rows).toHaveLength(0);
 
-    const detail = await getProcessor(readCtx({}, { params: { id: created.id } }));
-    expect(detail.status).toBe('停用');
+    // 删除后按 id 读取 → 404。
+    await expectAppError(
+      getProcessor(readCtx({}, { params: { id: created.id } })),
+      'NOT_FOUND',
+    );
 
+    // 行已不存在，再删同一个 id → 404（不是版本冲突）。
     await expectAppError(
       deleteProcessor(
         writeCtx({}, { params: { id: created.id }, headers: { 'if-match': '"1"' } }).ctx,
       ),
-      'VERSION_CONFLICT',
+      'NOT_FOUND',
     );
   });
 
-  it('D52①/D54⑥：AI 直接停用 → AI_ACTION_FORBIDDEN，加工厂状态不变', async () => {
+  it('D52①/D54⑥：AI 直接删除 → AI_ACTION_FORBIDDEN，加工厂仍在', async () => {
     const created = await createOne({ name: 'AI 停用加工厂' });
     const aiPrincipal = principal({
       actorType: 'ai',
@@ -470,11 +465,11 @@ describe('masterdata 加工厂 + 报价记录（PGlite + seed 演示租户）', 
       'AI_ACTION_FORBIDDEN',
     );
 
-    const row = await test.database.query<{ status: string }>(
-      'SELECT status FROM processor WHERE id = $1',
+    const row = await test.database.query<{ id: string }>(
+      'SELECT id FROM processor WHERE id = $1',
       [created.id],
     );
-    expect(row.rows[0]?.status).toBe('启用');
+    expect(row.rows).toHaveLength(1);
   });
 
   it('D51/D54②：加工厂 create/update/delete 写审计；普通列表/详情不写', async () => {
@@ -488,6 +483,20 @@ describe('masterdata 加工厂 + 报价记录（PGlite + seed 演示租户）', 
       writeCtx({}, { params: { id: created.id }, headers: { 'if-match': '"1"' }, body: { contactName: '新联系人' } })
         .ctx,
     );
+
+    // 普通读不记审计（物理删除后行已不存在，因此读检查放在删除之前）。
+    const beforeReads = await test.database.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM audit_log WHERE tenant_id = $1 AND object_type = 'processor'",
+      [DEMO_IDS.tenantId],
+    );
+    await listProcessors(readCtx());
+    await getProcessor(readCtx({}, { params: { id: created.id } }));
+    const afterReads = await test.database.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM audit_log WHERE tenant_id = $1 AND object_type = 'processor'",
+      [DEMO_IDS.tenantId],
+    );
+    expect(afterReads.rows[0]!.count).toBe(beforeReads.rows[0]!.count);
+
     await deleteProcessor(
       writeCtx({}, { params: { id: created.id }, headers: { 'if-match': '"2"' } }).ctx,
     );
@@ -517,15 +526,6 @@ describe('masterdata 加工厂 + 报价记录（PGlite + seed 演示租户）', 
     ]);
     expect(events.rows.every((row) => row.result === 'success')).toBe(true);
     expect(events.rows.every((row) => row.company_id === DEMO_IDS.companyId)).toBe(true);
-
-    await listProcessors(readCtx());
-    await getProcessor(readCtx({}, { params: { id: created.id } }));
-
-    const afterReads = await test.database.query<{ count: number }>(
-      "SELECT count(*)::int AS count FROM audit_log WHERE tenant_id = $1 AND object_type = 'processor'",
-      [DEMO_IDS.tenantId],
-    );
-    expect(afterReads.rows[0]!.count).toBe(afterWrites.rows[0]!.count);
   });
 
   it('报价创建：decimal 字符串保精度落表，201，并写报价审计', async () => {

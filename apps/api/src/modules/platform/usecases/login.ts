@@ -6,12 +6,16 @@ import { createSession } from '../../../platform/auth/session-store.js';
 import type { AppConfig } from '../../../platform/config.js';
 import type { Database } from '../../../platform/db/client.js';
 import { requestIdFor } from '../../../platform/http/request-id.js';
+import { consumeLoginCode } from './send-code.js';
 
 /**
  * 登录用例（D54④ / D59③⑦）。
  *
- * 一期不发短信：非生产环境只接受 `LOGIN_DEV_CODE`；production 未接服务商 → 501，不静默放行。
- * 失败原因对客户端一律 `UNAUTHENTICATED`（未知手机号 / 停用员工 / 停用租户不区分，防枚举）；
+ * 验证码两条通道：
+ *   - 非生产：`LOGIN_DEV_CODE`（默认 000000）直通，本地/测试不发短信；
+ *   - 生产 / 其他：校验 `login_code` 表里尚未消费、未过期、次数未超限的码，成功后立即作废。
+ *
+ * 失败原因对客户端一律 `UNAUTHENTICATED`（未知手机号 / 停用员工 / 停用租户 / 码错不区分，防枚举）；
  * 审计里仍按可用信息尽量记全（未知手机号只能记 tenant_id = NULL）。
  */
 
@@ -87,13 +91,6 @@ async function recordLoginFailure(
 }
 
 export async function login(ctx: LoginContext): Promise<LoginResult> {
-  // D59③：production 未接短信服务商，明确 501，不静默放行固定验证码。
-  if (ctx.config.nodeEnv === 'production') {
-    throw new AppError('NOT_IMPLEMENTED', '登录尚未接入短信服务商（D59③）', {
-      operationId: LOGIN_ACTION,
-    });
-  }
-
   const database = ctx.database;
   if (!database) {
     throw new AppError('NOT_IMPLEMENTED', `${LOGIN_ACTION} 尚未实现（数据库未配置，登录不可用）`, {
@@ -103,9 +100,14 @@ export async function login(ctx: LoginContext): Promise<LoginResult> {
 
   const { phone, code } = parseLoginBody(ctx.request.body);
 
-  if (code !== ctx.config.loginDevCode) {
-    await recordLoginFailure(ctx, database, { tenantId: null, actorId: phone });
-    throw new AppError('UNAUTHENTICATED');
+  // 非生产固定码直通（本地/测试零成本）；其余一律走库里的一次性验证码。
+  const devCodeAccepted = !isProduction(ctx.config) && code === ctx.config.loginDevCode;
+  if (!devCodeAccepted) {
+    const accepted = await consumeLoginCode(database, ctx.config, phone, code);
+    if (!accepted) {
+      await recordLoginFailure(ctx, database, { tenantId: null, actorId: phone });
+      throw new AppError('UNAUTHENTICATED');
+    }
   }
 
   // 登录时尚无租户上下文：走 SECURITY DEFINER 函数跨 RLS 查找（D59②）。

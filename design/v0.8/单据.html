@@ -1,0 +1,522 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN" class="no-js">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 单据</title>
+<script>try{var m=location.search.match(/[?&]theme=(moss|mist|bronze|paper)/);var t=m?m[1]:localStorage.getItem("qd-theme");if(t&&t!=="moss")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<link rel="stylesheet" href="tokens.css">
+<style>
+/* ============================================================
+   轻单 v0.8 · 单据页
+   v0.5 改动（对应《UI 改进建议》）：
+   - 表格正文提到 --fs-body(14px)、表头降到 --fs-label(12px)，拉开层级差
+   - 单据类型加 6px 色点（金/蓝/绿/中性），不用 2px 左边框，避免与 hover 强调竖条打架
+   - 吸底栏改用原生 checkbox（v0.4 的 div 复选框让吸底栏永远弹不出来）
+   - 新增空态 / 骨架屏 / 错误态三态（?state=empty|loading|error 可直达）
+   - 头部「已选 N 条」与吸底栏联动
+   - 眉标统一 .eyebrow，面包屑统一 .crumb
+   ============================================================ */
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--sans);font-size:13.5px;line-height:1.6;color:var(--text-1);
+  background:var(--bg-0);-webkit-font-smoothing:antialiased;min-height:100vh;
+  display:flex;
+}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--accent-light);outline-offset:2px;border-radius:3px}
+::selection{background:rgba(var(--accent-rgb), .32);color:var(--text-1)}
+
+/* ============================================================ 主壳 */
+.shell{flex:1;min-width:0;display:flex;flex-direction:column}
+
+/* ============================================================ 顶栏 */
+.topbar{
+  position:sticky;top:0;z-index:10;
+  background:var(--topbar-bg);backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--line-1);
+  padding:0 32px;height:52px;display:flex;align-items:center;gap:16px;
+}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--text-3)}
+.dot-sep{width:3px;height:3px;border-radius:50%;background:var(--line-3)}
+
+/* ============================================================ 主体 */
+.main{flex:1;display:flex;min-height:0;min-width:0}
+
+/* 左：筛选栏 */
+.rail{
+  width:200px;flex:none;border-right:1px solid var(--line-1);
+  padding:22px 16px 28px;background:rgba(var(--text-rgb), .012);overflow-y:auto;
+}
+.rail-group{margin-bottom:22px}
+.rail-group + .rail-group{padding-top:18px;border-top:1px solid var(--line-1)}
+.rail h3{
+  font-family:var(--mono);font-size:9px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--accent-light);margin-bottom:10px;
+}
+.opt{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px;color:var(--text-3);cursor:pointer;
+  transition:color var(--d-1)}
+.opt:hover{color:var(--text-1)}
+.opt input{display:none}
+.opt .c{
+  width:16px;height:16px;border:1.5px solid var(--line-3);border-radius:4px;
+  display:grid;place-items:center;flex:none;
+  transition:background var(--d-1),border-color var(--d-1);
+}
+.opt input:checked + .c{background:var(--accent-deep);border-color:var(--accent)}
+.opt input:checked + .c::after{
+  content:"";width:7px;height:4px;
+  border-left:1.6px solid var(--bg-0);border-bottom:1.6px solid var(--bg-0);
+  transform:rotate(-45deg) translateY(-1px);
+}
+.opt input:checked ~ .t{color:var(--text-1);font-weight:500}
+.opt .n{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--text-3)}
+.rail .clear{
+  margin-top:8px;font-size:11.5px;color:var(--accent-light);
+  border-bottom:1px solid rgba(var(--accent-rgb), .28);padding-bottom:1px;
+  transition:color var(--d-1),border-color var(--d-1);
+}
+.rail .clear:hover{color:var(--text-1);border-color:var(--text-3)}
+
+/* 右：工具条 + 表格 */
+.content{flex:1;min-width:0;padding:22px 28px 0;display:flex;flex-direction:column}
+
+.head{display:flex;align-items:baseline;gap:12px;margin-bottom:4px}
+.head h1{font-size:22px;font-weight:620;letter-spacing:-.022em;color:var(--text-1)}
+.head .count{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--text-3)}
+.sub{font-size:12px;color:var(--text-3);margin-bottom:16px}
+
+.bar{
+  display:flex;align-items:center;gap:8px;padding:9px 0;
+  border-top:1px solid var(--line-1);border-bottom:1px solid var(--line-1);
+  margin-bottom:0;
+}
+.seg{
+  display:flex;background:var(--surf-1);border:1px solid var(--line-2);
+  border-radius:var(--r-control);padding:2px;
+}
+.seg button{
+  padding:4px 11px;border-radius:6px;font-size:12px;color:var(--text-3);
+  transition:background var(--d-2) var(--ease-out),color var(--d-2);
+}
+.seg button:hover{color:var(--text-1)}
+.seg button.on{background:var(--accent-deep);color:var(--bg-0);font-weight:550}
+.search{
+  margin-left:auto;display:flex;align-items:center;gap:7px;height:30px;padding:0 10px;
+  border:1px solid var(--line-2);border-radius:var(--r-control);background:var(--surf-1);
+  font-size:12px;color:var(--text-3);min-width:200px;
+  transition:border-color var(--d-2),box-shadow var(--d-2),background var(--d-2);
+}
+.search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb), .18);background:var(--surf-2)}
+.search input{border:none;outline:none;background:none;font:inherit;color:var(--text-1);width:100%}
+.search input::placeholder{color:var(--text-3)}
+.btn{
+  height:30px;padding:0 12px;border-radius:var(--r-control);font-size:12px;font-weight:520;
+  display:inline-flex;align-items:center;gap:6px;
+  transition:background var(--d-1) var(--ease-out),border-color var(--d-1),color var(--d-1),transform 70ms;
+}
+.btn:active{transform:scale(.985)}
+.btn-p{background:var(--accent-deep);color:var(--bg-0);box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.btn-p:hover{background:var(--accent)}
+.btn-g{border:1px solid var(--line-2);background:var(--surf-1);color:var(--text-3)}
+.btn-g:hover{border-color:var(--line-3);color:var(--text-1);background:var(--surf-2)}
+
+/* ============================================================ 表格 */
+table{width:100%;border-collapse:collapse}
+thead th{
+  text-align:left;font-family:var(--mono);font-size:var(--fs-label);letter-spacing:.06em;
+  text-transform:uppercase;color:var(--accent-light);font-weight:500;
+  padding:11px 12px;border-bottom:1px solid var(--line-2);white-space:nowrap;
+  background:var(--bg-0);position:sticky;top:0;z-index:2;
+}
+th.r,td.r{text-align:right}
+tbody tr{
+  transition:background var(--d-2) var(--ease-out);
+  box-shadow:inset 3px 0 0 transparent;
+}
+tbody tr:hover{background:var(--surf-1);box-shadow:inset 3px 0 0 var(--accent)}
+tbody td{
+  padding:0 12px;height:46px;border-bottom:1px solid var(--line-1);
+  font-size:var(--fs-body);vertical-align:middle;white-space:nowrap;color:var(--text-1);
+}
+/* 单据号折叠 */
+td.no{font-family:var(--mono);font-size:12.5px;color:var(--text-1);position:relative}
+td.no .full{
+  display:none;position:absolute;left:0;top:50%;transform:translateY(-50%);
+  background:var(--bg-2);border:1px solid var(--line-3);border-radius:6px;
+  padding:6px 10px;font-size:11px;color:var(--text-1);white-space:nowrap;z-index:10;
+  box-shadow:var(--sh-2);pointer-events:none;
+}
+td.no:hover .full{display:block}
+td.no .no-a{display:inline-block;transition:color var(--d-1)}
+td.no .no-a:hover{color:var(--accent-light);text-decoration:underline;text-underline-offset:3px}
+/* 金额列等宽 */
+td.money{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:550;color:var(--text-1)}
+td.money.neg{color:var(--danger-on-surface)}
+td.money.neg .arr{font-size:9px;vertical-align:middle;margin-right:1px;opacity:.85}
+td.muted{color:var(--text-2)}
+.date{font-variant-numeric:tabular-nums;color:var(--text-2);font-family:var(--mono)}
+
+/* 类型：色点 + 文字 */
+.type{display:inline-flex;align-items:center;color:var(--text-2)}
+
+/* 原生复选框（v0.5：让吸底栏能真的收到 change 事件） */
+.cb{
+  appearance:none;-webkit-appearance:none;
+  width:15px;height:15px;border:1.5px solid var(--line-3);border-radius:4px;
+  display:grid;place-items:center;cursor:pointer;flex:none;margin:0;
+  transition:background var(--d-1),border-color var(--d-1);
+  background:transparent;
+}
+.cb:hover{border-color:var(--accent)}
+.cb:checked{background:var(--accent-deep);border-color:var(--accent)}
+.cb:checked::after{
+  content:"";width:7px;height:3.5px;
+  border-left:1.5px solid var(--bg-0);border-bottom:1.5px solid var(--bg-0);
+  transform:rotate(-45deg) translateY(-1px);
+}
+.cb-wrap{display:flex;align-items:center;justify-content:center}
+
+/* 状态胶囊 */
+.st{
+  display:inline-flex;align-items:center;gap:5px;height:21px;padding:0 8px;
+  border-radius:var(--r-pill);border:1px solid var(--line-2);
+  font-size:10.5px;color:var(--text-2);background:rgba(var(--text-rgb), .018);
+}
+.st i{width:4px;height:4px;border-radius:50%;background:var(--line-3)}
+.st.now{border-color:rgba(var(--accent-rgb), .36);color:var(--accent-light);background:rgba(var(--accent-rgb), .10)}
+.st.now i{background:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb), .22)}
+.st.done{border-color:var(--line-2);color:var(--text-3)}
+.st.done i{background:var(--ok)}
+.st.cancel{border-style:dashed;color:var(--text-3)}
+.st.cancel i{background:var(--text-3)}
+.st.wait{border-color:var(--b30);color:var(--accent-2-light)}
+.st.wait i{background:var(--accent-2-light)}
+
+/* 吸底栏：默认在视口外（fixed + translateY(100%)），勾选后由 motion.js 弹出。
+   v0.5 修：v0.4 用 sticky + translateY，元素只下移自身高度，实际仍露在页面里 */
+.batch{
+  position:fixed;left:var(--sb);right:0;bottom:0;z-index:30;
+  display:flex;align-items:center;gap:14px;
+  padding:12px 28px;background:var(--batch-bg);
+  border-top:1px solid var(--line-1);backdrop-filter:blur(12px);
+  font-size:12px;color:var(--text-3);
+  transform:translateY(100%);
+  transition:transform var(--d-3) var(--ease-out);
+  will-change:transform;
+}
+.batch b{color:var(--text-1);font-weight:600}
+.batch .sp{margin-left:auto;display:flex;gap:8px}
+.dot-s{width:3px;height:3px;border-radius:50%;background:var(--line-3)}
+
+/* 状态行里的排版 */
+.st-cell-inner{padding:8px 0}
+
+@media(max-width:1024px){
+  .sidebar{display:none}
+  .rail{display:none}
+  .content{padding:16px 16px 0}
+  .batch{padding:12px 16px;left:0}   /* 侧边栏隐藏后，吸底栏要从视口左边开始 */
+}
+</style>
+<link rel="stylesheet" href="components.css">
+<script src="motion.js"></script>
+</head>
+<body>
+<div class="qd-veil"></div>
+<div class="qd-field" aria-hidden="true"></div>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sb-brand">
+    <div class="sb-mark">轻</div>
+    <div class="sb-name">轻单<small>Qingdan</small></div>
+  </div>
+  <nav class="sb-nav">
+    <a href="工作台.html" class="sb-link">
+      <svg width="15" height="15" viewBox="0 0 16 16"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>
+      工作台
+    </a>
+    <a href="单据.html" class="sb-link on">
+      <svg width="15" height="15" viewBox="0 0 16 16"><path d="M4 2h8v12H4z"/><path d="M6 6h4M6 9h4M6 12h2"/></svg>
+      单据
+      <span class="badge">3</span>
+    </a>
+    <a href="库存.html" class="sb-link">
+      <svg width="15" height="15" viewBox="0 0 16 16"><path d="M2 5l6-3 6 3v6l-6 3-6-3z"/><path d="M8 2v12M2 5l6 3 6-3"/></svg>
+      库存
+    </a>
+    <a href="报表.html" class="sb-link">
+      <svg width="15" height="15" viewBox="0 0 16 16"><path d="M2 12l4-5 3 3 5-7"/></svg>
+      报表
+    </a>
+  </nav>
+  <div class="sb-foot">
+    <div class="sb-avatar">何</div>
+    <div class="sb-user"><b>何XX</b><small>演示公司</small></div>
+  </div>
+</aside>
+
+<div class="shell">
+  <!-- 顶栏 -->
+  <header class="topbar">
+    <nav class="crumb">
+      <a href="工作台.html">轻单</a>
+      <span class="sep">/</span>
+      <span class="cur">单据</span>
+      <span class="sep">·</span>
+      <span>演示公司</span>
+    </nav>
+    <div class="topbar-right">
+      <span data-row-selected>已选 0 条</span>
+      <span class="dot-sep"></span>
+      <span>2026.11.11</span>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- 左：筛选 -->
+    <aside class="rail">
+      <div class="rail-group">
+        <h3>单据类型</h3>
+        <label class="opt"><input type="checkbox" checked><span class="c"></span><span class="t">采购单 A</span><span class="n">24</span></label>
+        <label class="opt"><input type="checkbox" checked><span class="c"></span><span class="t">加工单 B</span><span class="n">11</span></label>
+        <label class="opt"><input type="checkbox" checked><span class="c"></span><span class="t">销售单 E</span><span class="n">88</span></label>
+        <label class="opt"><input type="checkbox"><span class="c"></span><span class="t">内部交易 N</span><span class="n">12</span></label>
+        <label class="opt"><input type="checkbox"><span class="c"></span><span class="t">结算单 C</span><span class="n">6</span></label>
+        <label class="opt"><input type="checkbox"><span class="c"></span><span class="t">退货 R / S</span><span class="n">9</span></label>
+        <label class="opt"><input type="checkbox"><span class="c"></span><span class="t">盘点 I</span><span class="n">2</span></label>
+      </div>
+
+      <div class="rail-group">
+        <h3>状态</h3>
+        <label class="opt"><input type="checkbox" checked><span class="c"></span><span class="t">进行中</span><span class="n">31</span></label>
+        <label class="opt"><input type="checkbox" checked><span class="c"></span><span class="t">已完成</span><span class="n">104</span></label>
+        <label class="opt"><input type="checkbox"><span class="c"></span><span class="t">已取消</span><span class="n">4</span></label>
+        <label class="opt"><input type="checkbox"><span class="c"></span><span class="t">在途（N 单）</span><span class="n">7</span></label>
+      </div>
+
+      <div class="rail-group">
+        <h3>时间</h3>
+        <label class="opt"><input type="checkbox" checked><span class="c"></span><span class="t">本月</span></label>
+        <label class="opt"><input type="checkbox"><span class="c"></span><span class="t">上月</span></label>
+        <label class="opt"><input type="checkbox"><span class="c"></span><span class="t">自定义区间</span></label>
+      </div>
+
+      <a class="clear" href="#">清空全部筛选</a>
+    </aside>
+
+    <!-- 右：列表 -->
+    <div class="content">
+      <div class="head" data-reveal="fade">
+        <h1>单据</h1>
+        <span class="eyebrow">documents</span>
+        <span class="count">共 139 条</span>
+      </div>
+      <p class="sub" data-reveal="fade">采购、加工、销售、内部交易、结算、退货、盘点——八类单据都在这一张表里。找具体的单就搜单号，搜不到多半是还没开。</p>
+
+      <div class="bar" data-reveal="fade">
+        <div class="seg">
+          <button class="on">全部</button>
+          <button>待我处理</button>
+          <button>我发起的</button>
+        </div>
+        <div class="search">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+            <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+          </svg>
+          <input placeholder="单据号 / 供应商 / 商品">
+        </div>
+        <button class="btn btn-g">导出 CSV</button>
+        <button class="btn btn-p">新建单据</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:34px"><input type="checkbox" class="cb" id="all-cb" aria-label="全选"></th>
+            <th style="width:96px">单据号</th>
+            <th style="width:126px">类型</th>
+            <th style="width:104px">日期</th>
+            <th>对方单位</th>
+            <th style="width:150px">环节</th>
+            <th class="r" style="width:126px">金额</th>
+            <th style="width:96px">状态</th>
+          </tr>
+        </thead>
+        <tbody data-state="filled">
+          <tr class="r-row" data-reveal="fade">
+            <td><div class="cb-wrap"><input type="checkbox" class="cb" aria-label="选择单据"></div></td>
+            <td class="no"><a class="no-a" href="单据详情.html" title="打开详情"><span class="short">A-0024</span><span class="full">A-0001-20261110-0024</span></a></td>
+            <td><span class="type"><span class="tdot a"></span>采购单 A</span></td>
+            <td class="date">2026-11-10</td>
+            <td>归档果业</td>
+            <td class="muted">入库待确认</td>
+            <td class="r money">¥13,600.00</td>
+            <td><span class="st now"><i></i>进行中</span></td>
+          </tr>
+          <tr class="r-row" data-reveal="fade">
+            <td><div class="cb-wrap"><input type="checkbox" class="cb" aria-label="选择单据"></div></td>
+            <td class="no"><a class="no-a" href="单据详情.html" title="打开详情"><span class="short">B-0011</span><span class="full">B-0001-20261110-0011</span></a></td>
+            <td><span class="type"><span class="tdot b"></span>加工单 B</span></td>
+            <td class="date">2026-11-10</td>
+            <td>北仓加工厂</td>
+            <td class="muted">材料已投入</td>
+            <td class="r money">¥4,280.00</td>
+            <td><span class="st now"><i></i>进行中</span></td>
+          </tr>
+          <tr class="r-row" data-reveal="fade">
+            <td><div class="cb-wrap"><input type="checkbox" class="cb" aria-label="选择单据"></div></td>
+            <td class="no"><a class="no-a" href="单据详情.html" title="打开详情"><span class="short">E-0088</span><span class="full">E-0001-20261110-0088</span></a></td>
+            <td><span class="type"><span class="tdot e"></span>销售单 E</span></td>
+            <td class="date">2026-11-10</td>
+            <td>华东商超</td>
+            <td class="muted">已出库</td>
+            <td class="r money">¥58,240.00</td>
+            <td><span class="st done"><i></i>已完成</span></td>
+          </tr>
+          <tr class="r-row" data-reveal="fade">
+            <td><div class="cb-wrap"><input type="checkbox" class="cb" aria-label="选择单据"></div></td>
+            <td class="no"><a class="no-a" href="单据详情.html" title="打开详情"><span class="short">N-0012</span><span class="full">N-0001-20261109-0012</span></a></td>
+            <td><span class="type"><span class="tdot n"></span>内部交易 N</span></td>
+            <td class="date">2026-11-09</td>
+            <td>演示公司 → 华南公司</td>
+            <td class="muted">在途</td>
+            <td class="r money">¥21,900.00</td>
+            <td><span class="st now"><i></i>进行中</span></td>
+          </tr>
+          <tr class="r-row" data-reveal="fade">
+            <td><div class="cb-wrap"><input type="checkbox" class="cb" aria-label="选择单据"></div></td>
+            <td class="no"><a class="no-a" href="单据详情.html" title="打开详情"><span class="short">C-0006</span><span class="full">C-0001-20261108-0006</span></a></td>
+            <td><span class="type"><span class="tdot c"></span>结算单 C</span></td>
+            <td class="date">2026-11-08</td>
+            <td>华东区 · 11 月上半月</td>
+            <td class="muted">待财务确认</td>
+            <td class="r money">¥62,180.00</td>
+            <td><span class="st wait"><i></i>待确认</span></td>
+          </tr>
+          <tr class="r-row" data-reveal="fade">
+            <td><div class="cb-wrap"><input type="checkbox" class="cb" aria-label="选择单据"></div></td>
+            <td class="no"><a class="no-a" href="单据详情.html" title="打开详情"><span class="short">R-0003</span><span class="full">R-0001-20261107-0003</span></a></td>
+            <td><span class="type"><span class="tdot n"></span>客户退货 R</span></td>
+            <td class="date">2026-11-07</td>
+            <td>华东商超</td>
+            <td class="muted">已回批次</td>
+            <td class="r money neg"><span class="arr">▾</span>¥1,204.50</td>
+            <td><span class="st done"><i></i>已完成</span></td>
+          </tr>
+          <tr class="r-row" data-reveal="fade">
+            <td><div class="cb-wrap"><input type="checkbox" class="cb" aria-label="选择单据"></div></td>
+            <td class="no"><a class="no-a" href="单据详情.html" title="打开详情"><span class="short">S-0001</span><span class="full">S-0001-20261106-0001</span></a></td>
+            <td><span class="type"><span class="tdot n"></span>供应商退货 S</span></td>
+            <td class="date">2026-11-06</td>
+            <td>久盛五金</td>
+            <td class="muted">已退款</td>
+            <td class="r money neg"><span class="arr">▾</span>¥2,450.00</td>
+            <td><span class="st done"><i></i>已完成</span></td>
+          </tr>
+          <tr class="r-row" data-reveal="fade">
+            <td><div class="cb-wrap"><input type="checkbox" class="cb" aria-label="选择单据"></div></td>
+            <td class="no"><a class="no-a" href="单据详情.html" title="打开详情"><span class="short">I-0002</span><span class="full">I-0001-20261105-0002</span></a></td>
+            <td><span class="type"><span class="tdot n"></span>盘点调整 I</span></td>
+            <td class="date">2026-11-05</td>
+            <td>冷库 A 区</td>
+            <td class="muted">待审批</td>
+            <td class="r money" style="color:var(--text-3)">—</td>
+            <td><span class="st wait"><i></i>待审批</span></td>
+          </tr>
+          <tr class="r-row" data-reveal="fade">
+            <td><div class="cb-wrap"><input type="checkbox" class="cb" aria-label="选择单据"></div></td>
+            <td class="no"><a class="no-a" href="单据详情.html" title="打开详情"><span class="short">A-0023</span><span class="full">A-0001-20261104-0023</span></a></td>
+            <td><span class="type"><span class="tdot a"></span>采购单 A</span></td>
+            <td class="date">2026-11-04</td>
+            <td>恒丰包装</td>
+            <td class="muted">已取消</td>
+            <td class="r money" style="color:var(--text-3)">—</td>
+            <td><span class="st cancel"><i></i>已取消</span></td>
+          </tr>
+          <tr class="r-row" data-reveal="fade">
+            <td><div class="cb-wrap"><input type="checkbox" class="cb" aria-label="选择单据"></div></td>
+            <td class="no"><a class="no-a" href="单据详情.html" title="打开详情"><span class="short">E-0087</span><span class="full">E-0001-20261103-0087</span></a></td>
+            <td><span class="type"><span class="tdot e"></span>销售单 E</span></td>
+            <td class="date">2026-11-03</td>
+            <td>西南批发</td>
+            <td class="muted">已出库 · 已结算</td>
+            <td class="r money">¥34,560.00</td>
+            <td><span class="st done"><i></i>已完成</span></td>
+          </tr>
+
+          <!-- ===== 状态行：空 / 骨架 / 错误（由 ?state= 切换） ===== -->
+          <tr class="st-tr st-empty">
+            <td colspan="8">
+              <div class="st-cell-inner">
+                <div class="st-box">
+                  <div class="st-ico">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+                      <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+                    </svg>
+                  </div>
+                  <div class="st-title">筛下来一条都没有</div>
+                  <div class="st-desc">这组条件把 139 条全筛掉了。把「单据类型」或「状态」放宽一格试试；也可能这单确实还没开。</div>
+                  <div class="st-actions">
+                    <button class="st-btn primary">清空筛选</button>
+                    <button class="st-btn">新建单据</button>
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+          <tr class="st-tr st-loading">
+            <td colspan="8">
+              <div class="st-cell-inner">
+                <div style="padding:6px 0">
+                  <div class="sk sk-line w80" style="height:12px;margin:14px 0"></div>
+                  <div class="sk sk-line w60" style="height:12px;margin:14px 0"></div>
+                  <div class="sk sk-line w80" style="height:12px;margin:14px 0"></div>
+                  <div class="sk sk-line w40" style="height:12px;margin:14px 0"></div>
+                  <div class="sk sk-line w60" style="height:12px;margin:14px 0"></div>
+                  <div class="sk sk-line w80" style="height:12px;margin:14px 0"></div>
+                </div>
+              </div>
+            </td>
+          </tr>
+          <tr class="st-tr st-error">
+            <td colspan="8">
+              <div class="st-cell-inner">
+                <div class="st-box st-error">
+                  <div class="st-ico">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+                      <path d="M8 3v6M8 12v.5"/><circle cx="8" cy="8" r="6"/>
+                    </svg>
+                  </div>
+                  <div class="st-title">这次没取到单据</div>
+                  <div class="st-desc">服务端没回话（演示环境里是故意造的）。先点重试；连着失败两次，就把请求编号发给管理员，他能顺着编号查到这一次。</div>
+                  <div class="st-actions">
+                    <button class="st-btn primary">重试</button>
+                    <button class="st-btn">先看上次的结果</button>
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- 吸底栏：默认隐藏，勾选后弹出 -->
+      <div class="batch">
+        <span>已选 <b data-batch-count>0</b> 条</span>
+        <span class="dot-s"></span>
+        <span>本页合计 <b class="num" style="font-family:var(--mono)" data-batch-total>¥191,605.50</b></span>
+        <div class="sp">
+          <button class="btn btn-g" data-needs-selection>打印客户联</button>
+          <button class="btn btn-g" data-needs-selection>批量取消</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

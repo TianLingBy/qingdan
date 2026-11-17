@@ -1318,38 +1318,15 @@ export async function getCustomerReturn(
   };
 }
 
-/** D47：客户退货录入 / 审批人限定老板、经理、财务岗位（老板标识同时短路）。 */
-export async function hasCustomerReturnApprovalPosition(
-  ctx: SalesOrderRepoContext,
-  employeeId: string,
-  companyId: string,
-): Promise<boolean> {
-  const result = await ctx.tx.query<{ allowed: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1
-         FROM employee e
-        WHERE e.id = $1::uuid
-          AND e.tenant_id = $2
-          AND e.status = '在职'
-          AND (
-            e.is_owner
-            OR EXISTS (
-              SELECT 1
-                FROM employee_company_position ecp
-                JOIN position p
-                  ON p.id = ecp.position_id
-                 AND p.tenant_id = ecp.tenant_id
-               WHERE ecp.tenant_id = $2
-                 AND ecp.employee_id = e.id
-                 AND ecp.company_id = $3::uuid
-                 AND p.status = '启用'
-                 AND p.preset_key IN ('owner', 'manager', 'finance')
-            )
-          )
-     ) AS allowed`,
-    [employeeId, ctx.tenantId, companyId],
+export async function completeCustomerReturn(ctx: SalesOrderRepoContext, id: string, expectedVersion: number): Promise<CustomerReturn | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE customer_return SET status = '已完成', version = version + 1
+      WHERE id = $1::uuid AND tenant_id = $2 AND company_id = ANY($3::uuid[])
+        AND version = $4 AND status = '进行中' RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
   );
-  return result.rows[0]?.allowed === true;
+  if (result.rows.length === 0) throw new AppError('VERSION_CONFLICT', '客户退货单已被并发修改或不是进行中状态');
+  return getCustomerReturn(ctx, id);
 }
 
 async function assertOriginalSalesOrder(

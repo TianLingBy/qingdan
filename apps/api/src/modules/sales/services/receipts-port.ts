@@ -7,7 +7,6 @@ import type {
   SalesOrderForPayment,
   SalesReceiptFromPaymentCommand,
   SalesReceiptFromPaymentResult,
-  SalesReceiptPort,
   ServiceRegistry,
 } from '../../../platform/services/registry.js';
 import { insertSalesReceipt } from '../repo.js';

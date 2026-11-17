@@ -13,12 +13,12 @@ import {
 } from '../../platform/http/route-mount.js';
 import {
   cancelSalesOrder,
-  completeSalesOrder,
   createSalesOrder,
   exportSalesOrders,
   getSalesOrder,
   getSalesOrderForPrint,
   listSalesOrders,
+  shipSalesOrder,
   updateSalesOrder,
 } from './usecases/sales-orders.js';
 import {
@@ -28,11 +28,13 @@ import {
 } from './usecases/sales-receipts.js';
 import {
   createCustomerReturn,
+  completeCustomerReturn,
   getCustomerReturn,
   listCustomerReturns,
 } from './usecases/customer-returns.js';
 import { maskSalesOrderDetailAmounts } from './services/masking.js';
 import { renderSalesOrderCustomerCopy } from './services/customer-copy.js';
+import { maskHandlerId, maskHandlerIdInPage } from '../../platform/authz/handler-mask.js';
 
 /**
  * sales 模块（E 销售单一期 5 条 + 收款记录 2 条 + R 客户退货 3 条）。
@@ -41,18 +43,20 @@ import { renderSalesOrderCustomerCopy } from './services/customer-copy.js';
  * - 开单 / 修改的破下限审批走 platform（D20），不要在这里另造审批表；
  * - 取消必须复用 `assertCancelable`（D21），有下游时先取消下游；
  * - E 单详情内嵌收款块，余额由 SQL 聚合（D24）；
- * - R 客户退货录入按 D47 校验老板 / 经理 / 财务岗位；
- * - 完成端点按 D72 接线：扣库存 + 生成 C 单草稿（D70 端口，同事务）。
+ * - R 客户退货录入只校验 `customer_return.create` 权限点，不看岗位；
+ * - 出库端点 `sales.order.ship` 按 D72 接线：扣库存 + 生成 C 单草稿（D70 端口，同事务）；
+ *   `complete` 已按 D85 改名，权限走 `sales.ship`。
  */
 
 const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'sales.order.create': 'sales_order',
   'sales.order.update': 'sales_order',
-  'sales.order.complete': 'sales_order',
+  'sales.order.ship': 'sales_order',
   'sales.order.cancel': 'sales_order',
   'sales.order.export': 'sales_order',
   'sales.receipt.create': 'sales_receipt',
   'customer_return.create': 'customer_return',
+  'customer_return.complete': 'customer_return',
 };
 
 /** 无数据库时保持骨架语义：501 + operationId。 */
@@ -74,7 +78,8 @@ export function registerSalesRoutes(app: FastifyInstance): void {
   const handlers: RouteHandlers = {
     'sales.order.list.read': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);
-      return await listSalesOrders({ database: instance.database, request });
+      const page = await listSalesOrders({ database: instance.database, request });
+      return maskHandlerIdInPage(page, request.principal);
     },
     'sales.order.create': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
@@ -106,9 +111,9 @@ export function registerSalesRoutes(app: FastifyInstance): void {
       const canViewPrice = request.principal
         ? allowsScope(request.principal.scope, 'sales', 'view_price')
         : false;
-      return maskSalesOrderDetailAmounts(
-        { ...detail, ...receiptBlock },
-        canViewPrice,
+      return maskHandlerId(
+        maskSalesOrderDetailAmounts({ ...detail, ...receiptBlock }, canViewPrice),
+        request.principal,
       );
     },
     'sales.order.export': async ({ app: instance, request, route }) => {
@@ -121,13 +126,13 @@ export function registerSalesRoutes(app: FastifyInstance): void {
     'sales.order.print': async ({ app: instance, request, route }) => {
       assertDatabaseConfigured(instance, route);
       // 复用详情取数 + view_price 脱敏；无权限时金额为 null，由渲染层显示「—」。
-      const { detail, companyName } = await getSalesOrderForPrint({
+      const { detail, companyName, labels } = await getSalesOrderForPrint({
         database: instance.database,
         request,
       });
       return {
         contentType: 'text/html',
-        content: renderSalesOrderCustomerCopy(detail, companyName),
+        content: renderSalesOrderCustomerCopy(detail, companyName, labels),
         filename: `销售单-${detail.orderNo}.html`,
       };
     },
@@ -139,9 +144,9 @@ export function registerSalesRoutes(app: FastifyInstance): void {
         reply,
       });
     },
-    'sales.order.complete': async ({ app: instance, request, reply, route }) => {
+    'sales.order.ship': async ({ app: instance, request, reply, route }) => {
       assertDatabaseConfigured(instance, route);
-      return await completeSalesOrder({
+      return await shipSalesOrder({
         database: instance.database,
         request,
         reply,
@@ -173,6 +178,8 @@ export function registerSalesRoutes(app: FastifyInstance): void {
         request,
         reply,
       }),
+    'customer_return.complete': async ({ app: instance, request, reply }) =>
+      completeCustomerReturn({ database: instance.database, request, reply }),
   };
 
   mountRoutes(app, {

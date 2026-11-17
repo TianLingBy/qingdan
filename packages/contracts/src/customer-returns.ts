@@ -177,6 +177,13 @@ export const CustomerReturnListQuerySchema = PageQuerySchema.extend({
  */
 export const CUSTOMER_RETURN_ROUTES: readonly RouteDef[] = [
   defineRoute({
+    module: 'sales', operationId: 'customer_return.complete', method: 'POST',
+    path: '/api/v1/customer-returns/{id}/complete', domain: 'customer_return', action: 'approve',
+    summary: '确认客户退货并入库（审批动作）', audit: { kind: 'write' },
+    ai: { policy: 'forbid', reasonRequired: true }, requiresIfMatch: true,
+    request: {}, response: { status: 200, schema: CustomerReturnSchema },
+  }),
+  defineRoute({
     module: 'sales',
     operationId: 'customer_return.list.read',
     method: 'GET',

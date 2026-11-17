@@ -430,7 +430,7 @@ async function assertSupplierInCompany(
 
 /**
  * 商品明细必须属于采购单所在公司（D15）：跨公司引用等同不存在，直接拒绝。
- * 去重后一次查询，避免逐行往返。
+ * 去重后一次查询，避免逐行往返；开单与改单共用同一条校验，两条写入路径不得只补一条。
  */
 async function assertProductsInCompany(
   ctx: PurchaseOrderRepoContext,
@@ -526,7 +526,7 @@ async function insertFees(
 
 /**
  * 汇总单头金额：全部交给 SQL 聚合，应用侧不出现浮点。
- * 货款 = 商品明细合计；费用合计可为负（D39）；总金额 = 货款 + 费用合计。
+ * 货款 = 商品明细合计；费用合计不得为负（D83）；总金额 = 货款 + 费用合计。
  */
 async function recalcTotals(ctx: PurchaseOrderRepoContext, orderId: string): Promise<void> {
   await ctx.tx.query(
@@ -555,6 +555,11 @@ export async function insertPurchaseOrder(
 ): Promise<PurchaseOrder> {
   await assertSupplierInCompany(ctx, input.supplierId, input.companyId);
   await assertHandlerInTenant(ctx, input.handlerId);
+  await assertProductsInCompany(
+    ctx,
+    input.lines.map((line) => line.productId),
+    input.companyId,
+  );
 
   await ctx.tx.query(
     `INSERT INTO purchase_order
@@ -602,6 +607,14 @@ export async function updatePurchaseOrder(
   }
   if (input.handlerId !== undefined) {
     await assertHandlerInTenant(ctx, input.handlerId);
+  }
+  if (input.lines !== undefined) {
+    // D15：改单换明细同样不得引用他公司商品；校验放在任何写入之前，失败不留半张单。
+    await assertProductsInCompany(
+      ctx,
+      input.lines.map((line) => line.productId),
+      current.companyId,
+    );
   }
 
   const updated = await ctx.tx.query<{ id: string }>(
@@ -682,6 +695,19 @@ export async function cancelPurchaseOrder(
     throw new AppError('VERSION_CONFLICT', '采购单已被并发修改，请重新读取后重试');
   }
 
+  return getPurchaseOrder(ctx, id);
+}
+
+export async function completePurchaseOrder(
+  ctx: PurchaseOrderRepoContext, id: string, expectedVersion: number,
+): Promise<PurchaseOrder | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE purchase_order SET status = '已完成', version = version + 1
+      WHERE id = $1::uuid AND tenant_id = $2 AND company_id = ANY($3::uuid[])
+        AND version = $4 AND status = '进行中' RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) throw new AppError('VERSION_CONFLICT', '采购单已被并发修改或不是进行中状态');
   return getPurchaseOrder(ctx, id);
 }
 
@@ -893,6 +919,40 @@ export async function getSupplierReturn(
     ...mapSupplierReturnHeader(row),
     lines: linesByReturn.get(id) ?? [],
   };
+}
+
+export async function completeSupplierReturn(ctx: PurchaseOrderRepoContext, id: string, expectedVersion: number): Promise<SupplierReturn | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE supplier_return SET status = '已完成', version = version + 1
+      WHERE id = $1::uuid AND tenant_id = $2 AND company_id = ANY($3::uuid[])
+        AND version = $4 AND status = '进行中' RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) throw new AppError('VERSION_CONFLICT', '供应商退货单已被并发修改或不是进行中状态');
+  return getSupplierReturn(ctx, id);
+}
+
+export async function cancelSupplierReturn(
+  ctx: PurchaseOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<SupplierReturn | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE supplier_return
+        SET status = '已取消',
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '进行中'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (result.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '供应商退货单已被并发修改或不是进行中状态');
+  }
+  return getSupplierReturn(ctx, id);
 }
 
 async function assertOriginalPurchaseOrder(

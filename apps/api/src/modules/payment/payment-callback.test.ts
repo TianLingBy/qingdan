@@ -171,7 +171,7 @@ describe('支付回调（PGlite + seed）', () => {
 
     const completed = await app.inject({
       method: 'POST',
-      url: `/api/v1/sales-orders/${order.id}/complete`,
+      url: `/api/v1/sales-orders/${order.id}/ship`,
       headers: {
         cookie: ownerCookie,
         origin: PUBLIC_BASE_URL,
@@ -190,15 +190,15 @@ describe('支付回调（PGlite + seed）', () => {
     await seed(test.database);
     await test.database.query(
       `INSERT INTO customer
-         (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, NULL, '支付回调测试客户', '启用')
+         (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, NULL, '支付回调测试客户')
        ON CONFLICT (id) DO NOTHING`,
       [CUSTOMER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '支付回调测试商品', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '支付回调测试商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );

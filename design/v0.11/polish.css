@@ -1,0 +1,33 @@
+/* v0.11 打磨层：可折叠分组、空态、分页语义、焦点可见、对比度、首屏密度 */
+.sb-domain{display:flex;align-items:center;justify-content:space-between;cursor:pointer;
+  border-radius:6px;padding:10px 10px 4px;transition:color .15s}
+.sb-domain:hover{color:var(--text-2)}
+.sb-domain::after{content:"›";font-size:11px;color:var(--text-decor);transition:transform .18s}
+.sb-domain.open::after{transform:rotate(90deg)}
+.sb-group{overflow:hidden;max-height:0;transition:max-height .22s ease}
+.sb-group.open{max-height:520px}
+
+.hero{padding:18px 22px}
+.hero-h{font-size:25px;margin:4px 0 6px}
+.hero-sub{max-width:64ch}
+.hero-tags{margin-top:10px}
+
+.empty{display:none;padding:44px 18px;text-align:center}
+.empty.show{display:block}
+.empty b{display:block;font-size:14px;margin-bottom:6px}
+.empty i{font-style:normal;font-size:12.5px;color:var(--text-3);line-height:1.7}
+.empty .ico{width:44px;height:44px;margin:0 auto 12px;border-radius:12px;display:grid;place-items:center;
+  background:rgba(var(--accent-rgb),.1);color:var(--accent-light);font-size:18px}
+
+.pager{justify-content:space-between;padding:10px 14px}
+.pager .count{font-size:12px;color:var(--text-3)}
+.pager .nav{display:flex;align-items:center;gap:6px}
+.pager.single .nav{display:none}
+
+:focus-visible{outline:2px solid var(--accent-light);outline-offset:2px;border-radius:6px}
+
+html[data-mode="dark"]{--text-3:#98A5A0}
+html[data-mode="light"]{--text-3:#5F6B65}
+
+.card tbody td:first-child{font-weight:520}
+.card tbody td[data-dim]{color:var(--text-2)}

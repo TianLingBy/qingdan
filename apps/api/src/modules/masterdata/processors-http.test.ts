@@ -16,7 +16,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  *   - D64① 主表只存基础资料：响应里没有任何价格键；
  *   - D64③ 报价按工序 + 日期区间过滤，跨加工厂按单价升序比价；
  *   - D64④ 报价只增不改：`/processor-quotes/{id}` 没有 PATCH / DELETE 路由；
- *   - D52① 停用加工厂属危险动作：AI 凭证 403 AI_ACTION_FORBIDDEN 且状态不变。
+ *   - D52① 删除加工厂属危险动作：AI 凭证 403 AI_ACTION_FORBIDDEN 且实体仍在。
  */
 
 const PUBLIC_BASE_URL = 'https://qingdan.example';
@@ -223,7 +223,6 @@ describe('masterdata 加工厂 + 报价 HTTP（PGlite + seed 演示租户）', (
       name: 'HTTP创建加工厂',
       processorNo: 'HTTP-PROC-CREATE-001',
       contactName: 'HTTP张师傅',
-      status: '启用',
       version: 1,
     });
 
@@ -321,8 +320,8 @@ describe('masterdata 加工厂 + 报价 HTTP（PGlite + seed 演示租户）', (
     });
   });
 
-  it('delete：缺 If-Match → 428；软停用成功回新 ETag，详情仍可读', async () => {
-    const created = await createOne('HTTP软删加工厂');
+  it('delete：缺 If-Match → 428；物理删除成功回 ETag，详情 404', async () => {
+    const created = await createOne('HTTP删除加工厂');
 
     const missing = await app.inject({
       method: 'DELETE',
@@ -338,16 +337,45 @@ describe('masterdata 加工厂 + 报价 HTTP（PGlite + seed 演示租户）', (
       headers: writeHeaders(ownerCookie, 'req-proc-delete-ok', { 'if-match': '"1"' }),
     });
     expect(deleted.statusCode).toBe(200);
-    expect(deleted.headers.etag).toBe('"2"');
-    expect(deleted.json()).toMatchObject({ status: '停用', version: 2 });
+    expect(deleted.headers.etag).toBe('"1"');
+    expect(deleted.json()).toMatchObject({ id: created.id, name: 'HTTP删除加工厂', version: 1 });
 
     const detail = await app.inject({
       method: 'GET',
       url: `/api/v1/processors/${created.id}`,
       headers: readHeaders(ownerCookie, 'req-proc-delete-detail'),
     });
+    expect(detail.statusCode).toBe(404);
+    expect(detail.json()).toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('删除被报价记录引用的加工厂 → 409 STATE_CONFLICT + reason=HAS_REFERENCES', async () => {
+    const created = await createOne('HTTP被引用加工厂');
+    await test.database.query(
+      `INSERT INTO processor_quote
+         (id, tenant_id, company_id, processor_id, quote_date, process_name, unit_price)
+       VALUES ('01900000-0000-7000-8000-0000000000e1', $1, $2, $3, '2026-01-10', 'HTTP引用工序', '1')`,
+      [DEMO_IDS.tenantId, DEMO_IDS.companyId, created.id],
+    );
+
+    const blocked = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/processors/${created.id}`,
+      headers: writeHeaders(ownerCookie, 'req-proc-delete-referenced', { 'if-match': '"1"' }),
+    });
+    expect(blocked.statusCode).toBe(409);
+    const body = blocked.json() as { code: string; message: string; details?: { reason?: string } };
+    expect(body.code).toBe('STATE_CONFLICT');
+    expect(body.details?.reason).toBe('HAS_REFERENCES');
+    expect(body.message).toContain('还有单据在用');
+
+    // 被引用时删除失败，加工厂仍在。
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/processors/${created.id}`,
+      headers: readHeaders(ownerCookie, 'req-proc-delete-referenced-detail'),
+    });
     expect(detail.statusCode).toBe(200);
-    expect((detail.json() as Processor).status).toBe('停用');
   });
 
   it('D15：跨公司不可见——详情 404、列表为空、创建到不可见公司 403', async () => {
@@ -560,7 +588,7 @@ describe('masterdata 加工厂 + 报价 HTTP（PGlite + seed 演示租户）', (
     expect(items[0]?.unitPrice).toBe('3.000000');
   });
 
-  it('D52①：AI 凭证停用加工厂 → 403 AI_ACTION_FORBIDDEN，加工厂状态不变', async () => {
+  it('D52①：AI 凭证删除加工厂 → 403 AI_ACTION_FORBIDDEN，加工厂仍在', async () => {
     const tokenResponse = await app.inject({
       method: 'POST',
       url: '/api/v1/api-tokens',
@@ -588,10 +616,10 @@ describe('masterdata 加工厂 + 报价 HTTP（PGlite + seed 演示租户）', (
     expect(forbidden.statusCode).toBe(403);
     expect(forbidden.json()).toMatchObject({ code: 'AI_ACTION_FORBIDDEN' });
 
-    const row = await test.database.query<{ status: string }>(
-      'SELECT status FROM processor WHERE id = $1',
+    const row = await test.database.query<{ id: string }>(
+      'SELECT id FROM processor WHERE id = $1',
       [created.id],
     );
-    expect(row.rows[0]?.status).toBe('启用');
+    expect(row.rows).toHaveLength(1);
   });
 });

@@ -11,12 +11,13 @@ import { v7 as uuidv7 } from 'uuid';
 import type { SqlClient } from '../../platform/db/client.js';
 
 /**
- * C 结算单 + 提成比例配置数据访问层（D15 / D19 / D26 / D69 / D77）。
+ * C 结算单 + 提成比例配置数据访问层（D15 / D19 / D26 / D69 / D77 / D88）。
  *
  * - 所有查询都带 tenant_id + company_id = ANY(可见公司集合)；
  * - 金额保持 decimal 字符串，单头字段由 SQL trim_scale 规范化；
  * - 已结算单读取 related_loss_amount_snapshot，确保 D69 快照冻结；
- * - confirm 使用 version + status 条件原子更新，保证一期一单一次结算；
+ * - confirm 使用 version + status 条件原子更新；unsettle 反向原子更新
+ *   （同一条 UPDATE 改 status + settled_at + 清空结算期快照，D88）；
  * - 提成比例在确认同一原子 UPDATE 内落快照与金额（D77 ③），并发下不会读到配置变化。
  *
  * D19 现状：E 单完成态已由 sales 模块经 D70 跨模块公开用例通道
@@ -56,6 +57,15 @@ export interface SettlementOrderState {
   readonly version: number;
   /** 提成归属人（D77 ②）；历史草稿可能为 null。 */
   readonly commissionOwnerId: string | null;
+  /**
+   * 撤销前要清掉的快照原值（D88）：审计必须留下这些值，撤销不等于没发生过。
+   * 与读取口径一致：relatedLossAmount 取 `COALESCE(snapshot, 当前值)`；
+   * 未经确认的草稿这些值也可能存在（草稿默认值），撤销只在「已结算」时发生。
+   */
+  readonly relatedLossAmount: string | null;
+  readonly netProfit: string | null;
+  readonly commissionRateSnapshot: string | null;
+  readonly commissionAmount: string | null;
 }
 
 export interface CommissionRateListQuery {
@@ -82,10 +92,10 @@ interface SettlementOrderRow {
   total_cost_amount: string | number;
   gross_profit: string | number;
   gross_margin_rate: string | number;
-  related_loss_amount: string | number;
-  net_profit: string | number;
-  commission_rate_snapshot: string | number;
-  commission_amount: string | number;
+  related_loss_amount: string | number | null;
+  net_profit: string | number | null;
+  commission_rate_snapshot: string | number | null;
+  commission_amount: string | number | null;
   commission_owner_id: string | null;
   version: number;
   created_at: Date | string;
@@ -98,6 +108,10 @@ interface SettlementOrderStateRow {
   status: string;
   version: number;
   commission_owner_id: string | null;
+  related_loss_amount: string | number | null;
+  net_profit: string | number | null;
+  commission_rate_snapshot: string | number | null;
+  commission_amount: string | number | null;
 }
 
 interface CommissionRateRow {
@@ -142,6 +156,11 @@ function decimal(value: string | number): string {
   return String(value);
 }
 
+/** 可空金额：撤销后清空的结算期快照（D88）读出来是 null，不能变成字符串 "null"。 */
+function nullableDecimal(value: string | number | null): string | null {
+  return value === null ? null : decimal(value);
+}
+
 function dateOnly(value: Date | string): string {
   return value instanceof Date
     ? value.toISOString().slice(0, 10)
@@ -165,10 +184,10 @@ function mapSettlementOrder(row: SettlementOrderRow): SettlementOrder {
     totalCostAmount: decimal(row.total_cost_amount),
     grossProfit: decimal(row.gross_profit),
     grossMarginRate: decimal(row.gross_margin_rate),
-    relatedLossAmount: decimal(row.related_loss_amount),
-    netProfit: decimal(row.net_profit),
-    commissionRateSnapshot: decimal(row.commission_rate_snapshot),
-    commissionAmount: decimal(row.commission_amount),
+    relatedLossAmount: nullableDecimal(row.related_loss_amount),
+    netProfit: nullableDecimal(row.net_profit),
+    commissionRateSnapshot: nullableDecimal(row.commission_rate_snapshot),
+    commissionAmount: nullableDecimal(row.commission_amount),
     commissionOwnerId: row.commission_owner_id,
     version: row.version,
     createdAt: toDate(row.created_at).toISOString(),
@@ -262,13 +281,19 @@ export async function getSettlementOrder(
   return row ? mapSettlementOrder(row) : null;
 }
 
-/** 确认前读取状态；跨公司等同不存在。 */
+/** 确认 / 撤销前读取状态；跨公司等同不存在。 */
 export async function loadSettlementOrderState(
   ctx: SettlementOrderRepoContext,
   id: string,
 ): Promise<SettlementOrderState | null> {
   const result = await ctx.tx.query<SettlementOrderStateRow>(
-    `SELECT id, company_id, status, version, commission_owner_id
+    `SELECT id, company_id, status, version, commission_owner_id,
+            trim_scale(
+              COALESCE(related_loss_amount_snapshot, related_loss_amount)
+            ) AS related_loss_amount,
+            trim_scale(net_profit) AS net_profit,
+            trim_scale(commission_rate_snapshot) AS commission_rate_snapshot,
+            trim_scale(commission_amount) AS commission_amount
        FROM settlement_order
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -283,6 +308,10 @@ export async function loadSettlementOrderState(
     status: row.status as SettlementOrderStatus,
     version: row.version,
     commissionOwnerId: row.commission_owner_id,
+    relatedLossAmount: nullableDecimal(row.related_loss_amount),
+    netProfit: nullableDecimal(row.net_profit),
+    commissionRateSnapshot: nullableDecimal(row.commission_rate_snapshot),
+    commissionAmount: nullableDecimal(row.commission_amount),
   };
 }
 
@@ -423,11 +452,15 @@ export async function deleteCommissionRate(
 }
 
 /**
- * 确认结算：待确认 -> 已结算，一次且仅一次（D19）。
+ * 确认结算：待确认 -> 已结算（D19）；撤销后可再次确认（D88）。
  *
  * related_loss_amount_snapshot 与 net_profit 在同一原子 UPDATE 内落库，
  * 后续来源损耗变化不再影响本单（D69）；提成比例与金额同一条 SQL 落快照（D77 ③）：
  * `commissionAmount = round(max(gross_profit, 0) × rate, 6)`，负毛利记 0（D5④）。
+ * `settled_at` 也在这里一次性写入（0026）：触发器会让 updated_at 随任何更新变化，
+ * 期间报表只认 settled_at，不再拿 updated_at 推断结算时间。
+ * 撤销会把 related_loss_amount 清空（D88），再次确认时按「无本单相关损失 = 0」重算净毛利；
+ * 本期没有损失重算通道，旧值只保留在撤销审计里。
  * 版本或状态已被并发修改时返回 null。
  */
 export async function confirmSettlementOrder(
@@ -439,8 +472,9 @@ export async function confirmSettlementOrder(
   const result = await ctx.tx.query<{ id: string }>(
     `UPDATE settlement_order
         SET status = '已结算',
-            related_loss_amount_snapshot = related_loss_amount,
-            net_profit = gross_profit - related_loss_amount,
+            settled_at = now(),
+            related_loss_amount_snapshot = COALESCE(related_loss_amount, 0),
+            net_profit = gross_profit - COALESCE(related_loss_amount, 0),
             commission_rate_snapshot = $5::numeric,
             commission_amount = round(GREATEST(gross_profit, 0) * $5::numeric, 6),
             version = version + 1
@@ -451,6 +485,43 @@ export async function confirmSettlementOrder(
         AND status = '待确认'
       RETURNING id`,
     [id, ctx.tenantId, [...ctx.companyIds], expectedVersion, commissionRate],
+  );
+  if (result.rows.length === 0) return null;
+  return getSettlementOrder(ctx, id);
+}
+
+/**
+ * 撤销结算：已结算 -> 待确认，整单退回并清空结算期快照（D88 / #288）。
+ *
+ * 必须**同一条 UPDATE** 同时改 `status` 与 `settled_at`：0026 的 CHECK 要求
+ * 「待确认 ⇔ settled_at IS NULL」「已结算 ⇔ settled_at IS NOT NULL」，分两步会被约束打死。
+ * 同时清空 related_loss_amount / related_loss_amount_snapshot / net_profit /
+ * commission_rate_snapshot / commission_amount：撤销后该单不再进已结算期间聚合（D43），
+ * 也不再计入提成；快照原值由调用方写进审计（D51）。
+ * 版本或状态已被并发修改时返回 null（调用方按 409 处理）。
+ */
+export async function unsettleSettlementOrder(
+  ctx: SettlementOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<SettlementOrder | null> {
+  const result = await ctx.tx.query<{ id: string }>(
+    `UPDATE settlement_order
+        SET status = '待确认',
+            settled_at = NULL,
+            related_loss_amount = NULL,
+            related_loss_amount_snapshot = NULL,
+            net_profit = NULL,
+            commission_rate_snapshot = NULL,
+            commission_amount = NULL,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '已结算'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
   );
   if (result.rows.length === 0) return null;
   return getSettlementOrder(ctx, id);

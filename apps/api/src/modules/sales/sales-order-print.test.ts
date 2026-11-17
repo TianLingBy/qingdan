@@ -83,15 +83,15 @@ describe('E 单打印（客户联）', () => {
     await seed(test.database);
     await test.database.query(
       `INSERT INTO customer
-         (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, NULL, '打印测试客户', '启用')
+         (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, NULL, '打印测试客户')
        ON CONFLICT (id) DO NOTHING`,
       [CUSTOMER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     await test.database.query(
       `INSERT INTO product
-         (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, '打印测试商品', '{}', '件', '启用')
+         (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, '打印测试商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
@@ -152,7 +152,7 @@ describe('E 单打印（客户联）', () => {
 
     const completed = await app.inject({
       method: 'POST',
-      url: `/api/v1/sales-orders/${order.id}/complete`,
+      url: `/api/v1/sales-orders/${order.id}/ship`,
       headers: writeHeaders(ownerCookie, 'req-print-complete', {
         'if-match': `"${order.version}"`,
       }),
@@ -181,6 +181,9 @@ describe('E 单打印（客户联）', () => {
     expect(doc.content).toContain(FEE_AMOUNT);
     expect(doc.content).toContain(TOTAL_AMOUNT);
     expect(doc.content).toContain('客户联');
+    // 商品名 / 批次号经 D70 端口取回，不再渲染 uuid 前 8 位。
+    expect(doc.content).toContain('打印测试商品');
+    expect(doc.content).toContain('E-PRINT-A');
   });
 
   it('无 view_price：200 + 金额渲染「—」，正文不含真实金额', async () => {
@@ -193,5 +196,34 @@ describe('E 单打印（客户联）', () => {
     expect(doc.content).not.toContain(LINE_AMOUNT);
     expect(doc.content).not.toContain(FEE_AMOUNT);
     expect(doc.content).not.toContain(TOTAL_AMOUNT);
+  });
+
+  it('AI 凭证打印 → 403 AI_ACTION_FORBIDDEN；人类凭证同一路径仍 200', async () => {
+    const tokenResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/api-tokens',
+      headers: writeHeaders(ownerCookie, 'req-print-ai-token'),
+      payload: {
+        name: 'HTTP Sales Print AI Token',
+        employeeId: DEMO_IDS.ownerEmployeeId,
+        scope: [{ domain: 'sales', actions: ['read'] }],
+      },
+    });
+    expect(tokenResponse.statusCode).toBe(201);
+    const { secret } = tokenResponse.json() as { secret: string };
+
+    const aiPrint = await app.inject({
+      method: 'GET',
+      url: `/api/v1/sales-orders/${order.id}/print`,
+      headers: {
+        authorization: `Bearer ${secret}`,
+        'x-request-id': 'req-print-ai',
+      },
+    });
+    expect(aiPrint.statusCode).toBe(403);
+    expect(aiPrint.json()).toMatchObject({ code: 'AI_ACTION_FORBIDDEN' });
+
+    const humanPrint = await print(ownerCookie, 'req-print-human-after-ai');
+    expect(humanPrint.statusCode).toBe(200);
   });
 });

@@ -115,6 +115,8 @@ describe('ApiClient 请求行为', () => {
     expect(headers.get('accept')).toBe('application/json');
     expect(headers.get('authorization')).toBeNull();
     expect(calls[0]?.init.method).toBe('GET');
+    // 会话是 HttpOnly Cookie（D59⑦）：必须显式带上凭据
+    expect(calls[0]?.init.credentials).toBe('include');
   });
 
   it('有 token 时带 Authorization，写操作带 Idempotency-Key', async () => {

@@ -75,14 +75,14 @@ async function main(): Promise<void> {
     await seed(database);
     // 库存来自造数而不是 A 单入库（#99 未接，见文件头）。
     await database.query(
-      `INSERT INTO customer (id, tenant_id, company_id, customer_no, name, status)
-       VALUES ($1, $2, $3, NULL, 'E2E 客户', '启用')
+      `INSERT INTO customer (id, tenant_id, company_id, customer_no, name)
+       VALUES ($1, $2, $3, NULL, 'E2E 客户')
        ON CONFLICT (id) DO NOTHING`,
       [CUSTOMER_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
     await database.query(
-      `INSERT INTO product (id, tenant_id, company_id, product_no, name, aliases, unit, status)
-       VALUES ($1, $2, $3, NULL, 'E2E 商品', '{}', '件', '启用')
+      `INSERT INTO product (id, tenant_id, company_id, product_no, name, aliases, unit)
+       VALUES ($1, $2, $3, NULL, 'E2E 商品', '{}', '件')
        ON CONFLICT (id) DO NOTHING`,
       [PRODUCT_ID, DEMO_IDS.tenantId, DEMO_IDS.companyId],
     );
@@ -148,7 +148,7 @@ async function main(): Promise<void> {
       assert(created !== null, '前一步没建出单据');
       const response = await app.inject({
         method: 'POST',
-        url: `/api/v1/sales-orders/${created.id}/complete`,
+        url: `/api/v1/sales-orders/${created.id}/ship`,
         headers: writeHeaders({ 'if-match': `"${created.version}"` }),
       });
       assert(response.statusCode === 200, `完成返回 ${response.statusCode}：${response.body.slice(0, 300)}`);
@@ -232,7 +232,7 @@ async function main(): Promise<void> {
       const created = order;
       assert(created !== null, '前一步没建出单据');
       const completeAudit = await database.query<{ action: string }>(
-        `SELECT action FROM audit_log WHERE object_id = $1 AND action = 'sales.order.complete'`,
+        `SELECT action FROM audit_log WHERE object_id = $1 AND action = 'sales.order.ship'`,
         [created.id],
       );
       assert(completeAudit.rows.length === 1, `完成 E 单审计期望 1 条，实际 ${completeAudit.rows.length}`);

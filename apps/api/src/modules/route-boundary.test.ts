@@ -124,7 +124,20 @@ const SETTLEMENT_CASES = [
   },
 ] as const;
 
-describe('路由挂载边界（platform / masterdata / inventory / sales / purchase / processing / internal-trade / settlement）', () => {
+const PROFIT_REPORT_CASES = [
+  {
+    method: 'GET',
+    url: '/api/v1/reports/profit?periodStart=2026-11-01&periodEnd=2026-11-30',
+    operationId: 'profit_report.read',
+  },
+  {
+    method: 'GET',
+    url: '/api/v1/reports/profit/losses?periodStart=2026-11-01&periodEnd=2026-11-30',
+    operationId: 'profit_report.loss.read',
+  },
+] as const;
+
+describe('路由挂载边界（platform / masterdata / inventory / sales / purchase / processing / internal-trade / settlement / report）', () => {
   let app: FastifyInstance;
 
   beforeAll(() => {
@@ -263,8 +276,23 @@ describe('路由挂载边界（platform / masterdata / inventory / sales / purch
     }
   });
 
-  it('5 个商品端点全部由 masterdata 挂载 → 501 NOT_IMPLEMENTED，operationId 正确', async () => {
-    for (const testCase of PRODUCT_CASES) {
+  it('2 个 profit_report 端点全部由 report 骨架挂载 → 501 NOT_IMPLEMENTED', async () => {
+    for (const testCase of PROFIT_REPORT_CASES) {
+      const response = await app.inject({ method: testCase.method, url: testCase.url });
+
+      expect(response.statusCode, `${testCase.method} ${testCase.url}`).toBe(501);
+      const body = response.json() as {
+        code: string;
+        message: string;
+        details?: Record<string, unknown>;
+      };
+      expect(body.code).toBe('NOT_IMPLEMENTED');
+      expect(body.message).toContain(testCase.operationId);
+      expect(body.details).toMatchObject({ operationId: testCase.operationId });
+    }
+  });
+
+  it('5 个商品端点全部由 masterdata 挂载 → 501 NOT_IMPLEMENTED，operationId 正确', async () => {    for (const testCase of PRODUCT_CASES) {
       const response = await app.inject({
         method: testCase.method,
         url: testCase.url,

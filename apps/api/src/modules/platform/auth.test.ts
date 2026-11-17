@@ -9,7 +9,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
 
 /**
  * M1-B 登录闭环（D54④ / D59③⑦）：
- *   - login：成功下发会话 Cookie；错误验证码 / 未知手机号统一 401；production → 501；
+ *   - login：成功下发会话 Cookie；错误验证码 / 未知手机号统一 401；production 不认固定码；
  *   - logout：撤销当前会话并清 Cookie，幂等；
  *   - me：返回身份、公司集合与实时权限；
  *   - 审计：成功 / 失败 / 登出各一条，未知手机号失败日志在 qingdan_app 下也能落库。
@@ -124,7 +124,7 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
     });
   });
 
-  it('production 未接短信服务商 → 501 NOT_IMPLEMENTED（不静默放行固定验证码）', async () => {
+  it('production 不认固定验证码 → 401（固定码只在非生产直通）', async () => {
     const prodApp = buildApp({
       config: testConfig({ nodeEnv: 'production' }),
       database: test.database,
@@ -135,8 +135,8 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
         url: '/api/v1/auth/login',
         payload: { phone: OWNER_PHONE, code: '000000' },
       });
-      expect(response.statusCode).toBe(501);
-      expect(response.json()).toMatchObject({ code: 'NOT_IMPLEMENTED' });
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toMatchObject({ code: 'UNAUTHENTICATED' });
       expect(response.headers['set-cookie']).toBeUndefined();
     } finally {
       await prodApp.close();
@@ -274,8 +274,10 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
       employeeId: string;
       tenantId: string;
       displayName: string;
+      isOwner: boolean;
       companyIds: string[];
       scope: Array<{ domain: string; actions: string[] }>;
+      entries: Array<{ id: string; path: string; page: string; title: string; domain: string }>;
     };
     expect(body).toMatchObject({
       employeeId: DEMO_IDS.ownerEmployeeId,
@@ -283,11 +285,67 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
       displayName: '张明',
       companyIds: [DEMO_IDS.companyId],
     });
-    // 老板 = 全功能域 × 全动作（D15 / D59⑥）。
-    expect(body.scope.length).toBe(24);
+    // 老板 = 全功能域 × 全动作（D15 / D59⑥；D89 新增 workbench 后 25 个域），身份位由账号属性决定（Issue #227）。
+    expect(body.isOwner).toBe(true);
+    expect(body.scope.length).toBe(25);
+    expect(body.scope.find((entry) => entry.domain === 'workbench')?.actions).toEqual(
+      expect.arrayContaining(['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'export']),
+    );
     expect(body.scope.find((entry) => entry.domain === 'sales')?.actions).toEqual(
       expect.arrayContaining(['read', 'create', 'update', 'approve', 'ship', 'delete', 'view_price', 'export']),
     );
+    // 老板 = 全部 20 个工作台入口（去掉登录页与工作台自己）。
+    expect(body.entries).toHaveLength(20);
+    expect(body.entries.map((entry) => entry.id)).toContain('flow');
+    expect(body.entries.map((entry) => entry.id)).toContain('audit-logs');
+  });
+
+  it('/auth/me：非老板（销售）isOwner=false，入口为 scope 收窄子集，看不到的入口不在返回体', async () => {
+    const login = await loginRequest('10000000003', '000000', 'req-me-sales-login');
+    expect(login.statusCode).toBe(200);
+    const cookie = cookieOf(login);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/auth/me',
+      headers: { cookie, 'x-request-id': 'req-me-sales-read' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      isOwner: boolean;
+      entries: Array<{ id: string }>;
+    };
+    expect(body.isOwner).toBe(false);
+
+    const ids = body.entries.map((entry) => entry.id);
+    // 销售岗位（seed）持 sales / customer / product / inventory_qty / settlement。
+    expect(ids).toContain('sales-orders');
+    expect(ids).toContain('customers');
+    expect(ids).toContain('products');
+    expect(ids).toContain('inventory');
+    expect(ids).toContain('settlements');
+    expect(ids).toContain('flow');
+    // 无权限的入口根本不在返回体里。
+    expect(ids).not.toContain('purchase-orders');
+    expect(ids).not.toContain('processing-orders');
+    expect(ids).not.toContain('internal-trades');
+    expect(ids).not.toContain('audit-logs');
+    expect(ids).not.toContain('permissions');
+    expect(ids.length).toBeLessThan(20);
+  });
+
+  it('越权拦截：销售直接访问需 audit.read 的端点 → 403 FORBIDDEN', async () => {
+    const login = await loginRequest('10000000003', '000000', 'req-me-sales-guard');
+    const cookie = cookieOf(login);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/audit-logs',
+      headers: { cookie, 'x-request-id': 'req-me-sales-guard-audit' },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({ code: 'FORBIDDEN' });
   });
 
   it('Cookie 序列化：production 才带 Secure，清除指令 Max-Age=0', () => {

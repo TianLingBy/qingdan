@@ -29,7 +29,8 @@ import * as repo from '../repo-suppliers.js';
  * - 审计（D51 / D54②）：create / update / delete 与业务同事务写；普通读不写；
  * - 供货物料：条目上限与单项长度由契约层校验，这里不改口径；
  * - 供应商没有金额字段，不存在看价逻辑；
- * - 停用是危险动作（D52① / D54⑥）：AI 凭证默认拒绝，走 platform 现有 `assertHumanCredential` 写法。
+ * - 删除是危险动作（D52① / D54⑥）：AI 凭证默认拒绝，走 platform 现有 `assertHumanCredential` 写法；
+ *   物理删除，仍被单据引用时由 repo 把外键 23503 翻译成 409 `STATE_CONFLICT`。
  */
 
 const OBJECT_TYPE = 'supplier';
@@ -50,7 +51,6 @@ export interface SupplierWriteContext extends SupplierContext {
 
 interface ParsedListQuery {
   readonly companyId?: string;
-  readonly status?: Supplier['status'];
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
   readonly limit: number;
@@ -93,7 +93,7 @@ function assertCompanyVisible(principal: Principal, companyId: string): void {
 /** AI 不得直接执行危险动作（D52① / D54⑥）；与 platform 现有危险动作处理一致。 */
 function assertHumanCredential(principal: Principal): void {
   if (principal.actorType === 'ai') {
-    throw new AppError('AI_ACTION_FORBIDDEN', 'AI 不得直接停用供应商，需人类审批');
+    throw new AppError('AI_ACTION_FORBIDDEN', 'AI 不得直接删除供应商，需人类审批');
   }
 }
 
@@ -118,7 +118,6 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
   }
   return {
     companyId: parsed.data.companyId,
-    status: parsed.data.status,
     keyword: parsed.data.keyword,
     cursor,
     limit: clampLimit(parsed.data.limit),
@@ -245,7 +244,6 @@ export async function createSupplier(ctx: SupplierWriteContext): Promise<Supplie
     contactName: input.contactName ?? null,
     contactPhone: input.contactPhone ?? null,
     suppliedMaterials: input.suppliedMaterials ?? [],
-    status: input.status ?? '启用',
   });
   // 归属公司在写入前已确定；update / delete 则在事务里回填。
   audit.companyId = input.companyId;
@@ -285,8 +283,9 @@ export async function updateSupplier(ctx: SupplierWriteContext): Promise<Supplie
 }
 
 /**
- * 停用供应商（软删除）：只置 `status='停用'`，不物理删除。
- * 危险动作：AI 凭证默认拒绝（D52① / D54⑥）；If-Match 强 ETag；成功后回新 ETag。
+ * 删除供应商（物理删除）：成功回被删实体 + ETag。
+ * 危险动作：AI 凭证默认拒绝（D52① / D54⑥）；If-Match 强 ETag；
+ * 仍被单据引用时 repo 抛 409 `STATE_CONFLICT`（`reason=HAS_REFERENCES`）。
  */
 export async function deleteSupplier(ctx: SupplierWriteContext): Promise<Supplier> {
   const principal = requirePrincipal(ctx.request);
@@ -298,15 +297,15 @@ export async function deleteSupplier(ctx: SupplierWriteContext): Promise<Supplie
   const expectedVersion = parseIfMatchVersion(ctx.request);
 
   const audit = auditEventOf(ctx.request, principal, 'supplier.delete', id, {
-    afterStatus: '停用',
+    deleted: true,
   });
 
   const supplier = await withAudit(database, audit, async (tx) => {
-    const updated = await repo.softDeleteSupplier(repoContext(tx, principal), id, expectedVersion);
-    if (!updated) throw new AppError('NOT_FOUND', '供应商不存在');
-    audit.companyId = updated.companyId;
-    audit.changeSummary = { afterStatus: updated.status };
-    return updated;
+    const deleted = await repo.deleteSupplier(repoContext(tx, principal), id, expectedVersion);
+    if (!deleted) throw new AppError('NOT_FOUND', '供应商不存在');
+    audit.companyId = deleted.companyId;
+    audit.changeSummary = { deleted: true, name: deleted.name };
+    return deleted;
   });
 
   ctx.reply.header('ETag', etagOf(supplier.version));
