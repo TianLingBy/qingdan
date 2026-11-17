@@ -24,6 +24,7 @@ import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useCompanyLabel } from '../../lib/company-directory';
 import { useEmployeeLabel } from '../../lib/employee-directory';
+import { orderEditBlockedText } from '../../lib/order-edit-guard';
 import {
   describeWriteError,
   isStaleVersionError,
@@ -520,6 +521,8 @@ export function DetailPanel({
   canceling,
   canComplete,
   completing,
+  canUpdate,
+  canViewPrice,
   onClose,
   onEdit,
   onCancel,
@@ -531,12 +534,24 @@ export function DetailPanel({
   canceling: boolean;
   canComplete: boolean;
   completing: boolean;
+  canUpdate: boolean;
+  canViewPrice: boolean;
   onClose: () => void;
   onEdit: () => void;
   onCancel: () => void;
   onComplete: () => void;
 }) {
   const disabledReason = cancelDisabledReason(order.cancelable.reason);
+  /**
+   * 详情面板的「编辑」要和列表行用同一把尺子（#261 同型缺陷）：
+   * 只判状态会让人点得动，点开改完保存才 403。
+   */
+  const editBlocked = orderEditBlockedText({
+    domain: 'purchase',
+    canUpdate,
+    canViewPrice,
+    status: order.status,
+  });
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -624,7 +639,8 @@ export function DetailPanel({
         <button
           type="button"
           onClick={onEdit}
-          disabled={order.status !== '进行中'}
+          disabled={editBlocked !== null}
+          title={editBlocked ?? undefined}
           className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
         >
           编辑
@@ -646,12 +662,16 @@ export function DetailPanel({
           {canceling ? '取消中…' : '取消采购单'}
         </button>
         {disabledReason && <span className="text-xs text-slate-500">{disabledReason}</span>}
+        {editBlocked && <span className="text-xs text-slate-500">{editBlocked}</span>}
         {!canCancel && order.cancelable.allowed && (
           <span className="text-xs text-slate-500">当前身份无取消权限（purchase.delete）</span>
         )}
-        {!canComplete && order.status === '进行中' && (
-          <span className="text-xs text-slate-500">当前身份无完成权限（purchase.approve）</span>
-        )}
+        {/*
+          「完成采购单」原本还有一条「无完成权限（purchase.approve）」——
+          两处都不对：契约里 `purchase.order.complete` 的 action 是 `update`，不是 `approve`，
+          而 `canComplete` 与 `canUpdate` 在页面里同源（都是 `can('update')`），
+          缺权限时上面「编辑」那条已经把 `purchase.update` 说清楚了，重复一遍只会让人以为缺两个权限。
+        */}
       </div>
     </section>
   );
@@ -1128,7 +1148,14 @@ export function PurchaseOrdersPage() {
                         disabled={!can('update') || !canViewPrice || order.status !== '进行中'}
                         onClick={() => void withFreshDetail(order.id, beginEdit)}
                         className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-40"
-                        title={!canViewPrice ? '无看价权限：看不到现价就没法改单' : undefined}
+                        title={
+                          orderEditBlockedText({
+                            domain: 'purchase',
+                            canUpdate: can('update'),
+                            canViewPrice,
+                            status: order.status,
+                          }) ?? undefined
+                        }
                       >
                         编辑
                       </button>
@@ -1193,6 +1220,8 @@ export function PurchaseOrdersPage() {
               canceling={cancelOrder.isPending}
               canComplete={can('update')}
               completing={completeOrder.isPending}
+              canUpdate={can('update')}
+              canViewPrice={canViewPrice}
               onClose={() => setDetailId(null)}
               onEdit={() => beginEdit(detailOrder)}
               onCancel={() => askCancel(detailOrder)}

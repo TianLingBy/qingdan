@@ -1,11 +1,11 @@
-import type { Product, SalesOrder } from '@qingdan/contracts';
+import type { Product, SalesOrder, SalesOrderDetail } from '@qingdan/contracts';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
 import { MASKED_AMOUNT } from '../../lib/decimal';
 import { authKeys } from '../auth/auth-api';
-import { SalesOrdersPage } from './SalesOrdersPage';
+import { DetailPanel, SalesOrdersPage } from './SalesOrdersPage';
 import { salesQueryKeys } from './sales-api';
 
 const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
@@ -167,5 +167,111 @@ describe('销售单 E 页面', () => {
 
     expect(html).toContain('完成');
     expect(html).not.toContain('当前身份没有 sales.ship 权限');
+  });
+
+  it('无 export 权限时说清导出需要 sales.export（敏感读记审计，D54②）', () => {
+    const withoutExport = renderPage(
+      seedClient({
+        me: {
+          ...ME_WITH_PRICE,
+          scope: [{ domain: 'sales', actions: ['read', 'create', 'update', 'view_price'] }],
+        },
+        orders: [ORDER],
+      }),
+    );
+    expect(withoutExport).toContain('「导出 CSV」需要 sales.export');
+    expect(withoutExport).toContain('敏感读记审计');
+
+    // 有 export 时不该出现这条提示（否则等于把有权限的人也劝退了）
+    const withExport = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
+    expect(withExport).not.toContain('「导出 CSV」需要 sales.export');
+  });
+});
+
+// ============================ 详情面板「编辑」三态 ============================
+
+const DETAIL: SalesOrderDetail = {
+  ...ORDER,
+  receipts: [],
+  receiptBalance: '225',
+  cancelable: { allowed: true, reason: null },
+};
+
+const FULL_PERMS = {
+  canViewPrice: true,
+  canUpdate: true,
+  canShip: true,
+  canCancel: true,
+};
+
+function renderDetailPanel(
+  overrides: Partial<typeof FULL_PERMS> & { status?: SalesOrder['status'] } = {},
+): string {
+  const { status, ...perms } = overrides;
+  // 详情面板要读员工姓名簿（`useEmployeeLabel`），必须给 Provider；
+  // 空表时回到短 id，不影响按钮三态的断言。
+  const client = createQueryClient();
+  return renderToStaticMarkup(
+    <QueryClientProvider client={client}>
+      <DetailPanel
+        order={{ ...DETAIL, status: status ?? DETAIL.status }}
+        products={[PRODUCT]}
+        batches={[]}
+        canViewPrice={perms.canViewPrice ?? FULL_PERMS.canViewPrice}
+        canUpdate={perms.canUpdate ?? FULL_PERMS.canUpdate}
+        canShip={perms.canShip ?? FULL_PERMS.canShip}
+        canCancel={perms.canCancel ?? FULL_PERMS.canCancel}
+        busy={false}
+        onClose={() => undefined}
+        onEdit={() => undefined}
+        onShip={() => undefined}
+        onCancel={() => undefined}
+        onPrint={() => undefined}
+        onError={() => undefined}
+      />
+    </QueryClientProvider>,
+  );
+}
+
+/** 取出某个按钮自己的标签，避免被旁边的提示文案干扰。 */
+function buttonTag(html: string, label: string): string {
+  const match = new RegExp(`<button[^>]*>${label}</button>`).exec(html);
+  expect(match, `找不到按钮「${label}」`).not.toBeNull();
+  return match![0];
+}
+
+describe('销售单详情「编辑」入口的三态（#261 同型缺陷）', () => {
+  it('有 update + 看价 + 进行中：编辑可点', () => {
+    const html = renderDetailPanel();
+    expect(buttonTag(html, '编辑')).not.toContain('disabled=""');
+  });
+
+  it('缺 sales.update（如「财务+销售」预设）：编辑置灰并说明缺哪个权限点', () => {
+    // 这是修前最要命的一条：财务只有 read + view_price，按钮却能点开表单，保存才 403。
+    const html = renderDetailPanel({ canUpdate: false });
+    expect(buttonTag(html, '编辑')).toContain('disabled=""');
+    expect(html).toContain('当前身份没有 sales.update 权限');
+  });
+
+  it('有 update 但无看价：编辑置灰，理由是看不到单价', () => {
+    const html = renderDetailPanel({ canViewPrice: false });
+    expect(buttonTag(html, '编辑')).toContain('disabled=""');
+    expect(html).toContain('sales.view_price');
+  });
+
+  it('权限齐但单据不是进行中：编辑置灰，理由是状态', () => {
+    const html = renderDetailPanel({ status: '已完成' });
+    expect(buttonTag(html, '编辑')).toContain('disabled=""');
+    expect(html).toContain('只有「进行中」的销售单能编辑，当前是「已完成」');
+  });
+
+  it('无看价时打印客户联仍可点，但要先说打印件金额是「—」（D79）', () => {
+    const html = renderDetailPanel({ canViewPrice: false });
+    expect(buttonTag(html, '打印客户联')).not.toContain('disabled=""');
+    expect(html).toContain('打印件上的金额是「—」');
+  });
+
+  it('有看价时打印按钮不带那条说明', () => {
+    expect(renderDetailPanel()).not.toContain('打印件上的金额是「—」');
   });
 });

@@ -1,4 +1,9 @@
-import type { Product, PurchaseOrder, PurchaseOrderDetail } from '@qingdan/contracts';
+import type {
+  Product,
+  PurchaseOrder,
+  PurchaseOrderDetail,
+  PurchaseOrderStatus,
+} from '@qingdan/contracts';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -148,15 +153,20 @@ describe('采购单详情「完成」入口', () => {
     cancelable: { allowed: true, reason: null },
   };
 
-  function renderDetail(order: PurchaseOrderDetail): string {
+  function renderDetail(
+    order: PurchaseOrderDetail,
+    opts: { canUpdate?: boolean; canViewPrice?: boolean } = {},
+  ): string {
     return renderToStaticMarkup(
       <DetailPanel
         order={order}
         products={[PRODUCT]}
         canCancel
         canceling={false}
-        canComplete
+        canComplete={opts.canUpdate ?? true}
         completing={false}
+        canUpdate={opts.canUpdate ?? true}
+        canViewPrice={opts.canViewPrice ?? true}
         onClose={() => {}}
         onEdit={() => {}}
         onCancel={() => {}}
@@ -183,6 +193,72 @@ describe('采购单详情「完成」入口', () => {
     expect(completeButtonMarkup(renderDetail({ ...DETAIL, status: '已取消' }))).toContain(
       'disabled=""',
     );
+  });
+});
+
+describe('采购单详情「编辑」入口的三态（#261 同型缺陷）', () => {
+  const DETAIL: PurchaseOrderDetail = {
+    ...ORDER,
+    status: '进行中',
+    cancelable: { allowed: true, reason: null },
+  };
+
+  function renderDetail(
+    opts: { canUpdate?: boolean; canViewPrice?: boolean; status?: PurchaseOrderStatus } = {},
+  ): string {
+    return renderToStaticMarkup(
+      <DetailPanel
+        order={{ ...DETAIL, status: opts.status ?? DETAIL.status }}
+        products={[PRODUCT]}
+        canCancel
+        canceling={false}
+        canComplete={opts.canUpdate ?? true}
+        completing={false}
+        canUpdate={opts.canUpdate ?? true}
+        canViewPrice={opts.canViewPrice ?? true}
+        onClose={() => {}}
+        onEdit={() => {}}
+        onCancel={() => {}}
+        onComplete={() => {}}
+      />,
+    );
+  }
+
+  function editButton(html: string): string {
+    return /<button[^>]*>编辑<\/button>/.exec(html)?.[0] ?? '';
+  }
+
+  it('有 update + 看价 + 进行中：编辑可点，无置灰理由文案', () => {
+    const html = renderDetail();
+    expect(editButton(html)).not.toContain('disabled=""');
+    expect(html).not.toContain('purchase.update 权限');
+  });
+
+  it('缺 purchase.update：编辑置灰，并说明缺哪个权限点', () => {
+    const html = renderDetail({ canUpdate: false });
+    expect(editButton(html)).toContain('disabled=""');
+    expect(html).toContain('当前身份没有 purchase.update 权限');
+  });
+
+  it('有 update 但无看价：编辑置灰，并说明看不到单价没法改单', () => {
+    const html = renderDetail({ canViewPrice: false });
+    expect(editButton(html)).toContain('disabled=""');
+    expect(html).toContain('无看价权限');
+    expect(html).toContain('purchase.view_price');
+  });
+
+  it('权限都够但单据已完成：编辑置灰，理由是状态而不是权限', () => {
+    const html = renderDetail({ status: '已完成' });
+    expect(editButton(html)).toContain('disabled=""');
+    expect(html).toContain('只有「进行中」的采购单能编辑，当前是「已完成」');
+    expect(html).not.toContain('当前身份没有 purchase.update 权限');
+  });
+
+  it('「完成采购单」的提示给的是真实权限点 purchase.update，不是 purchase.approve', () => {
+    // 契约里 `purchase.order.complete` 的 action 是 update；写成 approve 会让人去配错权限。
+    const html = renderDetail({ canUpdate: false });
+    expect(html).toContain('purchase.update');
+    expect(html).not.toContain('purchase.approve');
   });
 });
 
