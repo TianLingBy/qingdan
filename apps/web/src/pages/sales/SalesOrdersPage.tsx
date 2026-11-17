@@ -1410,6 +1410,7 @@ export function SalesOrdersPage() {
             type="button"
             onClick={() => exportCsv.mutate()}
             disabled={!can('export') || exportCsv.isPending}
+            title={!can('export') ? '当前身份没有 sales.export 权限' : undefined}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40"
           >
             {exportCsv.isPending ? '导出中…' : '导出 CSV'}
@@ -1441,6 +1442,12 @@ export function SalesOrdersPage() {
       {meData && !can('create') && (
         <p className="text-xs text-slate-500">
           「新建」需要 sales.create；当前身份只能查看（权限判定在服务端，前端只是不画按钮）。
+        </p>
+      )}
+
+      {meData && !can('export') && (
+        <p className="text-xs text-slate-500">
+          「导出 CSV」需要 sales.export：导出会把整批单据落成文件，服务端按敏感读记审计（D54②）。
         </p>
       )}
 

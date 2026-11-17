@@ -168,6 +168,24 @@ describe('销售单 E 页面', () => {
     expect(html).toContain('完成');
     expect(html).not.toContain('当前身份没有 sales.ship 权限');
   });
+
+  it('无 export 权限时说清导出需要 sales.export（敏感读记审计，D54②）', () => {
+    const withoutExport = renderPage(
+      seedClient({
+        me: {
+          ...ME_WITH_PRICE,
+          scope: [{ domain: 'sales', actions: ['read', 'create', 'update', 'view_price'] }],
+        },
+        orders: [ORDER],
+      }),
+    );
+    expect(withoutExport).toContain('「导出 CSV」需要 sales.export');
+    expect(withoutExport).toContain('敏感读记审计');
+
+    // 有 export 时不该出现这条提示（否则等于把有权限的人也劝退了）
+    const withExport = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
+    expect(withExport).not.toContain('「导出 CSV」需要 sales.export');
+  });
 });
 
 // ============================ 详情面板「编辑」三态 ============================
