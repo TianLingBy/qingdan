@@ -215,8 +215,8 @@ async function main(): Promise<void> {
         `remaining_qty 期望 7，实际 ${row.rows[0]?.remaining_qty}`,
       );
       assert(
-        Number(row.rows[0]?.available_qty) === 4,
-        `available_qty 期望 4，实际 ${row.rows[0]?.available_qty}`,
+        Number(row.rows[0]?.available_qty) === 5,
+        `available_qty 期望 5，实际 ${row.rows[0]?.available_qty}`,
       );
 
       let rejected = false;

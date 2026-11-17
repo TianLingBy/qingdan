@@ -352,10 +352,44 @@ export type ProcessingOrderUpdateInput = z.infer<typeof ProcessingOrderUpdateInp
  * `transitTo` 说最终去哪（回仓 / 直发客户）。两个字段都是发货时必填——
  * 少一个就说不清「多少东西压在哪」，在途量统计会失真。
  */
-export const ProcessingOrderShipInputSchema = z.object({
-  transitStage: z.enum(['materials', 'finished']),
-  transitTo: z.enum(['warehouse', 'customer']),
-});
+export const ProcessingOrderShipInputSchema = z
+  .object({
+    transitStage: z.enum(['materials', 'finished']),
+    transitTo: z.enum(['warehouse', 'customer']),
+    /**
+     * finished 段发货必须给出验收损耗：产出批次数量与成本要在发货事务内锁定。
+     * materials 段不接收这两个字段，避免把验收口径提前写进运输阶段。
+     */
+    lossQty: NonNegativeDecimal.optional(),
+    custodianId: z.string().uuid().optional(),
+    confirmFullLoss: z.boolean().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.transitStage === 'finished' && value.lossQty === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['lossQty'],
+        message: 'finished 段发货必须填写 lossQty',
+      });
+    }
+    if (value.transitStage === 'materials' && value.lossQty !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['lossQty'],
+        message: 'lossQty 只能用于 finished 段发货',
+      });
+    }
+    if (
+      value.transitStage === 'materials' &&
+      (value.custodianId !== undefined || value.confirmFullLoss !== undefined)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['custodianId'],
+        message: '验收字段只能用于 finished 段发货',
+      });
+    }
+  });
 export type ProcessingOrderShipInput = z.infer<typeof ProcessingOrderShipInputSchema>;
 
 /**
