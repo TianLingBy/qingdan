@@ -213,6 +213,8 @@ export type PurchaseOrderDetail = z.infer<typeof PurchaseOrderDetailSchema>;
 export const PurchaseOrderListQuerySchema = PageQuerySchema.extend({
   companyId: z.string().uuid().optional(),
   supplierId: z.string().uuid().optional(),
+  /** 按下单时记的对接人筛（#368）；老单据没记对接人，不会被命中。 */
+  supplierContactId: z.string().uuid().optional(),
   status: PurchaseOrderStatusSchema.optional(),
   keyword: z.string().min(1).max(64).optional(),
   /** 页码模式（D95）：三个列表试点之一，故这四个参数在这里而不是基类上。 */

@@ -424,6 +424,8 @@ describe('采购单契约（purchase）', () => {
       'pageSize',
       'sort',
       'status',
+      // #368：按对接人筛（须排在 `supplierId` 前，`sort()` 是字典序）。
+      'supplierContactId',
       'supplierId',
     ]);
 

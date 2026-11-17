@@ -70,6 +70,7 @@ export interface ProcessingOrderWriteContext extends ProcessingOrderContext {
 interface ParsedListQuery {
   readonly companyId?: string;
   readonly processorId?: string;
+  readonly processorContactId?: string;
   readonly status?: ProcessingOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
@@ -185,6 +186,7 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
   return {
     companyId: parsed.data.companyId,
     processorId: parsed.data.processorId,
+    processorContactId: parsed.data.processorContactId,
     status: parsed.data.status,
     keyword: parsed.data.keyword,
     cursor,

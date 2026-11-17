@@ -44,6 +44,8 @@ export interface SalesOrderRepoContext {
 export interface SalesOrderListQuery {
   readonly companyId?: string;
   readonly customerId?: string;
+  /** 按对接人筛（#368）。 */
+  readonly customerContactId?: string;
   readonly status?: SalesOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
@@ -328,6 +330,12 @@ export async function listSalesOrders(
   if (query.customerId !== undefined) {
     params.push(query.customerId);
     where.push(`o.customer_id = $${params.length}::uuid`);
+  }
+  // 按对接人筛（#368）：老单据的 customer_contact_id 是 NULL，等值比较不命中——
+  // 这是要的，点「王经理」时不该看到当年根本没记对接人的单。
+  if (query.customerContactId !== undefined) {
+    params.push(query.customerContactId);
+    where.push(`o.customer_contact_id = $${params.length}::uuid`);
   }
   if (query.status !== undefined) {
     params.push(query.status);
@@ -1785,6 +1793,8 @@ export async function insertCustomerReturn(
 export interface SalesOrderExportQuery {
   readonly companyId?: string;
   readonly customerId?: string;
+  /** 按对接人筛（#368）：与列表同口径，老单据没记对接人不命中。 */
+  readonly customerContactId?: string;
   readonly status?: SalesOrderStatus;
   readonly keyword?: string;
   /** 行数上限：内部统一按 `maxRows + 1` 取，多出一行即判定超限（不静默截断）。 */
@@ -1831,6 +1841,12 @@ export async function exportSalesOrders(
   if (query.customerId !== undefined) {
     params.push(query.customerId);
     where.push(`o.customer_id = $${params.length}::uuid`);
+  }
+  // 按对接人筛（#368）：老单据的 customer_contact_id 是 NULL，等值比较不命中——
+  // 这是要的，点「王经理」时不该看到当年根本没记对接人的单。
+  if (query.customerContactId !== undefined) {
+    params.push(query.customerContactId);
+    where.push(`o.customer_contact_id = $${params.length}::uuid`);
   }
   if (query.status !== undefined) {
     params.push(query.status);

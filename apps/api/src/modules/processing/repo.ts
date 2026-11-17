@@ -32,6 +32,8 @@ export interface ProcessingOrderRepoContext {
 export interface ProcessingOrderListQuery {
   readonly companyId?: string;
   readonly processorId?: string;
+  /** 按对接人筛（#368）。 */
+  readonly processorContactId?: string;
   readonly status?: ProcessingOrderStatus;
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
@@ -297,6 +299,11 @@ export async function listProcessingOrders(
   if (query.processorId !== undefined) {
     params.push(query.processorId);
     where.push(`o.processor_id = $${params.length}::uuid`);
+  }
+  // 按对接人筛（#368）：老单据的 processor_contact_id 是 NULL，等值比较不命中。
+  if (query.processorContactId !== undefined) {
+    params.push(query.processorContactId);
+    where.push(`o.processor_contact_id = $${params.length}::uuid`);
   }
   if (query.status !== undefined) {
     params.push(query.status);
