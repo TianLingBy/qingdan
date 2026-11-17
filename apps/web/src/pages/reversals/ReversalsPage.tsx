@@ -86,24 +86,30 @@ export function ReversalsView({
 
   return (
     <section className="mx-auto max-w-6xl space-y-4">
-      <header className="rounded-xl border border-slate-200 bg-white px-4 py-4 sm:px-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">冲正单据</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              错账不改原单，走追加的冲正单据：客户退货 R、供应商退货 S、盘点盈亏 I。
-            </p>
-          </div>
-          <p className="max-w-sm text-xs leading-relaxed text-slate-400">
-            冲正单据只追加，不可改、不可删（D47）；三类单分属 sales / purchase / inventory
-            三个模块，状态机也各不相同。
+      <div className="p-head">
+        <div>
+          <div className="eyebrow">冲正单据 R / S / I</div>
+          <h1>冲正单据</h1>
+          <p className="sub">
+            错账不改原单，走追加的冲正单据：客户退货 R、供应商退货 S、盘点盈亏 I。
+            三类单分属 sales / purchase / inventory 三个模块，状态机也各不相同。
           </p>
         </div>
-      </header>
+        {/*
+          视觉稿的「+ 新建冲正」是页头一个按钮，这里**放在各分栏里**：
+          三类单的建单入参与权限点完全不同（R 挂原销售单、S 只退钱、I 调批次数量），
+          页头一个按钮点下去还得先问「建哪种」，不如进到分栏里建。
+        */}
+      </div>
 
       {error ? <ErrorBar message={`身份读取失败：${error}`} onRetry={onRetry} /> : null}
 
-      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="冲正单据类型">
+      {/*
+        分栏（v0.13 `.seg`）：视觉稿用「全部 / 客户退货 R / 供应商退货 S / 盘点盈亏 I」，
+        我们是**一次只渲染一栏**（各栏各带建单表单与详情，全部渲染等于三套表单同时在页面上）。
+        所以这里是「选一栏」而不是「筛一类」，没有「全部」。
+      */}
+      <div className="seg" role="tablist" aria-label="冲正单据类型">
         {TABS.map((spec) => {
           const enabled = visibleTabs.some((item) => item.id === spec.id);
           const selected = activeTab === spec.id;
@@ -116,13 +122,7 @@ export function ReversalsView({
               disabled={!enabled || loading}
               title={enabled ? spec.blurb : '当前身份没有这个域的可读权限'}
               onClick={() => setTab(spec.id)}
-              className={`rounded-lg border px-3 py-2 text-sm ${
-                selected
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : enabled
-                    ? 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-                    : 'border-slate-200 bg-slate-50 text-slate-400'
-              }`}
+              className={selected ? 'on' : undefined}
             >
               {spec.label}
             </button>
@@ -167,6 +167,12 @@ export function ReversalsView({
           )}
         </div>
       )}
+
+      <p className="note">
+        冲正单据只追加，不可改、不可删（D47）；冲正后成本按 T1/T2/T3 更正（D37）。
+        三类单的「取消」能力并不对称：<b>S 单有取消、R 单没有</b>（`supplier-returns.ts` 有 cancel，
+        `customer-returns` 只有 complete）——客退一旦生成就得走完，两页因此长得不一样，不是漏画。
+      </p>
     </section>
   );
 }

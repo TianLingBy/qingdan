@@ -324,4 +324,48 @@ describe('内部交易单 N 页面', () => {
     // N 单没有「已结算」这种单据框架里不存在的状态
     expect(html).not.toContain('已结算<');
   });
+
+  /**
+   * 四态（#337 v0.13）：DOM 里三个状态行**常驻**，靠 `data-state` 让 CSS 决定谁显示。
+   * 这条测试盯着「别改回 `{rows.length === 0 ? … : …}`」——那样列数会塌、样式也拿不到。
+   */
+  it('有数据时容器与 tbody 都是 filled，三个状态行仍常驻（交给 CSS 显隐）', () => {
+    const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
+
+    expect(html).toContain('data-state="filled"');
+    expect(html).toContain('st-tr st-loading');
+    expect(html).toContain('st-tr st-error');
+    expect(html).toContain('st-tr st-empty');
+    // 数据行只带 r-row：带上 st-tr 会被 `tbody > tr.st-tr{display:none}` 整行吃掉（只有表头可见）
+    expect(html).toContain('class="r-row"');
+    expect(html).not.toContain('st-tr r-row');
+  });
+
+  it('空列表时 data-state 切到 empty，状态行 colSpan 等于表头列数（9 列不塌）', () => {
+    const html = renderPage(seedClient({ me: OWNER, orders: [] }));
+
+    expect(html).toContain('data-state="empty"');
+    expect(html).toContain('colSpan="9"');
+    expect(html).toContain('暂无内部交易单');
+  });
+
+  /** 游标分页没有总页数：只给「上一批 / 下一批」，不许画页码（D95 的例外情况）。 */
+  it('单批数据不渲染分页条：没有 nextCursor 就不画「下一批」', () => {
+    const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
+
+    expect(html).not.toContain('下一批');
+    expect(html).not.toContain('页</span>');
+  });
+
+  it('详情面板用单据信息网格 + 明细表 tfoot 合计（v0.13 单据详情版式）', () => {
+    const html = renderDetail(DETAIL);
+
+    expect(html).toContain('内部交易单');
+    expect(html).toContain('内部价');
+    expect(html).toContain('在途量');
+    expect(html).toContain('共 1 行 · 数量合计 10');
+    expect(html).toContain('¥125.00');
+    // 状态徽标走 v0.13 的 `.st` 语义档，「在途」是 transit
+    expect(html).toContain('st transit');
+  });
 });
