@@ -3,6 +3,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { appendAudit } from '../../../platform/audit/writer.js';
 import type { SqlClient } from '../../../platform/db/client.js';
 import type {
+  FindSalesOrderByIdInput,
   FindSalesOrderByNoInput,
   SalesOrderForPayment,
   SalesReceiptFromPaymentCommand,
@@ -35,12 +36,7 @@ function decimal(value: string | number): string {
   return String(value);
 }
 
-export async function findOrderByNo(
-  tx: SqlClient,
-  input: FindSalesOrderByNoInput,
-): Promise<SalesOrderForPayment | null> {
-  const result = await tx.query<OrderRow>(
-    `SELECT o.id,
+const ORDER_COLUMNS = `o.id,
             o.tenant_id,
             o.company_id,
             trim_scale(o.total_amount) AS total_amount,
@@ -53,11 +49,19 @@ export async function findOrderByNo(
                     AND r.sales_order_id = o.id),
                 0
               )
-            ) AS received_amount
+            ) AS received_amount`;
+
+/** 两个入口共用同一份「单头 + 已收合计」聚合，避免两处口径漂移。 */
+async function queryOrder(
+  tx: SqlClient,
+  filter: string,
+  params: readonly unknown[],
+): Promise<SalesOrderForPayment | null> {
+  const result = await tx.query<OrderRow>(
+    `SELECT ${ORDER_COLUMNS}
        FROM sales_order o
-      WHERE o.company_id = $1::uuid
-        AND o.order_no = $2`,
-    [input.companyId, input.orderNo],
+      WHERE ${filter}`,
+    params as unknown[],
   );
 
   const row = result.rows[0];
@@ -69,6 +73,32 @@ export async function findOrderByNo(
     totalAmount: decimal(row.total_amount),
     receivedAmount: decimal(row.received_amount),
   };
+}
+
+export async function findOrderByNo(
+  tx: SqlClient,
+  input: FindSalesOrderByNoInput,
+): Promise<SalesOrderForPayment | null> {
+  return queryOrder(tx, 'o.company_id = $1::uuid AND o.order_no = $2', [
+    input.companyId,
+    input.orderNo,
+  ]);
+}
+
+/**
+ * 发起收款按 id 查单（#101）。
+ *
+ * 公司可见性在这里判：不在 `companyIds` 内的单等同于不存在——发起收款是「我看到的单」，
+ * 越权访问不该靠返回 403 来暗示单据存在。
+ */
+export async function findOrderById(
+  tx: SqlClient,
+  input: FindSalesOrderByIdInput,
+): Promise<SalesOrderForPayment | null> {
+  return queryOrder(tx, 'o.id = $1::uuid AND o.company_id = ANY($2::uuid[])', [
+    input.orderId,
+    [...input.companyIds],
+  ]);
 }
 
 export async function createReceiptFromPayment(
@@ -121,5 +151,5 @@ export async function createReceiptFromPayment(
 
 /** sales 对外端口实现（D70）。 */
 export const salesServices: Pick<ServiceRegistry, 'salesReceipt'> = {
-  salesReceipt: { findOrderByNo, createReceiptFromPayment },
+  salesReceipt: { findOrderByNo, findOrderById, createReceiptFromPayment },
 };
