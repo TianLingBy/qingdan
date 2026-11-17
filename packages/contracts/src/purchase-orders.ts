@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CancelDecision } from './documents.js';
 import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, PageableSchema, pagedResultSchema } from './pagination.js';
+import { SupplierDraftSchema } from './masterdata-draft.js';
 
 /**
  * 采购单 A 契约（契约第一批 §3.1 / §5.1 / §5.2 / §10，第一批第二切）。
@@ -220,11 +221,14 @@ export const PurchaseOrderListQuerySchema = PageQuerySchema.extend({
  * 开单入参（§3.1）：
  * - **不接收单号**（服务端按 D16 生成）；
  * - 商品明细至少 1 行；费用明细选填；
- * - 入库锁价 / 成本更正不在本批（D5 / D37）。
+ * - 入库锁价 / 成本更正不在本批（D5 / D37）；
+ * - `supplierId` 与 `supplierDraft` 二选一（D100，口径同 E 单的 `customerDraft`）。
  */
 export const PurchaseOrderCreateInputSchema = z.object({
   companyId: z.string().uuid(),
-  supplierId: z.string().uuid(),
+  supplierId: z.string().uuid().optional(),
+  /** 新供应商草档（D100）：不传 `supplierId` 时必填；公司取本单 `companyId`。 */
+  supplierDraft: SupplierDraftSchema.optional(),
   handlerId: z.string().uuid(),
   lines: z.array(PurchaseOrderLineSchema).min(1, '采购单至少 1 行商品明细'),
   fees: z.array(PurchaseOrderFeeInputSchema).optional(),

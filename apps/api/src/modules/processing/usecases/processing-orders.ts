@@ -35,6 +35,10 @@ import {
   type StockReservationLine,
 } from '../../../platform/services/registry.js';
 import * as repo from '../repo.js';
+import {
+  assertIdOrDraft,
+  resolveMasterdataDraft,
+} from '../../masterdata/usecases/autocreate.js';
 
 /**
  * 加工单 B 用例（D15 / D16 / D21 / D39 / D47 / D51 / D52 / D54）。
@@ -383,6 +387,9 @@ export async function createProcessingOrder(
 
   const input = parseCreateInput(ctx.request.body);
   assertCompanyVisible(principal, input.companyId);
+  // 加工厂二选一（D100），口径同 E 单的客户。
+  assertIdOrDraft('processorId', input.processorId, input.processorDraft, '加工厂');
+  const { processorDraft, ...orderInput } = input;
 
   const id = uuidv7();
   const audit = auditEventOf(ctx.request, principal, 'processing.order.create', id, {
@@ -395,9 +402,20 @@ export async function createProcessingOrder(
   audit.companyId = input.companyId;
 
   const order = await withAudit(database, audit, async (tx) => {
+    // 静默建档（D100）：同事务先建加工厂，公司取本单 companyId。
+    const processorId =
+      input.processorId ??
+      (
+        await resolveMasterdataDraft(tx, principal, {
+          kind: 'processor',
+          companyId: input.companyId,
+          draft: processorDraft!,
+        })
+      ).id;
     const orderNo = await takeDocumentNo(tx, 'B', input.companyId, new Date());
     const created = await repo.insertProcessingOrder(repoContext(tx, principal), {
-      ...input,
+      ...orderInput,
+      processorId,
       id,
       orderNo,
     });
