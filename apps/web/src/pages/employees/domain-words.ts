@@ -1,7 +1,7 @@
 /**
  * 功能域 × 动作词表（页面本地副本）。
  *
- * 唯一真源是 `packages/contracts/src/domains.ts`（D44：24 个功能域 × 8 动作，D89 新增 workbench = 25）；
+ * 唯一真源是 `packages/contracts/src/domains.ts`（D44：24 个功能域 × 10 动作，D89 新增 workbench = 25；D98 加 merge）；
  * web 不依赖 contracts 包（避免把 zod 全量打进浏览器 bundle），这里按值复刻。
  * **contracts 词表变更时必须同步本文件**——`domain-words.test.ts` 会抽查两边数量
  * 对不上就红（读 contracts 源码文本做断言，不引包）。
@@ -45,6 +45,7 @@ export const ACTION_WORDS: readonly { key: string; label: string }[] = [
   { key: 'approve', label: '审' },
   { key: 'ship', label: '出' },
   { key: 'delete', label: '删' },
+  { key: 'merge', label: '合并主数据' },
   { key: 'view_price', label: '看价' },
   { key: 'view_handler', label: '看经手人' },
   { key: 'export', label: '导' },
