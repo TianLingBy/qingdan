@@ -102,6 +102,25 @@ async function auditHandlerFailure(
 export function mountRoutes(app: FastifyInstance, options: MountRoutesOptions): void {
   const failureObjectTypes = options.failureObjectTypes ?? {};
 
+  /**
+   * 挂载前先确认「每个路由都有 handler」。
+   *
+   * 为什么要在启动期抛错而不是留到运行时：handler 缺失时下面那个分支返回 501，但
+   * **认证与权限插件跑在 handler 之前** —— 未登录拿到 401、无权限拿到 403，缺 handler
+   * 这件事永远暴露不出来。等到有人用正确身份点到那个端点才发现，属于最坏的一种发现方式。
+   *
+   * 这个断言也解释了为什么它不会误伤「骨架阶段」：骨架的写法是**显式写一个抛 501 的
+   * handler**（见各模块 `assertDatabaseConfigured`），而不是省略 handler。
+   */
+  const missing = options.routes
+    .filter((route) => !options.handlers[route.operationId])
+    .map((route) => `${route.method} ${route.path}（${route.operationId}）`);
+  if (missing.length > 0) {
+    throw new Error(
+      `以下端点在契约里登记了但没有对应 handler，启动终止（共 ${missing.length} 条）：\n${missing.join('\n')}`,
+    );
+  }
+
   for (const route of options.routes) {
     app.route({
       method: route.method,

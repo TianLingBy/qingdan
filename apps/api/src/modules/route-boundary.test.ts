@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../app.js';
 import { testConfig } from '../platform/config.js';
+import { mountRoutes } from '../platform/http/route-mount.js';
 import { MOUNTED_MODULE_KEYS } from './index.js';
 
 /** D70 静态边界：跨模块 import 的落点必须仍在 `src/modules/<模块>/` 下。 */
@@ -338,6 +339,45 @@ describe('路由挂载边界（platform / masterdata / inventory / sales / purch
     const response = await app.inject({ method: 'GET', url: '/api/v1/health' });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: 'ok', version: '9.9.9' });
+  });
+
+  it('挂载时缺 handler 会立刻抛错，而不是留到运行时 501', () => {
+    // 为什么这条不能用「发请求看是不是 501」来测：认证与权限插件跑在 handler 之前，
+    // 缺 handler 的端点对未登录调用者返回 401、对无权限者返回 403 —— 缺 handler 这件事
+    // 从外部永远看不出来，必须从挂载入口本身断言。
+    const fakeApp = { route: () => undefined } as unknown as FastifyInstance;
+
+    expect(() =>
+      mountRoutes(fakeApp, {
+        routes: routesOfModule(ROUTES, 'report'),
+        handlers: {
+          // 故意只实现一条，另一条漏掉
+          'profit_report.read': () => ({ ok: true }),
+        },
+      }),
+    ).toThrow(/profit_report\.loss\.read/);
+  });
+
+  it('全部 handler 齐备时挂载正常（反向用例：不误伤）', () => {
+    const fakeApp = { route: () => undefined } as unknown as FastifyInstance;
+
+    expect(() =>
+      mountRoutes(fakeApp, {
+        routes: routesOfModule(ROUTES, 'report'),
+        handlers: {
+          'profit_report.read': () => ({ ok: true }),
+          'profit_report.loss.read': () => ({ ok: true }),
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  it('契约里每个端点都挂了 handler（这一条由本文件 beforeAll 的 buildApp 兜着）', () => {
+    // 上面两条证明守卫本身有效；「当前有没有漏挂」由本文件 beforeAll 里的 `buildApp()`
+    // 兜着 —— 任何模块只要漏一个 handler，挂载即抛错，整个 describe 块全红。
+    // 所以这里不需要再遍历一遍，只需要把这条关系写下来，避免后来人以为没人管。
+    expect(app).toBeDefined();
+    expect(routesOfModule(ROUTES, 'report').length).toBe(2);
   });
 
   it('D70 边界：业务模块不跨模块 import 对方的 repo / schema', () => {
