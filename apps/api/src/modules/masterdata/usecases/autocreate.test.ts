@@ -8,7 +8,7 @@ import { createTestDatabase, type TestDatabase } from '../../../testing/pglite.j
 import { inventoryServices } from '../../inventory/services/ports.js';
 import { createInternalTradeOrder } from '../../internal-trade/usecases/internal-trade-orders.js';
 import { createSalesOrder } from '../../sales/usecases/sales-orders.js';
-import { parseDedupeNote, recordDedupeCandidate } from '../dedupe/queue.js';
+import { recordDedupeCandidate } from '../dedupe/queue.js';
 import { resolveMasterdataDraft } from './autocreate.js';
 
 /**
@@ -160,9 +160,11 @@ describe('masterdata 开单即建档（D100）', () => {
       left_id: string;
       right_id: string;
       score: string;
+      matched_by: string;
       note: string | null;
     }>(
-      `SELECT left_id::text AS left_id, right_id::text AS right_id, score::text AS score, note
+      `SELECT left_id::text AS left_id, right_id::text AS right_id, score::text AS score,
+              matched_by, note
          FROM masterdata_dedupe
         WHERE kind = $1 AND (left_id = $2::uuid OR right_id = $2::uuid)`,
       [kind, id],
@@ -267,8 +269,8 @@ describe('masterdata 开单即建档（D100）', () => {
     const rows = await queueRowsFor('customer', created.customerId);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.score).toBe('1.000');
-    const parsed = parseDedupeNote(rows[0]!.note);
-    expect(parsed).toEqual({ matchedBy: 'name_only', note: null });
+    expect(rows[0]!.matched_by).toBe('name_only');
+    expect(rows[0]!.note).toBeNull();
   });
 
   it('用例5：电话相同名字不同 → name_phone；同名商品规格不同 → note=同名不同规格', async () => {
@@ -282,10 +284,8 @@ describe('masterdata 开单即建档（D100）', () => {
     });
     const customerQueue = await queueRowsFor('customer', second.id);
     expect(customerQueue).toHaveLength(1);
-    expect(parseDedupeNote(customerQueue[0]!.note)).toEqual({
-      matchedBy: 'name_phone',
-      note: null,
-    });
+    expect(customerQueue[0]!.matched_by).toBe('name_phone');
+    expect(customerQueue[0]!.note).toBeNull();
 
     await draftOf({
       kind: 'product',
@@ -298,10 +298,8 @@ describe('masterdata 开单即建档（D100）', () => {
     const productQueue = await queueRowsFor('product', sameName.id);
     expect(productQueue).toHaveLength(1);
     expect(productQueue[0]!.score).toBe('1.000');
-    expect(parseDedupeNote(productQueue[0]!.note)).toEqual({
-      matchedBy: 'name_only',
-      note: '同名不同规格',
-    });
+    expect(productQueue[0]!.matched_by).toBe('name_only');
+    expect(productQueue[0]!.note).toBe('同名不同规格');
   });
 
   it('用例9：N 单传 companyDraft → 422「公司只能选不能建」，且没有落任何单据', async () => {
