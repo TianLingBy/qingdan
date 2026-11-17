@@ -224,7 +224,7 @@ describe('销售单契约（sales）', () => {
     // 夹带单号不等于被接受：schema 会剥掉未知键，但契约明确不声明该字段。
     expect(Object.keys(SalesOrderCreateInputSchema.shape).sort()).toEqual(
       // D100：`customerId` 与 `customerDraft` 二选一，两个键都在契约上（由用例层校验互斥）。
-      ['companyId', 'customerDraft', 'customerId', 'fees', 'handlerId', 'lines'].sort(),
+      ['companyId', 'customerContactId', 'customerDraft', 'customerId', 'fees', 'handlerId', 'lines'].sort(),
     );
   });
 

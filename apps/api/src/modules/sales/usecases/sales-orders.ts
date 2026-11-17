@@ -435,6 +435,7 @@ async function loadSalesOrderDetail(
     {
       id: order.id,
       companyId: order.companyId,
+      customerId: order.customerId,
       status: order.status,
       version: order.version,
     },

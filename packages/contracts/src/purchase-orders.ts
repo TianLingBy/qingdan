@@ -165,6 +165,10 @@ export const PurchaseOrderSchema = z.object({
   supplierId: z.string(),
   /** 供应商名只读回显，避免列表二次查询。 */
   supplierName: z.string(),
+  /** 本次下单的对接人（#306）：可空；软停用不影响历史单回显。 */
+  supplierContactId: z.string().nullable().optional(),
+  /** 对接人姓名只读回显（软停用后仍回名字）。 */
+  supplierContactName: z.string().nullable().optional(),
   status: PurchaseOrderStatusSchema,
   /** 经手人（负责人）；无权查看负责人（非老板/经理）时服务端返回 null（Issue #227）。 */
   handlerId: z.string().nullable(),
@@ -229,6 +233,8 @@ export const PurchaseOrderCreateInputSchema = z.object({
   supplierId: z.string().uuid().optional(),
   /** 新供应商草档（D100）：不传 `supplierId` 时必填；公司取本单 `companyId`。 */
   supplierDraft: SupplierDraftSchema.optional(),
+  /** 下单对接人（#306）：选填；须属本单供应商、同公司、状态「启用」，否则 422。 */
+  supplierContactId: z.string().uuid().optional(),
   handlerId: z.string().uuid(),
   lines: z.array(PurchaseOrderLineSchema).min(1, '采购单至少 1 行商品明细'),
   fees: z.array(PurchaseOrderFeeInputSchema).optional(),
@@ -243,6 +249,8 @@ export type PurchaseOrderCreateInput = z.infer<typeof PurchaseOrderCreateInputSc
 export const PurchaseOrderUpdateInputSchema = z
   .object({
     supplierId: z.string().uuid().optional(),
+    /** 换对接人（#306）：传 null 表示清空；校验口径同创建。 */
+    supplierContactId: z.string().uuid().nullable().optional(),
     handlerId: z.string().uuid().optional(),
     lines: z.array(PurchaseOrderLineSchema).min(1).optional(),
     fees: z.array(PurchaseOrderFeeInputSchema).optional(),
