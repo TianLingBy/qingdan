@@ -27,6 +27,10 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   '20261117181000_d94_transit_states.sql',
   // D95 / #341：三个列表的排序复合索引。缺了不会 500，但高频翻页会退化成 Seq Scan + Sort。
   '20261117213000_paging_sort_indexes.sql',
+  // D97 / #298 第 2 块：换号用例读写 employee.pending_phone / pending_phone_code_hash /
+  // pending_phone_expires_at，并往 login_code 写 purpose='phone_change' 的频控流水。
+  // 缺这三列 → 换号端点 500；缺 purpose 放宽 → 频控流水 INSERT 撞 CHECK 约束。
+  '20261117220000_settings_center_fields.sql',
   // D98 / #302：主数据静默建档与去重审核依赖的新列与 masterdata_dedupe 表。
   '20261117223000_masterdata_autocreate.sql',
   // D94 / #328：在途可占用要求 available_qty 用“占用优先抵在途”的生成公式；
