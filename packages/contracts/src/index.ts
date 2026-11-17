@@ -33,6 +33,7 @@ export * from './audit.js';
 export * from './entities.js';
 export * from './suggest.js';
 export * from './masterdata-draft.js';
+export * from './masterdata-dedupe.js';
 export * from './pagination.js';
 export * from './envelope.js';
 export * from './http.js';

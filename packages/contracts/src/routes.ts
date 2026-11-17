@@ -10,6 +10,7 @@ import { PRODUCT_ROUTES } from './products.js';
 import { CUSTOMER_ROUTES } from './customers.js';
 import { SUPPLIER_ROUTES } from './suppliers.js';
 import { PROCESSOR_ROUTES } from './processors.js';
+import { MASTERDATA_DEDUPE_ROUTES } from './masterdata-dedupe.js';
 import { EMPLOYEE_ROUTES } from './employees.js';
 import { POSITION_ROUTES } from './positions.js';
 import { COMPANY_ROUTES } from './companies.js';
@@ -253,6 +254,9 @@ export const ROUTES: readonly RouteDef[] = [
   ...SUPPLIER_ROUTES,
   // —— masterdata 模块：加工厂 + 报价记录（契约第一批 §2 / D64）——
   ...PROCESSOR_ROUTES,
+  // —— masterdata 模块：去重审核台 3 条（list / keep-separate / reopen，D102 / #302 块 C 后半段）——
+  // 域取 `customer`（没有 masterdata 域，理由见 masterdata-dedupe.ts 与 D102）。
+  ...MASTERDATA_DEDUPE_ROUTES,
   // —— inventory 模块：首批只读（批次 list/detail + 流水，Issue #48 / D67）——
   ...INVENTORY_ROUTES,
   // —— inventory 模块：盘点调整 I 4 条（list/create/detail/approve，契约第一批 §4 / D47）——

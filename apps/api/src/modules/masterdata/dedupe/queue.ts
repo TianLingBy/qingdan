@@ -6,7 +6,8 @@ import type { DedupeKind, MatchedBy } from './thresholds.js';
  * 疑似重复队列写入（#302 块 C 前半段 / D100）。
  *
  * 表是块 A 迁移（`20261117223000_masterdata_autocreate.sql`）建好的，本文件只写不建；
- * **列名与取值一律以迁移为准**，与设计文档不一致的地方见下面两处注释。
+ * 块 C 后半段补了 `matched_by` 独列（`20261118030000_masterdata_dedupe_matched_by.sql` / D102），
+ * 命中依据不再编进 `note`。
  */
 
 export interface DedupePairInput {
@@ -22,34 +23,6 @@ export interface DedupePairInput {
   readonly note?: string | null;
 }
 
-/**
- * 备注列编码：`<matched_by>` 或 `<matched_by>|<人工备注>`。
- *
- * **为什么把 matched_by 塞进 note**：设计 §三 的队列表有独立 `matched_by` 列，
- * 但块 A 落地时没建（迁移里只有 score / note / state），而本次明确不许新增迁移、
- * 不许改既有列名。两个信息都要留给审核台，`note` 是唯一的自由文本列，
- * 于是约定用它承载：解析交给本文件的 `parseDedupeNote`，调用方不要自己 `split('|')`。
- * 块 C 后半段若能补列，这个编解码就是唯一需要改的地方。
- */
-const NOTE_SEPARATOR = '|';
-
-export function encodeDedupeNote(matchedBy: MatchedBy, note: string | null | undefined): string {
-  return note ? `${matchedBy}${NOTE_SEPARATOR}${note}` : matchedBy;
-}
-
-export function parseDedupeNote(raw: string | null): {
-  matchedBy: MatchedBy | null;
-  note: string | null;
-} {
-  if (raw === null || raw === '') return { matchedBy: null, note: null };
-  const index = raw.indexOf(NOTE_SEPARATOR);
-  if (index === -1) return { matchedBy: raw as MatchedBy, note: null };
-  return {
-    matchedBy: raw.slice(0, index) as MatchedBy,
-    note: raw.slice(index + 1) || null,
-  };
-}
-
 function round3(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
@@ -63,9 +36,11 @@ function round3(value: number): number {
  *   审核台出现两条，合并一条后另一条还挂着，变成永远处理不完的假待办。
  *   代价：`left_id` 不再等于「已有档案」（迁移注释是那么写的），审核台要看新旧
  *   只能读 `origin` / `dedupe_state` 或对子两侧的 `created_at`。
- * - **冲突时只更新分数与备注、不动 state**：同一对子被再次命中说明证据更强（或重复触发），
- *   但人工已经判过的结论（merged / kept）不该被一次新开单推翻——重新打开会让人白判一遍。
- *   `GREATEST` 保留较大分数，避免「先 0.86 后 0.85」把分数改低。
+ * - **冲突时只更新分数、命中依据与备注、不动 state**：同一对子被再次命中说明证据更强
+ *   （或重复触发），但人工已经判过的结论（merged / kept）不该被一次新开单推翻——
+ *   重新打开会让人白判一遍。`GREATEST` 保留较大分数，避免「先 0.86 后 0.85」把分数改低。
+ *   注：保持 kept 状态的这条，就是「判为不同之后不再提示」的实现位置（唯一约束 +
+ *   不重置 state）；要撤销只能走审核台的 reopen（D102）。
  */
 export async function recordDedupeCandidate(
   tx: SqlClient,
@@ -75,11 +50,13 @@ export async function recordDedupeCandidate(
     input.leftId < input.rightId ? [input.leftId, input.rightId] : [input.rightId, input.leftId];
   await tx.query(
     `INSERT INTO masterdata_dedupe
-       (id, tenant_id, company_id, kind, left_id, right_id, score, note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (id, tenant_id, company_id, kind, left_id, right_id, score, matched_by, note)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT ON CONSTRAINT masterdata_dedupe_pair_key
-     DO UPDATE SET score = GREATEST(masterdata_dedupe.score, EXCLUDED.score),
-                   note  = EXCLUDED.note`,
+     DO UPDATE SET score      = GREATEST(masterdata_dedupe.score, EXCLUDED.score),
+                   matched_by = EXCLUDED.matched_by,
+                   -- 备注只放人工信息：新一次命中没带备注时不要把已有备注抹掉。
+                   note       = COALESCE(EXCLUDED.note, masterdata_dedupe.note)`,
     [
       uuidv7(),
       input.tenantId,
@@ -88,7 +65,8 @@ export async function recordDedupeCandidate(
       leftId,
       rightId,
       round3(input.score),
-      encodeDedupeNote(input.matchedBy, input.note ?? null),
+      input.matchedBy,
+      input.note ?? null,
     ],
   );
 }

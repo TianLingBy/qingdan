@@ -37,6 +37,7 @@ import {
   suggestProducts,
   suggestSuppliers,
 } from './usecases/suggest.js';
+import { keepSeparateDedupe, listDedupe, reopenDedupe } from './usecases/dedupe.js';
 
 /**
  * masterdata 端点挂载（Issue #15 首切：商品资料）。
@@ -64,6 +65,9 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'processor.delete': 'processor',
   // 报价是独立子表（D64④），失败审计按对象记 processor_quote，与 usecases 常量一致。
   'processor.quote.create': 'processor_quote',
+  // 去重审核台的判定对象是队列行本身，不是被判的两条档案（D102）。
+  'customer.dedupe.keep_separate': 'masterdata_dedupe',
+  'customer.dedupe.reopen': 'masterdata_dedupe',
 };
 
 /**
@@ -213,9 +217,25 @@ export function registerMasterdataRoutes(app: FastifyInstance): void {
     },
   };
 
+  // 去重审核台 3 条（D102）：list 只读不记审计；两个判定是写操作，审计与 AI 拦截在用例内。
+  const dedupeHandlers: RouteHandlers = {
+    'customer.dedupe.list': async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listDedupe({ database: instance.database, request });
+    },
+    'customer.dedupe.keep_separate': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await keepSeparateDedupe({ database: instance.database, request, reply });
+    },
+    'customer.dedupe.reopen': async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await reopenDedupe({ database: instance.database, request, reply });
+    },
+  };
+
   mountRoutes(app, {
     routes: routesOfModule(ROUTES, 'masterdata'),
     failureObjectTypes: FAILURE_OBJECT_TYPES,
-    handlers: { ...handlers, ...suggestHandlers },
+    handlers: { ...handlers, ...suggestHandlers, ...dedupeHandlers },
   });
 }

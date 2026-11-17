@@ -36,6 +36,9 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // D94 / #328：在途可占用要求 available_qty 用“占用优先抵在途”的生成公式；
   // 缺这条会让在途批次一旦被占用就违反非负约束。
   '20261118000000_d94_transit_occupancy.sql',
+  // D102 / #302 块 C 后半段：审核台直接读 masterdata_dedupe.matched_by，缺列 → 500；
+  // 同时带的排序索引缺了不会 500，但按公司+类型+状态排队会退化成 Sort（不是索引级顺序）。
+  '20261118030000_masterdata_dedupe_matched_by.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {
