@@ -1,6 +1,13 @@
-﻿@import "tailwindcss";
+@import "tailwindcss";
 /* v0.8 设计令牌：颜色 / 圆角 / 字号 / 动效，见 docs/ui/design-tokens.md */
 @import "./styles/tokens.css";
+
+/* v0.13 设计语言（2026-11-17 起，23 页重做用）：令牌 + 组件类
+ * 令牌只定义变量、组件类与 v0.8 零交集，两份可安全并存；
+ * 原 app.css 里几条会波及老页面的全局 reset 已剔除，说明见 styles/app-v013.css 头注释。
+ * 类名怎么用见 styles/README.md。 */
+@import "./styles/tokens-v013.css";
+@import "./styles/app-v013.css";
 
 /*
  * 浏览器基线见 docs/decisions.md D56：
