@@ -1,0 +1,364 @@
+/* 轻单 v0.13 · 登录页专用样式（封面与内页是两套版式，互不污染） */
+
+/* ============================================================
+   轻单 v0.13 · 登录页
+   底色：纯黑 #000000，星点为冷白 / 亮白
+   沿用 v0.3 星座粒子引擎，适配纯黑星空
+   登录卡 focus 状态修正：米白底上用深色边框+强调色柔光
+   ============================================================ */
+:root{
+  --paper:#E8EDF8;
+  --ink:#0A0D11;
+  --mist:var(--accent-2);
+  --sans:"Microsoft YaHei","微软雅黑","PingFang SC",-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:#000;
+  color:var(--paper);
+  font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;cursor:default;
+}
+::selection{background:rgba(var(--accent-rgb), .36);color:var(--paper)}
+
+#fx{position:fixed;inset:0;width:100%;height:100%;display:block;z-index:0}
+
+/* 跟手柔光：强调色调 */
+.aura{
+  position:fixed;width:480px;height:480px;border-radius:50%;z-index:1;
+  pointer-events:none;translate:-50% -50%;
+  background:radial-gradient(circle,rgba(var(--accent-rgb), .14) 0%,rgba(var(--accent-2-rgb), .06) 42%,transparent 68%);
+  filter:blur(8px);
+  transition:opacity 500ms var(--ease-out,cubic-bezier(.16,1,.3,1));
+  opacity:0;
+}
+body.has-pointer .aura{opacity:1}
+
+/* 页面骨架 */
+.stage{
+  position:relative;z-index:2;height:100%;
+  display:grid;grid-template-columns:1.1fr .9fr;
+}
+
+/* 左：品牌陈述 */
+.brand{
+  position:relative;
+  display:flex;flex-direction:column;justify-content:space-between;
+  padding:44px 0 110px 64px;
+  pointer-events:none;user-select:none;
+}
+.brand::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(70% 55% at 26% 46%,rgba(0,0,0,.55),transparent 72%);
+}
+.brand-top{position:relative;display:flex;align-items:center;gap:12px}
+.mark{
+  width:30px;height:30px;border-radius:7px;display:grid;place-items:center;
+  background:var(--paper);color:var(--ink);font-weight:800;font-size:16px;
+}
+.brand-name{font-size:17px;font-weight:650;letter-spacing:.01em;color:#FFFFFF}
+.brand-name span{
+  display:block;font-size:16px;letter-spacing:.34em;color:rgba(255,255,255,.55);
+  text-transform:uppercase;font-weight:500;margin-top:2px;
+}
+
+.statement{position:relative;max-width:720px;margin:auto 0 auto 56px}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:12px;
+  font-size:20px;letter-spacing:.24em;text-transform:uppercase;
+  color:rgba(255,255,255,.62);margin-bottom:35px;
+}
+.eyebrow::before{content:"";width:33px;height:1px;background:rgba(255,255,255,.55)}
+h1{
+  font-size:clamp(40px,4.5vw,68px);line-height:1.18;font-weight:600;
+  letter-spacing:-.025em;color:#FFFFFF;
+}
+h1 em{font-style:normal;color:#FFFFFF;position:relative}
+.lede{
+  margin-top:33px;max-width:26em;font-size:20px;line-height:1.85;
+  color:rgba(255,255,255,.72);
+}
+.lede b{color:#FFFFFF;font-weight:520}
+
+/* 右：登录卡 */
+.panel{
+  display:grid;place-items:center;padding:48px 64px 48px 24px;
+  animation:panelIn var(--d-5,320ms) var(--ease-out,cubic-bezier(.16,1,.3,1));
+}
+@keyframes panelIn{
+  from{transform:translateY(16px) scale(.990)}
+  to{transform:none}
+}
+.card{
+  width:100%;max-width:500px;position:relative;
+  display:flex;flex-direction:column;justify-content:space-between;
+  min-height:min(600px,calc(100vh - 96px));
+  background:#EEF0F8;color:#0A0D14;
+  border-radius:14px;padding:44px 46px 38px;
+  box-shadow:
+    0 0 0 1px rgba(var(--text-rgb), .08),
+    0 40px 80px -20px rgba(0,0,0,.72),
+    0 0 70px -18px rgba(var(--accent-rgb), .16);
+  will-change:transform;
+}
+
+.card-head{margin-bottom:24px}
+.card-eyebrow{
+  font-size:16px;letter-spacing:.22em;text-transform:uppercase;
+  color:rgba(10,13,20,.38);margin-bottom:10px;
+}
+.card h2{font-size:34px;font-weight:650;letter-spacing:-.02em;color:#0A0D14}
+.card-sub{font-size:16px;color:rgba(10,13,20,.48);margin-top:6px}
+
+.field{margin-bottom:16px;position:relative}
+.field label{display:block;font-size:19px;font-weight:550;color:rgba(10,13,20,.58);margin-bottom:8px}
+.field input{
+  width:100%;height:54px;padding:0 16px;font:inherit;font-size:19px;
+  color:#E9E7E0;background:rgba(255,255,255,.08);
+  border:1.5px solid rgba(255,255,255,.16);border-radius:10px;
+  transition:border-color var(--d-2,200ms),box-shadow var(--d-2,200ms),
+    transform var(--d-3,240ms) var(--ease-spring,cubic-bezier(.34,1.28,.52,1)),background var(--d-2,200ms);
+}
+.field input::placeholder{color:rgba(233,231,224,.30)}
+/* 悬浮交互：hover 微浮一层，点击聚焦再上浮并投柔影 */
+.field input:hover{
+  border-color:rgba(255,255,255,.30);
+  background:rgba(255,255,255,.14);
+  transform:translateY(-1px);
+  box-shadow:0 6px 16px -8px rgba(0,0,0,.45);
+}
+/* focus：强调色描边 + 苔绿柔光，玻璃随之上浮变亮 */
+.field input:focus{
+  outline:none;
+  border-color:var(--accent);
+  transform:translateY(-2px);
+  background:rgba(255,255,255,.18);
+  box-shadow:0 0 0 3px rgba(var(--accent-rgb), .22),0 10px 24px -10px rgba(0,0,0,.5);
+}
+
+.field .err{font-size:19px;color:#B84030;margin-top:7px;display:none}
+.field.invalid input{border-color:#E08168;box-shadow:0 0 0 3px rgba(192,83,58,.20)}
+.field.invalid .err{display:block}
+
+.row-between{display:flex;align-items:center;justify-content:space-between;margin:2px 0 20px}
+.check{display:flex;align-items:center;gap:8px;font-size:16px;color:rgba(10,13,20,.52);cursor:pointer}
+.check input{
+  appearance:none;width:15px;height:15px;
+  border:1.5px solid rgba(10,13,20,.22);border-radius:4px;
+  display:grid;place-items:center;
+  transition:background var(--d-2,200ms),border-color var(--d-2,200ms);
+}
+.check input:checked{background:#0A0D14;border-color:#0A0D14}
+.check input:checked::after{
+  content:"";width:7px;height:4px;
+  border-left:1.6px solid #EEF0F8;border-bottom:1.6px solid #EEF0F8;
+  transform:rotate(-45deg) translateY(-1px);
+}
+/* v0.4 修正：忘记密码加明确 hover 状态 */
+.link{
+  font-size:16px;color:var(--accent-deep);text-decoration:none;
+  border-bottom:1px solid rgba(var(--accent-rgb), .30);padding-bottom:1px;
+  transition:color var(--d-1,110ms),border-color var(--d-1,110ms);
+}
+.link:hover{color:#0A0D14;border-color:#0A0D14}
+
+.btn{
+  position:relative;width:100%;height:46px;border:none;border-radius:8px;
+  background:#0A0D14;color:#EEF0F8;
+  font:inherit;font-size:16px;font-weight:560;letter-spacing:.02em;cursor:pointer;
+  overflow:hidden;display:flex;align-items:center;justify-content:center;gap:9px;
+  transition:transform 70ms ease,box-shadow var(--d-2,200ms),background var(--d-2,200ms);
+}
+.btn:hover{background:#111726;box-shadow:0 10px 26px -12px rgba(0,0,0,.8)}
+.btn:active{transform:scale(.986)}
+.btn::after{
+  content:"";position:absolute;top:0;bottom:0;width:38%;
+  background:linear-gradient(90deg,transparent,rgba(var(--text-rgb), .12),transparent);
+  transform:translateX(-160%) skewX(-16deg);
+}
+.btn:hover::after{animation:sweep var(--d-4,580ms) var(--ease-out,cubic-bezier(.16,1,.3,1))}
+@keyframes sweep{to{transform:translateX(360%) skewX(-16deg)}}
+.btn .spin{
+  width:13px;height:13px;border:1.6px solid rgba(var(--text-rgb), .3);border-top-color:#EEF0F8;
+  border-radius:50%;display:none;animation:spin 700ms linear infinite;
+}
+.btn.is-loading .spin{display:block}
+.btn.is-loading .label{opacity:.65}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.card-foot{margin-top:22px;padding-top:18px;border-top:1px solid rgba(255,255,255,.14)}
+.hint{font-size:16px;line-height:1.75;color:rgba(10,13,20,.40)}
+.hint code{
+  font-family:var(--mono,monospace);font-size:16px;
+  background:rgba(10,13,20,.07);padding:1px 5px;border-radius:4px;color:rgba(10,13,20,.64);
+}
+.copy-hint{
+  position:fixed;left:50%;bottom:34px;translate:-50% 10px;
+  padding:10px 16px;border-radius:8px;font-size:16px;
+  background:rgba(var(--text-rgb), .08);color:var(--paper);
+  border:1px solid rgba(var(--text-rgb), .12);
+  backdrop-filter:blur(8px);
+  opacity:0;pointer-events:none;z-index:30;
+  transition:opacity var(--d-2,200ms),translate var(--d-3,320ms) var(--ease-out,cubic-bezier(.16,1,.3,1));
+}
+.copy-hint.on{opacity:1;translate:-50% 0}
+
+.corner{
+  position:fixed;right:24px;top:20px;z-index:3;
+  font-size:16px;letter-spacing:.2em;text-transform:uppercase;
+  color:rgba(var(--text-rgb), .18);pointer-events:none;
+}
+@media(max-width:1024px){
+  .stage{grid-template-columns:1fr}
+  .brand{display:none}
+  .panel{padding:24px}
+}
+
+.code-row{display:flex;gap:10px;align-items:center}
+.code-row input{flex:1}
+.code-btn{flex:none;height:48px;padding:0 17px;border-radius:10px;
+  border:1px solid rgba(var(--accent-rgb),.38);background:rgba(var(--accent-rgb),.06);
+  color:var(--accent-deep);font-size:19px;font-weight:550;cursor:pointer;transition:background .15s,border-color .15s,opacity .15s;
+  font-family:inherit;white-space:nowrap}
+.code-btn:hover{background:rgba(var(--accent-rgb),.18);border-color:rgba(var(--accent-rgb),.7)}
+.code-btn:disabled{opacity:.45;cursor:default}
+
+
+/* ---------------------------------------------------------- 登录页（封面 / 内页品牌连续性） */
+body.login{background:#000;color:#E9E7E0}
+body.login .panel{background:transparent;border:0;box-shadow:none}
+/* ---- 暗夜模式（默认）：磨砂玻璃卡 ---- */
+form.card{
+  background:rgba(255,255,255,.08);
+  -webkit-backdrop-filter:blur(18px);
+  backdrop-filter:blur(18px);
+  border:1px solid rgba(255,255,255,.22);
+  border-radius:18px;
+  color:#F5F5F5;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.10),
+    0 30px 60px -34px rgba(0,0,0,.50);
+  transition:background 240ms var(--ease-out),border-color 240ms var(--ease-out),
+    color 240ms var(--ease-out),box-shadow 240ms var(--ease-out);
+}
+/* 登录按钮：白底黑字，无悬浮态（hover 不换色、不扫光） */
+form.card .btn,form.card .btn:hover{
+  background:#F2F2F2;color:#0A0A0A;
+  box-shadow:0 10px 26px -12px rgba(0,0,0,.60),inset 0 1px 0 rgba(255,255,255,.60);
+}
+form.card .btn:hover{background:#F2F2F2}
+form.card .btn:hover::after{animation:none}
+form.card .field input:focus{border-color:rgba(255,255,255,.85);transform:translateY(-2px);
+  box-shadow:0 0 0 3px rgba(255,255,255,.18),0 10px 24px -10px rgba(0,0,0,.40)}
+form.card h2{color:#FAFAFA}
+form.card .card-eyebrow{color:rgba(255,255,255,.55)}
+form.card .card-sub{color:rgba(255,255,255,.62)}
+form.card .field label{color:rgba(255,255,255,.72)}
+form.card .field .err{color:rgba(255,255,255,.92)}
+form.card .field.invalid input{border-color:rgba(255,255,255,.90)}
+form.card .field.invalid input{box-shadow:0 0 0 3px rgba(255,255,255,.16)}
+form.card .check{color:rgba(255,255,255,.62)}
+form.card .check input{border-color:rgba(255,255,255,.35)}
+form.card .check input:checked{background:#F2F2F2;border-color:#F2F2F2}
+form.card .check input:checked::after{border-left-color:#0A0A0A;border-bottom-color:#0A0A0A}
+form.card .link{color:rgba(255,255,255,.78);border-bottom-color:rgba(255,255,255,.35)}
+form.card .link:hover{color:#fff;border-bottom-color:#fff}
+form.card .hint{color:rgba(255,255,255,.45)}
+form.card .hint code{background:rgba(255,255,255,.12);color:rgba(255,255,255,.80)}
+form.card .card-foot{border-top-color:rgba(255,255,255,.14)}
+form.card .code-btn{
+  background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.35);color:#fff}
+form.card .code-btn:hover{background:rgba(255,255,255,.20);border-color:rgba(255,255,255,.60)}
+
+/* ---- 亮色模式：浅灰底黑字卡 ---- */
+html[data-mode="light"] form.card{
+  background:#F5F5F5;
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+  border:1px solid rgba(0,0,0,.08);
+  color:#0A0A0A;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.80),
+    0 30px 60px -30px rgba(0,0,0,.78);
+}
+/* 登录按钮：黑底白字，同样无悬浮态 */
+html[data-mode="light"] form.card .btn,
+html[data-mode="light"] form.card .btn:hover{
+  background:#0A0A0A;color:#FFFFFF;
+  box-shadow:0 10px 26px -12px rgba(0,0,0,.60);
+}
+html[data-mode="light"] form.card .btn:hover{background:#0A0A0A;box-shadow:0 10px 26px -12px rgba(0,0,0,.60)}
+/* 白卡内输入框：黑字 + 浅灰底 */
+html[data-mode="light"] form.card .field input{
+  color:#0A0A0A;
+  background:rgba(0,0,0,.035);
+  border-color:rgba(0,0,0,.14);
+}
+html[data-mode="light"] form.card .field input::placeholder{color:rgba(0,0,0,.38)}
+html[data-mode="light"] form.card .field input:hover{
+  background:rgba(0,0,0,.055);
+  border-color:rgba(0,0,0,.26);
+  box-shadow:0 6px 16px -10px rgba(0,0,0,.25);
+}
+html[data-mode="light"] form.card .field input:focus{border-color:#0A0A0A;transform:translateY(-2px);background:#FFFFFF;
+  box-shadow:0 0 0 3px rgba(0,0,0,.09),0 10px 24px -12px rgba(0,0,0,.28)}
+/* 卡内文字用黑色 / 灰色阶 */
+html[data-mode="light"] form.card h2{color:#0A0A0A}
+html[data-mode="light"] form.card .card-eyebrow{color:rgba(0,0,0,.42)}
+html[data-mode="light"] form.card .card-sub{color:rgba(0,0,0,.56)}
+html[data-mode="light"] form.card .field label{color:rgba(0,0,0,.66)}
+/* 错误态：深红描边 + 深红提示 */
+html[data-mode="light"] form.card .field .err{color:#B84030}
+html[data-mode="light"] form.card .field.invalid input{border-color:rgba(184,64,48,.70)}
+html[data-mode="light"] form.card .field.invalid input{box-shadow:0 0 0 3px rgba(184,64,48,.14)}
+html[data-mode="light"] form.card .check{color:rgba(0,0,0,.62)}
+html[data-mode="light"] form.card .check input{border-color:rgba(0,0,0,.28)}
+html[data-mode="light"] form.card .check input:checked{background:#0A0A0A;border-color:#0A0A0A}
+html[data-mode="light"] form.card .check input:checked::after{border-left-color:#FFFFFF;border-bottom-color:#FFFFFF}
+html[data-mode="light"] form.card .link{color:rgba(0,0,0,.72);border-bottom-color:rgba(0,0,0,.28)}
+html[data-mode="light"] form.card .link:hover{color:#000;border-bottom-color:#000}
+html[data-mode="light"] form.card .hint{color:rgba(0,0,0,.48)}
+html[data-mode="light"] form.card .hint code{background:rgba(0,0,0,.06);color:rgba(0,0,0,.70)}
+html[data-mode="light"] form.card .card-foot{border-top-color:rgba(0,0,0,.10)}
+html[data-mode="light"] form.card .code-btn{
+  background:#FFFFFF;border-color:rgba(0,0,0,.22);color:#0A0A0A}
+html[data-mode="light"] form.card .code-btn:hover{background:rgba(0,0,0,.05);border-color:rgba(0,0,0,.45)}
+body.login h1 em{color:#FFFFFF}
+body.login .eyebrow::before{background:rgba(255,255,255,.55)}
+.mark{background:var(--card-bg);color:var(--card-ink)}
+
+body.login{display:block;overflow:hidden;background:#000;color:#E9E7E0}
+
+/* ---------------------------------------------------------- 右下角暗亮开关
+   延用内页 .qd-mode-tgl：下凹轨道 + 磨砂玻璃选中块 + 点阵月亮/太阳图标。
+   登录页底色恒为纯黑星空，所以这里固定用白色系，不跟随 data-mode 令牌。 */
+.login-mode{
+  position:fixed;right:24px;bottom:24px;z-index:20;
+  display:flex;gap:2px;padding:2px;border-radius:999px;
+  background:rgba(255,255,255,.05);
+  box-shadow:inset 0 1.5px 3px rgba(0,0,0,.28),inset 0 -1px 1px rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(8px);
+  backdrop-filter:blur(8px);
+}
+.login-mode button{
+  width:26px;height:20px;padding:0;border-radius:999px;cursor:pointer;
+  display:grid;place-items:center;
+  background:transparent;border:1px solid transparent;color:rgba(255,255,255,.42);
+  transition:background var(--d-2,160ms),color var(--d-2,160ms),
+    box-shadow var(--d-2,160ms),border-color var(--d-2,160ms);
+}
+.login-mode button svg{width:11px;height:11px;display:block;fill:currentColor}
+.login-mode button:hover{color:rgba(255,255,255,.85)}
+/* 选中的一块：磨砂玻璃浮起，其余仍嵌在轨道里 */
+.login-mode button.on{
+  background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.06));
+  border-color:rgba(255,255,255,.18);
+  color:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.18);
+}
+.login-mode button:focus-visible{outline:1px solid rgba(255,255,255,.7);outline-offset:2px}
+@media(max-width:1024px){
+  .login-mode{right:18px;bottom:18px}
+}

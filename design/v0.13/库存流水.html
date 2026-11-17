@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 库存流水</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<script src="app.js"></script>
+</head>
+<body data-nav="inventory-flows" data-crumb="库存 / 库存流水">
+<div class="wrap">
+    <div class="p-head">
+      <div>
+        <div class="eyebrow">库存流水 · 每一笔都追得到</div>
+        <h1>库存流水</h1>
+        <p class="sub">可用量为什么变，答案在这一页，不在库存数量页。</p>
+      </div>
+      <div class="actions"><button class="btn-primary">导出流水</button></div>
+    </div>
+    <div class="p-filters"><div class="seg"><button class="on">全部来源</button><button class="">采购入库</button><button class="">销售出库</button><button class="">加工投入</button><button class="">加工产出</button><button class="">冲正</button><button class="">盘点</button></div><input class="search" placeholder="搜索…" aria-label="搜索"></div>
+    <div class="card"><table>
+      <thead><tr><th>发生时间</th><th>批次</th><th>变动量</th><th>来源单据</th><th>经手人</th></tr></thead>
+      <tbody><tr><td>11-11 10:32</td><td>P-2211</td><td class="num">+2.0 吨</td><td>R-0088 客户退货</td><td>王倩</td></tr><tr><td>11-11 09:20</td><td>P-2211</td><td class="num">−8.0 吨</td><td>N-0042 内部交易</td><td>王倩</td></tr><tr><td>11-10 16:45</td><td>P-2208</td><td class="num">−0.5 吨</td><td>S-0041 供应商退货</td><td>陈默</td></tr><tr><td>11-10 09:12</td><td>P-2211</td><td class="num">+12.0 吨</td><td>A-0023 采购入库</td><td>张明</td></tr></tbody>
+    </table></div>
+    <p class="note">变动量正绿负红；点来源单据跳详情，不留死链。</p>
+  </div>
+</body>
+</html>

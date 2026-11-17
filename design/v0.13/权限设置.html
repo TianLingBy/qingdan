@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 权限设置</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<script src="app.js"></script>
+</head>
+<body data-nav="permissions" data-crumb="组织 / 权限设置">
+<div class="wrap">
+    <div class="p-head">
+      <div>
+        <div class="eyebrow">权限设置 · 功能域 × 动作</div>
+        <h1>权限设置</h1>
+        <p class="sub">权限是矩阵，不是开关：哪个岗位、在哪个域、能做哪个动作。</p>
+      </div>
+      <div class="actions"><button class="btn-primary">+ 新建岗位</button></div>
+    </div>
+    <div class="p-filters"><div class="seg"><button class="on">全部岗位</button><button class="">管理员</button><button class="">经理</button><button class="">开单员</button><button class="">仓管</button></div><input class="search" placeholder="搜索…" aria-label="搜索"></div>
+    <div class="card"><table>
+      <thead><tr><th>岗位</th><th>类型</th><th>权限摘要</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody><tr><td>管理员</td><td>系统</td><td>全部功能域 · 全部动作</td><td><span class="st ok">启用</span></td><td><a href="#" class="btn" style="height:26px;padding:0 10px">编辑</a></td></tr><tr><td>开单员</td><td>业务</td><td>单据 5 类 · 新建 / 查看</td><td><span class="st ok">启用</span></td><td><a href="#" class="btn" style="height:26px;padding:0 10px">编辑</a></td></tr><tr><td>仓管</td><td>业务</td><td>库存 3 页 · 查看 / 盘点</td><td><span class="st ok">启用</span></td><td><a href="#" class="btn" style="height:26px;padding:0 10px">编辑</a></td></tr></tbody>
+    </table></div>
+    <p class="note">点「编辑」进矩阵：行＝功能域，列＝查看 / 新建 / 审批 / 导出；只读格子灰显。</p>
+  </div>
+</body>
+</html>

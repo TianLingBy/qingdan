@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 公司管理</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<script src="app.js"></script>
+</head>
+<body data-nav="companies" data-crumb="组织 / 公司管理">
+<div class="wrap">
+    <div class="p-head">
+      <div>
+        <div class="eyebrow">公司管理 · 多公司隔离</div>
+        <h1>公司管理</h1>
+        <p class="sub">一家公司一个公司码，数据按公司隔离（D15）。</p>
+      </div>
+      <div class="actions"><button class="btn-primary">+ 新建公司</button></div>
+    </div>
+    <div class="p-filters"><div class="seg"><button class="on">全部状态</button><button class="">启用</button><button class="">停用</button></div><input class="search" placeholder="搜索…" aria-label="搜索"></div>
+    <div class="card"><table>
+      <thead><tr><th>公司码</th><th>名称</th><th>更新时间</th><th>操作</th></tr></thead>
+      <tbody><tr><td>HQ</td><td>演示公司</td><td>11-10 18:22</td><td><a href="#" class="btn" style="height:26px;padding:0 10px">编辑</a></td></tr><tr><td>HD</td><td>华东公司</td><td>11-09 10:05</td><td><a href="#" class="btn" style="height:26px;padding:0 10px">编辑</a></td></tr><tr><td>HN</td><td>华南公司</td><td>11-08 15:40</td><td><a href="#" class="btn" style="height:26px;padding:0 10px">编辑</a></td></tr></tbody>
+    </table></div>
+    <p class="note">停用公司后，该公司的员工不能登录，但历史单据保留可查。</p>
+  </div>
+</body>
+</html>

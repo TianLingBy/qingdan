@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 冲正单据</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<script src="app.js"></script>
+</head>
+<body data-nav="reversals" data-crumb="单据与结算 / 冲正单据">
+<div class="wrap">
+    <div class="p-head">
+      <div>
+        <div class="eyebrow">冲正单据 R / S / I</div>
+        <h1>冲正单据</h1>
+        <p class="sub">退错了不是改单，是开一张反向单，原单留着不动（D19）。</p>
+      </div>
+      <div class="actions"><button class="btn-primary">+ 新建冲正</button></div>
+    </div>
+    <div class="p-filters"><div class="seg" id="rvSeg"><button data-t="all" class="on">全部</button><button data-t="r">客户退货 R</button><button data-t="s">供应商退货 S</button><button data-t="i">盘点盈亏 I</button></div><input class="search" placeholder="搜索…" aria-label="搜索"></div>
+    <div class="card"><div class="rv-scroll"><table>
+      <thead><tr><th>单号</th><th>方向</th><th>方式</th><th>引用批次</th><th class="num">数量</th><th>发生时间</th><th>状态</th></tr></thead>
+      <tbody><tr data-t="r"><td>R-0088</td><td>客户退货</td><td>退货入库</td><td>P-2211</td><td class="num">2 吨</td><td>11-11 10:32</td><td><span class="st warn">进行中</span></td></tr><tr data-t="s"><td>S-0041</td><td>供应商退货</td><td>退货出库</td><td>P-2208</td><td class="num">0.5 吨</td><td>11-10 16:45</td><td><span class="st ok">已完成</span></td></tr><tr data-t="r"><td>R-0087</td><td>客户退货</td><td>退货入库</td><td>P-2205</td><td class="num">1 吨</td><td>11-10 09:20</td><td><span class="st ok">已完成</span></td></tr><tr data-t="r"><td>R-0086</td><td>客户退货</td><td>退货入库</td><td>P-2201</td><td class="num">3 吨</td><td>11-09 14:05</td><td><span class="st cancel">已取消</span></td></tr><tr data-t="s"><td>S-0040</td><td>供应商退货</td><td>退货出库</td><td>P-2206</td><td class="num">0.8 吨</td><td>11-09 11:30</td><td><span class="st warn">进行中</span></td></tr><tr data-t="i"><td>I-0012</td><td>盘点盈亏</td><td>盘亏冲减</td><td>P-2199</td><td class="num">18 件</td><td>11-09 09:10</td><td><span class="st ok">已批准</span></td></tr><tr data-t="i"><td>I-0011</td><td>盘点盈亏</td><td>盘盈调增</td><td>P-2195</td><td class="num">12 件</td><td>11-08 15:40</td><td><span class="st bad">待审批</span></td></tr><tr data-t="s"><td>S-0039</td><td>供应商退货</td><td>退货出库</td><td>P-2202</td><td class="num">0.3 吨</td><td>11-08 10:15</td><td><span class="st cancel">已取消</span></td></tr><tr data-t="i"><td>I-0010</td><td>盘点盈亏</td><td>盘盈调增</td><td>P-2190</td><td class="num">9 件</td><td>11-07 09:25</td><td><span class="st warn">已驳回</span></td></tr></tbody>
+    </table></div></div>
+    <style>
+      /* 明细多时可上下滑动：滚动容器内表头吸顶 */
+      .rv-scroll{max-height:min(460px,calc(100vh - 340px));overflow-y:auto;overscroll-behavior:contain}
+      .rv-scroll thead th{top:0}
+    </style>
+    <script>
+      (function(){
+        var seg=document.getElementById('rvSeg');
+        if(!seg) return;
+        var rows=document.querySelectorAll('.rv-scroll tbody tr');
+        function apply(t){
+          for(var i=0;i<rows.length;i++){
+            rows[i].style.display=(t==='all'||rows[i].getAttribute('data-t')===t)?'':'none';
+          }
+        }
+        seg.addEventListener('click',function(e){
+          var b=e.target.closest('button'); if(!b) return;
+          var btns=seg.querySelectorAll('button');
+          for(var i=0;i<btns.length;i++) btns[i].classList.toggle('on',btns[i]===b);
+          apply(b.getAttribute('data-t'));
+        });
+        apply('all');
+      })();
+    </script>
+    <p class="note">页内三分栏（R / S / I），切栏不换页；冲正后成本按 T1/T2/T3 更正（D37）。</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 加工厂档案</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<script src="app.js"></script>
+</head>
+<body data-nav="processors" data-crumb="主数据 / 加工厂档案">
+<div class="wrap">
+    <div class="p-head">
+      <div>
+        <div class="eyebrow">加工厂档案 · 工序与单价</div>
+        <h1>加工厂档案</h1>
+        <p class="sub">一家加工厂一张价目表，开 B 单时按工序带出来；主列表一厂一行，价格进价目表。</p>
+      </div>
+      <div class="actions">
+        <button class="btn" data-drawer="#md-dedupe">重复审核<span class="md-badge">1</span></button>
+        <button class="btn-primary" data-drawer="#md-edit" data-sheet-title="新建加工厂">+ 新建加工厂</button>
+      </div>
+    </div>
+    <div class="p-filters">
+      <div class="seg" data-facet="status"><button class="on" data-val="all">全部状态</button><button data-val="启用">启用</button><button data-val="停用">停用</button></div>
+      <div class="seg" data-facet="company"><button class="on" data-val="all">全部公司</button><button data-val="演示公司">演示公司</button><button data-val="华南公司">华南公司</button></div>
+      <input class="search" placeholder="搜索名称 / 联系人…" aria-label="搜索">
+    </div>
+    <div class="card"><table>
+      <thead><tr><th>编号</th><th>名称</th><th>主联系人</th><th class="num">工序数</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr data-company="演示公司" data-status="启用">
+          <td>F-0401</td>
+          <td>恒昌加工<i class="cell-sub">后台录入</i></td>
+          <td>陈师傅<i class="cell-sub">137****4421</i></td>
+          <td class="num">2 道</td>
+          <td><span class="st ok">启用</span></td>
+          <td><div class="row-acts"><button class="btn btn-s" data-drawer="#md-edit" data-sheet-title="编辑加工厂">编辑</button><button class="btn btn-s" data-drawer="#md-quote" data-sheet-title="价目表 · 恒昌加工">价目</button><button class="btn btn-s" data-drawer="#md-contacts" data-sheet-title="对接人 · 恒昌加工">对接人</button></div></td>
+        </tr>
+        <tr data-company="演示公司" data-status="启用">
+          <td>F-0402</td>
+          <td>金泰精工<i class="cell-sub">开单自动建档 · 已确认独立</i></td>
+          <td>刘经理<i class="cell-sub">139****7710</i></td>
+          <td class="num">1 道</td>
+          <td><span class="st ok">启用</span></td>
+          <td><div class="row-acts"><button class="btn btn-s" data-drawer="#md-edit" data-sheet-title="编辑加工厂">编辑</button><button class="btn btn-s" data-drawer="#md-quote" data-sheet-title="价目表 · 金泰精工">价目</button><button class="btn btn-s" data-drawer="#md-contacts" data-sheet-title="对接人 · 金泰精工">对接人</button></div></td>
+        </tr>
+        <tr data-company="华南公司" data-status="停用">
+          <td>F-0403</td>
+          <td>华宇表面处理<i class="cell-sub">后台录入</i></td>
+          <td>赵工<i class="cell-sub">135****2280</i></td>
+          <td class="num">3 道</td>
+          <td><span class="st bad">停用</span></td>
+          <td><div class="row-acts"><button class="btn btn-s" data-drawer="#md-edit" data-sheet-title="编辑加工厂">编辑</button><button class="btn btn-s" data-drawer="#md-quote" data-sheet-title="价目表 · 华宇表面处理">价目</button><button class="btn btn-s" data-drawer="#md-contacts" data-sheet-title="对接人 · 华宇表面处理">对接人</button></div></td>
+        </tr>
+        <tr data-company="华南公司" data-status="启用">
+          <td>F-0411</td>
+          <td><span class="md-name">金泰精密</span><span class="st warn sm">疑似重复</span><i class="cell-sub">开单自动建档</i></td>
+          <td>刘经理<i class="cell-sub">139****7710</i></td>
+          <td class="num">1 道</td>
+          <td><span class="st ok">启用</span></td>
+          <td><div class="row-acts"><button class="btn btn-s" data-drawer="#md-edit" data-sheet-title="编辑加工厂">编辑</button><button class="btn btn-s" data-drawer="#md-quote" data-sheet-title="价目表 · 金泰精密">价目</button><button class="btn btn-s" data-drawer="#md-contacts" data-sheet-title="对接人 · 金泰精密">对接人</button></div></td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p class="note">调价按生效日期新增一行，不覆盖历史（D64④）；契约暂无电话 / 地址字段。金额列无看价权限时显示「—」（?state=noprice）。</p>
+  </div>
+
+  <!-- 新建 / 编辑加工厂 -->
+  <div class="md-scrim" id="md-edit" hidden>
+    <div class="md-panel" role="dialog" aria-modal="true" aria-labelledby="md-edit-t">
+      <div class="md-head">
+        <div><b id="md-edit-t" data-sheet-title>新建加工厂</b><small>档案只放身份与联系人；工序价格走独立价目表。</small></div>
+        <button class="btn btn-s" data-close="#md-edit">关闭</button>
+      </div>
+      <div class="md-body">
+        <label class="md-field">名称 *<input value="恒昌加工" aria-label="名称"></label>
+        <div class="md-grid2">
+          <label class="md-field">主联系人<input value="陈师傅" aria-label="主联系人"></label>
+          <label class="md-field">归属公司
+            <div class="seg" style="margin-top:4px"><button class="on">演示公司</button><button>华南公司</button></div>
+          </label>
+        </div>
+        <label class="md-field">备注<textarea rows="2" aria-label="备注">车削、钻孔两道工序，报价见价目表</textarea></label>
+        <div class="md-field">联系信息
+          <div class="md-static">契约 ProcessorSchema 目前只有 contactName，电话 / 地址需要时先走契约变更。</div>
+        </div>
+        <div class="md-sec">
+          <b>状态</b>
+          <div class="seg" style="justify-self:start"><button class="on">启用</button><button>停用</button></div>
+          <p class="hint">停用是危险动作（*.delete）：保留历史加工单与批次成本，需填原因并二次确认。</p>
+          <button class="btn" data-confirm-toggle="#md-stop" style="justify-self:start">停用该加工厂…</button>
+          <div class="md-confirm" id="md-stop">
+            <b>确认停用 F-0401 恒昌加工？</b>
+            <label class="md-field">停用原因 *<textarea rows="2" aria-label="停用原因">合作终止，已结清全部加工费</textarea></label>
+            <div class="md-foot">
+              <button class="btn btn-s" data-confirm-cancel="#md-stop">取消</button>
+              <a class="btn btn-s danger" href="#">确认停用</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="md-foot">
+        <button class="btn" data-close="#md-edit">取消</button>
+        <a class="btn-primary" href="#">保存</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 工序价目表 -->
+  <div class="md-scrim" id="md-quote" hidden>
+    <div class="md-panel" role="dialog" aria-modal="true" aria-labelledby="md-quote-t">
+      <div class="md-head">
+        <div><b id="md-quote-t" data-sheet-title>价目表 · 恒昌加工</b><small>报价只增不改：调价按生效日期新增一行，开 B 单按发生日期取价。</small></div>
+        <button class="btn btn-s" data-close="#md-quote">关闭</button>
+      </div>
+      <div class="md-body">
+        <div class="md-crumb">演示公司 <span>/</span> <b>恒昌加工</b> <span>/</span> <span>价目表</span></div>
+        <table>
+          <thead><tr><th>生效日期</th><th>工序</th><th class="num">单价</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr><td>2026-10-15</td><td>车削</td><td class="num" data-money>¥4.3 / 件</td><td>调价，旧价保留</td></tr>
+            <tr><td>2026-09-01</td><td>车削</td><td class="num" data-money>¥4.0 / 件</td><td>—</td></tr>
+            <tr><td>2026-09-01</td><td>钻孔</td><td class="num" data-money>¥1.2 / 件</td><td>—</td></tr>
+          </tbody>
+        </table>
+        <p class="note" style="margin:0">价目是 processor_quote 子表（quote.read / quote.create），主表不放价格列（D64①）。</p>
+      </div>
+      <div class="md-foot">
+        <button class="btn" data-close="#md-quote">关闭</button>
+        <a class="btn-primary" href="#">+ 新增报价</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 对接人 + 三级下钻 -->
+  <div class="md-scrim" id="md-contacts" hidden>
+    <div class="md-panel wide" role="dialog" aria-modal="true" aria-labelledby="md-contacts-t">
+      <div class="md-head">
+        <div><b id="md-contacts-t" data-sheet-title>对接人 · 恒昌加工</b><small>公司 → 档案 → 对接人 → 订单；与供应商同构。</small></div>
+        <button class="btn btn-s" data-close="#md-contacts">关闭</button>
+      </div>
+      <div class="md-body">
+        <div class="md-crumb">演示公司 <span>/</span> <b>恒昌加工</b> <span>/</span> <span>对接人</span></div>
+        <table>
+          <thead><tr><th>对接人</th><th class="num">单数</th><th class="num">累计金额</th><th>最近下单</th><th>订单</th></tr></thead>
+          <tbody>
+            <tr><td><span class="md-name">陈师傅</span><span class="st ok sm">主联系人</span><i class="cell-sub">****4421</i></td><td class="num">12</td><td class="num" data-money>¥86,400</td><td>11-09</td><td><button class="btn btn-s" data-drill="#ord-p1">查看订单</button></td></tr>
+            <tr><td><span class="md-name">李主管</span><i class="cell-sub">****7710</i></td><td class="num">5</td><td class="num" data-money>¥28,600</td><td>11-07</td><td><button class="btn btn-s" data-drill="#ord-p2">查看订单</button></td></tr>
+            <tr><td><span class="md-name">未指定对接人</span><i class="cell-sub">历史单据兜底</i></td><td class="num">1</td><td class="num" data-money>¥4,200</td><td>11-02</td><td><button class="btn btn-s" data-drill="#ord-p0">查看订单</button></td></tr>
+          </tbody>
+        </table>
+        <div class="md-orders" id="ord-p1" hidden>
+          <div class="md-crumb">演示公司 <span>/</span> 恒昌加工 <span>/</span> <b>陈师傅</b> <span>/</span> <span>订单</span></div>
+          <table>
+            <thead><tr><th>单号</th><th>日期</th><th class="num">金额</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>B-0110</td><td>11-09</td><td class="num" data-money>¥12,800</td><td><span class="st warn">进行中</span></td></tr>
+              <tr><td>B-0108</td><td>11-05</td><td class="num" data-money>¥8,600</td><td><span class="st ok">已完成</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="md-orders" id="ord-p2" hidden>
+          <div class="md-crumb">演示公司 <span>/</span> 恒昌加工 <span>/</span> <b>李主管</b> <span>/</span> <span>订单</span></div>
+          <table>
+            <thead><tr><th>单号</th><th>日期</th><th class="num">金额</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>B-0107</td><td>11-04</td><td class="num" data-money>¥5,400</td><td><span class="st ok">已完成</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="md-orders" id="ord-p0" hidden>
+          <div class="md-crumb">演示公司 <span>/</span> 恒昌加工 <span>/</span> <b>未指定对接人</b> <span>/</span> <span>订单</span></div>
+          <table>
+            <thead><tr><th>单号</th><th>日期</th><th class="num">金额</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>B-0104</td><td>11-02</td><td class="num" data-money>¥4,200</td><td><span class="st ok">已完成</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note" style="margin:0">对接人的单数与金额按已完成单据统计；未指定组兜底历史单据。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 疑似重复审核台 -->
+  <div class="md-scrim" id="md-dedupe" hidden>
+    <div class="md-panel" role="dialog" aria-modal="true" aria-labelledby="md-dedupe-t">
+      <div class="md-head">
+        <div><b id="md-dedupe-t">重复审核</b><small>开单自动建档可能把同一家厂建成两条，先核对接人与价目再合并。</small></div>
+        <button class="btn btn-s" data-close="#md-dedupe">关闭</button>
+      </div>
+      <div class="md-body">
+        <div class="md-dup">
+          <div class="md-dup-head"><b>疑似重复组 1</b><span>2 条档案 · 联系人相同</span></div>
+          <div class="md-dup-row"><div><b>F-0402 金泰精工</b><small>开单自动建档 · 演示公司 · 刘经理 139****7710</small></div><span class="st ok sm">已确认独立</span></div>
+          <div class="md-dup-row"><div><b>F-0411 金泰精密</b><small>开单自动建档 · 华南公司 · 刘经理 139****7710</small></div><span class="st warn sm">疑似重复</span></div>
+          <div class="md-dup-acts">
+            <button class="btn btn-s" data-dedupe-action="merge">合并到 F-0402</button>
+            <button class="btn btn-s" data-dedupe-action="keep">确认各自独立</button>
+          </div>
+          <p class="md-dup-state"></p>
+        </div>
+        <p class="note" style="margin:0">合并只归并档案与价目，不改写历史 B 单；确认独立后不再提醒。</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
