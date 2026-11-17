@@ -3100,6 +3100,732 @@ paths:
                 - processName
                 - unitPrice
               additionalProperties: false
+  /api/v1/customers/{id}/contacts:
+    get:
+      operationId: customer.contact.list
+      summary: 客户对接人列表（手机号只回后 4 位掩码）
+      tags:
+        - customer
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CustomerContactSummary"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: customer.read
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_customer_contact_list
+    post:
+      operationId: customer.contact.create
+      summary: 新增客户对接人（isPrimary 为真时自动把原主对接人降级）
+      tags:
+        - customer
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerContact"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: customer.create
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_customer_contact_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                phone:
+                  anyOf:
+                    - type: string
+                      pattern: ^1[0-9]{10}$
+                    - type: "null"
+                title:
+                  anyOf:
+                    - type: string
+                      maxLength: 64
+                    - type: "null"
+                isPrimary:
+                  type: boolean
+              required:
+                - name
+              additionalProperties: false
+  /api/v1/customer-contacts/{contactId}:
+    patch:
+      operationId: customer.contact.update
+      summary: 修改客户对接人（强 ETag If-Match；可改 status 重新启用）
+      tags:
+        - customer
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerContact"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: customer.update
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_customer_contact_update
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                phone:
+                  anyOf:
+                    - type: string
+                      pattern: ^1[0-9]{10}$
+                    - type: "null"
+                title:
+                  anyOf:
+                    - type: string
+                      maxLength: 64
+                    - type: "null"
+                isPrimary:
+                  type: boolean
+                status:
+                  type: string
+                  enum:
+                    - 启用
+                    - 停用
+              additionalProperties: false
+    delete:
+      operationId: customer.contact.delete
+      summary: 删除客户对接人（软停用：status 置「停用」，历史单仍可读）
+      tags:
+        - customer
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerContact"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: customer.delete
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_customer_contact_delete
+      x-requires-if-match: true
+  /api/v1/customers/{id}/summary:
+    get:
+      operationId: customer.summary.read
+      summary: 客户档案汇总（单数/累计金额/最近单据/对接人；金额需 view_price）
+      tags:
+        - customer
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustomerSummary"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: customer.read
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_customer_summary_read
+  /api/v1/suppliers/{id}/contacts:
+    get:
+      operationId: supplier.contact.list
+      summary: 供应商对接人列表（手机号只回后 4 位掩码）
+      tags:
+        - supplier
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SupplierContactSummary"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: supplier.read
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_supplier_contact_list
+    post:
+      operationId: supplier.contact.create
+      summary: 新增供应商对接人（isPrimary 为真时自动把原主对接人降级）
+      tags:
+        - supplier
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierContact"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: supplier.create
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_supplier_contact_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                phone:
+                  anyOf:
+                    - type: string
+                      pattern: ^1[0-9]{10}$
+                    - type: "null"
+                title:
+                  anyOf:
+                    - type: string
+                      maxLength: 64
+                    - type: "null"
+                isPrimary:
+                  type: boolean
+              required:
+                - name
+              additionalProperties: false
+  /api/v1/supplier-contacts/{contactId}:
+    patch:
+      operationId: supplier.contact.update
+      summary: 修改供应商对接人（强 ETag If-Match；可改 status 重新启用）
+      tags:
+        - supplier
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierContact"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: supplier.update
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_supplier_contact_update
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                phone:
+                  anyOf:
+                    - type: string
+                      pattern: ^1[0-9]{10}$
+                    - type: "null"
+                title:
+                  anyOf:
+                    - type: string
+                      maxLength: 64
+                    - type: "null"
+                isPrimary:
+                  type: boolean
+                status:
+                  type: string
+                  enum:
+                    - 启用
+                    - 停用
+              additionalProperties: false
+    delete:
+      operationId: supplier.contact.delete
+      summary: 删除供应商对接人（软停用：status 置「停用」，历史单仍可读）
+      tags:
+        - supplier
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierContact"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: supplier.delete
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_supplier_contact_delete
+      x-requires-if-match: true
+  /api/v1/suppliers/{id}/summary:
+    get:
+      operationId: supplier.summary.read
+      summary: 供应商档案汇总（单数/累计金额/最近单据/对接人；金额需 view_price）
+      tags:
+        - supplier
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierSummary"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: supplier.read
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_supplier_summary_read
+  /api/v1/processors/{id}/contacts:
+    get:
+      operationId: processor.contact.list
+      summary: 加工厂对接人列表（手机号只回后 4 位掩码）
+      tags:
+        - processor
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProcessorContactSummary"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processor.read
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_processor_contact_list
+    post:
+      operationId: processor.contact.create
+      summary: 新增加工厂对接人（isPrimary 为真时自动把原主对接人降级）
+      tags:
+        - processor
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessorContact"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processor.create
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_processor_contact_create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                phone:
+                  anyOf:
+                    - type: string
+                      pattern: ^1[0-9]{10}$
+                    - type: "null"
+                title:
+                  anyOf:
+                    - type: string
+                      maxLength: 64
+                    - type: "null"
+                isPrimary:
+                  type: boolean
+              required:
+                - name
+              additionalProperties: false
+  /api/v1/processor-contacts/{contactId}:
+    patch:
+      operationId: processor.contact.update
+      summary: 修改加工厂对接人（强 ETag If-Match；可改 status 重新启用）
+      tags:
+        - processor
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessorContact"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processor.update
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_processor_contact_update
+      x-requires-if-match: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                phone:
+                  anyOf:
+                    - type: string
+                      pattern: ^1[0-9]{10}$
+                    - type: "null"
+                title:
+                  anyOf:
+                    - type: string
+                      maxLength: 64
+                    - type: "null"
+                isPrimary:
+                  type: boolean
+                status:
+                  type: string
+                  enum:
+                    - 启用
+                    - 停用
+              additionalProperties: false
+    delete:
+      operationId: processor.contact.delete
+      summary: 删除加工厂对接人（软停用：status 置「停用」，历史单仍可读）
+      tags:
+        - processor
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessorContact"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processor.delete
+      x-module: masterdata
+      x-audit:
+        kind: write
+        required: true
+      x-ai-policy:
+        policy: forbid
+        reasonRequired: true
+      x-mcp-tool: qingdan_processor_contact_delete
+      x-requires-if-match: true
+  /api/v1/processors/{id}/summary:
+    get:
+      operationId: processor.summary.read
+      summary: 加工厂档案汇总（单数/累计金额/最近单据/对接人；金额需 view_price）
+      tags:
+        - processor
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessorSummary"
+        default:
+          description: 错误（统一错误体）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiErrorBody"
+      x-scope: processor.read
+      x-module: masterdata
+      x-audit:
+        kind: none
+        required: false
+      x-ai-policy:
+        policy: allow
+        reasonRequired: false
+      x-mcp-tool: qingdan_processor_summary_read
   /api/v1/masterdata/dedupe:
     get:
       operationId: customer.dedupe.list
@@ -4409,6 +5135,10 @@ paths:
                   required:
                     - name
                   additionalProperties: false
+                customerContactId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
                 handlerId:
                   type: string
                   format: uuid
@@ -4565,6 +5295,12 @@ paths:
                   type: string
                   format: uuid
                   pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                customerContactId:
+                  anyOf:
+                    - type: string
+                      format: uuid
+                      pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                    - type: "null"
                 handlerId:
                   type: string
                   format: uuid
@@ -5392,6 +6128,10 @@ paths:
                   required:
                     - name
                   additionalProperties: false
+                supplierContactId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
                 handlerId:
                   type: string
                   format: uuid
@@ -5549,6 +6289,12 @@ paths:
                   type: string
                   format: uuid
                   pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                supplierContactId:
+                  anyOf:
+                    - type: string
+                      format: uuid
+                      pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                    - type: "null"
                 handlerId:
                   type: string
                   format: uuid
@@ -6243,6 +6989,10 @@ paths:
                   required:
                     - name
                   additionalProperties: false
+                processorContactId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
                 outputProductId:
                   type: string
                   format: uuid
@@ -6408,6 +7158,12 @@ paths:
                   type: string
                   format: uuid
                   pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                processorContactId:
+                  anyOf:
+                    - type: string
+                      format: uuid
+                      pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                    - type: "null"
                 outputProductId:
                   type: string
                   format: uuid
@@ -9806,6 +10562,442 @@ components:
         - createdAt
         - updatedAt
       additionalProperties: false
+    CustomerContact:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        name:
+          type: string
+        phone:
+          type:
+            - string
+            - "null"
+        title:
+          type:
+            - string
+            - "null"
+        isPrimary:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - 启用
+            - 停用
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        customerId:
+          type: string
+      required:
+        - id
+        - tenantId
+        - companyId
+        - name
+        - phone
+        - title
+        - isPrimary
+        - status
+        - version
+        - createdAt
+        - updatedAt
+        - customerId
+      additionalProperties: false
+    CustomerContactSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        name:
+          type: string
+        title:
+          type:
+            - string
+            - "null"
+        isPrimary:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - 启用
+            - 停用
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        customerId:
+          type: string
+        phoneMasked:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - name
+        - title
+        - isPrimary
+        - status
+        - version
+        - createdAt
+        - updatedAt
+        - customerId
+        - phoneMasked
+      additionalProperties: false
+    SupplierContact:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        name:
+          type: string
+        phone:
+          type:
+            - string
+            - "null"
+        title:
+          type:
+            - string
+            - "null"
+        isPrimary:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - 启用
+            - 停用
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        supplierId:
+          type: string
+      required:
+        - id
+        - tenantId
+        - companyId
+        - name
+        - phone
+        - title
+        - isPrimary
+        - status
+        - version
+        - createdAt
+        - updatedAt
+        - supplierId
+      additionalProperties: false
+    SupplierContactSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        name:
+          type: string
+        title:
+          type:
+            - string
+            - "null"
+        isPrimary:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - 启用
+            - 停用
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        supplierId:
+          type: string
+        phoneMasked:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - name
+        - title
+        - isPrimary
+        - status
+        - version
+        - createdAt
+        - updatedAt
+        - supplierId
+        - phoneMasked
+      additionalProperties: false
+    ProcessorContact:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        name:
+          type: string
+        phone:
+          type:
+            - string
+            - "null"
+        title:
+          type:
+            - string
+            - "null"
+        isPrimary:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - 启用
+            - 停用
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        processorId:
+          type: string
+      required:
+        - id
+        - tenantId
+        - companyId
+        - name
+        - phone
+        - title
+        - isPrimary
+        - status
+        - version
+        - createdAt
+        - updatedAt
+        - processorId
+      additionalProperties: false
+    ProcessorContactSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        companyId:
+          type: string
+        name:
+          type: string
+        title:
+          type:
+            - string
+            - "null"
+        isPrimary:
+          type: boolean
+        status:
+          type: string
+          enum:
+            - 启用
+            - 停用
+        version:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        updatedAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        processorId:
+          type: string
+        phoneMasked:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - tenantId
+        - companyId
+        - name
+        - title
+        - isPrimary
+        - status
+        - version
+        - createdAt
+        - updatedAt
+        - processorId
+        - phoneMasked
+      additionalProperties: false
+    ContactRecentOrder:
+      type: object
+      properties:
+        id:
+          type: string
+        orderNo:
+          type: string
+        status:
+          type: string
+        totalAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        createdAt:
+          type: string
+          format: date-time
+          pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      required:
+        - id
+        - orderNo
+        - status
+        - createdAt
+      additionalProperties: false
+    CustomerSummary:
+      type: object
+      properties:
+        orderCount:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        totalAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        lastOrderAt:
+          anyOf:
+            - type: string
+              format: date-time
+              pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            - type: "null"
+        recentOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactRecentOrder"
+        contacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerContact"
+      required:
+        - orderCount
+        - lastOrderAt
+        - recentOrders
+        - contacts
+      additionalProperties: false
+    SupplierSummary:
+      type: object
+      properties:
+        orderCount:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        totalAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        lastOrderAt:
+          anyOf:
+            - type: string
+              format: date-time
+              pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            - type: "null"
+        recentOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactRecentOrder"
+        contacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupplierContact"
+      required:
+        - orderCount
+        - lastOrderAt
+        - recentOrders
+        - contacts
+      additionalProperties: false
+    ProcessorSummary:
+      type: object
+      properties:
+        orderCount:
+          type: integer
+          minimum: -9007199254740991
+          maximum: 9007199254740991
+        totalAmount:
+          type: string
+          pattern: ^\d{1,12}(\.\d{1,6})?$
+        lastOrderAt:
+          anyOf:
+            - type: string
+              format: date-time
+              pattern: "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            - type: "null"
+        recentOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactRecentOrder"
+        contacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessorContact"
+      required:
+        - orderCount
+        - lastOrderAt
+        - recentOrders
+        - contacts
+      additionalProperties: false
     Position:
       type: object
       properties:
@@ -10455,6 +11647,14 @@ components:
           type: string
         customerName:
           type: string
+        customerContactId:
+          type:
+            - string
+            - "null"
+        customerContactName:
+          type:
+            - string
+            - "null"
         status:
           type: string
           enum:
@@ -10588,6 +11788,14 @@ components:
           type: string
         customerName:
           type: string
+        customerContactId:
+          type:
+            - string
+            - "null"
+        customerContactName:
+          type:
+            - string
+            - "null"
         status:
           type: string
           enum:
@@ -10864,6 +12072,14 @@ components:
           type: string
         supplierName:
           type: string
+        supplierContactId:
+          type:
+            - string
+            - "null"
+        supplierContactName:
+          type:
+            - string
+            - "null"
         status:
           type: string
           enum:
@@ -11010,6 +12226,14 @@ components:
           type: string
         supplierName:
           type: string
+        supplierContactId:
+          type:
+            - string
+            - "null"
+        supplierContactName:
+          type:
+            - string
+            - "null"
         status:
           type: string
           enum:
@@ -11192,6 +12416,14 @@ components:
           type: string
         processorName:
           type: string
+        processorContactId:
+          type:
+            - string
+            - "null"
+        processorContactName:
+          type:
+            - string
+            - "null"
         outputProductId:
           type:
             - string
@@ -11336,6 +12568,14 @@ components:
           type: string
         processorName:
           type: string
+        processorContactId:
+          type:
+            - string
+            - "null"
+        processorContactName:
+          type:
+            - string
+            - "null"
         outputProductId:
           type:
             - string

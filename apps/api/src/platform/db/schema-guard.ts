@@ -44,6 +44,11 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // D102 / #302 块 C 后半段：审核台直接读 masterdata_dedupe.matched_by，缺列 → 500；
   // 同时带的排序索引缺了不会 500，但按公司+类型+状态排队会退化成 Sort（不是索引级顺序）。
   '20261118030000_masterdata_dedupe_matched_by.sql',
+  // D92 补句 / #306：三张对接人表 + 三张单据上的 *_contact_id 引用列。
+  // 缺表 → 对接人 CRUD 与档案 summary 全 500；缺单头列 → 开单 / 详情查询直接 500
+  // （HEADER_COLUMNS 已经 SELECT 这三列）。引用列索引缺了不会 500，
+  // 但 ON DELETE RESTRICT 检查与单据列表 LEFT JOIN 会退化。
+  '20261118060000_masterdata_contacts.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

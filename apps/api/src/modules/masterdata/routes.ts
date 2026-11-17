@@ -1,6 +1,6 @@
 import { AppError, ROUTES, etagOf, routesOfModule, type RouteDef } from '@qingdan/contracts';
 import type { FastifyInstance } from 'fastify';
-import { mountRoutes, type RouteHandlers } from '../../platform/http/route-mount.js';
+import { mountRoutes, type RouteHandler, type RouteHandlers } from '../../platform/http/route-mount.js';
 import {
   createCustomer,
   deleteCustomer,
@@ -38,6 +38,14 @@ import {
   suggestSuppliers,
 } from './usecases/suggest.js';
 import { keepSeparateDedupe, listDedupe, reopenDedupe } from './usecases/dedupe.js';
+import {
+  createContact,
+  deleteContact,
+  getSummary,
+  listContacts,
+  updateContact,
+} from './usecases/contacts.js';
+import { CONTACT_KINDS } from './repo-contacts.js';
 
 /**
  * masterdata 端点挂载（Issue #15 首切：商品资料）。
@@ -69,6 +77,17 @@ const FAILURE_OBJECT_TYPES: Readonly<Record<string, string>> = {
   'customer.dedupe.keep_separate': 'masterdata_dedupe',
   'customer.dedupe.reopen': 'masterdata_dedupe',
 };
+
+/**
+ * 对接人写操作的失败审计对象类型（#306）：三个域同构，按 `CONTACT_KINDS` 生成
+ * `customer.contact.create → customer_contact`，与用例里 `auditEventOf` 的 objectType 一致。
+ */
+const CONTACT_FAILURE_OBJECT_TYPES: Record<string, string> = {};
+for (const kind of CONTACT_KINDS) {
+  for (const action of ['create', 'update', 'delete']) {
+    CONTACT_FAILURE_OBJECT_TYPES[`${kind}.contact.${action}`] = `${kind}_contact`;
+  }
+}
 
 /**
  * 无数据库时保持骨架语义：501 + operationId（与用例内 `requireDatabase` 的口径一致）。
@@ -233,9 +252,41 @@ export function registerMasterdataRoutes(app: FastifyInstance): void {
     },
   };
 
+  /**
+   * 对接人 15 条（#306 / 设计文档 §十一、§十二）：3 个域 × { list, create, update, delete, summary }。
+   *
+   * 三个域完全同构，所以按 `CONTACT_KINDS` 循环生成 handler，不复制 15 段粘贴；
+   * 权限 / 公司隔离 / 审计 / If-Match / AI 拦截 / 软停用 / 脱敏 / `view_price` 条件字段
+   * 全在 `usecases/contacts.ts` 与 `repo-contacts.ts` 内，这里只做路径到用例的机械分派。
+   */
+  const contactHandlers: Record<string, RouteHandler> = {};
+  for (const kind of CONTACT_KINDS) {
+    contactHandlers[`${kind}.contact.list`] = async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await listContacts({ database: instance.database, request }, kind);
+    };
+    contactHandlers[`${kind}.contact.create`] = async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await createContact({ database: instance.database, request, reply }, kind);
+    };
+    contactHandlers[`${kind}.contact.update`] = async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await updateContact({ database: instance.database, request, reply }, kind);
+    };
+    // 「删除」= 软停用（UPDATE status），action 仍是 delete；用例内已写清语义。
+    contactHandlers[`${kind}.contact.delete`] = async ({ app: instance, request, reply, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await deleteContact({ database: instance.database, request, reply }, kind);
+    };
+    contactHandlers[`${kind}.summary.read`] = async ({ app: instance, request, route }) => {
+      assertDatabaseConfigured(instance, route);
+      return await getSummary({ database: instance.database, request }, kind);
+    };
+  }
+
   mountRoutes(app, {
     routes: routesOfModule(ROUTES, 'masterdata'),
-    failureObjectTypes: FAILURE_OBJECT_TYPES,
-    handlers: { ...handlers, ...suggestHandlers, ...dedupeHandlers },
+    failureObjectTypes: { ...FAILURE_OBJECT_TYPES, ...CONTACT_FAILURE_OBJECT_TYPES },
+    handlers: { ...handlers, ...suggestHandlers, ...dedupeHandlers, ...contactHandlers },
   });
 }

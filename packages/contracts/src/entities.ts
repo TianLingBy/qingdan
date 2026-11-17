@@ -6,6 +6,18 @@ import { ProductSchema } from './products.js';
 import { CustomerSchema } from './customers.js';
 import { SupplierSchema } from './suppliers.js';
 import { ProcessorQuoteSchema, ProcessorSchema } from './processors.js';
+import {
+  ContactRecentOrderSchema,
+  CustomerContactSchema,
+  CustomerContactSummarySchema,
+  CustomerSummarySchema,
+  ProcessorContactSchema,
+  ProcessorContactSummarySchema,
+  ProcessorSummarySchema,
+  SupplierContactSchema,
+  SupplierContactSummarySchema,
+  SupplierSummarySchema,
+} from './contacts.js';
 import { PositionSchema } from './positions.js';
 import { CompanySchema } from './companies.js';
 import { InventoryBatchDetailSchema, InventoryBatchSchema, InventoryFlowSchema } from './inventory.js';
@@ -88,6 +100,21 @@ z.globalRegistry.add(ProcessorSchema, { id: 'Processor' });
 
 /** 加工厂报价记录（D64 / 独立子表 processor_quote）：实体定义在 `processors.ts`。 */
 z.globalRegistry.add(ProcessorQuoteSchema, { id: 'ProcessorQuote' });
+
+/**
+ * 对接人（#306 / 设计文档 §十一）：实体定义在 `contacts.ts`。
+ * 三张表同构，但归属档案字段不同，所以分三个具名实体；列表口径多一套 `*Summary`（手机号只回掩码）。
+ */
+z.globalRegistry.add(CustomerContactSchema, { id: 'CustomerContact' });
+z.globalRegistry.add(CustomerContactSummarySchema, { id: 'CustomerContactSummary' });
+z.globalRegistry.add(SupplierContactSchema, { id: 'SupplierContact' });
+z.globalRegistry.add(SupplierContactSummarySchema, { id: 'SupplierContactSummary' });
+z.globalRegistry.add(ProcessorContactSchema, { id: 'ProcessorContact' });
+z.globalRegistry.add(ProcessorContactSummarySchema, { id: 'ProcessorContactSummary' });
+z.globalRegistry.add(ContactRecentOrderSchema, { id: 'ContactRecentOrder' });
+z.globalRegistry.add(CustomerSummarySchema, { id: 'CustomerSummary' });
+z.globalRegistry.add(SupplierSummarySchema, { id: 'SupplierSummary' });
+z.globalRegistry.add(ProcessorSummarySchema, { id: 'ProcessorSummary' });
 
 /** 岗位（权限模板，D4/D60②）：实体定义在 `positions.ts`。 */
 z.globalRegistry.add(PositionSchema, { id: 'Position' });
@@ -218,6 +245,16 @@ export const ENTITIES = [
   { name: 'Supplier', schema: SupplierSchema },
   { name: 'Processor', schema: ProcessorSchema },
   { name: 'ProcessorQuote', schema: ProcessorQuoteSchema },
+  { name: 'CustomerContact', schema: CustomerContactSchema },
+  { name: 'CustomerContactSummary', schema: CustomerContactSummarySchema },
+  { name: 'SupplierContact', schema: SupplierContactSchema },
+  { name: 'SupplierContactSummary', schema: SupplierContactSummarySchema },
+  { name: 'ProcessorContact', schema: ProcessorContactSchema },
+  { name: 'ProcessorContactSummary', schema: ProcessorContactSummarySchema },
+  { name: 'ContactRecentOrder', schema: ContactRecentOrderSchema },
+  { name: 'CustomerSummary', schema: CustomerSummarySchema },
+  { name: 'SupplierSummary', schema: SupplierSummarySchema },
+  { name: 'ProcessorSummary', schema: ProcessorSummarySchema },
   { name: 'Position', schema: PositionSchema },
   { name: 'Company', schema: CompanySchema },
   { name: 'InventoryBatch', schema: InventoryBatchSchema },

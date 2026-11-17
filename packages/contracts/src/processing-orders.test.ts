@@ -406,6 +406,7 @@ describe('加工单契约（processing）', () => {
         'lossQty',
         'materialBatchIds',
         'outputProductId',
+        'processorContactId',
         'processorDraft',
         'processorId',
       ].sort(),
