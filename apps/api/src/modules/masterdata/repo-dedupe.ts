@@ -157,6 +157,8 @@ interface StateRow {
   readonly state: string;
   readonly kind: string;
   readonly company_id: string;
+  readonly left_id: string;
+  readonly right_id: string;
 }
 
 interface LockRow {
@@ -165,25 +167,40 @@ interface LockRow {
 }
 
 /**
- * 只读当前状态 + 类型，**不加锁**。
+ * 只读当前状态 + 类型 + 两侧档案 id，**不加锁**。
  *
  * 判定要按行实际的 `kind` 去校验对应域的 `merge`（供应商对子查 `supplier.merge`），
  * 所以必须先拿到 kind 再鉴权；而鉴权之前不能锁行——否则越权的人只要不停发 403 的请求，
  * 就能把别人正要判定的行一直锁在自己的事务里（`FOR UPDATE` 直到事务结束才释放）。
+ *
+ * 合并（`usecases/dedupe-merge.ts`）也用它取 `left_id` / `right_id`：两侧档案 id
+ * 只能来自队列行本身，不能来自请求体（D103①）。
  */
 export async function readPair(
   ctx: DedupeRepoContext,
   id: string,
-): Promise<{ readonly kind: DedupeKind; readonly state: DedupeState; readonly companyId: string } | null> {
+): Promise<{
+  readonly kind: DedupeKind;
+  readonly state: DedupeState;
+  readonly companyId: string;
+  readonly leftId: string;
+  readonly rightId: string;
+} | null> {
   const { rows } = await ctx.tx.query<StateRow>(
-    `SELECT state, kind, company_id
+    `SELECT state, kind, company_id, left_id::text AS left_id, right_id::text AS right_id
        FROM masterdata_dedupe
       WHERE id = $1 AND tenant_id = $2 AND company_id = ANY($3::uuid[])`,
     [id, ctx.tenantId, [...ctx.companyIds]],
   );
   const row = rows[0];
   return row
-    ? { kind: row.kind as DedupeKind, state: row.state as DedupeState, companyId: row.company_id }
+    ? {
+        kind: row.kind as DedupeKind,
+        state: row.state as DedupeState,
+        companyId: row.company_id,
+        leftId: row.left_id,
+        rightId: row.right_id,
+      }
     : null;
 }
 
@@ -194,7 +211,7 @@ export async function readPair(
  *
  * 只在**鉴权通过之后**调用（见 `readPair` 的说明）。
  */
-async function lockPair(
+export async function lockPair(
   ctx: DedupeRepoContext,
   id: string,
 ): Promise<{ readonly state: DedupeState; readonly companyId: string } | null> {
@@ -285,4 +302,211 @@ export async function reopen(
   const row = rows[0];
   if (!row) throw new AppError('NOT_FOUND', '疑似重复记录不存在');
   return outcomeOf(row, locked.companyId);
+}
+
+// ---------------------------------------------------------------------------
+// 合并（#302 块 D / D103）
+// ---------------------------------------------------------------------------
+//
+// 本段的表名 / 列名全部来自下面两张**字面量映射表**，绝不接受外部字符串：
+// 触发合并的 `kind` 来自队列行、方向来自请求体，两者都只能是枚举值，但把枚举直接拼进
+// SQL 的写法一旦被人扩展成「按前端传的表名改引用」，就是一条全库任意 UPDATE 的通道。
+
+/** 四张主数据表：`kind` 即表名，仍显式映射一次（理由见上）。 */
+const ARCHIVE_TABLE: Readonly<Record<DedupeKind, string>> = {
+  customer: 'customer',
+  supplier: 'supplier',
+  processor: 'processor',
+  product: 'product',
+};
+
+interface ReferenceTarget {
+  readonly table: string;
+  readonly column: string;
+}
+
+/**
+ * 合并要改写的全部引用（D103：清单来自 `REFERENCES (customer|supplier|processor|product)` 的实测）。
+ *
+ * 注意几处与设计文档不一致、以仓库现实为准的地方：
+ *   - 商品退货明细表实际叫 `customer_return_line`（`0014_sales_receipts_returns.sql:59`）；
+ *   - `processor_quote.processor_id`（`0007_masterdata_processor.sql:54`）也算加工厂的引用：
+ *     历史报价不改挂，留存加工厂的比价就凭空少了几年数据；
+ *   - `processing_order` 有两列引用商品（`processor_id` 的成品 `output_product_id`
+ *     与材料无关，但成品商品同属 product），两列都在列表里。
+ *
+ * `settlement_order` 不在此列：它用 `source_doc_type` + `source_doc_id` 多态引用**单据**，
+ * 表里没有客户/供应商/商品的 id 列，也没有名字快照列。
+ */
+export const DEDUPE_MERGE_REFERENCES: Readonly<Record<DedupeKind, readonly ReferenceTarget[]>> = {
+  customer: [{ table: 'sales_order', column: 'customer_id' }],
+  supplier: [{ table: 'purchase_order', column: 'supplier_id' }],
+  processor: [
+    { table: 'processing_order', column: 'processor_id' },
+    { table: 'purchase_order_line', column: 'processor_id' },
+    { table: 'inventory_batch', column: 'held_by_processor_id' },
+    { table: 'processor_quote', column: 'processor_id' },
+  ],
+  product: [
+    { table: 'inventory_batch', column: 'product_id' },
+    { table: 'purchase_order_line', column: 'product_id' },
+    { table: 'supplier_return_line', column: 'product_id' },
+    { table: 'sales_order_line', column: 'product_id' },
+    { table: 'customer_return_line', column: 'product_id' },
+    { table: 'internal_trade_order_line', column: 'product_id' },
+    { table: 'processing_order', column: 'output_product_id' },
+  ],
+};
+
+export interface ArchiveRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly mergedIntoId: string | null;
+}
+
+interface ArchiveDbRow {
+  readonly id: string;
+  readonly company_id: string;
+  readonly merged_into_id: string | null;
+}
+
+/**
+ * 锁定一条档案行（`SELECT … FOR UPDATE`），返回归属公司与 `merged_into_id`。
+ *
+ * **一次只锁一条**，由用例按 id 升序逐条调用，原因见 `usecases/dedupe-merge.ts`：
+ * `SELECT … ORDER BY id FOR UPDATE` 不保证加锁顺序——行是在扫描阶段被锁住的，
+ * 排序发生在加锁之后，两个方向相反的合并请求照样能各锁一半互等。
+ */
+export async function lockArchive(
+  ctx: DedupeRepoContext,
+  kind: DedupeKind,
+  id: string,
+): Promise<ArchiveRow | null> {
+  const { rows } = await ctx.tx.query<ArchiveDbRow>(
+    `SELECT id::text AS id, company_id, merged_into_id
+       FROM ${ARCHIVE_TABLE[kind]}
+      WHERE id = $1 AND tenant_id = $2
+      FOR UPDATE`,
+    [id, ctx.tenantId],
+  );
+  const row = rows[0];
+  return row
+    ? { id: row.id, companyId: row.company_id, mergedIntoId: row.merged_into_id }
+    : null;
+}
+
+/**
+ * 把 `kind` 这一类的全部引用从 `source` 改到 `target`，逐列返回改了行数。
+ *
+ * `WHERE tenant_id / company_id / <col>` 三列固定：前两列吃掉建表时的
+ * `(tenant_id, company_id, <col>)` 复合索引，第三列是本次要改的值。
+ * 计数用数据修改型 CTE（`WITH moved AS (UPDATE … RETURNING 1) SELECT count(*)`）：
+ * `Database` 抽象只暴露 `rows`，没有 `rowCount`，这样一条语句既改又数。
+ *
+ * **`purchase_order_line.product_id` 这一列会被 D15 触发器拦一道**：
+ * `0027_purchase_order_line_product_company.sql` 有
+ * `BEFORE INSERT OR UPDATE OF order_id, tenant_id, company_id, product_id` 触发器，
+ * 校验「商品所属公司 = 采购单所属公司」。合并要求双方同公司（用例里已校验），所以这里能过；
+ * 将来若放开跨公司合并，这一列会先炸在触发器上——**且应该让它炸，不要绕过**：
+ * 绕过等于把跨公司的商品引用塞进库里，比合并失败严重得多。
+ */
+export async function moveReferences(
+  ctx: DedupeRepoContext,
+  kind: DedupeKind,
+  companyId: string,
+  sourceId: string,
+  targetId: string,
+): Promise<{ table: string; column: string; rows: number }[]> {
+  const moved: { table: string; column: string; rows: number }[] = [];
+  for (const reference of DEDUPE_MERGE_REFERENCES[kind]) {
+    const { rows } = await ctx.tx.query<{ rows: number }>(
+      `WITH moved AS (
+         UPDATE ${reference.table}
+            SET ${reference.column} = $1
+          WHERE tenant_id = $2 AND company_id = $3 AND ${reference.column} = $4
+          RETURNING 1
+       )
+       SELECT count(*)::int AS rows FROM moved`,
+      [targetId, ctx.tenantId, companyId, sourceId],
+    );
+    moved.push({ table: reference.table, column: reference.column, rows: rows[0]?.rows ?? 0 });
+  }
+  return moved;
+}
+
+/**
+ * 被并档案落到留存档案上：`merged_into_id = target` + `dedupe_state = 'merged'`。
+ *
+ * 两列一起写：`merged_into_id` 是「并到哪去了」的答案，`dedupe_state` 是「这条档案
+ * 已经不在候选池里」的速查位，缺一个都会让后续的候选查询要么漏掉、要么把它再推一次。
+ */
+export async function markArchiveMerged(
+  ctx: DedupeRepoContext,
+  kind: DedupeKind,
+  companyId: string,
+  sourceId: string,
+  targetId: string,
+): Promise<void> {
+  await ctx.tx.query(
+    `UPDATE ${ARCHIVE_TABLE[kind]}
+        SET merged_into_id = $1, dedupe_state = 'merged'
+      WHERE id = $2 AND tenant_id = $3 AND company_id = $4`,
+    [targetId, sourceId, ctx.tenantId, companyId],
+  );
+}
+
+/**
+ * 本次判定的对子落到 `merged`。`WHERE … state = 'pending'` 是并发兜底：
+ * 用例已先 `lockPair` 看过状态，这里再拦一次，宁可失败也不写出一条
+ * 「引用改了、对子却不是本次合并标的」的记录。
+ */
+export async function markPairMerged(
+  ctx: DedupeRepoContext,
+  id: string,
+  employeeId: string,
+): Promise<void> {
+  const { rows } = await ctx.tx.query<{ id: string }>(
+    `UPDATE masterdata_dedupe
+        SET state = 'merged', decided_at = now(), decided_by = $3
+      WHERE id = $1 AND tenant_id = $2 AND state = 'pending'
+      RETURNING id::text AS id`,
+    [id, ctx.tenantId, employeeId],
+  );
+  if (rows.length === 0) {
+    throw new AppError('STATE_CONFLICT', '该对子状态已变化，合并未执行', { id });
+  }
+}
+
+/**
+ * 连锁收口：`source` 参与的其他待判对子一并置 `merged`（D103④）。
+ *
+ * 不这么做的话，A 并进 B 之后「A vs C」还挂在审核台上：运营点进去，A 已经不在候选池里
+ * （`merged_into_id` 非空），判也没法判、合也合不了，只能一条条 keep-separate 清掉，
+ * 而 keep-separate 会写下一个「这两条确实不同」的假结论。
+ *
+ * `decided_by` 留 NULL 而不是记本次操作人：这些对子**没有人做过判断**，它们是因为
+ * 一侧档案消失而自动失效的；把操作人写进去等于伪造一条判定记录。
+ *
+ * **`left_id = $3 OR right_id = $3` 这半条为什么要单独补索引**：`OR` 跨两列，任何一条
+ * 复合索引都不可能让两段都进 `Index Cond`。`masterdata_dedupe_console_idx`
+ * （`tenant_id, company_id, kind, state, …`）只吃得到前面的等值确认范围，`left_id` /
+ * `right_id` 只能当 `Filter`；`right_id` 由 20261117223000 的
+ * `masterdata_dedupe_right_idx` 扛，`left_id` 在 20261118040000 之前**完全没有索引**
+ * ——缺了 `masterdata_dedupe_left_idx`，这条 UPDATE 就会退化成整表扫（审核台每合一次都扫）。
+ * 两个索引各为一半服务，删任何一个都会让规划器放弃 `BitmapOr`。
+ */
+export async function markChainedPairsMerged(
+  ctx: DedupeRepoContext,
+  pairId: string,
+  sourceId: string,
+): Promise<number> {
+  const { rows } = await ctx.tx.query<{ id: string }>(
+    `UPDATE masterdata_dedupe
+        SET state = 'merged', decided_at = now(), decided_by = NULL
+      WHERE tenant_id = $1 AND state = 'pending' AND id <> $2
+        AND (left_id = $3 OR right_id = $3)
+      RETURNING id::text AS id`,
+    [ctx.tenantId, pairId, sourceId],
+  );
+  return rows.length;
 }

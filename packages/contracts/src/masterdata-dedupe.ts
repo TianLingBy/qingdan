@@ -8,7 +8,8 @@ import { defineRoute, type RouteDef } from './registry.js';
  * 运营在这个审核台看到「张记建材 vs 张记建材店」，判它俩是不是同一家——
  * 判为不同（keep-separate）之后这对不再提示；判错了可以撤销（reopen）。
  *
- * **本块不做合并**：`state='merged'` 由后续合并单写入，这里只是让列表能把它读出来。
+ * **合并**（`pending → merged`）由块 D 补上（`customer.dedupe.merge`，D103）：它不改判定的
+ * 语义，只是把「要并」这个结论真正执行掉——改写全库引用 + 被并档案记 `merged_into_id`。
  */
 
 /** 对子两侧的档案类型；与 `masterdata_dedupe.kind` 的 CHECK 一致（以迁移为准）。 */
@@ -113,7 +114,57 @@ export const DedupeDecisionResultSchema = z.object({
 export type DedupeDecisionResult = z.infer<typeof DedupeDecisionResultSchema>;
 
 /**
- * 三条路由。
+ * 合并方向：只在这两条档案之间选，**不接受任意 id**（D103①）。
+ *
+ * 让前端传 `sourceId` / `targetId` 看着更灵活，实际是把「合并方向」这个业务决定
+ * 交给了一个可能缓存的页面：审核台打开一分钟后再提交，传回来的 id 可能已被另一次
+ * 合并改过；而方向只能在这两条之间，多传一个 id 出来就一定是错的。
+ * 传别的 id 一律 422（`request.body` 是 `.strict()`，多余字段直接拒绝）。
+ */
+export const DEDUPE_MERGE_DIRECTIONS = ['left_into_right', 'right_into_left'] as const;
+export const DedupeMergeDirectionSchema = z.enum(DEDUPE_MERGE_DIRECTIONS);
+export type DedupeMergeDirection = z.infer<typeof DedupeMergeDirectionSchema>;
+
+/**
+ * 合并入参。**只要方向**，不要 id、不要名字：id 来自路径（那是服务端读出来的队列行），
+ * 名字来自档案本身——受理一次「改名字的合并」等于让合并顺手改了主数据内容。
+ *
+ * `.strict()`：多传字段（典型是 `sourceId`）直接 422，不静默忽略。
+ */
+export const DedupeMergeInputSchema = z
+  .object({ direction: DedupeMergeDirectionSchema })
+  .strict();
+export type DedupeMergeInput = z.infer<typeof DedupeMergeInputSchema>;
+
+/**
+ * 一条被改写的引用：`table` + `column` + 改了多少行。
+ *
+ * 前端要能说清「并了哪些东西」，光回一个 `ok` 等于让用户自己回去翻单据找。
+ * `rows = 0` 也照实返回（这个库里这张表一条都没引用过 source），
+ * 不省略——少一行会让人以为漏改了这张表。
+ */
+export const DedupeMovedReferenceSchema = z.object({
+  table: z.string(),
+  column: z.string(),
+  rows: z.number().int().nonnegative(),
+});
+export type DedupeMovedReference = z.infer<typeof DedupeMovedReferenceSchema>;
+
+/**
+ * 合并结果：`keptId` 是留存（引用终点）、`mergedId` 是被并掉的那条。
+ *
+ * 两个 id 都必回：调用方要拿 `mergedId` 去提示「张记建材（老）已并入张记建材」，
+ * 只有 `keptId` 的话前端不知道该把哪一条从列表里划掉。
+ */
+export const DedupeMergeResultSchema = z.object({
+  keptId: z.string(),
+  mergedId: z.string(),
+  movedReferences: z.array(DedupeMovedReferenceSchema),
+});
+export type DedupeMergeResult = z.infer<typeof DedupeMergeResultSchema>;
+
+/**
+ * 四条路由。
  *
  * **为什么 `domain` 是 `customer` 而不是 `masterdata`**（见 D102）：
  * `packages/contracts/src/domains.ts` 里没有 `masterdata` 这个功能域——`masterdata` 只是
@@ -175,5 +226,21 @@ export const MASTERDATA_DEDUPE_ROUTES: readonly RouteDef[] = [
     ai: { policy: 'forbid', reasonRequired: true },
     request: { body: DedupeDecisionInputSchema },
     response: { status: 200, schema: DedupeDecisionResultSchema },
+  }),
+  defineRoute({
+    operationId: 'customer.dedupe.merge',
+    method: 'POST',
+    path: '/api/v1/masterdata/dedupe/{id}/merge',
+    module: MODULE,
+    domain: 'customer',
+    action: 'merge',
+    summary: '把疑似重复的两条档案合并为一条（source 并进 target，全库引用改向）',
+    // 合并改写全库引用（单据明细、库存批次、报价），必须留痕；审计的 objectType 是
+    // 队列行本身（`masterdata_dedupe`），changeSummary 里带 keptId / mergedId / 改了几行。
+    audit: { kind: 'write' },
+    // 合并**不可撤销**（D103③）：AI 一错就是全库引用错，且回滚要逐条复原引用，一律不许。
+    ai: { policy: 'forbid', reasonRequired: true },
+    request: { body: DedupeMergeInputSchema },
+    response: { status: 200, schema: DedupeMergeResultSchema },
   }),
 ];

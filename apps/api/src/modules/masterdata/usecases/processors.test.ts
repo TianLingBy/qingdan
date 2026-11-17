@@ -209,6 +209,8 @@ describe('masterdata 加工厂 + 报价记录（PGlite + seed 演示租户）', 
       // D98 / #302：来源与去重态两列由 20261117223000 追加。
       'origin',
       'dedupe_state',
+      // D103 / #302 块 D：合并指向由 20261118040000 追加。
+      'merged_into_id',
     ]);
     // D64④：加工厂主表只存基础资料，不得出现价格 / 金额列。
     expect(columns.some((name) => /price|cost|amount|fee|money/i.test(name))).toBe(false);
