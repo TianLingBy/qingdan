@@ -1132,3 +1132,112 @@ export async function insertSupplierReturn(
   }
   return created;
 }
+
+/**
+ * 导出用查询（#342）：采购单列表 CSV 的数据源。
+ *
+ * **与 `listPurchaseOrders` 的过滤条件必须保持一致，改一处要改两处。**
+ * 这是刻意的重复：并行任务 #341 正在改 `listPurchaseOrders`，共享 where 拼装会让两个
+ * 改动互相阻塞；另外导出不需要明细与费用，复用列表函数会把它们一起加载进内存。
+ */
+export interface PurchaseOrderExportQuery {
+  readonly companyId?: string;
+  readonly supplierId?: string;
+  readonly status?: PurchaseOrderStatus;
+  readonly keyword?: string;
+  /** 行数上限：内部统一按 `maxRows + 1` 取，多出一行即判定超限（不静默截断）。 */
+  readonly maxRows: number;
+}
+
+export interface PurchaseOrderExportRow {
+  readonly orderNo: string;
+  readonly createdAt: string;
+  readonly supplierName: string;
+  readonly status: PurchaseOrderStatus;
+  readonly handlerId: string | null;
+  readonly qtySum: string;
+  readonly totalAmount: string;
+}
+
+export interface PurchaseOrderExportResult {
+  readonly rows: readonly PurchaseOrderExportRow[];
+  readonly exceedsMaxRows: boolean;
+}
+
+interface PurchaseExportRow {
+  order_no: string;
+  created_at: Date | string;
+  supplier_name: string;
+  status: string;
+  handler_id: string | null;
+  qty_sum: string;
+  total_amount: string | number;
+}
+
+export async function exportPurchaseOrders(
+  ctx: PurchaseOrderRepoContext,
+  query: PurchaseOrderExportQuery,
+): Promise<PurchaseOrderExportResult> {
+  const params: unknown[] = [ctx.tenantId, [...ctx.companyIds]];
+  const where: string[] = ['o.tenant_id = $1', 'o.company_id = ANY($2::uuid[])'];
+
+  if (query.companyId !== undefined) {
+    params.push(query.companyId);
+    where.push(`o.company_id = $${params.length}::uuid`);
+  }
+  if (query.supplierId !== undefined) {
+    params.push(query.supplierId);
+    where.push(`o.supplier_id = $${params.length}::uuid`);
+  }
+  if (query.status !== undefined) {
+    params.push(query.status);
+    where.push(`o.status = $${params.length}`);
+  }
+  if (query.keyword !== undefined) {
+    params.push(likePattern(query.keyword));
+    const keywordParam = `$${params.length}`;
+    where.push(`(
+      o.order_no ILIKE ${keywordParam} ESCAPE '\\'
+      OR s.name ILIKE ${keywordParam} ESCAPE '\\'
+    )`);
+  }
+
+  params.push(query.maxRows + 1);
+  const result = await ctx.tx.query<PurchaseExportRow>(
+    `SELECT o.order_no,
+            o.created_at,
+            s.name AS supplier_name,
+            o.status,
+            o.handler_id,
+            trim_scale(o.total_amount) AS total_amount,
+            COALESCE(
+              (
+                SELECT trim_scale(SUM(l.qty))
+                  FROM purchase_order_line l
+                 WHERE l.tenant_id = o.tenant_id
+                   AND l.order_id = o.id
+              ),
+              0
+            )::text AS qty_sum
+       FROM ${HEADER_FROM}
+      WHERE ${where.join('\n        AND ')}
+      ORDER BY o.id DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+
+  const exceedsMaxRows = result.rows.length > query.maxRows;
+  const kept = exceedsMaxRows ? result.rows.slice(0, query.maxRows) : result.rows;
+  return {
+    rows: kept.map((row) => ({
+      orderNo: row.order_no,
+      createdAt: toDate(row.created_at).toISOString(),
+      supplierName: row.supplier_name,
+      status: row.status as PurchaseOrderStatus,
+      handlerId: row.handler_id,
+      qtySum: String(row.qty_sum),
+      totalAmount: decimal(row.total_amount),
+    })),
+    exceedsMaxRows,
+  };
+}

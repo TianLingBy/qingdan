@@ -1528,3 +1528,114 @@ export async function insertCustomerReturn(
   }
   return created;
 }
+
+/**
+ * 导出用查询（#342）：销售单列表 CSV 的数据源。
+ *
+ * **与 `listSalesOrders` 的过滤条件必须保持一致，改一处要改两处。**
+ * 这是刻意的重复：并行任务 #341 正在改 `listSalesOrders`，若把 where 拼装抽成共享函数，
+ * 两个改动会在同一段代码上互相阻塞；而且导出只需要表头列 + 数量合计，
+ * 复用列表函数会连带把明细、批次、费用全加载进内存（5 万行时直接打爆进程）。
+ */
+export interface SalesOrderExportQuery {
+  readonly companyId?: string;
+  readonly customerId?: string;
+  readonly status?: SalesOrderStatus;
+  readonly keyword?: string;
+  /** 行数上限：内部统一按 `maxRows + 1` 取，多出一行即判定超限（不静默截断）。 */
+  readonly maxRows: number;
+}
+
+export interface SalesOrderExportRow {
+  readonly orderNo: string;
+  readonly createdAt: string;
+  readonly customerName: string;
+  readonly status: SalesOrderStatus;
+  readonly handlerId: string | null;
+  /** 明细数量合计，由 SQL 聚合（decimal 字符串，不在 JS 里做浮点累加）。 */
+  readonly qtySum: string;
+  readonly totalAmount: string;
+}
+
+export interface SalesOrderExportResult {
+  readonly rows: readonly SalesOrderExportRow[];
+  readonly exceedsMaxRows: boolean;
+}
+
+interface ExportRow {
+  order_no: string;
+  created_at: Date | string;
+  customer_name: string;
+  status: string;
+  handler_id: string | null;
+  qty_sum: string;
+  total_amount: string | number;
+}
+
+export async function exportSalesOrders(
+  ctx: SalesOrderRepoContext,
+  query: SalesOrderExportQuery,
+): Promise<SalesOrderExportResult> {
+  const params: unknown[] = [ctx.tenantId, [...ctx.companyIds]];
+  const where: string[] = ['o.tenant_id = $1', 'o.company_id = ANY($2::uuid[])'];
+
+  if (query.companyId !== undefined) {
+    params.push(query.companyId);
+    where.push(`o.company_id = $${params.length}::uuid`);
+  }
+  if (query.customerId !== undefined) {
+    params.push(query.customerId);
+    where.push(`o.customer_id = $${params.length}::uuid`);
+  }
+  if (query.status !== undefined) {
+    params.push(query.status);
+    where.push(`o.status = $${params.length}`);
+  }
+  if (query.keyword !== undefined) {
+    params.push(likePattern(query.keyword));
+    const keywordParam = `$${params.length}`;
+    where.push(`(
+      o.order_no ILIKE ${keywordParam} ESCAPE '\\'
+      OR c.name ILIKE ${keywordParam} ESCAPE '\\'
+    )`);
+  }
+
+  params.push(query.maxRows + 1);
+  const result = await ctx.tx.query<ExportRow>(
+    `SELECT o.order_no,
+            o.created_at,
+            c.name AS customer_name,
+            o.status,
+            o.handler_id,
+            trim_scale(o.total_amount) AS total_amount,
+            COALESCE(
+              (
+                SELECT trim_scale(SUM(l.qty))
+                  FROM sales_order_line l
+                 WHERE l.tenant_id = o.tenant_id
+                   AND l.order_id = o.id
+              ),
+              0
+            )::text AS qty_sum
+       FROM ${HEADER_FROM}
+      WHERE ${where.join('\n        AND ')}
+      ORDER BY o.id DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+
+  const exceedsMaxRows = result.rows.length > query.maxRows;
+  const kept = exceedsMaxRows ? result.rows.slice(0, query.maxRows) : result.rows;
+  return {
+    rows: kept.map((row) => ({
+      orderNo: row.order_no,
+      createdAt: toDate(row.created_at).toISOString(),
+      customerName: row.customer_name,
+      status: row.status as SalesOrderStatus,
+      handlerId: row.handler_id,
+      qtySum: String(row.qty_sum),
+      totalAmount: decimal(row.total_amount),
+    })),
+    exceedsMaxRows,
+  };
+}
