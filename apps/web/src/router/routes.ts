@@ -86,6 +86,16 @@ export const ROUTE_TABLE = [
   { id: 'customers', path: '/customers', page: '客户', domain: '主数据', title: '客户' },
   { id: 'suppliers', path: '/suppliers', page: '供应商', domain: '主数据', title: '供应商' },
   { id: 'processors', path: '/processors', page: '加工厂档案', domain: '主数据', title: '加工厂档案' },
+  // 第 23 页（D102 / D103）：去重审核台是「主数据」这一组的功能页，不是 prototype-v0 §2 的 22 页之一。
+  // 之所以还是放进 ROUTE_TABLE：导航、可见性（PAGE_SCOPE）、工作台入口卡片三处都只读这张表，
+  // 挂在表外（像 SETTINGS_ROUTE 那样）会让它进不了「主数据」导航组，也就等于这页没上线。
+  {
+    id: 'masterdata-dedupe',
+    path: '/masterdata-dedupe',
+    page: '主数据去重审核台',
+    domain: '主数据',
+    title: '去重审核台',
+  },
 
   { id: 'inventory', path: '/inventory', page: '库存数量（含委外在途量）', domain: '库存', title: '库存数量' },
   { id: 'inventory-flows', path: '/inventory-flows', page: '库存流水', domain: '库存', title: '库存流水' },

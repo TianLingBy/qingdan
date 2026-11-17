@@ -64,7 +64,7 @@ function titles(scope: ScopeMatrix): string[] {
 }
 
 describe('页面 × 权限域对照表', () => {
-  it('22 条路由都有对照项（漏一页会让那页永远不显示）', () => {
+  it('23 条路由都有对照项（漏一页会让那页永远不显示）', () => {
     expect(Object.keys(PAGE_SCOPE).sort()).toEqual(ROUTE_TABLE.map((route) => route.id).sort());
   });
 
@@ -90,7 +90,7 @@ describe('scope → 可见页面', () => {
     expect(titles(OWNER_SCOPE)).not.toContain('登录 / 入企');
   });
 
-  it('销售只看到自己那 7 页，采购 / 加工 / 权限设置一律不出现', () => {
+  it('销售只看到自己那 8 页，采购 / 加工 / 权限设置一律不出现', () => {
     expect(titles(SALES_SCOPE)).toEqual([
       '工作台',
       '业务全流程图',
@@ -98,6 +98,8 @@ describe('scope → 可见页面', () => {
       '结算单 C',
       '商品资料',
       '客户',
+      // 去重审核台挂在四类主数据上，持 customer.read 就能进（页内再按对子 kind 收窄动作）。
+      '去重审核台',
       '库存数量',
     ]);
     expect(titles(SALES_SCOPE)).not.toContain('采购单 A');

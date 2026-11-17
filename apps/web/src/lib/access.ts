@@ -32,6 +32,9 @@ export const PAGE_SCOPE = {
   customers: ['customer'],
   suppliers: ['supplier'],
   processors: ['processor'],
+  // 去重审核台横跨四类主数据：持有其中任一类 read 就能进页，页内再按对子的 kind 收窄动作
+  // （服务端 `readableKinds` 只返回调用者能读的那几类，一类都没有就 403）。
+  'masterdata-dedupe': ['customer', 'supplier', 'processor', 'product'],
   inventory: ['inventory_qty'],
   'inventory-flows': ['inventory_flow'],
   // 盘点页本身走 stocktake_page；只持「盘盈盘亏」域的（如经理/D47 审批）也放进来。

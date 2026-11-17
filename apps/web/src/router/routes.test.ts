@@ -3,8 +3,8 @@ import { WEB_API_PROXY_PREFIX } from '../../vite.config';
 import { DEFAULT_ROUTE_PATH, NAV_DOMAINS, ROUTE_TABLE, routesByDomain, type Domain } from './routes';
 
 /**
- * 22 页 IA 是 `docs/prototype-v0.md` §2 的硬约束：
- * 本测试锁住「22 条齐全、路径唯一、kebab-case、功能域合法」。
+ * prototype-v0 §2 的 22 页 IA 是硬约束，第 23 页（`masterdata-dedupe`，D102/D103 去重审核台）
+ * 是后补的功能页、不属于那张 22 页表；本测试锁住「23 条齐全、路径唯一、kebab-case、功能域合法」。
  */
 const EXPECTED_PATHS = [
   '/login',
@@ -20,6 +20,7 @@ const EXPECTED_PATHS = [
   '/customers',
   '/suppliers',
   '/processors',
+  '/masterdata-dedupe',
   '/inventory',
   '/inventory-flows',
   '/stocktakes',
@@ -33,10 +34,10 @@ const EXPECTED_PATHS = [
 
 const KEBAB_PATH = /^\/[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-describe('22 页路由表', () => {
-  it('恰好 22 条页面路由', () => {
-    expect(ROUTE_TABLE).toHaveLength(22);
-    expect(EXPECTED_PATHS).toHaveLength(22);
+describe('22 页 IA + 去重审核台路由表', () => {
+  it('恰好 23 条页面路由（22 页 IA + 去重审核台）', () => {
+    expect(ROUTE_TABLE).toHaveLength(23);
+    expect(EXPECTED_PATHS).toHaveLength(23);
   });
 
   it('路径与 prototype-v0 §2 的页面清单一一对应且无重复', () => {
@@ -66,8 +67,8 @@ describe('22 页路由表', () => {
 
   it('按功能域分组不丢页面、不重复页面', () => {
     const grouped = routesByDomain().flatMap((group) => group.routes.map((route) => route.path));
-    expect(grouped).toHaveLength(22);
-    expect(new Set(grouped).size).toBe(22);
+    expect(grouped).toHaveLength(23);
+    expect(new Set(grouped).size).toBe(23);
     for (const group of routesByDomain()) {
       expect(NAV_DOMAINS).toContain(group.domain as Domain);
     }

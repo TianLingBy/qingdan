@@ -18,6 +18,8 @@ export const IMPLEMENTED_PAGE_IDS = [
   'customers',
   'suppliers',
   'processors',
+  // 主数据去重审核台（#374 契约扫描缺口，D102 / D103 后端已就绪）
+  'masterdata-dedupe',
   // 库存（#143）
   'inventory',
   'inventory-flows',

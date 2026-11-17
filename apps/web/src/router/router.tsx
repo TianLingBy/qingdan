@@ -122,6 +122,10 @@ const IMPLEMENTED_PAGES: { [K in ImplementedPageId]: ComponentType } = {
     () => import('../pages/masterdata/MasterdataPage'),
     'ProcessorsPage',
   ),
+  'masterdata-dedupe': lazyRouteComponent(
+    () => import('../pages/masterdata/DedupeConsolePage'),
+    'DedupeConsolePage',
+  ),
   'purchase-orders': lazyRouteComponent(
     () => import('../pages/purchase/PurchaseOrdersPage'),
     'PurchaseOrdersPage',

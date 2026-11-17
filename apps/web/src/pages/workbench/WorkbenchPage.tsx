@@ -42,6 +42,7 @@ const PAGE_BLURB = {
   customers: '客户档案与联系人',
   suppliers: '供应商档案与结算口径',
   processors: '加工厂档案与加工费约定',
+  'masterdata-dedupe': '判掉开单时攒下的疑似重复档案，可合并 / 撤销',
   inventory: '批次可用量 + 委外在途量',
   'inventory-flows': '每笔出入库流水，可追溯',
   stocktakes: '盘点录入与盘盈盘亏冲正（D47 / D71）',
