@@ -15,6 +15,7 @@ import {
   salesReceiptPort,
   settlementDraftPort,
   settlementProfitAggregatePort,
+  sourceOrderStatusPort,
   stockFlowPort,
 } from '../platform/services/registry.js';
 
@@ -62,6 +63,7 @@ describe('规则机械检查', () => {
       ['processingLossAggregatePort', processingLossAggregatePort],
       ['productDirectoryPort', productDirectoryPort],
       ['batchDirectoryPort', batchDirectoryPort],
+      ['sourceOrderStatusPort', sourceOrderStatusPort],
     ];
 
     const wired = new Map<string, boolean>();
