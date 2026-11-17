@@ -56,8 +56,11 @@ export interface ProcessingOrderState {
   readonly status: ProcessingOrderStatus;
   readonly inputQty: string;
   readonly lossQty: string | null;
+  readonly sellableQty: string | null;
   readonly outputBatchId: string | null;
   readonly lossAmount: string | null;
+  readonly transitStage: 'materials' | 'finished' | null;
+  readonly transitTo: 'warehouse' | 'customer' | null;
   readonly updatedAt: string;
   readonly version: number;
 }
@@ -77,6 +80,8 @@ interface HeaderRow {
   loss_qty: string | number | null;
   sellable_qty: string | number | null;
   attribution_doc: string | null;
+  transit_stage: 'materials' | 'finished' | null;
+  transit_to: 'warehouse' | 'customer' | null;
   version: number;
   created_at: Date | string;
   updated_at: Date | string;
@@ -97,8 +102,11 @@ interface StateRow {
   status: string;
   input_qty: string | number;
   loss_qty: string | number | null;
+  sellable_qty: string | number | null;
   output_batch_id: string | null;
   loss_amount: string | number | null;
+  transit_stage: 'materials' | 'finished' | null;
+  transit_to: 'warehouse' | 'customer' | null;
   updated_at: Date | string;
   version: number;
 }
@@ -117,6 +125,8 @@ const HEADER_COLUMNS = `o.id,
   trim_scale(o.loss_qty) AS loss_qty,
   trim_scale(o.sellable_qty) AS sellable_qty,
   o.attribution_doc,
+  o.transit_stage,
+  o.transit_to,
   o.version,
   o.created_at,
   o.updated_at`;
@@ -162,6 +172,8 @@ function mapHeader(row: HeaderRow): Omit<ProcessingOrder, 'materialBatchIds' | '
     lossQty: nullableDecimal(row.loss_qty),
     sellableQty: nullableDecimal(row.sellable_qty),
     attributionDoc: row.attribution_doc,
+    ...(row.transit_stage === null ? {} : { transitStage: row.transit_stage }),
+    ...(row.transit_to === null ? {} : { transitTo: row.transit_to }),
     version: row.version,
     createdAt: toDate(row.created_at).toISOString(),
     updatedAt: toDate(row.updated_at).toISOString(),
@@ -343,8 +355,11 @@ export async function loadProcessingOrderState(
             status,
             trim_scale(input_qty) AS input_qty,
             trim_scale(loss_qty) AS loss_qty,
+            trim_scale(sellable_qty) AS sellable_qty,
             output_batch_id,
             trim_scale(loss_amount) AS loss_amount,
+            transit_stage,
+            transit_to,
             updated_at,
             version
        FROM processing_order
@@ -361,8 +376,11 @@ export async function loadProcessingOrderState(
     status: row.status as ProcessingOrderStatus,
     inputQty: decimal(row.input_qty),
     lossQty: nullableDecimal(row.loss_qty),
+    sellableQty: nullableDecimal(row.sellable_qty),
     outputBatchId: row.output_batch_id,
     lossAmount: nullableDecimal(row.loss_amount),
+    transitStage: row.transit_stage,
+    transitTo: row.transit_to,
     updatedAt: toDate(row.updated_at).toISOString(),
     version: row.version,
   };
@@ -434,6 +452,182 @@ export async function completeProcessingOrder(
   );
   if (result.rows.length === 0) {
     throw new AppError('VERSION_CONFLICT', '加工单已被并发修改或不是进行中状态');
+  }
+  return getProcessingOrder(ctx, id);
+}
+
+/** 进行中 → 在途（materials / finished），同时写单头在途分段与去向。 */
+export async function startProcessingTransit(
+  ctx: ProcessingOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+  input: {
+    readonly transitStage: 'materials' | 'finished';
+    readonly transitTo: 'warehouse' | 'customer';
+  },
+): Promise<ProcessingOrder | null> {
+  const changed = await ctx.tx.query<{ id: string }>(
+    `UPDATE processing_order
+        SET status = '在途',
+            transit_stage = $1,
+            transit_to = $2,
+            version = version + 1
+      WHERE id = $3::uuid
+        AND tenant_id = $4
+        AND company_id = ANY($5::uuid[])
+        AND version = $6
+        AND status = '进行中'
+      RETURNING id`,
+    [
+      input.transitStage,
+      input.transitTo,
+      id,
+      ctx.tenantId,
+      [...ctx.companyIds],
+      expectedVersion,
+    ],
+  );
+  if (changed.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '加工单已被并发修改或不是进行中状态');
+  }
+  return getProcessingOrder(ctx, id);
+}
+
+/** finished 段发货时一次性锁定损耗、成本与产出批次，但状态仍是「在途」。 */
+export async function startProcessingFinishedTransit(
+  ctx: ProcessingOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+  input: {
+    readonly transitTo: 'warehouse' | 'customer';
+    readonly lossQty: string;
+    readonly sellableQty: string;
+    readonly outputBatchId: string | null;
+    readonly materialCostAmount: string;
+    readonly lossAmount: string;
+    readonly partialLossAmount: string;
+  },
+): Promise<ProcessingOrder | null> {
+  const changed = await ctx.tx.query<{ id: string }>(
+    `UPDATE processing_order
+        SET status = '在途',
+            transit_stage = 'finished',
+            transit_to = $1,
+            loss_qty = $2::amount,
+            sellable_qty = $3::amount,
+            output_batch_id = $4::uuid,
+            material_cost_amount = $5::amount,
+            loss_amount = $6::amount,
+            partial_loss_amount = $7::amount,
+            version = version + 1
+      WHERE id = $8::uuid
+        AND tenant_id = $9
+        AND company_id = ANY($10::uuid[])
+        AND version = $11
+        AND status = '进行中'
+      RETURNING id`,
+    [
+      input.transitTo,
+      input.lossQty,
+      input.sellableQty,
+      input.outputBatchId,
+      input.materialCostAmount,
+      input.lossAmount,
+      input.partialLossAmount,
+      id,
+      ctx.tenantId,
+      [...ctx.companyIds],
+      expectedVersion,
+    ],
+  );
+  if (changed.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '加工单已被并发修改或不是进行中状态');
+  }
+  return getProcessingOrder(ctx, id);
+}
+
+/** materials 到货：回到进行中，后续 complete 继续走 D92 的释放与产出逻辑。 */
+export async function receiveProcessingMaterials(
+  ctx: ProcessingOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<ProcessingOrder | null> {
+  const changed = await ctx.tx.query<{ id: string }>(
+    `UPDATE processing_order
+        SET status = '进行中',
+            transit_stage = NULL,
+            transit_to = NULL,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '在途'
+        AND transit_stage = 'materials'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (changed.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '加工单不是在途材料段或已被并发修改');
+  }
+  return getProcessingOrder(ctx, id);
+}
+
+/** finished 到货：产出批次已在发货时锁定，这里只完成状态机。 */
+export async function receiveProcessingFinished(
+  ctx: ProcessingOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<ProcessingOrder | null> {
+  const changed = await ctx.tx.query<{ id: string }>(
+    `UPDATE processing_order
+        SET status = '已完成',
+            transit_stage = NULL,
+            transit_to = NULL,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '在途'
+        AND transit_stage = 'finished'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (changed.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '加工单不是在途成品段或已被并发修改');
+  }
+  return getProcessingOrder(ctx, id);
+}
+
+/** 撤销任意在途段：回到进行中，并清掉 finished 阶段已锁定的快照。 */
+export async function revokeProcessingTransit(
+  ctx: ProcessingOrderRepoContext,
+  id: string,
+  expectedVersion: number,
+): Promise<ProcessingOrder | null> {
+  const changed = await ctx.tx.query<{ id: string }>(
+    `UPDATE processing_order
+        SET status = '进行中',
+            transit_stage = NULL,
+            transit_to = NULL,
+            loss_qty = NULL,
+            sellable_qty = NULL,
+            output_batch_id = NULL,
+            material_cost_amount = NULL,
+            loss_amount = NULL,
+            partial_loss_amount = NULL,
+            version = version + 1
+      WHERE id = $1::uuid
+        AND tenant_id = $2
+        AND company_id = ANY($3::uuid[])
+        AND version = $4
+        AND status = '在途'
+      RETURNING id`,
+    [id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
+  );
+  if (changed.rows.length === 0) {
+    throw new AppError('VERSION_CONFLICT', '加工单不是在途状态或已被并发修改');
   }
   return getProcessingOrder(ctx, id);
 }

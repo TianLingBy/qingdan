@@ -403,7 +403,7 @@ describe('inventory HTTP 只读切片（PGlite + 0008）', () => {
       version: 1,
     });
     expect(Number(batch.remainingQty)).toBe(90);
-    expect(Number(batch.availableQty)).toBe(80);
+    expect(Number(batch.availableQty)).toBe(85);
     expect(typeof batch.availableQty).toBe('string');
 
     const detailResponse = await app.inject({

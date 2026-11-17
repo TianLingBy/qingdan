@@ -41,7 +41,7 @@ export const PositionPresetKeySchema = z.enum(POSITION_PRESET_KEYS);
 export type PositionPresetKey = z.infer<typeof PositionPresetKeySchema>;
 
 /**
- * 动作勾选表可用动作 = 8 动作词表去掉 `view_price`（D4 第七轮确认）。
+ * 动作勾选表可用动作 = 全部动作词表去掉 `view_price`（D4 第七轮确认；D98 后共 10 个动作 → 勾选表 9 个）。
  * 只做词表过滤，不新增动作。
  */
 const TEMPLATE_ACTION_KEYS = ACTION_KEYS.filter((action) => action !== 'view_price');

@@ -342,6 +342,7 @@ paths:
                               - approve
                               - ship
                               - delete
+                              - merge
                               - view_price
                               - view_handler
                               - export
@@ -817,6 +818,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - merge
                             - view_handler
                             - export
                     required:
@@ -935,6 +937,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - merge
                             - view_handler
                             - export
                     required:
@@ -1283,6 +1286,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - merge
                             - view_price
                             - view_handler
                             - export
@@ -1480,6 +1484,7 @@ paths:
                           - approve
                           - ship
                           - delete
+                          - merge
                           - view_price
                           - view_handler
                           - export
@@ -5747,6 +5752,15 @@ paths:
                   enum:
                     - warehouse
                     - customer
+                lossQty:
+                  type: string
+                  pattern: ^\d{1,12}(\.\d{1,6})?$
+                custodianId:
+                  type: string
+                  format: uuid
+                  pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                confirmFullLoss:
+                  type: boolean
               required:
                 - transitStage
                 - transitTo
@@ -7439,6 +7453,7 @@ paths:
                             - approve
                             - ship
                             - delete
+                            - merge
                             - view_price
                             - view_handler
                             - export
@@ -7739,6 +7754,7 @@ components:
                     - approve
                     - ship
                     - delete
+                    - merge
                     - view_price
                     - view_handler
                     - export
@@ -7854,6 +7870,7 @@ components:
                     - approve
                     - ship
                     - delete
+                    - merge
                     - view_price
                     - view_handler
                     - export
@@ -8369,6 +8386,7 @@ components:
                     - approve
                     - ship
                     - delete
+                    - merge
                     - view_handler
                     - export
             required:
@@ -8488,6 +8506,12 @@ components:
           pattern: ^\d{1,12}(\.\d{1,6})?$
         custodianId:
           type: string
+        heldByProcessorId:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
         version:
           type: integer
           minimum: -9007199254740991
@@ -8554,6 +8578,12 @@ components:
           pattern: ^\d{1,12}(\.\d{1,6})?$
         custodianId:
           type: string
+        heldByProcessorId:
+          anyOf:
+            - type: string
+              format: uuid
+              pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+            - type: "null"
         version:
           type: integer
           minimum: -9007199254740991

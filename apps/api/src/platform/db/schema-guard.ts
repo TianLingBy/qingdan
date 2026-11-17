@@ -24,6 +24,13 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // processing_order.transit_stage / transit_to、inventory_batch.held_by_processor_id，
   // 缺列会让发货 / 到货确认直接 500，必须在启动时就报出来。
   '20261117181000_d94_transit_states.sql',
+  // D94 / #328：在途可占用要求 available_qty 用“占用优先抵在途”的生成公式；
+  // 缺这条会让在途批次一旦被占用就违反非负约束。
+  '20261118000000_d94_transit_occupancy.sql',
+  // D98 / #302：主数据静默建档与去重审核依赖 customer/supplier/processor/product 的
+  // origin / dedupe_state、company.source、customer 的五个财务列与 masterdata_dedupe 表；
+  // 缺它们，审核台与开单选档案会直接 500，必须在启动时就报出来。
+  '20261117223000_masterdata_autocreate.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {
