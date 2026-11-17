@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 业务全流程图</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<script src="app.js"></script>
+</head>
+<body data-nav="flow" data-crumb="公共">
+<div class="wrap">
+    <div class="p-head">
+      <div>
+        <div class="eyebrow">一期 22 页 · 业务闭环</div>
+        <h1>业务全流程图</h1>
+        <p class="sub">五类单据怎么串成一条链：谁开单、谁确认、钱和货在哪一步对上。</p>
+      </div>
+      <div class="actions"><button class="btn-primary">导出流程图</button></div>
+    </div>
+    <div class="p-filters"><div class="seg"><button class="on">全部角色</button><button class="">老板 / 经理</button><button class="">开单员</button><button class="">仓管</button></div><input class="search" placeholder="搜索…" aria-label="搜索"></div>
+    <div class="card"><table>
+      <thead><tr><th>单据</th><th>已经能做什么</th><th>还缺什么</th><th>页面</th></tr></thead>
+      <tbody><tr><td>采购单 A</td><td>开单、供应商确认、完成入库</td><td>到货数量差异的二次确认</td><td>采购单A.html</td></tr><tr><td>加工单 B</td><td>投入批次、成品与损耗回填</td><td>损耗率超阈值的审批</td><td>加工单B.html</td></tr><tr><td>内部交易单 N</td><td>发出 → 接收、在途量跟踪</td><td>跨公司对账口径</td><td>内部交易单N.html</td></tr><tr><td>销售单 E</td><td>引用批次出库、破成本放行</td><td>退货与冲正的联动</td><td>销售单E.html</td></tr><tr><td>结算单 C</td><td>总售价/总成本/毛利/提成</td><td>提成规则配置</td><td>结算单C.html</td></tr></tbody>
+    </table></div>
+    <p class="note">按角色切换视角时，只保留该角色经手的节点，其余置灰。</p>
+  </div>
+</body>
+</html>

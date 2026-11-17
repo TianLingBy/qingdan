@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 盘点</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<script src="app.js"></script>
+</head>
+<body data-nav="stocktakes" data-crumb="库存 / 盘点">
+<div class="wrap">
+    <div class="p-head">
+      <div>
+        <div class="eyebrow">盘点 · 盘盈盘亏都要有人签字</div>
+        <h1>盘点</h1>
+        <p class="sub">账面和实物对不上时，先盘，再开 I 单冲正，不要手改数量。</p>
+      </div>
+      <div class="actions"><button class="btn-primary">+ 新建盘点</button></div>
+    </div>
+    <div class="p-filters"><div class="seg"><button class="on">全部状态</button><button class="">盘点中</button><button class="">待审批</button><button class="">已完成</button></div><input class="search" placeholder="搜索…" aria-label="搜索"></div>
+    <div class="card"><table>
+      <thead><tr><th>盘点单</th><th>仓库</th><th>盘盈</th><th>盘亏</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody><tr><td>I-0012</td><td>华东主仓</td><td>—</td><td>18 件</td><td><span class="st bad">待审批</span></td><td><a href="#" class="btn" style="height:26px;padding:0 10px">审核</a></td></tr><tr><td>I-0011</td><td>华南分仓</td><td>6 件</td><td>—</td><td><span class="st ok">已完成</span></td><td><a href="#" class="btn" style="height:26px;padding:0 10px">查看</a></td></tr><tr><td>I-0010</td><td>华东主仓</td><td>—</td><td>2 件</td><td><span class="st ok">已完成</span></td><td><a href="#" class="btn" style="height:26px;padding:0 10px">查看</a></td></tr></tbody>
+    </table></div>
+    <p class="note">盘盈盘亏需老板或经理审批（D47 / D71）；审批后自动生成 I 单冲正并写库存流水。</p>
+  </div>
+</body>
+</html>

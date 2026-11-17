@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 操作日志</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<script src="app.js"></script>
+</head>
+<body data-nav="audit-logs" data-crumb="系统 / 操作日志">
+<div class="wrap">
+    <div class="p-head">
+      <div>
+        <div class="eyebrow">操作日志 · 谁在什么时候动了什么</div>
+        <h1>操作日志</h1>
+        <p class="sub">出问题时先看这里：谁、从哪来、对哪个对象、做了什么、成没成。</p>
+      </div>
+      <div class="actions"><button class="btn-primary">导出日志</button></div>
+    </div>
+    <div class="p-filters"><div class="seg"><button class="on">全部结果</button><button class="">成功</button><button class="">失败</button></div><input class="search" placeholder="搜索…" aria-label="搜索"></div>
+    <div class="card"><table>
+      <thead><tr><th>时间</th><th>操作人</th><th>来源</th><th>动作</th><th>对象</th><th>结果</th></tr></thead>
+      <tbody><tr><td>11-11 10:32</td><td>王倩</td><td>web</td><td>客户退货审批</td><td>R-0088</td><td><span class="st ok">成功</span></td></tr><tr><td>11-11 09:41</td><td>张明</td><td>web</td><td>采购单入库</td><td>A-0023</td><td><span class="st ok">成功</span></td></tr><tr><td>11-10 16:45</td><td>陈默</td><td>api</td><td>供应商退货提交</td><td>S-0041</td><td><span class="st warn">失败（批次已锁定）</span></td></tr></tbody>
+    </table></div>
+    <p class="note">失败行右侧带「请求编号」，可复制给管理员查。</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>轻单 · 客户</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<script src="app.js"></script>
+</head>
+<body data-nav="customers" data-crumb="主数据 / 客户">
+<div class="wrap">
+    <div class="p-head">
+      <div>
+        <div class="eyebrow">客户 · 谁在买</div>
+        <h1>客户</h1>
+        <p class="sub">客户档案一改，历史单据的联系人不会跟着变；一个客户可挂多个对接人。</p>
+      </div>
+      <div class="actions">
+        <button class="btn" data-drawer="#md-dedupe">重复审核<span class="md-badge">1</span></button>
+        <button class="btn-primary" data-drawer="#md-edit" data-sheet-title="新建客户">+ 新建客户</button>
+      </div>
+    </div>
+    <div class="p-filters">
+      <div class="seg" data-facet="status"><button class="on" data-val="all">全部状态</button><button data-val="启用">启用</button><button data-val="停用">停用</button></div>
+      <div class="seg" data-facet="company"><button class="on" data-val="all">全部公司</button><button data-val="演示公司">演示公司</button><button data-val="华南公司">华南公司</button></div>
+      <input class="search" placeholder="搜索名称 / 对接人…" aria-label="搜索">
+    </div>
+    <div class="card"><table>
+      <thead><tr><th>编号</th><th>名称</th><th>主联系人</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody>
+        <tr data-company="演示公司" data-status="启用">
+          <td>K-0201</td>
+          <td>江北机电<i class="cell-sub">后台录入</i></td>
+          <td>周工<i class="cell-sub">138****2210</i></td>
+          <td><span class="st ok">启用</span></td>
+          <td><div class="row-acts"><button class="btn btn-s" data-drawer="#md-edit" data-sheet-title="编辑客户">编辑</button><button class="btn btn-s" data-drawer="#md-contacts" data-sheet-title="对接人 · 江北机电">对接人</button></div></td>
+        </tr>
+        <tr data-company="演示公司" data-status="启用">
+          <td>K-0202</td>
+          <td>远成物资<i class="cell-sub">后台录入 · 已确认独立</i></td>
+          <td>刘经理<i class="cell-sub">139****8834</i></td>
+          <td><span class="st ok">启用</span></td>
+          <td><div class="row-acts"><button class="btn btn-s" data-drawer="#md-edit" data-sheet-title="编辑客户">编辑</button><button class="btn btn-s" data-drawer="#md-contacts" data-sheet-title="对接人 · 远成物资">对接人</button></div></td>
+        </tr>
+        <tr data-company="华南公司" data-status="停用">
+          <td>K-0203</td>
+          <td>新河设备<i class="cell-sub">开单自动建档</i></td>
+          <td>—</td>
+          <td><span class="st bad">停用</span></td>
+          <td><div class="row-acts"><button class="btn btn-s" data-drawer="#md-edit" data-sheet-title="编辑客户">编辑</button><button class="btn btn-s" data-drawer="#md-contacts" data-sheet-title="对接人 · 新河设备">对接人</button></div></td>
+        </tr>
+        <tr data-company="华南公司" data-status="启用">
+          <td>K-0214</td>
+          <td><span class="md-name">江北机电设备</span><span class="st warn sm">疑似重复</span><i class="cell-sub">开单自动建档</i></td>
+          <td>周工<i class="cell-sub">138****2210</i></td>
+          <td><span class="st ok">启用</span></td>
+          <td><div class="row-acts"><button class="btn btn-s" data-drawer="#md-edit" data-sheet-title="编辑客户">编辑</button><button class="btn btn-s" data-drawer="#md-contacts" data-sheet-title="对接人 · 江北机电设备">对接人</button></div></td>
+        </tr>
+      </tbody>
+    </table></div>
+    <p class="note">与供应商、加工厂共用主数据列表模板；财务字段（地址 / 税号 / 开户行 / 账号 / 发票抬头）只读用户脱敏或空，金额列无看价权限时显示「—」（?state=noprice）。</p>
+  </div>
+
+  <!-- 新建 / 编辑客户 -->
+  <div class="md-scrim" id="md-edit" hidden>
+    <div class="md-panel" role="dialog" aria-modal="true" aria-labelledby="md-edit-t">
+      <div class="md-head">
+        <div><b id="md-edit-t" data-sheet-title>新建客户</b><small>建档来源自动标记：后台录入 / 开单自动建档；财务字段随客户档案维护。</small></div>
+        <button class="btn btn-s" data-close="#md-edit">关闭</button>
+      </div>
+      <div class="md-body">
+        <label class="md-field">名称 *<input value="江北机电" aria-label="名称"></label>
+        <div class="md-grid2">
+          <label class="md-field">主联系人<input value="周工" aria-label="主联系人"></label>
+          <label class="md-field">联系电话<input value="138****2210" aria-label="联系电话"></label>
+        </div>
+        <label class="md-field">归属公司
+          <div class="seg" style="margin-top:4px;justify-self:start"><button class="on">演示公司</button><button>华南公司</button></div>
+        </label>
+        <div class="md-sec">
+          <b>财务信息</b>
+          <label class="md-field">地址<input value="南京市江宁区将军大道 66 号" aria-label="地址"></label>
+          <div class="md-grid2">
+            <label class="md-field">税号<input value="91320115MA1N8K7L2P" aria-label="税号"></label>
+            <label class="md-field">发票抬头<input value="南京江北机电有限公司" aria-label="发票抬头"></label>
+          </div>
+          <div class="md-grid2">
+            <label class="md-field">开户行<input value="建设银行 江宁支行" aria-label="开户行"></label>
+            <label class="md-field">银行账号<input value="6227 **** **** 8802" aria-label="银行账号"></label>
+          </div>
+          <p class="hint">只读用户看到脱敏或空值；字段清单以 customers 契约为准。</p>
+        </div>
+        <div class="md-sec">
+          <b>状态</b>
+          <div class="seg" style="justify-self:start"><button class="on">启用</button><button>停用</button></div>
+          <p class="hint">停用是危险动作（*.delete）：保留历史销售单与结算，需填原因并二次确认。</p>
+          <button class="btn" data-confirm-toggle="#md-stop" style="justify-self:start">停用该客户…</button>
+          <div class="md-confirm" id="md-stop">
+            <b>确认停用 K-0201 江北机电？</b>
+            <label class="md-field">停用原因 *<textarea rows="2" aria-label="停用原因">与 K-0214 为同一家，合并后停用</textarea></label>
+            <div class="md-foot">
+              <button class="btn btn-s" data-confirm-cancel="#md-stop">取消</button>
+              <a class="btn btn-s danger" href="#">确认停用</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="md-foot">
+        <button class="btn" data-close="#md-edit">取消</button>
+        <a class="btn-primary" href="#">保存</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- 对接人 + 三级下钻 -->
+  <div class="md-scrim" id="md-contacts" hidden>
+    <div class="md-panel wide" role="dialog" aria-modal="true" aria-labelledby="md-contacts-t">
+      <div class="md-head">
+        <div><b id="md-contacts-t" data-sheet-title>对接人 · 江北机电</b><small>is_primary 每档案唯一；未指定对接人的单据单独兜底。</small></div>
+        <button class="btn btn-s" data-close="#md-contacts">关闭</button>
+      </div>
+      <div class="md-body">
+        <div class="md-crumb">演示公司 <span>/</span> <b>江北机电</b> <span>/</span> <span>对接人</span></div>
+        <table>
+          <thead><tr><th>对接人</th><th class="num">单数</th><th class="num">累计金额</th><th>最近下单</th><th>订单</th></tr></thead>
+          <tbody>
+            <tr><td><span class="md-name">周工</span><span class="st ok sm">主联系人</span><i class="cell-sub">****2210</i></td><td class="num">9</td><td class="num" data-money>¥263,700</td><td>11-11</td><td><button class="btn btn-s" data-drill="#ord-k1">查看订单</button></td></tr>
+            <tr><td><span class="md-name">李采购</span><i class="cell-sub">****3305</i></td><td class="num">3</td><td class="num" data-money>¥48,200</td><td>11-06</td><td><button class="btn btn-s" data-drill="#ord-k2">查看订单</button></td></tr>
+            <tr><td><span class="md-name">未指定对接人</span><i class="cell-sub">历史单据兜底</i></td><td class="num">1</td><td class="num" data-money>¥12,000</td><td>11-02</td><td><button class="btn btn-s" data-drill="#ord-k0">查看订单</button></td></tr>
+          </tbody>
+        </table>
+        <div class="md-orders" id="ord-k1" hidden>
+          <div class="md-crumb">演示公司 <span>/</span> 江北机电 <span>/</span> <b>周工</b> <span>/</span> <span>订单</span></div>
+          <table>
+            <thead><tr><th>单号</th><th>日期</th><th class="num">金额</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>E-0308</td><td>11-10</td><td class="num" data-money>¥44,000</td><td><span class="st warn">进行中</span></td></tr>
+              <tr><td>E-0305</td><td>11-07</td><td class="num" data-money>¥36,800</td><td><span class="st ok">已完成</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="md-orders" id="ord-k2" hidden>
+          <div class="md-crumb">演示公司 <span>/</span> 江北机电 <span>/</span> <b>李采购</b> <span>/</span> <span>订单</span></div>
+          <table>
+            <thead><tr><th>单号</th><th>日期</th><th class="num">金额</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>E-0304</td><td>11-06</td><td class="num" data-money>¥21,400</td><td><span class="st ok">已完成</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="md-orders" id="ord-k0" hidden>
+          <div class="md-crumb">演示公司 <span>/</span> 江北机电 <span>/</span> <b>未指定对接人</b> <span>/</span> <span>订单</span></div>
+          <table>
+            <thead><tr><th>单号</th><th>日期</th><th class="num">金额</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>E-0301</td><td>11-02</td><td class="num" data-money>¥12,000</td><td><span class="st ok">已完成</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note" style="margin:0">新增或调整对接人走档案编辑；变更主联系人只影响后续单据的默认带出。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 疑似重复审核台 -->
+  <div class="md-scrim" id="md-dedupe" hidden>
+    <div class="md-panel" role="dialog" aria-modal="true" aria-labelledby="md-dedupe-t">
+      <div class="md-head">
+        <div><b id="md-dedupe-t">重复审核</b><small>名称、电话、地址任一相近即进入待审；合并前先看对接人与历史单据。</small></div>
+        <button class="btn btn-s" data-close="#md-dedupe">关闭</button>
+      </div>
+      <div class="md-body">
+        <div class="md-dup">
+          <div class="md-dup-head"><b>疑似重复组 1</b><span>2 条档案 · 电话相同</span></div>
+          <div class="md-dup-row"><div><b>K-0201 江北机电</b><small>后台录入 · 演示公司 · 周工 138****2210</small></div><span class="st ok sm">正常</span></div>
+          <div class="md-dup-row"><div><b>K-0214 江北机电设备</b><small>开单自动建档 · 华南公司 · 周工 138****2210</small></div><span class="st warn sm">疑似重复</span></div>
+          <div class="md-dup-acts">
+            <button class="btn btn-s" data-dedupe-action="merge">合并到 K-0201</button>
+            <button class="btn btn-s" data-dedupe-action="keep">确认各自独立</button>
+          </div>
+          <p class="md-dup-state"></p>
+        </div>
+        <p class="note" style="margin:0">合并后保留主档案，另一条归档，历史单据不改写；确认独立后不再提醒。</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

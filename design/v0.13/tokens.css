@@ -1,0 +1,124 @@
+﻿/* ============================================================
+   轻单 v0.13 · 设计令牌层（本文件只放变量，不写组件规则）
+   ------------------------------------------------------------
+   v0.12 去重：删掉 v0.7 遗留的 mist / bronze / paper 三套配色
+   （v0.9 起产品已收敛为亮 / 暗两套，由 app.js 写 data-mode），
+   删掉零引用的兼容别名（--gold* / --w-* / --g06…）。
+   主题只有两套：默认暗色 :root + html[data-mode="light"]。
+   组件与布局规则全部在 app.css。
+   ============================================================ */
+
+@import url("https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css");
+
+:root{
+  /* ---- 暗色（默认）· 墨黑 / 米白 / 苔绿 ---- */
+  --bg-0:#0A0E0C;
+  --bg-1:#101613;
+  /* 页面底：顶部双光斑 + 纯底色（顶栏复用同一张底，保证与页面同色） */
+  --page-bg:radial-gradient(1100px 520px at 10% -10%, rgba(var(--accent-rgb),.10), transparent 62%),
+    radial-gradient(900px 460px at 102% -6%, rgba(var(--accent-2-rgb),.06), transparent 58%),
+    var(--bg-0);
+  --bg-2:#1A211C;
+  --bg-3:#252E28;
+  --bg-4:#323C35;
+
+  --text-1:rgba(233,231,224,.96);
+  --text-2:rgba(233,231,224,.76);
+  --text-3:#98A5A0;
+  --text-decor:rgba(233,231,224,.42);
+  --text-rgb:233,231,224;
+
+  --accent:#93AE9C;
+  --accent-light:#B6D0BE;
+  --accent-deep:#728E7B;
+  --accent-2:#7F8F86;
+  --accent-2-light:#A6B8AE;
+  --accent-rgb:147,174,156;
+  --accent-2-rgb:127,143,134;
+  --on-accent:#0A0E0C;
+
+  --ok:#9CCBAE;
+  --danger:#C0533A;
+  --danger-on-surface:#E08168;
+
+  --a-04:rgba(147,174,156,.04);  --a-06:rgba(147,174,156,.06);
+  --a-10:rgba(147,174,156,.10);  --a-12:rgba(147,174,156,.12);
+  --a-14:rgba(147,174,156,.14);  --a-16:rgba(147,174,156,.16);
+  --a-18:rgba(147,174,156,.18);  --a-22:rgba(147,174,156,.22);
+  --a-24:rgba(147,174,156,.24);  --a-28:rgba(147,174,156,.28);
+  --a-30:rgba(147,174,156,.30);  --a-32:rgba(147,174,156,.32);
+  --a-35:rgba(147,174,156,.35);  --a-36:rgba(147,174,156,.36);
+  --a-40:rgba(147,174,156,.40);  --a-45:rgba(147,174,156,.45);
+  --a-50:rgba(147,174,156,.50);  --a-65:rgba(147,174,156,.65);
+  --b-04:rgba(127,143,134,.04);  --b-06:rgba(127,143,134,.06);
+  --b-16:rgba(127,143,134,.16);  --b-18:rgba(127,143,134,.18);
+  --b-30:rgba(127,143,134,.30);  --b-40:rgba(127,143,134,.40);
+
+  --line-1:rgba(233,231,224,.12);
+  --line-2:rgba(233,231,224,.18);
+  --line-3:rgba(233,231,224,.28);
+  --surf-1:rgba(233,231,224,.035);
+  --surf-2:rgba(233,231,224,.06);
+  --surf-3:rgba(233,231,224,.09);
+  --track:rgba(233,231,224,.05);
+
+  --topbar-bg:rgba(10,14,12,.90);
+  --batch-bg:rgba(10,14,12,.96);
+  --btn-inset:rgba(255,255,255,.16);
+  --sh-1:0 10px 28px -12px rgba(0,0,0,.68);
+  --sh-2:0 22px 52px -16px rgba(0,0,0,.82);
+  --sh-accent:0 0 0 1px var(--a-18),0 8px 28px -10px var(--a-12);
+  --sh-inset:inset 0 1px 0 rgba(233,231,224,.06);
+  --elev-1:0 0 0 1px var(--line-2),0 14px 34px -16px rgba(0,0,0,.72);
+  --focus-ring:2px solid var(--accent-light);
+  --card-hair:rgba(233,231,224,.12);
+
+  --cover-bg:#000000;
+  --card-bg:#EEF0EA;
+  --card-ink:#141A16;
+  --card-line:rgba(20,26,22,.14);
+}
+
+/* ---- 亮色（白色主题）---- 纯白底 + 中性灰阶，去掉米黄 / 绿灰色偏 ---- */
+html[data-mode="light"]{
+  --bg-0:#FFFFFF;
+  --bg-1:#F7F8FA;
+  --surf-1:#FFFFFF;
+  --surf-2:#F4F5F7;
+  --text-1:#14161A;
+  --text-2:#4B4F56;
+  --text-3:#6B7078;
+  --text-decor:#8E939B;
+  --line-1:rgba(18,22,28,.09);
+  --line-2:rgba(18,22,28,.15);
+  --line-3:rgba(18,22,28,.24);
+  --topbar-bg:rgba(255,255,255,.90);
+  --page-bg:radial-gradient(720px 460px at 12% 6%, rgba(255,255,255,.90), transparent 62%),
+    radial-gradient(640px 420px at 88% 34%, rgba(212,212,212,.55), transparent 60%),
+    radial-gradient(560px 400px at 30% 88%, rgba(163,163,163,.40), transparent 62%),
+    linear-gradient(135deg,#fafafa 0%,#f0f0f0 52%,#e5e5e5 100%);
+  --sh-1:0 1px 2px rgba(18,22,28,.05);
+  --sh-2:0 10px 30px -12px rgba(18,22,28,.16);
+  --accent-light:#3C5A4E;
+}
+
+/* ---- 尺度 / 几何 / 字体（合并自 tokens.css 尺度块 + fonts.css） ---- */
+:root{
+  --r-card:12px; --r-panel:14px; --r-control:7px; --r-tag:5px; --r-pill:999px;
+  --fs-9:10px; --fs-10:11px; --fs-11:12px; --fs-12:12px; --fs-13:13px;
+  --fs-14:14px; --fs-16:16px; --fs-18:18px; --fs-20:20px; --fs-24:24px;
+  --fs-30:30px; --fs-38:38px; --fs-48:48px;
+  --fs-body:14px; --fs-label:12px; --fs-min:12px;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px;
+  --sp-5:24px; --sp-6:32px; --sp-7:48px; --sp-8:64px;
+  --d-1:110ms; --d-2:160ms; --d-3:200ms; --d-4:240ms; --d-5:320ms; --d-data:420ms;
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --ease-in:cubic-bezier(.7,0,.2,1);
+  --ease-io:cubic-bezier(.65,0,.35,1);
+  --ease-spring:cubic-bezier(.34,1.28,.52,1);
+  --sans:"Microsoft YaHei","微软雅黑","PingFang SC",-apple-system,"Segoe UI",sans-serif;
+  --kai:"LXGW WenKai","霞鹜文楷",serif;
+  --mono:ui-monospace,Consolas,"SF Mono","Liberation Mono",monospace;
+  --sb:236px; --topbar-h:52px;
+  /* 断点规范：1024 / 768 / 480 */
+}
