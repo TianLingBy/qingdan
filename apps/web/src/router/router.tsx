@@ -7,10 +7,10 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import { Suspense, type ComponentType } from 'react';
-import { SettingsEntryPlaceholder } from '../components/SettingsEntryPlaceholder';
 import { AppLayout } from '../layouts/AppLayout';
 import { LoginPage } from '../pages/auth/LoginPage';
 import { PlaceholderPage } from '../pages/PlaceholderPage';
+import { SettingsPage } from '../pages/settings/SettingsPage';
 import { WorkbenchPage } from '../pages/workbench/WorkbenchPage';
 import type { ImplementedPageId } from './implemented';
 import { DEFAULT_ROUTE_PATH, ROUTE_TABLE, SETTINGS_ROUTE, type RouteEntry } from './routes';
@@ -218,13 +218,13 @@ const pageRoutes = ROUTE_TABLE.filter((entry) => entry.path !== LOGIN_PATH).map(
 );
 
 /**
- * 设置中心（#300）：不在 22 页业务 IA 里，单独注册，复用登录后的应用外壳。
- * 面板未实现前先渲染占位骨架；#299 落地后把 component 换成 `SettingsPage` 即可。
+ * 设置中心（#343 / D93）：不在 22 页业务 IA 里，单独注册，复用登录后的应用外壳。
+ * 原先挂 `SettingsEntryPlaceholder`（#300 的占位骨架），#343 落地后换成真页面。
  */
 const settingsRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: SETTINGS_ROUTE.path,
-  component: SettingsEntryPlaceholder,
+  component: SettingsPage,
 });
 
 const routeTree = rootRoute.addChildren([
