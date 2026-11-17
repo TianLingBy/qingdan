@@ -104,17 +104,37 @@
 
 | 单据 | 状态 | 关键动作端点 | 权限点 |
 |---|---|---|---|
-| A 采购单 | 进行中 → 已完成 / 已取消 | `POST /purchase-orders/{id}/complete` | `purchase.approve` |
-| B 加工单 | 进行中 → 已完成 | `POST /processing-orders/{id}/complete` | `processing.approve` |
-| E 销售单 | 进行中 → 已完成 / 已取消 | **无审批端点**（破成本下限放行 D20 尚未实现） | — |
-| N 内部交易 | 进行中 → 在途 → 已完成 / 已取消 | `/dispatch`、`/dispatch-revoke`、`/receive` | `internal_trade.ship` / `.update` |
-| C 结算单 | 草稿 → 已确认 | `POST /settlement-orders/{id}/confirm` | `settlement.approve` |
-| R 客户退货 | 进行中 → 已完成 | `POST /customer-returns/{id}/complete` | `customer_return.create` |
-| S 供应商退货 | 进行中 → 已完成 | `POST /supplier-returns/{id}/complete` | `supplier_return.create` |
-| I 盘点 | 待审批 → 已审批 | `POST /stocktakes/{id}/approve` | `stocktake.approve` |
+| A 采购单 | 进行中 → **在途** → 已完成 / 已取消 | `POST /purchase-orders/{id}/complete`（完成并入库）、`/ship`（发货）、`/ship-revoke`（撤销发货）、`/receive`（确认到货）、`/cancel` | `purchase.approve`（完成 / 到货）、`purchase.ship`（发货 / 撤销）、`purchase.delete`（取消） |
+| B 加工单 | 进行中 → **在途** → 已完成 / 已取消 | `POST /processing-orders/{id}/complete`、`/ship`、`/ship-revoke`、`/receive`、`/cancel` | `processing.approve`（完成 / 到货）、`processing.ship`（发货 / 撤销）、`processing.delete`（取消） |
+| E 销售单 | 进行中 → **已发货** → 已完成 / 已取消 | `POST /sales-orders/{id}/complete`、`/ship`（发货）、`/cancel` | `sales.approve`（完成）、`sales.ship`（发货）、`sales.delete`（取消） |
+| N 内部交易 | 进行中 → **在途** → 已完成 / 已取消 | `/dispatch`（发货）、`/dispatch-revoke`、`/receive`（到货）、`/cancel` | `internal_trade.ship`（发货 / 撤销）、`internal_trade.approve`（到货）、`internal_trade.delete`（取消） |
+| C 结算单 | 待确认 → 已结算 | `POST /settlement-orders/{id}/confirm`、`/unsettle`（撤销结算） | `settlement.approve` |
+| R 客户退货 | 进行中 → 已完成 / 已取消 | `POST /customer-returns/{id}/complete` | `customer_return.approve` |
+| S 供应商退货 | 进行中 → 已完成 / 已取消 | `POST /supplier-returns/{id}/complete`、`/cancel` | `supplier_return.approve`（完成）、`supplier_return.delete`（取消） |
+| I 盘点 | 待审批 → 已批准 / 已驳回 | `POST /stocktakes/{id}/approve`、`/reject` | `stocktake.approve` |
 | T2 成本更正 | 待审批 → 已通过 / 已驳回 | `/approve`、`/reject` | `inventory_qty.approve` |
 
 写单时如果发现「设计稿有这步审批、上表没有对应端点」，那说明是缺口——开单补，不要在实现里假装有。
+
+### 这张表的三个易错处（2026-11-18 校准）
+
+**一、四类单据都有中间态，别按「进行中 → 已完成」两态写。**
+
+A / B / N 有「**在途**」，E 有「**已发货**」（D94，2026-11-17 负责人口径）。它们的共同点是**货在路上、账还没落**：
+
+- A/B 的「在途」= 已发出、等收货方（仓库或加工厂）确认到货。`/ship` 进在途，`/receive` 或 `/complete` 出在途。
+- E 的「已发货」= 货出门、客户还没签收。`/ship` 进，`/complete` 出。
+- N 的「在途」= 发起方已发出、接收方公司还没到货。`/dispatch` 进，`/receive` 出。
+
+**这四类单据的「完成」都不再走 `update`**，一律走 `approve`。D94 之前「完成」挂在 `update` 上，等于「能改单的人就能入库」，老板拆不开这两个权限——现在拆开了，写单时别照旧口径把完成挂到 `update`。
+
+**二、`delete` 不等于「删除单据」。** 上表里取消类动作用的都是 `delete` action（`purchase.delete` / `sales.delete` / `supplier_return.delete`…），它在这里的语义是「作废这张单」，单据行仍在库里、状态变「已取消」。真正删行没有接口。
+
+**三、E 单没有「破成本下限审批」这回事，别再当缺口开单。**
+
+D20 的口径是「成本下限取批次锁价，**低于下限前端只如实展示、不拦**」——不是漏了实现，是刻意不拦。成本下限在 `apps/api/src/modules/sales/repo.ts` 的 `resolveLineCostFloors` 里算出来放在明细行上，前端拿它显示一个提示。
+
+上一版这里写着「破成本下限放行 D20 尚未实现」，会让人去实现一个已经拍板不做的东西。
 
 ---
 
