@@ -28,6 +28,10 @@ import { requestIdFor } from '../../../platform/http/request-id.js';
 import { stockFlowPort } from '../../../platform/services/registry.js';
 import { takeDocumentNo } from '../../../platform/numbering/service.js';
 import * as repo from '../repo.js';
+import {
+  assertIdOrDraft,
+  resolveMasterdataDraft,
+} from '../../masterdata/usecases/autocreate.js';
 import { allocatePurchaseFees } from '../services/fee-allocation.js';
 import { maskPurchaseOrderAmounts } from '../services/masking.js';
 
@@ -345,6 +349,9 @@ export async function createPurchaseOrder(
 
   const input = parseCreateInput(ctx.request.body);
   assertCompanyVisible(principal, input.companyId);
+  // 供应商二选一（D100），口径同 E 单的客户。
+  assertIdOrDraft('supplierId', input.supplierId, input.supplierDraft, '供应商');
+  const { supplierDraft, ...orderInput } = input;
 
   const id = uuidv7();
   const audit = auditEventOf(ctx.request, principal, 'purchase.order.create', id, {
@@ -357,9 +364,20 @@ export async function createPurchaseOrder(
   audit.companyId = input.companyId;
 
   const order = await withAudit(database, audit, async (tx) => {
+    // 静默建档（D100）：同事务先建供应商，公司取本单 companyId。
+    const supplierId =
+      input.supplierId ??
+      (
+        await resolveMasterdataDraft(tx, principal, {
+          kind: 'supplier',
+          companyId: input.companyId,
+          draft: supplierDraft!,
+        })
+      ).id;
     const orderNo = await takeDocumentNo(tx, 'A', input.companyId, new Date());
     const created = await repo.insertPurchaseOrder(repoContext(tx, principal), {
-      ...input,
+      ...orderInput,
+      supplierId,
       id,
       orderNo,
     });

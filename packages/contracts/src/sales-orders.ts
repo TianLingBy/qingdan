@@ -3,6 +3,7 @@ import type { CancelDecision } from './documents.js';
 import { defineRoute, type RouteDef } from './registry.js';
 import { PageQuerySchema, PageableSchema, pagedResultSchema } from './pagination.js';
 import { SalesReceiptSchema } from './sales-receipts.js';
+import { CustomerDraftSchema } from './masterdata-draft.js';
 
 /**
  * 销售单 E 契约（契约第一批 §3.3 / §5.1 / §5.2 / §10，第一批第一切）。
@@ -190,11 +191,16 @@ export const SalesOrderExportQuerySchema = PageQuerySchema.extend({
  * 开单入参（§3.3）：
  * - **不接收单号**（服务端按 D16 生成）；
  * - 费用明细选填（§3.3），商品明细至少 1 行；
- * - 破下限需走 platform 审批（D20），本批不提供审批字段。
+ * - 破下限需走 platform 审批（D20），本批不提供审批字段；
+ * - `customerId` 与 `customerDraft` **二选一**（D100）：老客户选 id，新客户现场报个名字，
+ *   服务端在同一事务里静默建档再引用它。两个都给 / 都不给由用例层报 422，
+ *   错误里的 `details.field` 指回 `customerId`——前端据此把红框画在客户选择器上。
  */
 export const SalesOrderCreateInputSchema = z.object({
   companyId: z.string().uuid(),
-  customerId: z.string().uuid(),
+  customerId: z.string().uuid().optional(),
+  /** 新客户草档（D100）：不传 `customerId` 时必填。归属公司取本单 `companyId`，前端不得指定。 */
+  customerDraft: CustomerDraftSchema.optional(),
   handlerId: z.string().uuid(),
   lines: z.array(SalesOrderLineSchema).min(1, '销售单至少 1 行商品明细'),
   fees: z.array(SalesOrderFeeInputSchema).optional(),

@@ -60,7 +60,15 @@ export interface SalesOrderListQuery {
 export type SalesOrderSortKey = 'orderNo' | 'totalAmount' | 'createdAt';
 
 /** 创建输入 = 契约创建体 + 用例生成的 uuid / 单号。 */
-export type SalesOrderInsertInput = SalesOrderCreateInput & {
+/**
+ * `customerId` 由用例解析后必填（D100）：开单入参里它和 `customerDraft` 二选一，
+ * 到了 repo 这一层草档已经建完、id 已经确定，不许再把「可能还没建」的形态带下来。
+ */
+export type SalesOrderInsertInput = Omit<
+  SalesOrderCreateInput,
+  'customerId' | 'customerDraft'
+> & {
+  readonly customerId: string;
   readonly id: string;
   readonly orderNo: string;
 };

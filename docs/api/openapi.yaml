@@ -4092,6 +4092,32 @@ paths:
                   type: string
                   format: uuid
                   pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                customerDraft:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                    contactName:
+                      anyOf:
+                        - type: string
+                          maxLength: 64
+                        - type: "null"
+                    contactPhone:
+                      anyOf:
+                        - type: string
+                          maxLength: 32
+                        - type: "null"
+                    creditTermDays:
+                      anyOf:
+                        - type: integer
+                          minimum: 0
+                          maximum: 9007199254740991
+                        - type: "null"
+                  required:
+                    - name
+                  additionalProperties: false
                 handlerId:
                   type: string
                   format: uuid
@@ -4160,7 +4186,6 @@ paths:
                     additionalProperties: false
               required:
                 - companyId
-                - customerId
                 - handlerId
                 - lines
               additionalProperties: false
@@ -5049,6 +5074,33 @@ paths:
                   type: string
                   format: uuid
                   pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                supplierDraft:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                    contactName:
+                      anyOf:
+                        - type: string
+                          maxLength: 64
+                        - type: "null"
+                    contactPhone:
+                      anyOf:
+                        - type: string
+                          maxLength: 32
+                        - type: "null"
+                    suppliedMaterials:
+                      maxItems: 20
+                      type: array
+                      items:
+                        type: string
+                        minLength: 1
+                        maxLength: 64
+                  required:
+                    - name
+                  additionalProperties: false
                 handlerId:
                   type: string
                   format: uuid
@@ -5118,7 +5170,6 @@ paths:
                     additionalProperties: false
               required:
                 - companyId
-                - supplierId
                 - handlerId
                 - lines
               additionalProperties: false
@@ -5886,6 +5937,21 @@ paths:
                   type: string
                   format: uuid
                   pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+                processorDraft:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                    contactName:
+                      anyOf:
+                        - type: string
+                          maxLength: 64
+                        - type: "null"
+                  required:
+                    - name
+                  additionalProperties: false
                 outputProductId:
                   type: string
                   format: uuid
@@ -5960,7 +6026,6 @@ paths:
                     - type: "null"
               required:
                 - companyId
-                - processorId
                 - outputProductId
                 - handlerId
                 - materialBatchIds
@@ -6545,6 +6610,16 @@ paths:
             schema:
               type: object
               properties:
+                companyDraft:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                      maxLength: 64
+                  required:
+                    - name
+                  additionalProperties: false
                 fromCompanyId:
                   type: string
                   format: uuid
