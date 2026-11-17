@@ -1,9 +1,9 @@
 /**
  * 结算单 C 接口封装（22 页 IA 第 7 页；D2③ / D5 / D19 / D29 / D33 / D36 / D78）。
  *
- * 只有 3 条端点：列表 / 详情 / 确认结算。
- * **没有创建端点**——C 单草稿由 E / N 单「已完成」时系统自动生成（D19 / D29），
- * 也没有取消与冲正：结算后不可冲正，错账走 R 退货（D2③）。所以这一层不封装 create / cancel。
+ * 四条端点：列表 / 详情 / 确认结算 / 撤销结算。
+ * **没有创建端点**——C 单草稿由 E / N 单「已完成」时系统自动生成（D19 / D29）。
+ * 撤销结算（`unsettle`，D88 / #288）把已结算整单退回「待确认」，必须填原因并二次确认。
  *
  * 口径（别在这里发明）：
  * - **状态是独立两态** `待确认 / 已结算`（D2③），不复用单据三态，也没有「已取消」；
@@ -64,6 +64,20 @@ export function createSettlementsApi(client: ApiClient = apiClient) {
       client.post<SettlementOrderDetail>(`/settlement-orders/${id}/confirm`, undefined, {
         headers: { 'If-Match': `"${version}"` },
       }),
+    /**
+     * 撤销结算（D88 / #288）：已结算 → 待确认，整单退回。
+     *
+     * 三件事都必须做对：
+     * - `confirm: true` 是契约的误触护栏，少这个字段服务端直接 422；
+     * - `reason` 必填（1–200 字），落审计——财务事后要能答「谁为什么把结算撤了」；
+     * - 强 ETag：不带 `If-Match` 服务端回 428，带了旧 version 回 409。
+     */
+    unsettle: (id: string, version: number, reason: string) =>
+      client.post<SettlementOrderDetail>(
+        `/settlement-orders/${id}/unsettle`,
+        { confirm: true, reason },
+        { headers: { 'If-Match': `"${version}"` } },
+      ),
   };
 }
 
