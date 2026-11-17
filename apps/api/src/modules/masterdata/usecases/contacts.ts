@@ -1,5 +1,6 @@
 import {
   AppError,
+  ContactSummaryQuerySchema,
   ContactCreateInputSchema,
   ContactUpdateInputSchema,
   allowsScope,
@@ -334,16 +335,35 @@ export async function getSummary(
 
   const ownerId = parseUuidParam(ctx.request, 'id');
   const companyId = await ownerCompanyOr404(ctx, principal, database, kind, ownerId);
-  const summary = await withTenant(database, principal.tenantId, (tx) =>
-    repo.aggregateSummary(repoContext(tx, principal), kind, ownerId, companyId),
-  );
+  // `?groupBy=contact` 时才多跑一次按对接人聚合。放在同一个事务里，两次聚合
+  // 看到的是同一快照——否则并发下单会让「分项之和 ≠ 总数」，而这条正是分组的
+  // 唯一用途（拿分项去核对总数）。
+  // 用契约 schema 解析而不是直接摸 `request.query.groupBy`：`request.query` 在这里
+  // 的类型是 `{}`，直接下标访问要写类型断言；而 safeParse 顺带把非法值挡成 422。
+  const summaryQuery = ContactSummaryQuerySchema.safeParse(ctx.request.query);
+  if (!summaryQuery.success) {
+    throw new AppError('VALIDATION_FAILED', '查询参数不合法', {
+      issues: summaryQuery.error.issues,
+    });
+  }
+  const wantGroups = summaryQuery.data.groupBy === 'contact';
+  const summary = await withTenant(database, principal.tenantId, async (tx) => {
+    const context = repoContext(tx, principal);
+    const detail = await repo.aggregateSummary(context, kind, ownerId, companyId);
+    const groups = wantGroups
+      ? await repo.aggregateByContact(context, kind, ownerId, companyId)
+      : null;
+    return { detail, groups };
+  });
+  const detail = summary.detail;
+  const groups = summary.groups;
 
   const withAmount = allowsScope(principal.scope, kind, 'view_price');
   return {
-    orderCount: summary.orderCount,
-    ...(withAmount ? { totalAmount: summary.totalAmount ?? '0' } : {}),
-    lastOrderAt: summary.lastOrderAt,
-    recentOrders: summary.recentOrders.map((order) => ({
+    orderCount: detail.orderCount,
+    ...(withAmount ? { totalAmount: detail.totalAmount ?? '0' } : {}),
+    lastOrderAt: detail.lastOrderAt,
+    recentOrders: detail.recentOrders.map((order) => ({
       id: order.id,
       orderNo: order.orderNo,
       status: order.status,
@@ -352,6 +372,17 @@ export async function getSummary(
       contactId: order.contactId,
       contactName: order.contactName,
     })),
-    contacts: summary.contacts.map((contact) => presentContact(kind, contact)),
+    contacts: detail.contacts.map((contact) => presentContact(kind, contact)),
+    ...(groups === null
+      ? {}
+      : {
+          contactGroups: groups.map((group) => ({
+            contactId: group.contactId,
+            contactName: group.contactName,
+            orderCount: group.orderCount,
+            ...(withAmount ? { totalAmount: group.totalAmount ?? '0' } : {}),
+            lastOrderAt: group.lastOrderAt,
+          })),
+        }),
   };
 }

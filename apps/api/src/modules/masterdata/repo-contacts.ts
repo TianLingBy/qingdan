@@ -582,3 +582,73 @@ interface RawOrderJson {
   contact_id: string | null;
   contact_name: string | null;
 }
+/** 按对接人分组的一行（`?groupBy=contact`）。 */
+export interface ContactSummaryGroupData {
+  readonly contactId: string | null;
+  readonly contactName: string | null;
+  readonly orderCount: number;
+  readonly totalAmount: string | null;
+  readonly lastOrderAt: string | null;
+}
+
+export interface ContactGroupRow {
+  contact_id: string | null;
+  contact_name: string | null;
+  order_count: number | string;
+  total_amount: string | number | null;
+  last_order_at: Date | string | null;
+}
+
+/**
+ * 按对接人把该公司下该档案的订单分组统计。
+ *
+ * `GROUP BY s.contact_id` 会把 `contact_id IS NULL` 的行天然归成一组——这正是要的：
+ * 「当时没记对接人的那批单」必须单独成组出现，否则各分组的 orderCount 加起来
+ * 小于 `aggregateSummary` 的总数，看的人会以为丢单。所以这里**不许**加
+ * `WHERE contact_id IS NOT NULL` 之类的过滤。
+ *
+ * `ORDER BY order_count DESC, contact_id NULLS LAST`：主要看谁的单多；
+ * 无对接人那组永远排最后（它是历史遗留，不是某个人的业绩）。
+ *
+ * 一条 SQL 出全部组，不在应用层循环补查（N+1）。
+ */
+export async function aggregateByContact(
+  ctx: ContactRepoContext,
+  kind: ContactKind,
+  ownerId: string,
+  companyId: string,
+): Promise<readonly ContactSummaryGroupData[]> {
+  const spec = CONTACT_SPECS[kind];
+  const result = await ctx.tx.query<ContactGroupRow>(
+    `WITH scoped AS (
+       SELECT o.${spec.orderContactColumn} AS contact_id,
+              o.total_amount,
+              o.created_at
+         FROM ${spec.orderTable} o
+        WHERE o.tenant_id = $1
+          AND o.company_id = $2::uuid
+          AND o.${spec.orderOwnerColumn} = $3::uuid
+          AND o.status <> '已取消'
+     )
+     SELECT s.contact_id,
+            c.name AS contact_name,
+            COUNT(*)::int AS order_count,
+            trim_scale(COALESCE(SUM(s.total_amount), 0)) AS total_amount,
+            MAX(s.created_at) AS last_order_at
+       FROM scoped s
+       LEFT JOIN ${spec.table} c
+              ON c.id = s.contact_id
+             AND c.tenant_id = $1
+      GROUP BY s.contact_id, c.name
+      ORDER BY COUNT(*) DESC, s.contact_id NULLS LAST`,
+    [ctx.tenantId, companyId, ownerId],
+  );
+
+  return result.rows.map((row) => ({
+    contactId: row.contact_id,
+    contactName: row.contact_name,
+    orderCount: Number(row.order_count),
+    totalAmount: row.total_amount === null ? null : String(row.total_amount),
+    lastOrderAt: toIso(row.last_order_at),
+  }));
+}
