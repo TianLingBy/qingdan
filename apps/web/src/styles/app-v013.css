@@ -582,3 +582,8 @@ html[data-mode="light"] .row-ico,html[data-mode="light"] .empty .ico{
 
 /* 无看价权限提示条（?state=noprice） */
 .md-noprice{margin:0 0 12px;padding:10px 14px;border:1px solid rgba(192,83,58,.30);border-radius:10px;background:rgba(192,83,58,.08);color:var(--text-2);font-size:16px;line-height:1.6}
+
+/* 按钮禁用态（本地补充，设计稿缺）：产品里 disabled 的按钮不少（权限不足 / 状态不符），
+   设计稿的按钮都是可点的所以没写这条；不加的话禁用按钮与可点按钮长得一模一样。 */
+.btn:disabled,.btn-p:disabled,.btn-primary:disabled,.btn-ghost:disabled{opacity:.42;cursor:not-allowed;box-shadow:none;transform:none}
+.btn-s:disabled{opacity:.42;cursor:not-allowed}

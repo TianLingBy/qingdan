@@ -2,7 +2,7 @@
  * 销售单 E 页面（`/sales-orders`，22 页 IA 第 5 页）。
  *
  * 视觉与字段对齐 `prototype.html` 的 `pages.e`：单号 / 客户 / 成交额 / 状态 / 经手，
- * 工具条上「新建销售单」，金额受「看价」权限控制（D27 / D79）；
+ * 页头「+ 新建」开单，金额受「看价」权限控制（D27 / D79）；
  * 详情按 D24 内嵌「收款记录」块（退款是负数行，块内余额服务端算）。
  *
  * 与原型不同的地方，都是本批接口口径决定的：
@@ -27,6 +27,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import {
+  DetailHead,
+  DetailMetaDot,
+  DocMeta,
+  DocPill,
+  LinesFooter,
+  type DocPillTone,
+} from '../../components/OrderDetailUI';
 import { allows, type ScopeAction } from '../../lib/access';
 import { resolveListState, type ListState } from '../../lib/list-state';
 import { useCompanyLabel } from '../../lib/company-directory';
@@ -69,12 +77,19 @@ import {
   type SalesOrderSort,
 } from './sales-api';
 
-const STATUS_STYLE: Readonly<Record<SalesOrderStatus, string>> = {
-  进行中: 'bg-blue-50 text-blue-700',
+/**
+ * 状态色档（v0.13 `.st` 系列，选档规则见 `components/OrderDetailUI.tsx`）：
+ * 进行中还要人干活 → `now`；已发货货在路上 → `transit`；已完成 → `ok`；已取消 → `cancel`。
+ *
+ * 原来这里是 Tailwind `bg-blue-50` / `bg-amber-50` 自拼色，同一个「已发货」在不同页
+ * 会是不同深浅的琥珀 —— 换成 `.st` 之后六张单据页说的是同一种颜色。
+ */
+const STATUS_TONE: Readonly<Record<SalesOrderStatus, DocPillTone>> = {
+  进行中: 'now',
   // D94：货已发出、等客户签收（签收走 sales.order.complete）。
-  已发货: 'bg-amber-50 text-amber-700',
-  已完成: 'bg-emerald-50 text-emerald-700',
-  已取消: 'bg-slate-100 text-slate-500',
+  已发货: 'transit',
+  已完成: 'ok',
+  已取消: 'cancel',
 };
 
 /**
@@ -171,9 +186,7 @@ function totalLineQty(lines: readonly { readonly qty: string }[]): string {
 }
 
 function StatusBadge({ status }: { status: SalesOrderStatus }) {
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[status]}`}>{status}</span>
-  );
+  return <DocPill label={status} tone={STATUS_TONE[status] ?? 'cancel'} />;
 }
 
 // ============================ 开单 / 改单表单 ============================
@@ -903,121 +916,146 @@ export function DetailPanel({
   });
 
   return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-mono text-sm text-slate-900">{order.orderNo}</h2>
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-            <StatusBadge status={order.status} />
+    <section className="card min-w-0 space-y-3 p-4">
+      <DetailHead
+        docLabel="销售单"
+        orderNo={order.orderNo}
+        pill={<StatusBadge status={order.status} />}
+        meta={
+          <>
             <span>{order.customerName}</span>
-            <span className="text-slate-300">|</span>
-            <span>经手人 {employeeLabel(order.handlerId)}</span>
-            <span className="text-slate-300">|</span>
+            <DetailMetaDot />
+            <span>经手 {employeeLabel(order.handlerId)}</span>
+            <DetailMetaDot />
             <span>开单 {formatDateTime(order.createdAt)}</span>
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-sm text-slate-500 hover:text-slate-900"
-        >
-          关闭
-        </button>
-      </div>
+            <DetailMetaDot />
+            <span>最近更新 {formatDateTime(order.updatedAt)}</span>
+            <DetailMetaDot />
+            <span>版本 {order.version}</span>
+          </>
+        }
+        onClose={onClose}
+        closeLabel="收起"
+      />
 
+      {/*
+        明细列序把「引用批次」挪到商品后面：批次是这一行的来源（D22 一行可引多批次），
+        贴着商品读才顺；也为了把 `LinesFooter` 的合计放到最后一列「金额」下面 ——
+        合计落在「引用批次」列下会被读成批次的数量。
+      */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-left text-sm">
-          <thead className="border-b border-slate-200 text-xs text-slate-500">
+        <table className="w-full text-left" style={{ minWidth: '760px' }}>
+          <thead>
             <tr>
-              <th className="py-2">商品</th>
-              <th className="py-2">数量</th>
-              <th className="py-2">单价</th>
-              <th className="py-2">金额</th>
-              <th className="py-2">引用批次</th>
+              <th>商品</th>
+              <th>引用批次</th>
+              <th className="num">数量</th>
+              <th className="num">单价</th>
+              <th className="num">金额</th>
             </tr>
           </thead>
           <tbody>
             {order.lines.map((line, index) => (
-              <tr key={`${line.productId}-${index}`} className="border-b border-slate-100">
-                <td className="py-2">{productLabel(products, line.productId)}</td>
-                <td className="py-2">{formatQty(line.qty)}</td>
-                <td className="py-2">{canViewPrice ? formatMoney(line.unitPrice) : MASKED_AMOUNT}</td>
-                <td className="py-2">{canViewPrice ? formatMoney(line.amount) : MASKED_AMOUNT}</td>
-                <td className="py-2">
+              <tr key={`${line.productId}-${index}`} className="r-row">
+                <td>{productLabel(products, line.productId)}</td>
+                <td>
                   <div className="flex flex-wrap gap-1">
                     {line.batchIds.map((batchId) => (
                       <span
                         key={batchId}
-                        className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-700"
+                        className="rounded px-2 py-0.5 font-mono text-xs"
+                        style={{ background: 'var(--surf-2)', color: 'var(--text-2)' }}
                       >
                         {batchLabel(batches, batchId)}
                       </span>
                     ))}
                   </div>
                 </td>
+                <td className="num whitespace-nowrap">{formatQty(line.qty)}</td>
+                <td className="num whitespace-nowrap">
+                  {canViewPrice ? formatMoney(line.unitPrice) : MASKED_AMOUNT}
+                </td>
+                <td className="num whitespace-nowrap">
+                  {canViewPrice ? formatMoney(line.amount) : MASKED_AMOUNT}
+                </td>
               </tr>
             ))}
           </tbody>
+          <LinesFooter
+            colSpan={4}
+            note={`共 ${order.lines.length} 行 · 数量合计 ${formatQty(totalLineQty(order.lines))}（不同商品单位可能不同）`}
+            sum={canViewPrice ? formatMoney(lineTotal) : MASKED_AMOUNT}
+          />
         </table>
       </div>
 
       {order.fees.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs text-slate-500">
+          <table className="w-full text-left" style={{ minWidth: '560px' }}>
+            <thead>
               <tr>
-                <th className="py-2">费用</th>
-                <th className="py-2">数量</th>
-                <th className="py-2">单价</th>
-                <th className="py-2">金额</th>
-                <th className="py-2">备注</th>
+                <th>费用</th>
+                <th className="num">数量</th>
+                <th className="num">单价</th>
+                <th>备注</th>
+                <th className="num">金额</th>
               </tr>
             </thead>
             <tbody>
               {order.fees.map((fee, index) => (
-                <tr key={`${fee.feeName}-${index}`} className="border-b border-slate-100">
-                  <td className="py-2">{fee.feeName}</td>
-                  <td className="py-2">{formatQty(fee.qty)}</td>
-                  <td className="py-2">{canViewPrice ? formatMoney(fee.unitPrice) : MASKED_AMOUNT}</td>
-                  <td className="py-2">{canViewPrice ? formatMoney(fee.amount) : MASKED_AMOUNT}</td>
-                  <td className="py-2 text-slate-600">{fee.remark ?? '—'}</td>
+                <tr key={`${fee.feeName}-${index}`} className="r-row">
+                  <td>{fee.feeName}</td>
+                  <td className="num whitespace-nowrap">{formatQty(fee.qty)}</td>
+                  <td className="num whitespace-nowrap">
+                    {canViewPrice ? formatMoney(fee.unitPrice) : MASKED_AMOUNT}
+                  </td>
+                  <td style={{ color: 'var(--text-3)' }}>{fee.remark ?? '—'}</td>
+                  <td className="num whitespace-nowrap">
+                    {canViewPrice ? formatMoney(fee.amount) : MASKED_AMOUNT}
+                  </td>
                 </tr>
               ))}
             </tbody>
+            <LinesFooter
+              colSpan={4}
+              note={`共 ${order.fees.length} 行费用 · 费用行金额必须 ≥ 0（D39）`}
+              sum={canViewPrice ? formatMoney(feeTotal) : MASKED_AMOUNT}
+            />
           </table>
         </div>
       )}
 
-      <dl className="grid gap-x-8 gap-y-2 rounded-lg bg-slate-50 px-4 py-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-        <div className="flex gap-2">
-          <dt className="text-slate-500">数量合计</dt>
-          <dd className="font-medium">{formatQty(totalLineQty(order.lines))}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">商品合计</dt>
-          <dd className="font-medium">{canViewPrice ? formatMoney(lineTotal) : MASKED_AMOUNT}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">费用合计</dt>
-          <dd className="font-medium">{canViewPrice ? formatMoney(feeTotal) : MASKED_AMOUNT}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">单据合计</dt>
-          <dd className="font-medium">
-            {canViewPrice ? formatMoney(order.totalAmount) : MASKED_AMOUNT}
-          </dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">收款余额</dt>
-          <dd className="font-medium">
-            {canViewPrice ? formatMoney(order.receiptBalance) : MASKED_AMOUNT}
-          </dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">更新时间</dt>
-          <dd className="font-medium">{formatDateTime(order.updatedAt)}</dd>
-        </div>
-      </dl>
+      <DocMeta
+        columns={3}
+        items={[
+          { label: '客户', value: order.customerName },
+          { label: '经手', value: employeeLabel(order.handlerId) },
+          { label: '数量合计', mono: true, value: formatQty(totalLineQty(order.lines)) },
+          {
+            label: '商品合计',
+            mono: true,
+            value: canViewPrice ? formatMoney(lineTotal) : MASKED_AMOUNT,
+          },
+          {
+            label: '费用合计',
+            mono: true,
+            value: canViewPrice ? formatMoney(feeTotal) : MASKED_AMOUNT,
+          },
+          {
+            label: '单据合计',
+            mono: true,
+            tone: 'money',
+            value: canViewPrice ? formatMoney(order.totalAmount) : MASKED_AMOUNT,
+          },
+          {
+            label: '收款余额',
+            mono: true,
+            value: canViewPrice ? formatMoney(order.receiptBalance) : MASKED_AMOUNT,
+          },
+          { label: '开单时间', mono: true, value: formatDateTime(order.createdAt) },
+          { label: '最近更新', mono: true, value: formatDateTime(order.updatedAt) },
+        ]}
+      />
 
       <ReceiptBlock
         orderId={order.id}
@@ -1029,13 +1067,19 @@ export function DetailPanel({
         onError={onError}
       />
 
-      <div className="flex flex-wrap items-center gap-3">
+      {/*
+        按钮常驻 + 禁用 + 说原因（D85：能改单不等于能出库，只有 sales.update 时「发货」
+        仍在但置灰，并写明缺 sales.ship）—— 与 A / B 页「按状态分段画」不同，
+        这里两个动作是同一批货的两步，并排才看得出「先发货再签收」。
+        主色只给当前状态该做的那一个，避免出现两个同等重要的按钮。
+      */}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={onEdit}
           disabled={editBlocked !== null}
           title={editBlocked ?? undefined}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
+          className="btn"
         >
           编辑
         </button>
@@ -1050,7 +1094,7 @@ export function DetailPanel({
                 ? '仅「进行中」状态的销售单可发货'
                 : undefined
           }
-          className="rounded border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-40"
+          className={order.status === '进行中' && canShip ? 'btn btn-p' : 'btn'}
         >
           发货
         </button>
@@ -1070,7 +1114,7 @@ export function DetailPanel({
                 ? '仅「已发货」状态的销售单可签收'
                 : undefined
           }
-          className="rounded border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-40"
+          className={order.status === '已发货' && canComplete ? 'btn btn-p' : 'btn'}
         >
           客户签收
         </button>
@@ -1078,7 +1122,7 @@ export function DetailPanel({
           type="button"
           onClick={onCancel}
           disabled={!order.cancelable.allowed || !canCancel || busy}
-          className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-700 disabled:opacity-40"
+          className="btn danger"
         >
           取消销售单
         </button>
@@ -1086,10 +1130,13 @@ export function DetailPanel({
           type="button"
           onClick={onPrint}
           title={canViewPrice ? undefined : '无看价权限：打印件上的金额是「—」（D79），不会印出具体金额'}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+          className="btn"
         >
           打印客户联
         </button>
+      </div>
+
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
         {cancelReason && <span className="text-xs text-slate-500">{cancelReason}</span>}
         {editBlocked && <span className="text-xs text-slate-500">{editBlocked}</span>}
         {!canCancel && order.cancelable.allowed && (
@@ -1097,6 +1144,11 @@ export function DetailPanel({
         )}
         {!canShip && order.status === '进行中' && (
           <span className="text-xs text-slate-500">当前身份没有 sales.ship 权限</span>
+        )}
+        {!canComplete && order.status === '已发货' && (
+          <span className="text-xs text-slate-500">
+            签收需要 sales.approve（签收才认收入、才生成结算草稿）
+          </span>
         )}
       </div>
       <p className="text-xs text-slate-500">
@@ -1110,6 +1162,8 @@ export function DetailPanel({
 
 export function SalesOrdersPage() {
   const companyLabel = useCompanyLabel();
+  /** 列表「经手」列要姓名不要 id 前缀；与详情共用同一册姓名簿（5 分钟缓存，不额外拉）。 */
+  const employeeLabel = useEmployeeLabel();
   const queryClient = useQueryClient();
   const me = useQuery({ queryKey: authKeys.me, queryFn: authApi.me });
   const meData = me.data;
@@ -1560,19 +1614,20 @@ export function SalesOrdersPage() {
       : null;
 
   return (
-    <section className="mx-auto max-w-7xl space-y-5">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+    <section className="mx-auto max-w-7xl space-y-4">
+      <div className="p-head">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">销售单 E</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">{PAGE_DESCRIPTION}</p>
+          <div className="eyebrow">销售单 E · 按批次出库</div>
+          <h1>销售单 E</h1>
+          <p className="sub">{PAGE_DESCRIPTION}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="actions">
           <button
             type="button"
             onClick={() => exportCsv.mutate()}
             disabled={!can('export') || exportCsv.isPending}
             title={!can('export') ? '当前身份没有 sales.export 权限' : undefined}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40"
+            className="btn"
           >
             {exportCsv.isPending ? '导出中…' : '导出 CSV'}
           </button>
@@ -1580,17 +1635,16 @@ export function SalesOrdersPage() {
             type="button"
             onClick={beginCreate}
             disabled={!can('create') || companyIds.length === 0}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+            className="btn-primary"
           >
-            新建销售单
+            + 新建
           </button>
         </div>
-      </header>
+      </div>
 
-      <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        完成 = 货已发出：扣批次可用量 + 生成结算单 C 草稿（D72）；
-        「已结算」由财务在 C 单确认，不在这张单上（D19）。
-        收款记录内嵌详情，退款只追加负数行，不改历史行（D24 / D34 / D40）。
+      <p className="note">
+        完成 = 货已发出：扣批次可用量 + 生成结算单 C 草稿（D72）；「已结算」由财务在 C 单确认，
+        不在这张单上（D19）。收款记录内嵌详情，退款只追加负数行，不改历史行（D24 / D34 / D40）。
       </p>
 
       {meData && !canViewPrice && (
@@ -1807,7 +1861,7 @@ export function SalesOrdersPage() {
               </tr>
               <tr className="st-tr st-empty">
                 <td colSpan={8}>
-                  <ListEmpty title="暂无销售单。可调整筛选条件，或用右上角「新建销售单」开第一张。" />
+                  <ListEmpty title="暂无销售单。可调整筛选条件，或用右上角「+ 新建」开第一张。" />
                 </td>
               </tr>
               {rows.map((order) => (
@@ -1829,16 +1883,21 @@ export function SalesOrdersPage() {
                   <td className="px-4 py-3">
                     <StatusBadge status={order.status} />
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                    {order.handlerId ? shortId(order.handlerId) : '—'}
+                  <td className="px-4 py-3">
+                    {/*
+                      经手人列原先直接 `shortId(handlerId)` —— 界面上是一串 8 位十六进制，
+                      对使用者没有意义（详情里同一个字段明明显示的是姓名）。走姓名簿，
+                      `null`（无权查看负责人，Issue #227）才回破折号。
+                    */}
+                    {order.handlerId ? employeeLabel(order.handlerId) : '—'}
                   </td>
                   <td className="px-4 py-3 text-slate-600">{formatDateTime(order.createdAt)}</td>
                   <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
+                    <div className="flex justify-end gap-1.5">
                       <button
                         type="button"
                         onClick={() => setDetailId(order.id)}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs"
+                        className="btn btn-s"
                       >
                         详情
                       </button>
@@ -1846,7 +1905,7 @@ export function SalesOrdersPage() {
                         type="button"
                         disabled={!can('update') || !canViewPrice || order.status !== '进行中'}
                         onClick={() => void withFreshDetail(order.id, beginEdit)}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-40"
+                        className="btn btn-s"
                         title={
                           orderEditBlockedText({
                             domain: 'sales',
@@ -1858,6 +1917,10 @@ export function SalesOrdersPage() {
                       >
                         编辑
                       </button>
+                      {/*
+                        这一格原叫「完成」，但它调的是 `askShip`（出库，D94 之后「完成」专指
+                        客户签收）—— 同一个页面上两个动作两种叫法，用户会以为点的是签收。
+                      */}
                       <button
                         type="button"
                         disabled={!can('ship') || order.status !== '进行中' || shipOrder.isPending}
@@ -1869,15 +1932,15 @@ export function SalesOrdersPage() {
                               ? '仅「进行中」状态的销售单可出库'
                               : undefined
                         }
-                        className="rounded border border-emerald-300 px-2 py-1 text-xs text-emerald-700 disabled:opacity-40"
+                        className="btn btn-s"
                       >
-                        完成
+                        发货
                       </button>
                       <button
                         type="button"
                         disabled={!can('delete') || order.status !== '进行中' || cancelOrder.isPending}
                         onClick={() => void withFreshDetail(order.id, askCancel)}
-                        className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 disabled:opacity-40"
+                        className="btn btn-s danger"
                       >
                         取消
                       </button>
@@ -1921,12 +1984,12 @@ export function SalesOrdersPage() {
       {detailId !== null && (
         <>
           {detail.isPending && (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
+            <p className="card p-4 text-sm" style={{ color: 'var(--text-3)' }}>
               正在加载销售单详情…
             </p>
           )}
           {detail.error && (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-red-700">
+            <p className="card p-4 text-sm" style={{ color: 'var(--danger-on-surface)' }}>
               {errorText(detail.error)}
             </p>
           )}

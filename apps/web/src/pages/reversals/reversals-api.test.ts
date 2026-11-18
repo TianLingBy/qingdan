@@ -274,4 +274,20 @@ describe('R / S 完成端点', () => {
     expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"5"');
     expect(calls[0]?.init.body).toBeUndefined();
   });
+
+  it('供应商退货取消带 If-Match 与 X-Reason，且原因里的中文被编码成可取回的 ASCII', async () => {
+    const { api, calls } = recorder();
+
+    await api.supplierReturnCancel('s1', 2, '供应商确认不退货');
+
+    expect(calls[0]?.url).toBe('/api/v1/supplier-returns/s1/cancel');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(headerOf(calls[0]!.init, 'If-Match')).toBe('"2"');
+    // 契约 response 回单据本体，request 为空 —— 原因只走头，不塞 body。
+    expect(calls[0]?.init.body).toBeUndefined();
+    const reason = headerOf(calls[0]!.init, 'X-Reason');
+    expect(reason).not.toBeNull();
+    // 中文直接塞 `Headers.set` 会抛 ByteString TypeError；client 统一 percent-encode，这里验可逆。
+    expect(decodeURIComponent(reason!)).toBe('供应商确认不退货');
+  });
 });

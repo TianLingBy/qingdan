@@ -123,6 +123,14 @@ export interface DocMetaProps {
  */
 export function DocMeta({ items, columns = 3 }: DocMetaProps) {
   if (items.length === 0) return null;
+  /**
+   * 末尾补几个**空的**格子把最后一行填满。
+   *
+   * 为什么：网格的底色是 `--line-1`（用来当单元格分隔线），项目数不是列数整数倍时，
+   * 最后一行右侧的空白区会把这块底色露出来 —— 看起来像「有两格数据没加载出来」。
+   * 采购单 7 项 / 3 列时就是 2 个空洞（见 v0.13 采购单详情截图）。补同色空格最省事。
+   */
+  const filler = (columns - (items.length % columns)) % columns;
   return (
     <dl
       className="grid gap-px overflow-hidden rounded-xl border sm:grid-cols-2"
@@ -153,6 +161,13 @@ export function DocMeta({ items, columns = 3 }: DocMetaProps) {
             {item.value}
           </dd>
         </div>
+      ))}
+      {Array.from({ length: filler }, (_, index) => (
+        <div
+          key={`filler-${index}`}
+          aria-hidden="true"
+          style={{ background: 'var(--surf-1)' }}
+        />
       ))}
     </dl>
   );

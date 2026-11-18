@@ -137,7 +137,7 @@ describe('加工单 B 页面', () => {
     expect(html).toContain('不锈钢合页 4寸');
     expect(html).toContain('¥1,500.00');
     expect(html).toContain('进行中');
-    expect(html).toContain('新建加工单');
+    expect(html).toContain('+ 新建');
   });
 
   it('损耗量还没验收时显示「待验收」，不拿投入量或 0 假装已知（D5 / F3）', () => {
@@ -330,6 +330,7 @@ function renderDetailPanel(
       order={{ ...PANEL_ORDER, status: status ?? PANEL_ORDER.status }}
       products={[PRODUCT]}
       batches={[]}
+      handlerLabel="张明"
       canViewPrice={perms.canViewPrice ?? FULL_ACTIONS.canViewPrice}
       canUpdate={perms.canUpdate ?? FULL_ACTIONS.canUpdate}
       canPrint={perms.canPrint ?? FULL_ACTIONS.canPrint}
@@ -370,6 +371,14 @@ function buttonTag(html: string, label: string): string {
  */
 function isDisabled(html: string, label: string): boolean {
   return /\sdisabled(=""|\s|>)/.test(buttonTag(html, label));
+}
+
+/**
+ * 动作按钮按状态分段画（v0.13 起与采购单同口径）：不属于当前状态的动作**根本不画**，
+ * 所以「找不到按钮」是预期结果，不能当成失败。要判「在不在」先用这个。
+ */
+function hasButton(html: string, label: string): boolean {
+  return new RegExp(`<button[^>]*>${label}</button>`).test(html);
 }
 
 describe('加工单详情面板：按钮三态', () => {
@@ -421,21 +430,24 @@ describe('加工单详情面板：按钮三态', () => {
 /* ------------------- D94 ②：发货 / 撤销发货 / 到货确认 ------------------- */
 
 describe('加工单详情面板：在途两步（D94 ②）', () => {
-  it('进行中 + 有 processing.ship：发货可点，撤销与到货确认置灰', () => {
+  it('进行中 + 有 processing.ship：只画「发货」，撤销与到货确认不画（这两个状态不属于它）', () => {
     const html = renderDetailPanel({ status: '进行中' });
 
     expect(isDisabled(html, '发货')).toBe(false);
-    expect(isDisabled(html, '撤销发货')).toBe(true);
-    expect(isDisabled(html, '到货确认')).toBe(true);
+    expect(hasButton(html, '撤销发货')).toBe(false);
+    expect(hasButton(html, '到货确认')).toBe(false);
   });
 
-  it('在途 + 有 processing.ship：撤销可点，发货置灰', () => {
+  it('在途 + 有 processing.ship：只画「撤销发货」，发货不画、完成要给出去路', () => {
     const html = renderDetailPanel({ status: '在途' });
 
     expect(isDisabled(html, '撤销发货')).toBe(false);
-    expect(isDisabled(html, '发货')).toBe(true);
+    expect(hasButton(html, '发货')).toBe(false);
+    // 在途的正确出口是「到货确认」，直接点完成会 422 —— 先把路指出来
+    expect(isDisabled(html, '完成 / 验收')).toBe(true);
+    expect(html).toContain('这张单在途，请点「到货确认」入库');
     // 撤销原因输入只在「在途 + 有 ship」时出现
-    expect(html).toContain('撤销原因（必填，进审计）');
+    expect(html).toContain('撤销原因（必填，会记审计）');
   });
 
   it('在途 + 有 processing.approve：到货确认可点', () => {
@@ -517,5 +529,36 @@ describe('加工单发货口径（ship-flow）', () => {
       transitTo: 'warehouse',
       lossQty: '4',
     });
+  });
+});
+
+/* ---------------------- v0.13 版式（#337 单据组） ---------------------- */
+
+describe('v0.13 列表版式（#337）', () => {
+  it('列表落在 card 上，三个状态行常驻 tbody、靠 data-state 显隐', () => {
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
+
+    expect(html).toContain('data-state="filled"');
+    expect(html).toContain('class="r-row"');
+    for (const stateClass of ['st-tr st-loading', 'st-tr st-error', 'st-tr st-empty']) {
+      expect(html).toContain(stateClass);
+    }
+  });
+
+  it('状态徽标用 .st 语义档，不再自拼 Tailwind 底色（同一个「在途」不该有两种黄）', () => {
+    const inTransit: ProcessingOrder = { ...ORDER, status: '在途' };
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [inTransit] }));
+
+    expect(html).toContain('class="st transit"');
+    expect(html).not.toContain('bg-amber-50');
+  });
+
+  it('游标分页只写「上一批 / 下一批」，不画页码', () => {
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
+
+    expect(html).toContain('上一批');
+    expect(html).toContain('下一批');
+    expect(html).not.toContain('下一页');
+    expect(html).not.toContain('第 1 页');
   });
 });
