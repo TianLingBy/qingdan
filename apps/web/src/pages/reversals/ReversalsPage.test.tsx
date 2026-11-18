@@ -110,11 +110,33 @@ describe('盘点权限拆得比别的页细（D71）', () => {
   });
 });
 
-describe('三态齐全', () => {
-  it('列表停在骨架态时不下「没有数据」的结论', () => {
+describe('v0.13 列表版式（#337）', () => {
+  it('列表落在 card 上，三个状态行常驻 tbody、靠 data-state 显隐', () => {
     const html = view(OWNER);
+    expect(html).toContain('class="card min-w-0"');
+    expect(html).toContain('data-state="loading"');
+    for (const stateClass of ['st-tr st-loading', 'st-tr st-error', 'st-tr st-empty']) {
+      expect(html).toContain(stateClass);
+    }
+  });
+
+  it('游标分页只写「上一批 / 下一批」，不画页码', () => {
+    const html = view(OWNER);
+    expect(html).toContain('上一批');
+    expect(html).toContain('下一批');
+    expect(html).not.toContain('下一页');
+    expect(html).not.toContain('第 1 页');
+  });
+});
+
+describe('三态齐全', () => {
+  it('列表停在骨架态时容器与 tbody 都报 loading，空态行被 CSS 藏起来', () => {
+    const html = view(OWNER);
+    // v0.13 四态是同一份 DOM 靠 data-state 切显示，所以「空态文案不在 HTML 里」不再是判据；
+    // 判据是容器/表体报 loading，且空态那行挂在 st-tr st-empty 上（CSS 只在该态之外才放它出来）。
+    expect(html).toContain('data-state="loading"');
     expect(html).toContain('aria-label="列表加载中"');
-    expect(html).not.toContain('还没有客户退货单');
+    expect(html).toContain('st-tr st-empty');
   });
 
   it('身份读取失败时给提示，但仍显示分栏结构', () => {
@@ -212,7 +234,11 @@ describe('完成入口（R / S）', () => {
     );
   }
 
-  function renderSupplierDetail(status: SupplierReturn['status'], canApprove = true): string {
+  function renderSupplierDetail(
+    status: SupplierReturn['status'],
+    canApprove = true,
+    canCancel = true,
+  ): string {
     const detail = supplierReturn(status);
     const client = createQueryClient();
     client.setQueryData(reversalsQueryKeys.supplierReturn(detail.id), detail);
@@ -232,6 +258,7 @@ describe('完成入口（R / S）', () => {
           canCreate
           canApprove={canApprove}
           canViewPrice
+          canCancel={canCancel}
           companyIds={[COMPANY]}
           companyId={COMPANY}
           onCompanyChange={() => {}}
@@ -252,6 +279,15 @@ describe('完成入口（R / S）', () => {
     const html = renderSupplierDetail('进行中');
     expect(html).toContain('完成');
     expect(html).not.toContain('仅「进行中」状态的单据可完成');
+  });
+
+  it('S 单是三类冲正里唯一能取消的：有 supplier_return.delete 才画「取消单据」', () => {
+    expect(renderSupplierDetail('进行中')).toContain('取消单据');
+    expect(renderSupplierDetail('进行中', true, false)).not.toContain('取消单据');
+  });
+
+  it('已完成的 S 单不给取消（cancel 端点只放行进行中）', () => {
+    expect(renderSupplierDetail('已完成')).not.toContain('取消单据');
   });
 
   it('已完成的单据「完成」按钮禁用并说明原因', () => {

@@ -18,7 +18,7 @@ import { ApiError } from '../../api/client';
 import { formatQty } from '../../lib/decimal';
 import { useEmployeeLabel } from '../../lib/employee-directory';
 import {
-  STOCKTAKE_STATUS_CLASS,
+  STOCKTAKE_STATUS_TONE,
   approveBlockedText,
   batchOptionLabel,
   idLabel,
@@ -31,16 +31,16 @@ import {
 } from './reversals-api';
 import {
   BasisNote,
-  EmptyState,
   ErrorBar,
   ErrorList,
   FIELD_CLASS,
   Field,
-  Kv,
-  StatusPill,
+  ReversalListCard,
+  ReversalPager,
   TableSkeleton,
 } from './reversals-ui';
-import { ListError } from '../../components/ListStates';
+import { DetailHead, DocMeta, DocPill } from '../../components/OrderDetailUI';
+import { resolveListState } from '../../lib/list-state';
 
 export interface StocktakesPanelProps {
   /** 盘盈：`stocktake.create`。 */
@@ -176,6 +176,11 @@ export function StocktakesPanel({
 
   const items = list.data?.items ?? [];
   const nextCursor = list.data?.nextCursor ?? null;
+  const listState = resolveListState({
+    isPending: list.isPending,
+    hasError: list.isError,
+    isEmpty: items.length === 0,
+  });
 
   return (
     <div className="space-y-3">
@@ -344,183 +349,166 @@ export function StocktakesPanel({
         </section>
       ) : null}
 
-      <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-semibold text-slate-900">盘点单</h3>
-          <span className="text-xs text-slate-400">共 {items.length} 条 · 审批后批次数量才会变</span>
-        </div>
-
-        {list.isError ? (
-          <ListError
-            title="列表加载失败"
-            error={list.error}
-            onRetry={() => void list.refetch()}
+      <ReversalListCard
+        title="盘点单"
+        meta={`共 ${items.length} 条 · 审批后批次数量才会变`}
+        state={listState}
+        colCount={7}
+        minWidth="720px"
+        head={
+          <tr>
+            <th>单号</th>
+            <th>批次</th>
+            <th className="num">账面量</th>
+            <th className="num">实盘量</th>
+            <th className="num">差异</th>
+            <th>状态</th>
+            <th />
+          </tr>
+        }
+        emptyText="还没有盘点单"
+        emptyHint="盘点只用于盘盈盘亏冲正；实盘量与账面量一致时不需要开单。"
+        errorTitle="盘点单加载失败"
+        error={list.error}
+        onRetry={() => void list.refetch()}
+        pager={
+          <ReversalPager
+            batchIndex={pageIndex}
+            count={items.length}
+            hasNext={nextCursor !== null}
+            onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
+            onNext={() => {
+              if (nextCursor === null) return;
+              setCursors((current) => {
+                const next = current.slice(0, pageIndex + 1);
+                next[pageIndex + 1] = nextCursor;
+                return next;
+              });
+              setPageIndex((index) => index + 1);
+            }}
           />
-        ) : list.isPending ? (
-          <TableSkeleton />
-        ) : items.length === 0 ? (
-          <EmptyState
-            title="还没有盘点单"
-            hint="盘点只用于盘盈盘亏冲正；实盘量与账面量一致时不需要开单。"
-          />
-        ) : (
-          <div className="mt-3 -mx-4 overflow-x-auto px-4">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead>
-                <tr className="text-xs text-slate-400">
-                  <th className="py-1.5 pr-3 font-medium">单号</th>
-                  <th className="py-1.5 pr-3 font-medium">批次</th>
-                  <th className="py-1.5 pr-3 font-medium">账面量</th>
-                  <th className="py-1.5 pr-3 font-medium">实盘量</th>
-                  <th className="py-1.5 pr-3 font-medium">差异</th>
-                  <th className="py-1.5 pr-3 font-medium">状态</th>
-                  <th className="py-1.5 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item: Stocktake) => (
-                  <tr key={item.id} className="border-t border-slate-100">
-                    <td className="whitespace-nowrap py-2 pr-3 font-mono text-xs text-slate-700">
-                      {item.stocktakeNo}
-                    </td>
-                    <td className="whitespace-nowrap py-2 pr-3 font-mono text-xs text-slate-500">
-                      {batchNoById.get(item.batchId) ?? idLabel(item.batchId)}
-                    </td>
-                    <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{formatQty(item.bookQty)}</td>
-                    <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{formatQty(item.actualQty)}</td>
-                    <td className="whitespace-nowrap py-2 pr-3 tabular-nums">
-                      <span
-                        className={
-                          item.diffQty.startsWith('-') ? 'text-emerald-700' : 'text-rose-700'
-                        }
-                      >
-                        {item.diffQty.startsWith('-') ? '' : '+'}
-                        {formatQty(item.diffQty)}
-                      </span>
-                      <span className="ml-1 text-[11px] text-slate-400">
-                        {stocktakeDirectionText(item.diffQty)}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap py-2 pr-3">
-                      <StatusPill
-                        status={item.status}
-                        className={STOCKTAKE_STATUS_CLASS[item.status] ?? 'bg-slate-100 text-slate-500'}
-                      />
-                    </td>
-                    <td className="whitespace-nowrap py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setDetailId(item.id)}
-                        className="rounded-md border border-slate-300 px-2 py-0.5 text-xs text-slate-600"
-                      >
-                        查看
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-          <span>第 {pageIndex + 1} 页</span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={pageIndex === 0}
-              onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-              className="rounded-md border border-slate-300 px-2 py-1 disabled:opacity-40"
-            >
-              上一页
-            </button>
-            <button
-              type="button"
-              disabled={nextCursor === null}
-              onClick={() => {
-                if (nextCursor === null) return;
-                setCursors((current) => {
-                  const next = current.slice(0, pageIndex + 1);
-                  next[pageIndex + 1] = nextCursor;
-                  return next;
-                });
-                setPageIndex((index) => index + 1);
-              }}
-              className="rounded-md border border-slate-300 px-2 py-1 disabled:opacity-40"
-            >
-              下一页
-            </button>
-          </div>
-        </div>
-      </section>
+        }
+      >
+        {items.map((item: Stocktake) => (
+          <tr key={item.id} className="r-row">
+            <td className="whitespace-nowrap">
+              <button
+                type="button"
+                onClick={() => setDetailId(item.id)}
+                className="font-mono text-xs underline-offset-2 hover:underline"
+              >
+                {item.stocktakeNo}
+              </button>
+            </td>
+            <td className="whitespace-nowrap font-mono text-xs" style={{ color: 'var(--text-3)' }}>
+              {batchNoById.get(item.batchId) ?? idLabel(item.batchId)}
+            </td>
+            <td className="num whitespace-nowrap">{formatQty(item.bookQty)}</td>
+            <td className="num whitespace-nowrap">{formatQty(item.actualQty)}</td>
+            <td className="num whitespace-nowrap">
+              {item.diffQty.startsWith('-') ? '' : '+'}
+              {formatQty(item.diffQty)}
+              <span className="ml-1 text-xs" style={{ color: 'var(--text-3)' }}>
+                {stocktakeDirectionText(item.diffQty)}
+              </span>
+            </td>
+            <td className="whitespace-nowrap">
+              <DocPill
+                label={item.status}
+                tone={STOCKTAKE_STATUS_TONE[item.status] ?? 'warn'}
+              />
+            </td>
+            <td className="whitespace-nowrap text-right">
+              <button type="button" onClick={() => setDetailId(item.id)} className="btn btn-s">
+                详情
+              </button>
+            </td>
+          </tr>
+        ))}
+      </ReversalListCard>
 
       {detailId !== null ? (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">盘点单详情</h3>
-            <button
-              type="button"
-              onClick={() => setDetailId(null)}
-              className="rounded-md border border-slate-300 px-2 py-0.5 text-xs text-slate-600"
-            >
-              关闭
-            </button>
-          </div>
-
+        <section className="card min-w-0 p-4">
           {detail.isError ? (
-            <div className="mt-3">
-              <ErrorBar message="详情加载失败" onRetry={() => void detail.refetch()} />
-            </div>
+            <ErrorBar message="详情加载失败" onRetry={() => void detail.refetch()} />
           ) : detail.isPending || !detail.data ? (
             <TableSkeleton rows={2} />
           ) : (
-            <div className="mt-3 space-y-3">
-              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Kv label="单号">{detail.data.stocktakeNo}</Kv>
-                <Kv label="状态">
-                  <StatusPill
-                    status={detail.data.status}
-                    className={STOCKTAKE_STATUS_CLASS[detail.data.status] ?? 'bg-slate-100 text-slate-500'}
+            <div className="space-y-3">
+              <DetailHead
+                docLabel="盘点单"
+                orderNo={detail.data.stocktakeNo}
+                pill={
+                  <DocPill
+                    label={detail.data.status}
+                    tone={STOCKTAKE_STATUS_TONE[detail.data.status] ?? 'warn'}
                   />
-                </Kv>
-                <Kv label="批次">
-                  {batchNoById.get(detail.data.batchId) ?? idLabel(detail.data.batchId)}
-                </Kv>
-                <Kv label="差异量">
-                  <span className="font-mono">
-                    {detail.data.diffQty.startsWith('-') ? '' : '+'}
-                    {formatQty(detail.data.diffQty)}
-                  </span>
-                  <span className="ml-1 text-xs text-slate-400">
-                    {stocktakeDirectionText(detail.data.diffQty)}
-                  </span>
-                </Kv>
-                <Kv label="账面量">{formatQty(detail.data.bookQty)}</Kv>
-                <Kv label="实盘量">{formatQty(detail.data.actualQty)}</Kv>
-                <Kv label="发起人">{employeeLabel(detail.data.applicantId)}</Kv>
-                <Kv label="审批人">{employeeLabel(detail.data.approverId)}</Kv>
-                <Kv label="备注">{detail.data.remark ?? '—'}</Kv>
-              </dl>
+                }
+                meta={
+                  <>
+                    <span>{stocktakeDirectionText(detail.data.diffQty)}</span>
+                    <span aria-hidden="true" style={{ color: 'var(--line-3)' }}>
+                      ·
+                    </span>
+                    <span>批次 {batchNoById.get(detail.data.batchId) ?? idLabel(detail.data.batchId)}</span>
+                  </>
+                }
+                actions={
+                  detail.data.approvable.allowed ? (
+                    <button
+                      type="button"
+                      onClick={() => approve.mutate(detail.data!)}
+                      disabled={!canApprove || approve.isPending}
+                      title={canApprove ? undefined : '当前身份没有 stocktake.approve 权限'}
+                      className="btn btn-p"
+                    >
+                      {approve.isPending ? '审批中…' : '批准'}
+                    </button>
+                  ) : null
+                }
+                onClose={() => setDetailId(null)}
+              />
+
+              <DocMeta
+                columns={3}
+                items={[
+                  {
+                    label: '批次',
+                    mono: true,
+                    value:
+                      batchNoById.get(detail.data.batchId) ?? idLabel(detail.data.batchId),
+                  },
+                  { label: '账面量', mono: true, value: formatQty(detail.data.bookQty) },
+                  { label: '实盘量', mono: true, value: formatQty(detail.data.actualQty) },
+                  {
+                    label: '差异量',
+                    mono: true,
+                    tone: 'money',
+                    value: `${detail.data.diffQty.startsWith('-') ? '' : '+'}${formatQty(
+                      detail.data.diffQty,
+                    )}（${stocktakeDirectionText(detail.data.diffQty)}）`,
+                  },
+                  { label: '发起人', value: employeeLabel(detail.data.applicantId) },
+                  { label: '审批人', value: employeeLabel(detail.data.approverId) },
+                  {
+                    label: '备注',
+                    tone: detail.data.remark ? undefined : 'dim',
+                    value: detail.data.remark ?? '—',
+                  },
+                ]}
+              />
 
               {actionError ? <ErrorBar message={actionError} /> : null}
 
               {detail.data.approvable.allowed ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => approve.mutate(detail.data!)}
-                    disabled={!canApprove || approve.isPending}
-                    title={canApprove ? undefined : '当前身份没有 stocktake.approve 权限'}
-                    className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
-                  >
-                    {approve.isPending ? '审批中…' : '批准'}
-                  </button>
-                  <span className="text-[11px] text-slate-400">
-                    批准后会调整批次可用量并追加一条冲正流水（D47 / D67），不可撤销；一期没有驳回端点。
-                  </span>
-                </div>
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
+                  批准后会调整批次可用量并追加一条冲正流水（D47 / D67），不可撤销；一期没有驳回端点。
+                </p>
               ) : (
-                <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                <p
+                  className="rounded-lg px-3 py-2 text-xs"
+                  style={{ background: 'var(--surf-2)', color: 'var(--text-3)' }}
+                >
                   {approveBlockedText(detail.data.approvable.reason) ?? '当前状态不可审批'}
                 </p>
               )}

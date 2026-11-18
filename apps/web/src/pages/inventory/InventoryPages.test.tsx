@@ -183,7 +183,8 @@ describe('盘点页（#143）', () => {
     expect(html).toContain('盘点');
     expect(html).toContain(STOCKTAKE.stocktakeNo);
     expect(html).toContain('待审批');
-    expect(html).toContain('查看');
+    // 列表行内动作按钮在 v0.13 版式里统一叫「详情」（#337）
+    expect(html).toContain('详情');
     expect(html).toContain('唯一能直接改批次数量');
   });
 });

@@ -103,7 +103,7 @@ export function createReversalsApi(client: ApiClient = apiClient) {
         headers: ifMatch(version),
       }),
 
-    /* S 供应商退货（4 条） */
+    /* S 供应商退货（5 条） */
     listSupplierReturns: (filters: SupplierReturnListFilters = {}) =>
       client.get<PageResult<SupplierReturn>>('/supplier-returns', {
         query: {
@@ -121,6 +121,18 @@ export function createReversalsApi(client: ApiClient = apiClient) {
     supplierReturnComplete: (id: string, version: number) =>
       client.post<SupplierReturn>(`/supplier-returns/${id}/complete`, undefined, {
         headers: ifMatch(version),
+      }),
+    /**
+     * 取消进行中的 S 单（`supplier_return.cancel`，权限点 `supplier_return.delete`）。
+     *
+     * 服务端 `assertHumanCreation(principal, request.auditReason)` 要求带原因，
+     * 所以 `reason` 必填——它走 `X-Reason` 头（中文由 client 的 `headerSafeValue` 编码）。
+     * 取消会释放待执行库存占用，且不可撤销。
+     */
+    supplierReturnCancel: (id: string, version: number, reason: string) =>
+      client.post<SupplierReturn>(`/supplier-returns/${id}/cancel`, undefined, {
+        headers: ifMatch(version),
+        reason,
       }),
 
     /* I 盘点（5 条；D71 盘盈 / 盘亏拆成两条创建端点） */
@@ -342,16 +354,33 @@ export function validateStocktakeDraft(draft: {
 
 /* ------------------------------ 展示口径 ------------------------------ */
 
-export const RETURN_STATUS_CLASS: Readonly<Record<string, string>> = {
-  进行中: 'bg-blue-50 text-blue-700',
-  已完成: 'bg-emerald-50 text-emerald-700',
-  已取消: 'bg-slate-100 text-slate-500',
+/**
+ * R / S 单三态 → v0.13 `.st` 语义档（对应 `.st` 的 now / ok / warn / bad / cancel）。
+ *
+ * 为什么「进行中」用 `warn`（黄）而不是 N 单的 `now`（苔绿）：
+ * `design/v0.13/冲正单据.html` 的 R / S 行就是这么画的（`<span class="st warn">进行中</span>`），
+ * 而且语义上说得通——一张进行中的退货单意味着**钱或货还悬着**，等审批人动手，
+ * 和 N 单那种「单据在正常流转」的进行中不是一回事。照稿，不按好看的挑。
+ */
+export const RETURN_STATUS_TONE: Readonly<Record<string, 'warn' | 'ok' | 'cancel'>> = {
+  进行中: 'warn',
+  已完成: 'ok',
+  已取消: 'cancel',
 };
 
-export const STOCKTAKE_STATUS_CLASS: Readonly<Record<StocktakeStatus, string>> = {
-  待审批: 'bg-amber-50 text-amber-800',
-  已批准: 'bg-emerald-50 text-emerald-700',
-  已驳回: 'bg-rose-50 text-rose-700',
+/**
+ * 盘点三态 → `.st` 语义档。
+ *
+ * `待审批` 用 `bad`（红）也是照稿：它不是出错，是「等财务批」，红一点才有人管；
+ * `已驳回` 稿子给的是 `warn`（黄）而不是 `cancel`（灰），因为驳回后还要人改单重报，
+ * 不是废单。两者都不是终态灰，别按「失败就该灰」的习惯改。
+ */
+export const STOCKTAKE_STATUS_TONE: Readonly<
+  Record<StocktakeStatus, 'bad' | 'ok' | 'warn'>
+> = {
+  待审批: 'bad',
+  已批准: 'ok',
+  已驳回: 'warn',
 };
 
 /** 盘点可审批原因的文案；`null` 表示可批。只渲染服务端结论，前端不重算（D21 同款）。 */
