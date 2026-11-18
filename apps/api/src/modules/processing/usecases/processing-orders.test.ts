@@ -200,10 +200,15 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     return receiveProcessingOrder(ctx);
   }
 
-  async function revoke(id: string, version = 2): Promise<ProcessingOrder> {
+  async function revoke(
+    id: string,
+    version = 2,
+    reason: string | null = '仓库临时取消',
+  ): Promise<ProcessingOrder> {
     const { ctx } = writeCtx({}, {
       params: { id },
       headers: { 'if-match': `"${version}"` },
+      auditReason: reason,
     });
     return revokeProcessingOrderShip(ctx);
   }
@@ -433,6 +438,29 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       in_transit_qty: '0',
       held_by_processor_id: null,
     });
+  });
+
+  it('撤销发货必须在服务端校验原因：缺失、空白、超长全部 422，且单据仍在途', async () => {
+    const created = await createOne();
+    await ship(created.id, {
+      transitStage: 'materials',
+      transitTo: 'warehouse',
+    });
+
+    for (const reason of [null, '   ', 'x'.repeat(201)]) {
+      await expectAppError(revoke(created.id, 2, reason), 'VALIDATION_FAILED');
+    }
+
+    const unchanged = await test.database.query<{
+      status: string;
+      version: number;
+    }>(
+      `SELECT status, version
+         FROM processing_order
+        WHERE id = $1::uuid`,
+      [created.id],
+    );
+    expect(unchanged.rows[0]).toMatchObject({ status: '在途', version: 2 });
   });
 
   it('finished 发货生成在途产出批次；到货后转可用并完成', async () => {

@@ -176,6 +176,8 @@ export function toPaymentRequest(record: repo.PaymentRequestRecord): PaymentRequ
     channel: record.channel,
     amount: record.amount,
     status: expired ? 'expired' : record.status,
+    // 商户订单号要出到响应里：前端靠它调 mock 确认，客服靠它跟支付平台对账。
+    providerOrderNo: record.providerOrderNo,
     qrContent: record.qrContent,
     payUrl: record.payUrl,
     expiresAt: record.expiresAt,

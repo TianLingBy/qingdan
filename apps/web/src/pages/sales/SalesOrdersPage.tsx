@@ -58,6 +58,7 @@ import {
 } from '../../lib/decimal';
 import { authApi, authKeys } from '../auth/auth-api';
 import { extractIssues, masterdataApi, optionalText } from '../masterdata/masterdata-api';
+import { PaymentRequestPanel } from './PaymentRequestPanel';
 import {
   RECEIPT_METHODS,
   batchOptionLabel,
@@ -645,8 +646,16 @@ interface ReceiptBlockProps {
   readonly balance: string | null;
   readonly canViewPrice: boolean;
   readonly canAdd: boolean;
+  /**
+   * `payment.create`（#101 发起收款）。与 `canAdd` 是两件事：`canAdd` 是 `sales.update`
+   * （线下补录收款行），这个是把二维码给客户去扫码付。能补录不等于能收钱 ——
+   * 同 D85 把「出库」与「认收入」拆开的理由。
+   */
+  readonly canCreatePayment: boolean;
   readonly status: SalesOrderStatus;
   readonly onError: (message: string) => void;
+  /** 扫码收款入账后让详情重拉（余额/收款记录/状态都可能变）。 */
+  readonly onRefresh: () => void;
 }
 
 function ReceiptBlock({
@@ -655,11 +664,14 @@ function ReceiptBlock({
   balance,
   canViewPrice,
   canAdd,
+  canCreatePayment,
   status,
   onError,
+  onRefresh,
 }: ReceiptBlockProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
   const [direction, setDirection] = useState<SalesReceiptDirection>('收款');
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<(typeof RECEIPT_METHODS)[number]>('线下转账');
@@ -712,16 +724,48 @@ function ReceiptBlock({
             （收款合计 − 退款合计，服务端计算，D34）
           </span>
         </div>
-        {canAdd && status !== '已取消' && (
-          <button
-            type="button"
-            onClick={() => setOpen((value) => !value)}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
-          >
-            {open ? '收起' : '+ 追加收款 / 退款'}
-          </button>
+        {(canAdd || canCreatePayment) && status !== '已取消' && (
+          <div className="flex items-center gap-2">
+            {/*
+              扫码收款与线下补录并列但不混：一个让客户自己付、一个由操作员录入已发生的钱。
+              两道权限（`payment.create` / `sales.update`）各自判、各自置灰 ——
+              用 `canAdd || canCreatePayment` 作为是否渲染的依据，否则「有收款权没改单权」
+              的人会连按钮都看不见。
+            */}
+            <button
+              type="button"
+              onClick={() => setPayOpen((value) => !value)}
+              disabled={!canCreatePayment}
+              title={canCreatePayment ? undefined : '发起收款需要 payment.create 权限'}
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-40"
+            >
+              {payOpen ? '收起收款码' : '+ 发起扫码收款'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen((value) => !value)}
+              disabled={!canAdd}
+              title={canAdd ? undefined : '追加收款需要 sales.update 权限'}
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-40"
+            >
+              {open ? '收起' : '+ 追加收款 / 退款'}
+            </button>
+          </div>
         )}
       </div>
+
+      {payOpen && canCreatePayment && status !== '已取消' && (
+        <div className="border-b border-slate-200 px-4 py-3">
+          <PaymentRequestPanel
+            orderId={orderId}
+            canCreate={canCreatePayment}
+            canViewPrice={canViewPrice}
+            onClose={() => setPayOpen(false)}
+            onPaid={onRefresh}
+            onError={onError}
+          />
+        </div>
+      )}
 
       {!canViewPrice && (
         <p className="px-4 py-3 text-xs text-amber-900">
@@ -872,6 +916,8 @@ interface DetailPanelProps {
   readonly canShip: boolean;
   readonly canComplete: boolean;
   readonly canCancel: boolean;
+  /** `payment.create`（#101 扫码收款），与 `canUpdate` 不是一回事。 */
+  readonly canCreatePayment: boolean;
   readonly busy: boolean;
   readonly onClose: () => void;
   readonly onEdit: () => void;
@@ -879,6 +925,8 @@ interface DetailPanelProps {
   readonly onComplete: () => void;
   readonly onCancel: () => void;
   readonly onPrint: () => void;
+  /** 扫码收款入账后重拉详情。 */
+  readonly onRefresh: () => void;
   readonly onError: (message: string) => void;
 }
 
@@ -891,6 +939,7 @@ export function DetailPanel({
   canShip,
   canComplete,
   canCancel,
+  canCreatePayment,
   busy,
   onClose,
   onEdit,
@@ -898,6 +947,7 @@ export function DetailPanel({
   onComplete,
   onCancel,
   onPrint,
+  onRefresh,
   onError,
 }: DetailPanelProps) {
   const employeeLabel = useEmployeeLabel();
@@ -1063,8 +1113,10 @@ export function DetailPanel({
         balance={order.receiptBalance}
         canViewPrice={canViewPrice}
         canAdd={canUpdate}
+        canCreatePayment={canCreatePayment}
         status={order.status}
         onError={onError}
+        onRefresh={onRefresh}
       />
 
       {/*
@@ -2003,6 +2055,7 @@ export function SalesOrdersPage() {
               canShip={can('ship')}
               canComplete={can('approve')}
               canCancel={can('delete')}
+              canCreatePayment={allows(meData?.scope, 'payment', 'create')}
               busy={shipOrder.isPending || completeOrder.isPending || cancelOrder.isPending}
               onClose={() => setDetailId(null)}
               onEdit={() => beginEdit(detailOrder)}
@@ -2010,6 +2063,7 @@ export function SalesOrdersPage() {
               onComplete={() => askComplete(detailOrder)}
               onCancel={() => askCancel(detailOrder)}
               onPrint={() => print.mutate(detailOrder.id)}
+              onRefresh={() => void queryClient.invalidateQueries({ queryKey: ['sales-orders'] })}
               onError={setActionError}
             />
           )}

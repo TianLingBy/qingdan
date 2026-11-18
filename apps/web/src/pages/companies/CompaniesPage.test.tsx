@@ -102,7 +102,7 @@ describe('权限设置页（#144）', () => {
 describe('操作日志页（#144）', () => {
   it('渲染敏感读标识与日志行', () => {
     const html = render(<AuditLogsPage />, (client) => {
-      client.setQueryData(['admin', 'audit-logs'], { items: [AUDIT_LOG], nextCursor: null });
+      client.setQueryData(['admin', 'audit-logs', null], { items: [AUDIT_LOG], nextCursor: null });
     });
     expect(html).toContain('操作日志');
     expect(html).toContain('敏感读');
@@ -112,7 +112,7 @@ describe('操作日志页（#144）', () => {
 
   it('空列表提供明确空态', () => {
     const html = render(<AuditLogsPage />, (client) => {
-      client.setQueryData(['admin', 'audit-logs'], { items: [], nextCursor: null });
+      client.setQueryData(['admin', 'audit-logs', null], { items: [], nextCursor: null });
     });
     expect(html).toContain('还没有操作记录');
   });

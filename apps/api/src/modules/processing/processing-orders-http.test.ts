@@ -273,6 +273,53 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
     expect(received.json()).toMatchObject({ status: '进行中', version: 3 });
   });
 
+  it('撤销发货：缺 X-Reason 422；带原因成功，且审计保留原文', async () => {
+    const order = await createOne(nextRequestId('revoke-reason'), {
+      materialBatchIds: [{ batchId: BATCH_2_ID, qty: '100.000000' }],
+    });
+    const shipped = await app.inject({
+      method: 'POST',
+      url: `/api/v1/processing-orders/${order.id}/ship`,
+      headers: writeHeaders(ownerCookie, nextRequestId('revoke-reason-ship'), {
+        'if-match': '"1"',
+      }),
+      payload: { transitStage: 'materials', transitTo: 'warehouse' },
+    });
+    expect(shipped.statusCode).toBe(200);
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: `/api/v1/processing-orders/${order.id}/ship/revoke`,
+      headers: writeHeaders(ownerCookie, nextRequestId('revoke-reason-missing'), {
+        'if-match': '"2"',
+      }),
+    });
+    expect(missing.statusCode).toBe(422);
+    expect(missing.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    const reason = '仓库反馈司机临时取消';
+    const revoked = await app.inject({
+      method: 'POST',
+      url: `/api/v1/processing-orders/${order.id}/ship/revoke`,
+      headers: writeHeaders(ownerCookie, nextRequestId('revoke-reason-ok'), {
+        'if-match': '"2"',
+        'x-reason': reason,
+      }),
+    });
+    expect(revoked.statusCode).toBe(200);
+    expect(revoked.json()).toMatchObject({ status: '进行中', version: 3 });
+
+    const audit = await test.database.query<{ reason: string | null }>(
+      `SELECT reason
+         FROM audit_log
+        WHERE action = 'processing.order.ship.revoke'
+          AND object_id = $1
+          AND result = 'success'`,
+      [order.id],
+    );
+    expect(audit.rows[0]?.reason).toBe(reason);
+  });
+
   it('未登录 → 401；无 processing.create → 403', async () => {
     const anonymous = await app.inject({
       method: 'GET',

@@ -1,22 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import type { ScopeMatrix } from '@qingdan/contracts';
 import { platformAdminApi } from '../../api/platform-admin';
 import { ApiError } from '../../api/client';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { fetchMe } from '../../api/platform';
 import { DOMAIN_WORDS } from '../employees/domain-words';
+import { resolveListState, type ListState } from '../../lib/list-state';
+import { allows, type ScopeAction } from '../../lib/access';
 
 /**
- * API 与集成页（22 页之第 22 页，#144）。
+ * API 与集成页（22 页之第 22 页，#144；v0.13 重做 #340）。
  *
- * - Token 列表：`GET /api/v1/api-tokens`（敏感读，服务端必记审计）；
- * - 创建：`POST /api/v1/api-tokens`，scope ⊆ 创建人授权（超出服务端拒绝）；
- *   明文 `secret` **只在创建响应里出现一次**（服务端只存 SHA-256，契约第三批 §2）；
- * - 撤销：`DELETE /api-tokens/{id}`，If-Match 强 ETag（危险动作）；
- * - 集成入口：`GET /api/v1/openapi.json`（公开只读，接口真源）。
- *
- * scope 编辑简化口径：按「功能域整域继承」勾选——勾中的域继承创建人在该域的
- * 全部动作，服务端仍是唯一判定者（D15）；逐动作粒度后续有需求再细化。
+ * - Token 列表：`GET /api/v1/api-tokens`（敏感读）；
+ * - 创建：`POST /api/v1/api-tokens`，scope ⊆ 创建人授权；明文 secret 只显示一次；
+ * - 撤销：`DELETE /api-tokens/{id}`，If-Match。
+ * - 写入口按 scope：api_integration.create / api_integration.delete。
  */
 
 interface CreatedSecret {
@@ -35,6 +34,11 @@ export function ApiIntegrationPage() {
     queryFn: fetchMe,
   });
 
+  const scope = meQuery.data?.scope as ScopeMatrix | undefined;
+  const can = (action: ScopeAction) => allows(scope, 'api_integration', action);
+  const canCreate = can('create');
+  const canDelete = can('delete');
+
   const [form, setForm] = useState<{ open: boolean; name: string; domains: ReadonlySet<string> }>({
     open: false,
     name: '',
@@ -49,7 +53,6 @@ export function ApiIntegrationPage() {
   const createMutation = useMutation({
     mutationFn: () => {
       const me = meQuery.data!;
-      // scope ⊆ 创建人授权：只取勾中域内「我自己也有的动作」，超出部分交给服务端兜底拒绝。
       const scope = [...form.domains].map((domain) => ({
         domain,
         actions: (me.scope.find((s) => s.domain === domain)?.actions ?? []).slice(),
@@ -82,131 +85,134 @@ export function ApiIntegrationPage() {
   });
 
   const tokens = listQuery.data?.items ?? [];
+  const listState: ListState = resolveListState({
+    isPending: listQuery.isPending,
+    hasError: listQuery.error !== null,
+    isEmpty: tokens.length === 0,
+  });
   const myScope = meQuery.data?.scope ?? [];
   const grantableDomains = DOMAIN_WORDS.filter((d) =>
     myScope.some((s) => s.domain === d.key && s.actions.length > 0),
   );
 
   return (
-    <section className="mx-auto max-w-6xl">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">API 与集成</h1>
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-            已接真实接口
-          </span>
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-            Token 列表为敏感读
-          </span>
+    <section className="mx-auto max-w-6xl space-y-4">
+      <div className="p-head">
+        <div>
+          <div className="eyebrow">系统 · 外部集成</div>
+          <h1>API 与集成</h1>
+          <p className="sub">为 AI 助手 / 脚本 / CLI 发放受限 Token；明文密钥只在创建时显示一次。</p>
         </div>
-        <div className="flex gap-2">
+        <div className="actions">
           <button
             type="button"
+            disabled={!canCreate}
             onClick={() => setForm({ open: true, name: '', domains: new Set() })}
-            className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700"
+            className="btn btn-p"
+            title={!canCreate ? '当前身份没有 api_integration.create 权限' : undefined}
           >
-            创建 Token
+            + 创建 Token
           </button>
         </div>
       </div>
 
-      {notice && (
-        <p className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          {notice}
-        </p>
-      )}
-      {error && (
-        <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          {error}
-        </p>
+      {!canCreate && (
+        <p className="text-xs text-slate-500">创建 Token 需要 api_integration.create。</p>
       )}
 
-      <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white">
-        {listQuery.isPending ? (
-          <ListLoading label="Token 列表加载中…" />
-        ) : listQuery.isError ? (
-          <ListError
-            title="Token 列表加载失败"
-            error={listQuery.error}
-            hint={
-              listQuery.error instanceof ApiError && listQuery.error.status === 403
-                ? '查看 Token 列表需要 api_integration.read 权限（敏感读），请联系老板开通。'
-                : '请确认本地 API 已启动后重试。'
-            }
-            onRetry={() => void listQuery.refetch()}
-          />
-        ) : tokens.length === 0 ? (
-          <ListEmpty title="还没有 API Token。外部系统（AI 助手 / 脚本 / CLI）通过 Token 调用 /api/v1。" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-400">
-                  <th className="px-4 py-2.5 font-medium">名称</th>
-                  <th className="px-4 py-2.5 font-medium">授权范围</th>
-                  <th className="px-4 py-2.5 font-medium">状态</th>
-                  <th className="px-4 py-2.5 font-medium">过期时间</th>
-                  <th className="px-4 py-2.5 font-medium">最后使用</th>
-                  <th className="px-4 py-2.5 text-right font-medium">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tokens.map((token) => (
-                  <tr key={token.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
-                    <td className="px-4 py-2.5">{token.name}</td>
-                    <td className="px-4 py-2.5 text-xs text-slate-600">
-                      {token.scope
-                        .slice(0, 3)
-                        .map(
-                          (entry) =>
-                            `${DOMAIN_WORDS.find((d) => d.key === entry.domain)?.label ?? entry.domain}(${entry.actions.length})`,
-                        )
-                        .concat(token.scope.length > 3 ? [`…共 ${token.scope.length} 域`] : [])
-                        .join('、') || '—'}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={[
-                          'rounded-full px-2 py-0.5 text-xs font-medium',
-                          token.status === 'active'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-slate-100 text-slate-500',
-                        ].join(' ')}
+      {notice && <p className="rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
+      {error && <p className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+
+      <div className="card" data-state={listState}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left">
+            <thead>
+              <tr>
+                <th>名称</th>
+                <th>授权范围</th>
+                <th>状态</th>
+                <th>过期时间</th>
+                <th>最后使用</th>
+                <th className="text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody data-state={listState}>
+              <tr className="st-tr st-loading">
+                <td colSpan={6}>
+                  <ListLoading label="Token 列表加载中…" />
+                </td>
+              </tr>
+              <tr className="st-tr st-error">
+                <td colSpan={6}>
+                  <ListError
+                    title="Token 列表加载失败"
+                    error={listQuery.error ?? null}
+                    hint={
+                      listQuery.error instanceof ApiError && listQuery.error.status === 403
+                        ? '查看 Token 列表需要 api_integration.read 权限（敏感读），请联系老板开通。'
+                        : undefined
+                    }
+                    onRetry={() => void listQuery.refetch()}
+                  />
+                </td>
+              </tr>
+              <tr className="st-tr st-empty">
+                <td colSpan={6}>
+                  <ListEmpty title="还没有 API Token。外部系统（AI 助手 / 脚本 / CLI）通过 Token 调用 /api/v1。" />
+                </td>
+              </tr>
+              {tokens.map((token) => (
+                <tr key={token.id} className="r-row">
+                  <td className="px-4 py-3">{token.name}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600">
+                    {token.scope
+                      .slice(0, 3)
+                      .map(
+                        (entry) =>
+                          `${DOMAIN_WORDS.find((d) => d.key === entry.domain)?.label ?? entry.domain}(${entry.actions.length})`,
+                      )
+                      .concat(token.scope.length > 3 ? [`…共 ${token.scope.length} 域`] : [])
+                      .join('、') || '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={token.status === 'active' ? 'text-emerald-600' : 'text-slate-400'}>
+                      {token.status === 'active' ? '生效中' : token.status === 'revoked' ? '已撤销' : '已过期'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                    {token.expiresAt ? token.expiresAt.slice(0, 10) : '永不过期'}
+                  </td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                    {token.lastUsedAt ? token.lastUsedAt.slice(0, 19).replace('T', ' ') : '从未使用'}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {token.status === 'active' && (
+                      <button
+                        type="button"
+                        disabled={!canDelete || revokeMutation.isPending}
+                        onClick={() =>
+                          revokeMutation.mutate({ id: token.id, name: token.name, version: token.version })
+                        }
+                        className="btn btn-s"
+                        title={
+                          !canDelete
+                            ? '当前身份没有 api_integration.delete 权限'
+                            : '撤销后持有该密钥的请求即刻失效（If-Match 版本校验）'
+                        }
                       >
-                        {token.status === 'active' ? '生效中' : token.status === 'revoked' ? '已撤销' : '已过期'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
-                      {token.expiresAt ? token.expiresAt.slice(0, 10) : '永不过期'}
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-slate-500">
-                      {token.lastUsedAt ? token.lastUsedAt.slice(0, 19).replace('T', ' ') : '从未使用'}
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      {token.status === 'active' && (
-                        <button
-                          type="button"
-                          disabled={revokeMutation.isPending}
-                          onClick={() =>
-                            revokeMutation.mutate({ id: token.id, name: token.name, version: token.version })
-                          }
-                          className="rounded border border-rose-200 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50 disabled:opacity-40"
-                          title="撤销后持有该密钥的请求即刻失效（If-Match 版本校验）"
-                        >
-                          撤销
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                        撤销
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <p className="mt-3 text-xs text-slate-400">
-        明文密钥只在创建时显示一次，服务端只存 SHA-256（契约第三批 §2）；授权范围不能超出你自己的权限（服务端强制）。
+      <p className="note">
+        明文密钥只在创建时显示一次，服务端只存 SHA-256；授权范围不能超出你自己的权限（服务端强制）。
         接口契约真源：<span className="font-mono">GET /api/v1/openapi.json</span>（公开只读）。
       </p>
 
