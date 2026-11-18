@@ -283,7 +283,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       headers: writeHeaders(ownerCookie, nextRequestId('revoke-reason-ship'), {
         'if-match': '"1"',
       }),
-      payload: { transitStage: 'materials', transitTo: 'warehouse' },
+      payload: { transitStage: 'materials' },
     });
     expect(shipped.statusCode).toBe(200);
 

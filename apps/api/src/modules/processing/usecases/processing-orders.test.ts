@@ -442,10 +442,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
 
   it('撤销发货必须在服务端校验原因：缺失、空白、超长全部 422，且单据仍在途', async () => {
     const created = await createOne();
-    await ship(created.id, {
-      transitStage: 'materials',
-      transitTo: 'warehouse',
-    });
+    await ship(created.id, { transitStage: 'materials' });
 
     for (const reason of [null, '   ', 'x'.repeat(201)]) {
       await expectAppError(revoke(created.id, 2, reason), 'VALIDATION_FAILED');
