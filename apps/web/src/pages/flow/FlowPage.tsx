@@ -261,20 +261,19 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
 
   return (
     <section className="mx-auto max-w-6xl space-y-4">
-      <header className="rounded-xl border border-slate-200 bg-white px-4 py-4 sm:px-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">业务全流程图</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              采购 A → 加工 B → 销售 E → 结算 C；辅助是内部交易 N、冲正 R / S / I。
-            </p>
-          </div>
-          <p className="max-w-sm text-xs leading-relaxed text-slate-400">
-            本期只做业务全流程图（D7），实时看板与集团看板二期。图对全部登录员工开放（D44），
-            节点能不能点取决于你的岗位权限。
+      <div className="p-head">
+        <div>
+          <div className="eyebrow">流程 · 单据关系</div>
+          <h1>业务全流程图</h1>
+          <p className="sub">
+            采购 A → 加工 B → 销售 E → 结算 C；辅助是内部交易 N、冲正 R / S / I。
           </p>
         </div>
-      </header>
+        <p className="max-w-sm text-xs leading-relaxed text-slate-400">
+          本期只做业务全流程图（D7），实时看板与集团看板二期。图对全部登录员工开放（D44），
+          节点能不能点取决于你的岗位权限。
+        </p>
+      </div>
 
       {error ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
@@ -297,7 +296,7 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
         </p>
       ) : null}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className="panel">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-900">主线：一张货的流向</h2>
           <span className="text-xs text-slate-400">
@@ -344,7 +343,7 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
         </ul>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className="panel">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-900">辅助与冲正</h2>
           <span className="text-xs text-slate-400">
@@ -360,7 +359,7 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
         </ul>
       </section>
 
-      <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
+      <section className="min-w-0 panel">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-900">落地情况</h2>
           <span className="text-xs text-slate-400">图的可读版：每条链路缺什么，以这张表为准</span>
@@ -420,7 +419,7 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className="panel">
         <h2 className="text-sm font-semibold text-slate-900">怎么看这张图</h2>
         <ul className="mt-2 space-y-1 text-xs leading-relaxed text-slate-500">
           <li>· 箭头只表示单据的业务先后，不代表系统会自动跑批；每一步都要有人开单或确认。</li>
