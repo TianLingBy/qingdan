@@ -1,18 +1,10 @@
-import type { ScopeMatrix } from '@qingdan/contracts';
+import type { ScopeMatrix, TodoItem } from '@qingdan/contracts';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { workbenchEntries } from '../../lib/access';
 import { isImplementedPage } from '../../router/implemented';
 import { ROUTE_TABLE } from '../../router/routes';
-import {
-  ActiveDocsPanel,
-  EntryCards,
-  TodoPanel,
-  WorkbenchView,
-  formatToday,
-  greetingFor,
-} from './WorkbenchPage';
-import { buildOverview } from './workbench-mock';
+import { EntryCards, TodoPanel, WorkbenchView, formatToday, greetingFor } from './WorkbenchPage';
 
 const OWNER_SCOPE: ScopeMatrix = [
   { domain: 'purchase', actions: ['read', 'approve'] },
@@ -34,15 +26,19 @@ const SALES_SCOPE: ScopeMatrix = [
   { domain: 'settlement', actions: ['read'] },
 ];
 
-function view(scope: ScopeMatrix): string {
-  const overview = buildOverview(scope);
+/** 契约 `TodoItemSchema` 的形状：`{ kind, title, count, hint, routeId }`，**没有 id**。 */
+const TODO_FIXTURES: readonly TodoItem[] = [
+  { kind: 'purchase_pending', title: '采购单待审核', count: 3, hint: '等你确认', routeId: 'purchase-orders' },
+  { kind: 'sales_pending', title: '销售单待审核', count: 1, hint: '等你确认', routeId: 'sales-orders' },
+];
+
+function view(scope: ScopeMatrix, todos: readonly TodoItem[] = []): string {
   return renderToStaticMarkup(
     <WorkbenchView
       displayName="张明"
       companyCount={1}
       entries={workbenchEntries(scope)}
-      todos={overview.todos}
-      docs={overview.docs}
+      todos={todos}
       loading={false}
       onOpen={() => {}}
       now={new Date(2026, 10, 9, 15, 0, 0)}
@@ -67,8 +63,8 @@ describe('问候与日期', () => {
 });
 
 describe('工作台版式', () => {
-  it('老板：问候 + 身份摘要 + 待办列表 + 我负责的单据', () => {
-    const html = view(OWNER_SCOPE);
+  it('有待办：问候 + 身份摘要 + 待办列表 + 下一步', () => {
+    const html = view(OWNER_SCOPE, TODO_FIXTURES);
 
     expect(html).toContain('下午好，张明');
     expect(html).toContain('2026年11月9日 周一');
@@ -77,13 +73,17 @@ describe('工作台版式', () => {
     expect(html).toContain('待我处理');
     expect(html).toContain('采购单待审核');
     expect(html).toContain('销售单待审核');
-    // 我负责的进行中单据（假数据里有销售 / 采购 / 加工 / 内部交易四张）
-    expect(html).toContain('E-0001-20261109-0002');
-    expect(html).toContain('A-0001-20261109-0003');
     expect(html).toContain('下一步做什么');
   });
 
-  it('销售：没有审批权限 → 待办空状态，且看不到采购 / 加工入口', () => {
+  it('待办笔数是各条 count 之和，不是条数', () => {
+    // 3 + 1 = 4 笔、2 类。这两个数字混起来最容易让人误读「我今天有 2 件事」。
+    const html = view(OWNER_SCOPE, TODO_FIXTURES);
+    expect(html).toContain('4');
+    expect(html).toContain('共 2 类');
+  });
+
+  it('没有待办 → 空状态，且看不到采购 / 加工入口', () => {
     const html = view(SALES_SCOPE);
 
     expect(html).toContain('当前没有待办');
@@ -94,14 +94,13 @@ describe('工作台版式', () => {
     expect(html).not.toContain('采购单待审核');
   });
 
-  it('加载中只出骨架，不出数字与假数据', () => {
+  it('加载中只出骨架，不出数字', () => {
     const html = renderToStaticMarkup(
       <WorkbenchView
         displayName="张明"
         companyCount={2}
         entries={workbenchEntries(SALES_SCOPE)}
         todos={[]}
-        docs={[]}
         loading
         onOpen={() => {}}
         now={new Date(2026, 10, 9, 15, 0, 0)}
@@ -109,8 +108,19 @@ describe('工作台版式', () => {
     );
 
     expect(html).toContain('aria-label="待办加载中"');
-    expect(html).toContain('aria-label="单据加载中"');
     expect(html).not.toContain('当前没有待办');
+  });
+
+  it('页面里没有「占位数据」字样 —— 待办接的是真接口', () => {
+    // 这一条是回归锁：曾经整个页面标着「占位数据」、数据来自 workbench-mock.ts。
+    // 换成 GET /api/v1/todos 之后再加回去就说明有人又塞了假数据。
+    expect(view(OWNER_SCOPE, TODO_FIXTURES)).not.toContain('占位数据');
+  });
+
+  it('没有「我负责的进行中单据」这一块', () => {
+    // 撤掉的理由在 WorkbenchPage.tsx 的注释里：需要 handlerId=me 过滤，后端还不支持（#354 第 3 条）。
+    // 这条断言防止有人「顺手加回来」时又用假数据。
+    expect(view(OWNER_SCOPE, TODO_FIXTURES)).not.toContain('我负责的进行中单据');
   });
 });
 
@@ -139,67 +149,24 @@ describe('入口卡片', () => {
   });
 });
 
-describe('待办与进行中单据', () => {
-  it('待办空状态与列表互斥', () => {
+describe('待办面板', () => {
+  it('空状态与列表互斥', () => {
     const empty = renderToStaticMarkup(<TodoPanel todos={[]} loading={false} emptyHint="说明文案" />);
     expect(empty).toContain('当前没有待办');
     expect(empty).toContain('说明文案');
 
     const list = renderToStaticMarkup(
-      <TodoPanel
-        todos={[{ id: 't1', title: '采购单待审核', count: 3, hint: '等你确认', routeId: 'purchase-orders' }]}
-        loading={false}
-        emptyHint="说明文案"
-      />,
+      <TodoPanel todos={TODO_FIXTURES} loading={false} emptyHint="说明文案" />,
     );
     expect(list).toContain('采购单待审核');
     expect(list).toContain('3 笔');
     expect(list).not.toContain('当前没有待办');
   });
 
-  it('进行中单据表含单号 / 类型 / 状态', () => {
-    const html = renderToStaticMarkup(
-      <ActiveDocsPanel
-        docs={[
-          {
-            id: 'd1',
-            orderNo: 'E-0001-20261109-0002',
-            kind: '销售单',
-            partner: '王记五金',
-            summary: '12 件',
-            status: '进行中',
-            routeId: 'sales-orders',
-          },
-        ]}
-        loading={false}
-      />,
-    );
-    expect(html).toContain('E-0001-20261109-0002');
-    expect(html).toContain('销售单');
-    expect(html).toContain('王记五金');
-    expect(html).toContain('进行中');
-  });
-});
-
-describe('占位数据按 scope 生成', () => {
-  it('待办只出现在持 approve 的域上', () => {
-    expect(buildOverview(OWNER_SCOPE).todos.map((todo) => todo.title)).toEqual([
-      '采购单待审核',
-      '加工单待确认',
-      '销售单待审核',
-      '结算单待确认',
-      '客户退货待审批',
-      '供应商退货待审批',
-      '盘点盈亏待审批',
-    ]);
-    expect(buildOverview(SALES_SCOPE).todos).toHaveLength(0);
-  });
-
-  it('进行中单据只出现在有 read 的域上', () => {
-    const ownerDocs = buildOverview(OWNER_SCOPE).docs.map((doc) => doc.kind);
-    expect(ownerDocs).toContain('内部交易单');
-
-    const salesDocs = buildOverview(SALES_SCOPE).docs.map((doc) => doc.kind);
-    expect(salesDocs).toEqual(['销售单']);
+  it('说明文案讲清「没看到不等于没有」', () => {
+    // 后端按权限逐条过滤：没权限的类别直接不返回。用户看到空列表时最可能的误读是
+    // 「公司真没活」，而实际可能是「这些活不归你」。
+    const html = renderToStaticMarkup(<TodoPanel todos={[]} loading={false} emptyHint="x" />);
+    expect(html).toContain('不归你');
   });
 });
