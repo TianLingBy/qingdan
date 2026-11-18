@@ -115,6 +115,7 @@ function renderDetail(opts: DetailOpts = {}): string {
         cancelable: opts.cancelable ?? DETAIL_BASE.cancelable,
       }}
       products={[PRODUCT]}
+      handlerLabel="张明"
       canCancel
       canceling={false}
       canComplete={opts.canApprove ?? true}
@@ -159,8 +160,10 @@ describe('采购单 A 页面', () => {
     expect(html).toContain('不锈钢合页 4寸');
     expect(html).toContain('¥4,300.00');
     expect(html).toContain('进行中');
-    expect(html).toContain('张明');
-    expect(html).toContain('新建采购单');
+    // 经手人不再占列表一列（8 列已把「操作」挤到卡片外），改在详情里给
+    expect(html).not.toContain('>经手<');
+    // 页头主按钮按视觉稿是「+ 新建」（`采购单A.html` 的 .btn-primary）
+    expect(html).toContain('+ 新建');
   });
 
   it('无看价权限时金额全遮罩，且不把 null 当 0（D79）', () => {
@@ -204,7 +207,7 @@ describe('采购单 A 页面', () => {
   it('空列表给出明确空态与下一步', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [] }));
     expect(html).toContain('暂无采购单');
-    expect(html).toContain('新建采购单');
+    expect(html).toContain('+ 新建');
   });
 });
 
@@ -350,5 +353,36 @@ describe('采购单开单前校验', () => {
 
   it('合法单据零报错', () => {
     expect(validateDraft(SUPPLIER_ID, [validLine], [])).toHaveLength(0);
+  });
+});
+
+describe('v0.13 版式（#337）', () => {
+  it('列表落在 card 上，三行状态行常驻、数据行只带 r-row', () => {
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
+
+    expect(html).toContain('class="card"');
+    expect(html).toContain('data-state="filled"');
+    expect(html).toContain('class="r-row"');
+    // 数据行带 st-tr 就会命中 `tbody > tr.st-tr{display:none}`，filled 态没有复原规则
+    expect(html).not.toContain('st-tr r-row');
+    for (const stateClass of ['st-tr st-loading', 'st-tr st-error', 'st-tr st-empty']) {
+      expect(html).toContain(stateClass);
+    }
+  });
+
+  it('游标分页写「上一批 / 下一批」，不画页码', () => {
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
+
+    expect(html).toContain('上一批');
+    expect(html).toContain('下一批');
+    expect(html).not.toContain('下一页');
+  });
+
+  it('在途在列表里是 transit（蓝）档，不与「进行中」同色（D94）', () => {
+    const inTransit: PurchaseOrder = { ...ORDER, status: '在途' };
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [inTransit] }));
+
+    expect(html).toContain('class="st transit"');
+    expect(html).not.toContain('class="st now"');
   });
 });
