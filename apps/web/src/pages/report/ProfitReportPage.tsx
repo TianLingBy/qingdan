@@ -4,10 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { ListEmpty, ListError } from '../../components/ListStates';
 import { formatMoney } from '../../lib/decimal';
 import { authApi, authKeys } from '../auth/auth-api';
-import {
-  PageShell,
-  shortId,
-} from '../inventory/inventory-ui';
+import { shortId } from '../inventory/inventory-ui';
 import {
   profitReportApi,
   profitReportQueryKeys,
@@ -89,79 +86,82 @@ export function ProfitReportPage() {
   };
 
   return (
-    <PageShell
-      title="利润报表"
-      description="按期间汇总已结算毛利、全损耗与净毛利；金额始终以服务端权限结果为准。"
-    >
-      <form
-        onSubmit={submit}
-        className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 xl:grid-cols-4"
-      >
-        <label className="text-sm">
-          <span className="text-slate-600">开始日期</span>
-          <input
-            required
-            type="date"
-            value={periodStart}
-            onChange={(event) => setPeriodStart(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-          />
-        </label>
-        <label className="text-sm">
-          <span className="text-slate-600">结束日期</span>
-          <input
-            required
-            type="date"
-            value={periodEnd}
-            onChange={(event) => setPeriodEnd(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-          />
-        </label>
-        <label className="text-sm">
-          <span className="text-slate-600">可见公司</span>
-          <select
-            value={companyId}
-            onChange={(event) => setCompanyId(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-          >
-            <option value="">全部可见公司</option>
-            {(me.data?.companyIds ?? []).map((id) => (
-              <option key={id} value={id}>
-                {shortId(id)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex items-end">
-          <button
-            type="submit"
-            className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
-          >
-            查询报表
-          </button>
+    <section className="mx-auto max-w-7xl space-y-4">
+      <div className="p-head">
+        <div>
+          <div className="eyebrow">报表 · 期间汇总</div>
+          <h1>利润报表</h1>
+          <p className="sub">按期间汇总已结算毛利、全损耗与净毛利；金额始终以服务端权限结果为准。</p>
         </div>
-        {formError && (
-          <p className="text-sm text-rose-600 sm:col-span-2 xl:col-span-4">{formError}</p>
-        )}
+      </div>
+
+      <form onSubmit={submit} className="panel">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <label className="text-sm">
+            <span className="text-slate-600">开始日期</span>
+            <input
+              required
+              type="date"
+              value={periodStart}
+              onChange={(event) => setPeriodStart(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="text-slate-600">结束日期</span>
+            <input
+              required
+              type="date"
+              value={periodEnd}
+              onChange={(event) => setPeriodEnd(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="text-slate-600">可见公司</span>
+            <select
+              value={companyId}
+              onChange={(event) => setCompanyId(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+            >
+              <option value="">全部可见公司</option>
+              {(me.data?.companyIds ?? []).map((id) => (
+                <option key={id} value={id}>
+                  {shortId(id)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex items-end">
+            <button type="submit" className="btn btn-p w-full">
+              查询报表
+            </button>
+          </div>
+        </div>
+        {formError && <p className="mt-2 text-sm text-rose-600">{formError}</p>}
       </form>
 
       {!submitted ? (
-        <ListEmpty title="选择起止日期后查询；不使用隐式默认期间。" />
+        <div className="panel">
+          <ListEmpty title="选择起止日期后查询；不使用隐式默认期间。" />
+        </div>
       ) : report.isPending ? (
-        <div className="grid gap-4 md:grid-cols-3" aria-busy="true">
-          {[0, 1, 2].map((item) => (
-            <div key={item} className="h-28 animate-pulse rounded-xl bg-slate-100" />
-          ))}
+        <div className="panel">
+          <div className="grid gap-4 md:grid-cols-3" aria-busy="true">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="h-28 animate-pulse rounded-xl bg-slate-100" />
+            ))}
+          </div>
         </div>
       ) : report.isError ? (
-        <ListError
-          title="利润报表加载失败"
-          error={report.error}
-          onRetry={() => void report.refetch()}
-        />
+        <div className="panel">
+          <ListError title="利润报表加载失败" error={report.error} onRetry={() => void report.refetch()} />
+        </div>
       ) : report.data ? (
-        <ProfitReportSummary report={report.data} canViewPrice={canViewPrice} />
+        <div className="panel">
+          <ProfitReportSummary report={report.data} canViewPrice={canViewPrice} />
+        </div>
       ) : null}
-    </PageShell>
+    </section>
   );
 }
