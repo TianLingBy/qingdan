@@ -20,6 +20,7 @@ import {
   validateDraft,
 } from './ProcessingOrdersPage';
 import { processingQueryKeys } from './processing-api';
+import { ProcessingShipDialog } from './ShipDialog';
 import {
   buildShipInput,
   receiveBlockedText,
@@ -521,9 +522,16 @@ describe('加工单发货口径（ship-flow）', () => {
     };
     expect(validateShipDraft(materialsDraft, detail())[0]).toContain('料段不填损耗');
 
-    expect(buildShipInput({ ...DRAFT, transitStage: 'materials', lossQty: '4', custodianId: 'e2' })).toEqual(
-      { transitStage: 'materials', transitTo: 'warehouse' },
-    );
+    /**
+     * 料段只发分段（#333 复核）：草稿里残留的 transitTo / 损耗 / 保管人一律不带。
+     * 断言用 toEqual 全等而不是 toMatchObject —— 多带一个字段就是 422，少看一个都算漏。
+     */
+    expect(
+      buildShipInput({ ...DRAFT, transitStage: 'materials', lossQty: '4', custodianId: 'e2' }),
+    ).toEqual({ transitStage: 'materials' });
+    expect(
+      buildShipInput({ ...DRAFT, transitStage: 'materials', transitTo: 'customer' }),
+    ).not.toHaveProperty('transitTo');
     expect(buildShipInput({ ...DRAFT, lossQty: '4' })).toEqual({
       transitStage: 'finished',
       transitTo: 'warehouse',
@@ -560,5 +568,50 @@ describe('v0.13 列表版式（#337）', () => {
     expect(html).toContain('下一批');
     expect(html).not.toContain('下一页');
     expect(html).not.toContain('第 1 页');
+  });
+});
+
+/* ---------------------- 发货弹层：料段不给成品去向（#333 复核） ---------------------- */
+
+describe('发货弹层（#333 复核）', () => {
+  const SHIP_DRAFT: ShipDraft = {
+    transitStage: 'finished',
+    transitTo: 'warehouse',
+    lossQty: '',
+    custodianId: '',
+    confirmFullLoss: false,
+  };
+
+  const renderDialog = (transitStage: ShipDraft['transitStage']): string =>
+    renderToStaticMarkup(
+      <ProcessingShipDialog
+        orderNo="B-0001-20261118-0001"
+        inputQty="200"
+        processorName="顺发五金加工厂"
+        draft={{ ...SHIP_DRAFT, transitStage }}
+        errors={[]}
+        custodians={[]}
+        custodiansError={null}
+        busy={false}
+        onChange={() => undefined}
+        onClose={() => undefined}
+        onSubmit={() => undefined}
+      />,
+    );
+
+  it('料段：没有成品去向下拉，只读显示单据上的加工厂', () => {
+    const html = renderDialog('materials');
+
+    expect(html).not.toContain('在途去向');
+    expect(html).toContain('料段去向');
+    expect(html).toContain('顺发五金加工厂');
+  });
+
+  it('成品段：有去向下拉（回仓 / 直发客户），不画料段只读去向', () => {
+    const html = renderDialog('finished');
+
+    expect(html).toContain('在途去向');
+    expect(html).toContain('直发客户');
+    expect(html).not.toContain('料段去向');
   });
 });

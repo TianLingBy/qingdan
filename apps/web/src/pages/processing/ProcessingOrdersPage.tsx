@@ -2184,6 +2184,7 @@ export function ProcessingOrdersPage() {
         <ProcessingShipDialog
           orderNo={shippingOrder.orderNo}
           inputQty={shippingOrder.inputQty}
+          processorName={shippingOrder.processorName}
           draft={shipDraft}
           errors={shipErrors}
           custodians={custodians}

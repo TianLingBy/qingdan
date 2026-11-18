@@ -350,16 +350,22 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
 
   it('materials 发货把占用转在途；到货恢复占用并回到进行中，随后仍可完成', async () => {
     const created = await createOne();
-    const shipped = await ship(created.id, {
-      transitStage: 'materials',
-      transitTo: 'warehouse',
-    });
+    const shipped = await ship(created.id, { transitStage: 'materials' });
     expect(shipped).toMatchObject({
       status: '在途',
       transitStage: 'materials',
-      transitTo: 'warehouse',
       version: 2,
     });
+    /**
+     * 料段不写成品去向（#333 复核）：去向就是单据上的加工厂，再写一个 transit_to
+     * 会造出「材料在路上、去向却是回仓」的记录。列留 NULL。
+     */
+    expect(shipped.transitTo).toBeUndefined();
+    const dest = await test.database.query<{ transit_to: string | null }>(
+      `SELECT transit_to FROM processing_order WHERE id = $1::uuid`,
+      [created.id],
+    );
+    expect(dest.rows[0]?.transit_to).toBeNull();
     const transit = await test.database.query<{
       pending_execution_qty: string;
       in_transit_qty: string;
@@ -412,10 +418,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
 
   it('撤销 materials 发货：在途转回占用并清掉加工厂持有人', async () => {
     const created = await createOne();
-    await ship(created.id, {
-      transitStage: 'materials',
-      transitTo: 'warehouse',
-    });
+    await ship(created.id, { transitStage: 'materials' });
     const revoked = await revoke(created.id, 2);
     expect(revoked).toMatchObject({ status: '进行中', version: 3 });
     const batch = await test.database.query<{
@@ -439,10 +442,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
 
   it('撤销发货必须在服务端校验原因：缺失、空白、超长全部 422，且单据仍在途', async () => {
     const created = await createOne();
-    await ship(created.id, {
-      transitStage: 'materials',
-      transitTo: 'warehouse',
-    });
+    await ship(created.id, { transitStage: 'materials' });
 
     for (const reason of [null, '   ', 'x'.repeat(201)]) {
       await expectAppError(revoke(created.id, 2, reason), 'VALIDATION_FAILED');
@@ -511,14 +511,14 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
           {
             params: { id: created.id },
             headers: { 'if-match': '"1"' },
-            body: { transitStage: 'materials', transitTo: 'warehouse' },
+            body: { transitStage: 'materials' },
           },
         ).ctx,
       ),
       'FORBIDDEN',
     );
 
-    await ship(created.id, { transitStage: 'materials', transitTo: 'warehouse' });
+    await ship(created.id, { transitStage: 'materials' });
     await expectAppError(
       receiveProcessingOrder(
         writeCtx(

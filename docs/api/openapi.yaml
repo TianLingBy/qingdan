@@ -7476,7 +7476,7 @@ paths:
   /api/v1/processing-orders/{id}/ship:
     post:
       operationId: processing.order.ship
-      summary: 加工发货：进行中 → 在途，带 transitStage（料/成品在路上）+ transitTo（回仓/直发客户，D94 ②）
+      summary: 加工发货：进行中 → 在途。materials 段只带 transitStage（料去加工厂，方向由单据上的加工厂决定）；finished 段带 transitTo（回仓/直发客户）+ lossQty（D94 ②）
       tags:
         - processing
       security:
@@ -7539,7 +7539,6 @@ paths:
                   type: boolean
               required:
                 - transitStage
-                - transitTo
               additionalProperties: false
   /api/v1/processing-orders/{id}/ship/revoke:
     post:

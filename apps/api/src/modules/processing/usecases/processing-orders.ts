@@ -746,7 +746,9 @@ export async function shipProcessingOrder(
         lines: processingReservationLines(order.materialBatchIds),
         heldByProcessorId: order.processorId,
       });
-      const result = await repo.startProcessingTransit(context, id, expectedVersion, input);
+      const result = await repo.startProcessingTransit(context, id, expectedVersion, {
+        transitStage: 'materials',
+      });
       if (!result) throw new AppError('NOT_FOUND', '加工单不存在');
       audit.companyId = result.companyId;
       audit.changeSummary = {
@@ -754,13 +756,20 @@ export async function shipProcessingOrder(
         afterStatus: result.status,
         version: result.version,
         transitStage: input.transitStage,
-        transitTo: input.transitTo,
+        // 料段没有成品去向：料去哪由单据上的加工厂决定（#333 复核），审计里显式记 null，
+        // 免得好几年后翻日志时以为这一栏是漏记的。
+        transitTo: null,
+        processorId: order.processorId,
         materialBatchIds: order.materialBatchIds,
       };
       return result;
     }
 
     // finished：复制 complete 的成本与产出计算，但产出批次落成“在途”。
+    const transitTo = input.transitTo;
+    if (transitTo === undefined) {
+      throw new AppError('VALIDATION_FAILED', 'finished 段发货必须填写 transitTo');
+    }
     const lossQty = input.lossQty;
     if (lossQty === undefined) {
       throw new AppError('VALIDATION_FAILED', 'finished 段发货必须填写 lossQty');
@@ -839,7 +848,7 @@ export async function shipProcessingOrder(
       };
     }
     const result = await repo.startProcessingFinishedTransit(context, id, expectedVersion, {
-      transitTo: input.transitTo,
+      transitTo,
       lossQty,
       sellableQty: decimal(sellable),
       outputBatchId,
@@ -854,7 +863,7 @@ export async function shipProcessingOrder(
       afterStatus: result.status,
       version: result.version,
       transitStage: input.transitStage,
-      transitTo: input.transitTo,
+      transitTo,
       lossQty,
       sellableQty: decimal(sellable),
       outputBatch,

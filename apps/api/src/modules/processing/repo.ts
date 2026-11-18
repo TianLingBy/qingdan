@@ -484,36 +484,34 @@ export async function completeProcessingOrder(
   return getProcessingOrder(ctx, id);
 }
 
-/** 进行中 → 在途（materials / finished），同时写单头在途分段与去向。 */
+/**
+ * 进行中 → 在途的「料段」（`materials`）。
+ *
+ * 只写 `transit_stage`：料往加工厂去，方向由单据头的 `processor_id` 唯一决定，
+ * 没有第二个真源。`transit_to` 留 NULL（列本来可空，CHECK 也只允许 warehouse/customer），
+ * 硬填一个 `warehouse` 会造出「材料在路上、去向却是回仓」这种自相矛盾的记录（#333 复核）。
+ */
 export async function startProcessingTransit(
   ctx: ProcessingOrderRepoContext,
   id: string,
   expectedVersion: number,
   input: {
-    readonly transitStage: 'materials' | 'finished';
-    readonly transitTo: 'warehouse' | 'customer';
+    readonly transitStage: 'materials';
   },
 ): Promise<ProcessingOrder | null> {
   const changed = await ctx.tx.query<{ id: string }>(
     `UPDATE processing_order
         SET status = '在途',
             transit_stage = $1,
-            transit_to = $2,
+            transit_to = NULL,
             version = version + 1
-      WHERE id = $3::uuid
-        AND tenant_id = $4
-        AND company_id = ANY($5::uuid[])
-        AND version = $6
+      WHERE id = $2::uuid
+        AND tenant_id = $3
+        AND company_id = ANY($4::uuid[])
+        AND version = $5
         AND status = '进行中'
       RETURNING id`,
-    [
-      input.transitStage,
-      input.transitTo,
-      id,
-      ctx.tenantId,
-      [...ctx.companyIds],
-      expectedVersion,
-    ],
+    [input.transitStage, id, ctx.tenantId, [...ctx.companyIds], expectedVersion],
   );
   if (changed.rows.length === 0) {
     throw new AppError('VERSION_CONFLICT', '加工单已被并发修改或不是进行中状态');
