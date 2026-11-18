@@ -13,6 +13,7 @@ import { authKeys } from '../auth/auth-api';
 import {
   CompletionPanel,
   DetailPanel,
+  NewProcessorInlineForm,
   ProcessingOrdersPage,
   editBlockedText,
   printBlockedText,
@@ -613,5 +614,33 @@ describe('发货弹层（#333 复核）', () => {
     expect(html).toContain('在途去向');
     expect(html).toContain('直发客户');
     expect(html).not.toContain('料段去向');
+  });
+});
+
+/* ---------------------- 开单现场建档（D100 静默建档） ---------------------- */
+
+describe('开单现场建档（D100）', () => {
+  const MATERIALS = [{ batchId: 'b1', qty: '10' }];
+
+  it('给了草档就不再要求 processorId，改要求名称', () => {
+    const withDraft = validateDraft('', '', MATERIALS, [], '', '', { name: '顺发加工厂' });
+    expect(withDraft).not.toContain('请选择加工厂');
+
+    const emptyName = validateDraft('', '', MATERIALS, [], '', '', { name: '  ' });
+    expect(emptyName).toContain('新建加工厂：请填写加工厂名称');
+  });
+
+  it('内联表单只有名称与联系人（加工厂没有电话列），且无建档提示', () => {
+    const html = renderToStaticMarkup(
+      <NewProcessorInlineForm
+        fields={{ name: '顺发加工厂', contactName: '' }}
+        onChange={() => undefined}
+      />,
+    );
+    expect(html).toContain('aria-label="新建加工厂名称"');
+    expect(html).toContain('aria-label="新建加工厂联系人"');
+    expect(html).not.toContain('新建加工厂电话');
+    expect(html).not.toContain('已建档');
+    expect(html).not.toContain('待审核');
   });
 });

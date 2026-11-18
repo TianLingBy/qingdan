@@ -68,11 +68,14 @@ import { extractIssues, masterdataApi, optionalText } from '../masterdata/master
 import {
   EMPTY_FEES_HINT,
   EMPTY_MATERIALS_HINT,
+  EMPTY_NEW_PROCESSOR,
+  buildProcessorDraft,
   isAttributionDoc,
   isFullLoss,
   processingApi,
   processingQueryKeys,
   sellableQtyText,
+  type NewProcessorFields,
 } from './processing-api';
 import { ProcessingShipDialog } from './ShipDialog';
 import {
@@ -192,9 +195,20 @@ export function validateDraft(
   fees: readonly FeeDraft[],
   auxMaterials: string,
   attributionDoc: string,
+  /**
+   * 开单现场建档（D100）：传了它就**不再要求** `processorId`，改为要求加工厂名称。
+   * 与 A / E 两单同一口径。
+   */
+  newProcessor?: { readonly name: string } | null,
 ): string[] {
   const errors: string[] = [];
-  if (!processorId) errors.push('请选择加工厂');
+  if (newProcessor) {
+    const name = newProcessor.name.trim();
+    if (name === '') errors.push('新建加工厂：请填写加工厂名称');
+    else if (name.length > 64) errors.push('新建加工厂：名称最多 64 字');
+  } else if (!processorId) {
+    errors.push('请选择加工厂');
+  }
   if (!outputProductId) errors.push('请选择成品商品（完成后据此生成产出批次，#150 决策 A）');
 
   if (materials.length === 0) errors.push(EMPTY_MATERIALS_HINT);
@@ -233,6 +247,47 @@ function StatusBadge({ status }: { status: ProcessingOrderStatus }) {
   return <DocPill label={status} tone={STATUS_TONE[status] ?? 'cancel'} />;
 }
 
+/**
+ * 开单现场建档的内联小表单（D100「静默建档」）。
+ *
+ * 只有名称与联系人两个输入：`processor` 表没有电话列（迁移 0006），契约
+ * `ProcessorDraftSchema` 也不收 —— 多画一个电话框只会让人填了却存不下。
+ */
+export function NewProcessorInlineForm({
+  fields,
+  onChange,
+}: {
+  readonly fields: NewProcessorFields;
+  readonly onChange: (patch: Partial<NewProcessorFields>) => void;
+}) {
+  return (
+    <div className="mt-2 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
+      <label className="text-sm">
+        <span className="text-slate-600">加工厂名称（必填）</span>
+        <input
+          aria-label="新建加工厂名称"
+          value={fields.name}
+          onChange={(event) => onChange({ name: event.target.value })}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="text-slate-600">联系人（选填）</span>
+        <input
+          aria-label="新建加工厂联系人"
+          value={fields.contactName}
+          onChange={(event) => onChange({ contactName: event.target.value })}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+        />
+      </label>
+      <p className="text-xs text-slate-500 sm:col-span-2">
+        保存单据时一起建档，不必先去主数据页。建档对你是透明的 —— 保存成功后只提示单据保存，
+        不额外提示建档结果，也不需要建加工厂权限（有开单权即可）。
+      </p>
+    </div>
+  );
+}
+
 interface OrderFormProps {
   readonly editing: ProcessingOrderDetail | null;
   readonly companyIds: readonly string[];
@@ -243,6 +298,11 @@ interface OrderFormProps {
   readonly handlerName: string;
   readonly companyId: string;
   readonly processorId: string;
+  /** 开单现场建档（D100）：打开后加工厂走草档，下拉被替换。 */
+  readonly newProcessorOpen: boolean;
+  readonly newProcessor: NewProcessorFields;
+  readonly onNewProcessorToggle: (open: boolean) => void;
+  readonly onNewProcessorChange: (patch: Partial<NewProcessorFields>) => void;
   readonly outputProductId: string;
   readonly materials: readonly MaterialDraft[];
   readonly fees: readonly FeeDraft[];
@@ -276,6 +336,10 @@ function OrderForm({
   handlerName,
   companyId,
   processorId,
+  newProcessorOpen,
+  newProcessor,
+  onNewProcessorToggle,
+  onNewProcessorChange,
   outputProductId,
   materials,
   fees,
@@ -339,19 +403,26 @@ function OrderForm({
         </label>
         <label className="text-sm">
           <span className="text-slate-600">加工厂</span>
-          <select
-            required
-            value={processorId}
-            onChange={(event) => onProcessorChange(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-          >
-            <option value="">请选择加工厂</option>
-            {processors.map((processor) => (
-              <option key={processor.id} value={processor.id}>
-                {processor.name}
-              </option>
-            ))}
-          </select>
+          {newProcessorOpen ? (
+            <p className="mt-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
+              开单时新建：
+              <b>{newProcessor.name.trim() === '' ? '在下方填名称' : newProcessor.name.trim()}</b>
+            </p>
+          ) : (
+            <select
+              required
+              value={processorId}
+              onChange={(event) => onProcessorChange(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+            >
+              <option value="">请选择加工厂</option>
+              {processors.map((processor) => (
+                <option key={processor.id} value={processor.id}>
+                  {processor.name}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
         <label className="text-sm">
           <span className="text-slate-600">成品商品</span>
@@ -379,6 +450,25 @@ function OrderForm({
           />
         </label>
       </div>
+
+      {/**
+       * 开单现场建档（D100）：只能开单时用。改单顺带建新加工厂会让「这张单原来给谁做」
+       * 无从追溯。
+       */}
+      {editing === null && (
+        <div>
+          <button
+            type="button"
+            onClick={() => onNewProcessorToggle(!newProcessorOpen)}
+            className="btn btn-s"
+          >
+            {newProcessorOpen ? '取消新建，改从已有加工厂里选' : '+ 新建加工厂'}
+          </button>
+          {newProcessorOpen && (
+            <NewProcessorInlineForm fields={newProcessor} onChange={onNewProcessorChange} />
+          )}
+        </div>
+      )}
 
       {(processors.length === 0 || products.length === 0 || batches.length === 0) && (
         <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
@@ -1208,6 +1298,12 @@ export function ProcessingOrdersPage() {
   const [editing, setEditing] = useState<ProcessingOrderDetail | null>(null);
   const [formCompanyId, setFormCompanyId] = useState('');
   const [formProcessorId, setFormProcessorId] = useState('');
+  /**
+   * 开单现场建档（D100）：打开后加工厂不选下拉，改为填草档随单据一起提交。
+   * 与 `formProcessorId` 分开是因为「打开了但没填名称」与「没打开」报的错不同。
+   */
+  const [newProcessorOpen, setNewProcessorOpen] = useState(false);
+  const [newProcessor, setNewProcessor] = useState<NewProcessorFields>({ ...EMPTY_NEW_PROCESSOR });
   const [formOutputProductId, setFormOutputProductId] = useState('');
   const [materials, setMaterials] = useState<MaterialDraft[]>([{ ...EMPTY_MATERIAL }]);
   const [fees, setFees] = useState<FeeDraft[]>([{ ...EMPTY_FEE }]);
@@ -1335,6 +1431,8 @@ export function ProcessingOrdersPage() {
     setFormOpen(false);
     setEditing(null);
     setFormProcessorId('');
+    setNewProcessorOpen(false);
+    setNewProcessor({ ...EMPTY_NEW_PROCESSOR });
     setFormOutputProductId('');
     setMaterials([{ ...EMPTY_MATERIAL }]);
     setFees([{ ...EMPTY_FEE }]);
@@ -1378,7 +1476,10 @@ export function ProcessingOrdersPage() {
       }
       return processingApi.create({
         companyId: formCompanyId,
-        processorId: formProcessorId,
+        /** 二选一（D100）：两个都给会被服务端 422（`details.field = processorId`）。 */
+        ...(newProcessorOpen
+          ? { processorDraft: buildProcessorDraft(newProcessor) }
+          : { processorId: formProcessorId }),
         outputProductId: formOutputProductId,
         handlerId: meData.employeeId,
         materialBatchIds: payloadMaterials,
@@ -1598,6 +1699,8 @@ export function ProcessingOrdersPage() {
   const beginCreate = () => {
     setEditing(null);
     setFormProcessorId('');
+    setNewProcessorOpen(false);
+    setNewProcessor({ ...EMPTY_NEW_PROCESSOR });
     setFormOutputProductId('');
     setMaterials([{ ...EMPTY_MATERIAL }]);
     setFees([{ ...EMPTY_FEE }]);
@@ -1881,6 +1984,15 @@ export function ProcessingOrdersPage() {
           errors={clientErrors}
           serverIssues={serverIssues}
           onCompanyChange={setFormCompanyId}
+          newProcessorOpen={newProcessorOpen}
+          newProcessor={newProcessor}
+          onNewProcessorToggle={(open) => {
+            setNewProcessorOpen(open);
+            // 双向清空另一条路：服务端对「processorId 与 processorDraft 都给」是 422。
+            if (open) setFormProcessorId('');
+            else setNewProcessor({ ...EMPTY_NEW_PROCESSOR });
+          }}
+          onNewProcessorChange={(patch) => setNewProcessor((current) => ({ ...current, ...patch }))}
           onProcessorChange={setFormProcessorId}
           onOutputProductChange={setFormOutputProductId}
           onMaterialChange={(index, patch) =>
@@ -1912,6 +2024,7 @@ export function ProcessingOrdersPage() {
               fees,
               auxMaterials,
               attributionDoc,
+              newProcessorOpen ? newProcessor : null,
             );
             setClientErrors(errors);
             if (errors.length > 0) return;

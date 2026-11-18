@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiClient } from '../../api/client';
 import {
   MASKED_AMOUNT,
+  buildSupplierDraft,
   cancelDisabledReason,
   createPurchaseApi,
   formatMoney,
@@ -263,5 +264,21 @@ describe('金额展示（D79 遮罩）', () => {
     expect(cancelDisabledReason('has_downstream')).toContain('下游');
     expect(cancelDisabledReason(null)).toBeNull();
     expect(cancelDisabledReason('whatever')).toContain('不可取消');
+  });
+});
+
+/* ---------------------- 开单现场建档（D100 静默建档） ---------------------- */
+
+describe('buildSupplierDraft（D100）', () => {
+  it('空串变「不传」，名称 trim，不带 companyId', () => {
+    expect(
+      buildSupplierDraft({ name: '  宏发五金  ', contactName: '', contactPhone: '' }),
+    ).toEqual({ name: '宏发五金' });
+    expect(
+      buildSupplierDraft({ name: '宏发五金', contactName: '王宏', contactPhone: '13900000000' }),
+    ).toEqual({ name: '宏发五金', contactName: '王宏', contactPhone: '13900000000' });
+    expect(
+      buildSupplierDraft({ name: '宏发五金', contactName: '', contactPhone: '' }),
+    ).not.toHaveProperty('companyId');
   });
 });

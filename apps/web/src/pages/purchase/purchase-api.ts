@@ -19,6 +19,7 @@ import type {
   PurchaseOrderShipInput,
   PurchaseOrderStatus,
   PurchaseOrderUpdateInput,
+  SupplierDraft,
 } from '@qingdan/contracts';
 import { ApiClient, apiClient } from '../../api/client';
 import type { PageResult } from '../masterdata/masterdata-api';
@@ -137,3 +138,41 @@ export {
 } from '../../lib/decimal';
 
 export const EMPTY_LINES_HINT = '采购单至少 1 行商品明细';
+
+/* -------------------- 开单现场建档（D100 静默建档） -------------------- */
+
+/**
+ * 供应商草档的表单输入：都是字符串，转换收在 `buildSupplierDraft` 一处。
+ *
+ * `suppliedMaterials` 契约上是选填数组（最多 20 项），开单现场不填 ——
+ * 「这家主要供什么」属于主数据页的事，不该在采购单里顺手猜。
+ */
+export interface NewSupplierFields {
+  readonly name: string;
+  readonly contactName: string;
+  readonly contactPhone: string;
+}
+
+export const EMPTY_NEW_SUPPLIER: NewSupplierFields = {
+  name: '',
+  contactName: '',
+  contactPhone: '',
+};
+
+/**
+ * 草档 → 建单入参（D100）。
+ *
+ * 空串一律变「不传」：契约里这两项是选填，传 `''` 会建出一个联系人叫「」的供应商，
+ * 事后在主数据页里看着像没填却查不出区别。**不带 `companyId`** —— 归属公司取单据自身的
+ * （D100 第 4 条：前端传了服务端也不看）。
+ */
+export function buildSupplierDraft(fields: NewSupplierFields): SupplierDraft {
+  const name = fields.name.trim();
+  const contactName = fields.contactName.trim();
+  const contactPhone = fields.contactPhone.trim();
+  return {
+    name,
+    ...(contactName === '' ? {} : { contactName }),
+    ...(contactPhone === '' ? {} : { contactPhone }),
+  };
+}
