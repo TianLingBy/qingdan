@@ -1,15 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 import { ACTIONS, DOCUMENT_TYPES, DOMAINS, type SettingsOverview } from '@qingdan/contracts';
 import { ApiError } from '../../api/client';
+import { SessionsBlock } from './SessionsBlock';
 import { settingsApi } from './settings-api';
 
 /**
  * 设置中心 `/settings`（第 23 页，#343 / D93）。
  *
  * 设计意图（`docs/design-settings-center.md`）：
- * - 单页滚动五个区块，不做 tab —— 只有一个聚合端点，一次拿全，分 tab 反而要多管一套状态；
- * - 五个区块**全部只读**。改资料、换号、踢设备、改单号规则、勾权限，后端都还没有端点，
- *   画了就是假功能（#298 第 2 块之后再议）；
+ * - 单页滚动六个区块，不做 tab —— 正文只有一个聚合端点，一次拿全，分 tab 反而要多管一套状态；
+ * - 五块正文**全部只读**（改资料、换号、改单号规则、勾权限，后端都还没有端点，画了就是假功能）；
+ * - 第六块「我的登录设备」是**唯一可操作**的：后端有 `platform.settings.sessions` 与
+ *   `.revoke_session`（`apps/api/src/modules/platform/usecases/settings-sessions.ts`），
+ *   自己管四态（见 `SessionsBlock.tsx`）—— 它拉失败不该把整页五块正文一起打掉；
  * - 「我」的一切只作用于本人：路径写死不带任何员工 id，服务端从会话取身份。
  *
  * 四态用 v0.13 的 CSS 驱动写法（`data-state` + `st-block`），不写 `{!data && <Skeleton/>}`。
@@ -107,7 +110,15 @@ export function SettingsErrorBlock({
   );
 }
 
-/** 五块正文。拆出来只是为了让 `SettingsPage` 的四态骨架看得清。 */function OverviewBlocks({ overview }: { readonly overview: SettingsOverview }) {
+/**
+ * 六个区块。拆出来只是为了让 `SettingsPage` 的四态骨架看得清。
+ *
+ * 第六块 `SessionsBlock` 挂在 `data-state="filled"` 里 —— 只有概览拿到才渲染它。
+ * 概览 403（连 `company.read` 都没有）时展示设备列表没有意义：那种身份连自己
+ * 属于哪家公司都看不到，给他一个「踢设备」入口反而更容易误操作。
+ * 它自己内部还有一层四态，所以概览正常、会话接口挂了时，只有这一块显示错误。
+ */
+function OverviewBlocks({ overview }: { readonly overview: SettingsOverview }) {
   return (
     <>
       <MyProfileBlock overview={overview} />
@@ -115,6 +126,7 @@ export function SettingsErrorBlock({
       <NumberingBlock overview={overview} />
       <PermissionsBlock overview={overview} />
       <TenantBlock overview={overview} />
+      <SessionsBlock />
     </>
   );
 }
