@@ -9046,6 +9046,8 @@ paths:
                       - paid
                       - expired
                       - cancelled
+                  providerOrderNo:
+                    type: string
                   qrContent:
                     type:
                       - string
@@ -9066,6 +9068,7 @@ paths:
                   - channel
                   - amount
                   - status
+                  - providerOrderNo
                   - qrContent
                   - payUrl
                   - expiresAt
@@ -9146,6 +9149,8 @@ paths:
                       - paid
                       - expired
                       - cancelled
+                  providerOrderNo:
+                    type: string
                   qrContent:
                     type:
                       - string
@@ -9166,6 +9171,7 @@ paths:
                   - channel
                   - amount
                   - status
+                  - providerOrderNo
                   - qrContent
                   - payUrl
                   - expiresAt
