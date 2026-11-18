@@ -51,7 +51,9 @@ import { authApi, authKeys } from '../auth/auth-api';
 import { extractIssues, masterdataApi, optionalText } from '../masterdata/masterdata-api';
 import {
   EMPTY_LINES_HINT,
+  EMPTY_NEW_SUPPLIER,
   MASKED_AMOUNT,
+  buildSupplierDraft,
   cancelDisabledReason,
   formatMoney,
   formatQty,
@@ -60,6 +62,7 @@ import {
   purchaseApi,
   purchaseQueryKeys,
   sumDecimal,
+  type NewSupplierFields,
 } from './purchase-api';
 import { ShipDialog } from './ShipDialog';
 import {
@@ -180,9 +183,20 @@ export function validateDraft(
   supplierId: string,
   lines: readonly LineDraft[],
   fees: readonly FeeDraft[],
+  /**
+   * 开单现场建档（D100）：传了它就**不再要求** `supplierId`，改为要求供应商名称。
+   * 与 E 销售单同一口径 —— 这两条是互斥的同一件事，分成两个函数必然被同时调用。
+   */
+  newSupplier?: { readonly name: string } | null,
 ): string[] {
   const errors: string[] = [];
-  if (!supplierId) errors.push('请选择供应商');
+  if (newSupplier) {
+    const name = newSupplier.name.trim();
+    if (name === '') errors.push('新建供应商：请填写供应商名称');
+    else if (name.length > 64) errors.push('新建供应商：名称最多 64 字');
+  } else if (!supplierId) {
+    errors.push('请选择供应商');
+  }
   if (lines.length === 0) errors.push(EMPTY_LINES_HINT);
 
   lines.forEach((line, index) => {
@@ -208,6 +222,57 @@ export function validateDraft(
   return errors;
 }
 
+/**
+ * 开单现场建档的内联小表单（D100「静默建档」）。
+ *
+ * 对外导出是为了能在本仓不带 jsdom 的测试里静态渲染（`OrderForm` props 二十多个，
+ * 为一条断言造二十个 mock 不值）。只收名称 + 联系人 + 电话：供货物料这类字段属于
+ * 主数据页的事，开单现场不该顺手猜。
+ */
+export function NewSupplierInlineForm({
+  fields,
+  onChange,
+}: {
+  readonly fields: NewSupplierFields;
+  readonly onChange: (patch: Partial<NewSupplierFields>) => void;
+}) {
+  return (
+    <div className="mt-2 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
+      <label className="text-sm">
+        <span className="text-slate-600">供应商名称（必填）</span>
+        <input
+          aria-label="新建供应商名称"
+          value={fields.name}
+          onChange={(event) => onChange({ name: event.target.value })}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="text-slate-600">联系人（选填）</span>
+        <input
+          aria-label="新建供应商联系人"
+          value={fields.contactName}
+          onChange={(event) => onChange({ contactName: event.target.value })}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="text-slate-600">电话（选填）</span>
+        <input
+          aria-label="新建供应商电话"
+          value={fields.contactPhone}
+          onChange={(event) => onChange({ contactPhone: event.target.value })}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+        />
+      </label>
+      <p className="text-xs text-slate-500 sm:col-span-3">
+        保存单据时一起建档，不必先去主数据页。建档对你是透明的 —— 保存成功后只提示单据保存，
+        不额外提示建档结果，也不需要建供应商权限（有开单权即可）。
+      </p>
+    </div>
+  );
+}
+
 interface OrderFormProps {
   readonly editing: PurchaseOrderDetail | null;
   readonly companyIds: readonly string[];
@@ -218,6 +283,11 @@ interface OrderFormProps {
   readonly fees: readonly FeeDraft[];
   readonly companyId: string;
   readonly supplierId: string;
+  /** 开单现场建档（D100）：打开后供应商走草档，下拉被替换。 */
+  readonly newSupplierOpen: boolean;
+  readonly newSupplier: NewSupplierFields;
+  readonly onNewSupplierToggle: (open: boolean) => void;
+  readonly onNewSupplierChange: (patch: Partial<NewSupplierFields>) => void;
   readonly busy: boolean;
   readonly errors: readonly string[];
   readonly serverIssues: readonly { path: string; message: string }[];
@@ -243,6 +313,10 @@ function OrderForm({
   fees,
   companyId,
   supplierId,
+  newSupplierOpen,
+  newSupplier,
+  onNewSupplierToggle,
+  onNewSupplierChange,
   busy,
   errors,
   serverIssues,
@@ -297,19 +371,26 @@ function OrderForm({
         </label>
         <label className="text-sm">
           <span className="text-slate-600">供应商</span>
-          <select
-            required
-            value={supplierId}
-            onChange={(event) => onSupplierChange(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-          >
-            <option value="">请选择供应商</option>
-            {suppliers.map((supplier) => (
-              <option key={supplier.id} value={supplier.id}>
-                {supplier.name}
-              </option>
-            ))}
-          </select>
+          {newSupplierOpen ? (
+            <p className="mt-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
+              开单时新建：
+              <b>{newSupplier.name.trim() === '' ? '在下方填名称' : newSupplier.name.trim()}</b>
+            </p>
+          ) : (
+            <select
+              required
+              value={supplierId}
+              onChange={(event) => onSupplierChange(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+            >
+              <option value="">请选择供应商</option>
+              {suppliers.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.name}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
         <label className="text-sm">
           <span className="text-slate-600">经手人</span>
@@ -320,6 +401,25 @@ function OrderForm({
           />
         </label>
       </div>
+
+      {/**
+       * 开单现场建档（D100）：只能开单时用。改单顺带建新供应商会让「这张单原来向谁买」
+       * 无从追溯，所以编辑态不提供。
+       */}
+      {editing === null && (
+        <div>
+          <button
+            type="button"
+            onClick={() => onNewSupplierToggle(!newSupplierOpen)}
+            className="btn btn-s"
+          >
+            {newSupplierOpen ? '取消新建，改从已有供应商里选' : '+ 新建供应商'}
+          </button>
+          {newSupplierOpen && (
+            <NewSupplierInlineForm fields={newSupplier} onChange={onNewSupplierChange} />
+          )}
+        </div>
+      )}
 
       {(suppliers.length === 0 || products.length === 0) && (
         <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
@@ -883,6 +983,12 @@ export function PurchaseOrdersPage() {
   const [editing, setEditing] = useState<PurchaseOrderDetail | null>(null);
   const [formCompanyId, setFormCompanyId] = useState('');
   const [formSupplierId, setFormSupplierId] = useState('');
+  /**
+   * 开单现场建档（D100）：打开后供应商不选下拉，改为填草档随单据一起提交。
+   * 与 `formSupplierId` 分开是因为「打开了但没填名称」与「没打开」提交时报的错不同。
+   */
+  const [newSupplierOpen, setNewSupplierOpen] = useState(false);
+  const [newSupplier, setNewSupplier] = useState<NewSupplierFields>({ ...EMPTY_NEW_SUPPLIER });
   const [lines, setLines] = useState<LineDraft[]>([{ ...EMPTY_LINE }]);
   const [fees, setFees] = useState<FeeDraft[]>([]);
   const [clientErrors, setClientErrors] = useState<string[]>([]);
@@ -989,7 +1095,10 @@ export function PurchaseOrdersPage() {
       }
       return purchaseApi.create({
         companyId: formCompanyId,
-        supplierId: formSupplierId,
+        /** 二选一（D100）：两个都给会被服务端 422（`details.field = supplierId`）。 */
+        ...(newSupplierOpen
+          ? { supplierDraft: buildSupplierDraft(newSupplier) }
+          : { supplierId: formSupplierId }),
         handlerId: meData.employeeId,
         lines: payloadLines,
         ...(payloadFees.length > 0 ? { fees: payloadFees } : {}),
@@ -1001,6 +1110,8 @@ export function PurchaseOrdersPage() {
       setFormOpen(false);
       setEditing(null);
       setFormSupplierId('');
+      setNewSupplierOpen(false);
+      setNewSupplier({ ...EMPTY_NEW_SUPPLIER });
       setLines([{ ...EMPTY_LINE }]);
       setFees([]);
       setClientErrors([]);
@@ -1029,6 +1140,8 @@ export function PurchaseOrdersPage() {
     setEditing(null);
     setStaleNotice(null);
     setFormSupplierId('');
+    setNewSupplierOpen(false);
+    setNewSupplier({ ...EMPTY_NEW_SUPPLIER });
     setLines([{ ...EMPTY_LINE }]);
     setFees([]);
     setClientErrors([]);
@@ -1219,6 +1332,8 @@ export function PurchaseOrdersPage() {
   const beginCreate = () => {
     setEditing(null);
     setFormSupplierId('');
+    setNewSupplierOpen(false);
+    setNewSupplier({ ...EMPTY_NEW_SUPPLIER });
     setLines([{ ...EMPTY_LINE }]);
     setFees([]);
     setClientErrors([]);
@@ -1411,6 +1526,15 @@ export function PurchaseOrdersPage() {
           fees={fees}
           companyId={formCompanyId}
           supplierId={formSupplierId}
+          newSupplierOpen={newSupplierOpen}
+          newSupplier={newSupplier}
+          onNewSupplierToggle={(open) => {
+            setNewSupplierOpen(open);
+            // 双向清空另一条路：服务端对「supplierId 与 supplierDraft 都给」是 422。
+            if (open) setFormSupplierId('');
+            else setNewSupplier({ ...EMPTY_NEW_SUPPLIER });
+          }}
+          onNewSupplierChange={(patch) => setNewSupplier((current) => ({ ...current, ...patch }))}
           busy={save.isPending}
           errors={clientErrors}
           serverIssues={serverIssues}
@@ -1430,7 +1554,12 @@ export function PurchaseOrdersPage() {
           onRemoveFee={(index) => setFees((current) => current.filter((_, i) => i !== index))}
           onSubmit={(event) => {
             event.preventDefault();
-            const errors = validateDraft(formSupplierId, lines, fees);
+            const errors = validateDraft(
+              formSupplierId,
+              lines,
+              fees,
+              newSupplierOpen ? newSupplier : null,
+            );
             setClientErrors(errors);
             if (errors.length > 0) return;
             save.mutate();

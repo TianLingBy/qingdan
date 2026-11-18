@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiClient } from '../../api/client';
 import {
+  buildProcessorDraft,
   createProcessingApi,
   isAttributionDoc,
   isFullLoss,
@@ -230,5 +231,23 @@ describe('归属单格式（D18 / D35）', () => {
     expect(isAttributionDoc('A-0001-20261105-0001')).toBe(false);
     expect(isAttributionDoc('E-1-2026-1')).toBe(false);
     expect(isAttributionDoc('')).toBe(false);
+  });
+});
+
+/* ---------------------- 开单现场建档（D100 静默建档） ---------------------- */
+
+describe('buildProcessorDraft（D100）', () => {
+  it('只有名称与联系人两项（加工厂表没有电话列），空串变「不传」', () => {
+    expect(buildProcessorDraft({ name: ' 顺发加工厂 ', contactName: '' })).toEqual({
+      name: '顺发加工厂',
+    });
+    expect(buildProcessorDraft({ name: '顺发加工厂', contactName: '李顺' })).toEqual({
+      name: '顺发加工厂',
+      contactName: '李顺',
+    });
+    // 契约里就没有电话这一项，别顺手塞进去
+    expect(buildProcessorDraft({ name: '顺发加工厂', contactName: '' })).not.toHaveProperty(
+      'contactPhone',
+    );
   });
 });
