@@ -27,6 +27,7 @@ import type {
   ProcessingOrderStatus,
   ProcessingOrderUpdateInput,
   PrintDocument,
+  ProcessorDraft,
 } from '@qingdan/contracts';
 import { ApiClient, apiClient, headerSafeValue } from '../../api/client';
 import { compareDecimal, subtractDecimal } from '../../lib/decimal';
@@ -176,4 +177,29 @@ export function sellableQtyText(inputQty: string, lossQty: string | null): strin
 export function isFullLoss(inputQty: string, lossQty: string | null): boolean {
   if (lossQty === null) return false;
   return compareDecimal(lossQty, inputQty) >= 0;
+}
+
+/* -------------------- 开单现场建档（D100 静默建档） -------------------- */
+
+/**
+ * 加工厂草档的表单输入。
+ *
+ * 只有名称与联系人两项：`processor` 表**没有电话列**（迁移 0006 的建表语句），
+ * 契约 `ProcessorDraftSchema` 也就不收电话 —— 这里多画一个电话框只会让人填了却存不下。
+ */
+export interface NewProcessorFields {
+  readonly name: string;
+  readonly contactName: string;
+}
+
+export const EMPTY_NEW_PROCESSOR: NewProcessorFields = {
+  name: '',
+  contactName: '',
+};
+
+/** 草档 → 建单入参（D100）。空串变「不传」，不带 `companyId`（取单据自身的）。 */
+export function buildProcessorDraft(fields: NewProcessorFields): ProcessorDraft {
+  const name = fields.name.trim();
+  const contactName = fields.contactName.trim();
+  return { name, ...(contactName === '' ? {} : { contactName }) };
 }

@@ -9,7 +9,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
 import { authKeys } from '../auth/auth-api';
-import { DetailPanel, PurchaseOrdersPage, validateDraft } from './PurchaseOrdersPage';
+import {
+  DetailPanel,
+  NewSupplierInlineForm,
+  PurchaseOrdersPage,
+  validateDraft,
+} from './PurchaseOrdersPage';
 import { MASKED_AMOUNT, purchaseQueryKeys } from './purchase-api';
 
 const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
@@ -384,5 +389,36 @@ describe('v0.13 版式（#337）', () => {
 
     expect(html).toContain('class="st transit"');
     expect(html).not.toContain('class="st now"');
+  });
+});
+
+/* ---------------------- 开单现场建档（D100 静默建档） ---------------------- */
+
+describe('开单现场建档（D100）', () => {
+  const LINE = { productId: 'p1', qty: '2', unitPrice: '10' };
+
+  it('给了草档就不再要求 supplierId，改要求名称', () => {
+    expect(validateDraft('', [LINE], [], { name: '宏发五金' })).not.toContain('请选择供应商');
+    expect(validateDraft('', [LINE], [], { name: '   ' })).toContain(
+      '新建供应商：请填写供应商名称',
+    );
+    expect(validateDraft('', [LINE], [], { name: 'x'.repeat(65) })).toContain(
+      '新建供应商：名称最多 64 字',
+    );
+  });
+
+  it('内联表单三个输入齐全，且无建档提示', () => {
+    const html = renderToStaticMarkup(
+      <NewSupplierInlineForm
+        fields={{ name: '宏发五金', contactName: '', contactPhone: '' }}
+        onChange={() => undefined}
+      />,
+    );
+    for (const label of ['新建供应商名称', '新建供应商联系人', '新建供应商电话']) {
+      expect(html).toContain(`aria-label="${label}"`);
+    }
+    expect(html).not.toContain('已建档');
+    expect(html).not.toContain('待审核');
+    expect(html).toContain('value="宏发五金"');
   });
 });
