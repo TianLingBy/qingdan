@@ -53,6 +53,22 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // （HEADER_COLUMNS 已经 SELECT 这三列）。引用列索引缺了不会 500，
   // 但 ON DELETE RESTRICT 检查与单据列表 LEFT JOIN 会退化。
   '20261118060000_masterdata_contacts.sql',
+  // D89 / #289：把 `workbench` 加进 position_permission 与 employee_permission_override
+  // 的 domain CHECK 白名单，并给存量岗位 backfill `workbench.read`。
+  //
+  // **这条漏登记过一段时间，是补的。** 缺了它，`platform/db/seed.ts` 里
+  // `ALL_DOMAINS` 含 `workbench`（`:50`）、岗位预设写 `perms('workbench', ['read'])`（`:90`/`:110`），
+  // 而 CHECK 白名单只到 `api_integration` —— 新库初始化直接撞约束失败，权限设置页
+  // 给任何岗位勾「工作台」也 500。这不是「性能退化」一类的软问题，是写不进去。
+  '20261116043100_workbench_position_domain.sql',
+  // D90 / #227：把 `view_handler`（看经手人）加进 action CHECK 白名单，并给 owner/manager
+  // 补授四类单据域的 view_handler。
+  //
+  // 同样是补登记的。缺了它：seed 的 `ALL_ACTIONS` 含 `view_handler`（`:53`）、
+  // `:87` 写 `perms(domain, ['view_handler'])` → 撞 CHECK 失败；
+  // 权限设置页授予「看经手人」也 500。读端只是查不到授权（回 403），不会崩，
+  // 但写端崩在初始化阶段，比读端 403 严重得多。
+  '20261116154500_allow_view_handler_action.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {
