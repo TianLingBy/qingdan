@@ -110,7 +110,7 @@ describe('销售单 E 页面', () => {
     expect(html).toContain('王记五金');
     expect(html).toContain('¥225.00');
     expect(html).toContain('进行中');
-    expect(html).toContain('新建销售单');
+    expect(html).toContain('+ 新建');
     // 数量合计来自明细行，不是单头字段
     expect(html).toContain('>10<');
   });
@@ -148,17 +148,18 @@ describe('销售单 E 页面', () => {
     expect(html).toContain('不等于已结算');
   });
 
-  it('销售身份（有 update、无 ship）看到完成按钮被禁用并写明缺 sales.ship（D85）', () => {
+  it('销售身份（有 update、无 ship）看到「发货」被禁用并写明缺 sales.ship（D85）', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
-    expect(html).toContain('完成');
+    // 列表这一格原叫「完成」，但它调的是出库（askShip）；D94 之后「完成」专指客户签收。
+    expect(buttonTag(html, '发货')).toContain('disabled=""');
     expect(html).toContain('取消');
     // D85：能改单不等于能出库——只有 sales.update 时按钮仍在但禁用，并给出具体权限点。
     expect(html).toContain('当前身份没有 sales.ship 权限');
     expect(html).toContain('disabled');
   });
 
-  it('授予 sales.ship 后不再提示缺权限（按钮可点）', () => {
+  it('授予 sales.ship 后「发货」可点，也不再提示缺权限', () => {
     const html = renderPage(
       seedClient({
         me: {
@@ -174,7 +175,7 @@ describe('销售单 E 页面', () => {
       }),
     );
 
-    expect(html).toContain('完成');
+    expect(buttonTag(html, '发货')).not.toContain('disabled=""');
     expect(html).not.toContain('当前身份没有 sales.ship 权限');
   });
 
@@ -307,5 +308,54 @@ describe('销售单「发货 → 客户签收」两步（D94）', () => {
     const html = renderDetailPanel({ status: '已发货', canComplete: false });
     expect(buttonTag(html, '客户签收')).toContain('disabled=""');
     expect(html).toContain('当前身份没有 sales.approve 权限');
+  });
+});
+
+/* ---------------------- v0.13 详情版式（#337 单据组） ---------------------- */
+
+describe('v0.13 详情版式（#337）', () => {
+  it('详情落在 card 上，走 DetailHead + DocMeta + LinesFooter 三块公用版式', () => {
+    const html = renderDetailPanel();
+
+    expect(html).toContain('class="card min-w-0 space-y-3 p-4"');
+    // DetailHead：单据名 + 单号 + 状态徽标 + 关闭（关闭按 v0.13 叫「收起」）
+    expect(html).toContain('销售单');
+    expect(html).toContain('收起');
+    // DocMeta 网格（gap-px 模拟单元格分隔线）
+    expect(html).toContain('gap-px');
+    expect(html).toContain('数量合计');
+    // LinesFooter：明细合计行
+    expect(html).toContain('共');
+    expect(html).toContain('行');
+  });
+
+  it('状态徽标用 .st 语义档，「已发货」是 transit 而不是自拼琥珀', () => {
+    const shipping = renderDetailPanel({ status: '已发货' });
+
+    expect(shipping).toContain('class="st transit"');
+    expect(shipping).not.toContain('bg-amber-50');
+    expect(renderDetailPanel({ status: '进行中' })).toContain('class="st now"');
+    expect(renderDetailPanel({ status: '已完成' })).toContain('class="st ok"');
+    expect(renderDetailPanel({ status: '已取消' })).toContain('class="st cancel"');
+  });
+
+  it('主色只给当前状态该做的那一步：进行中亮「发货」，已发货亮「客户签收」', () => {
+    expect(buttonTag(renderDetailPanel({ status: '进行中' }), '发货')).toContain('btn-p');
+    expect(buttonTag(renderDetailPanel({ status: '进行中' }), '客户签收')).not.toContain('btn-p');
+    expect(buttonTag(renderDetailPanel({ status: '已发货' }), '客户签收')).toContain('btn-p');
+    expect(buttonTag(renderDetailPanel({ status: '已发货' }), '发货')).not.toContain('btn-p');
+  });
+
+  it('明细表列序把「引用批次」贴近商品，合计才落在「金额」列下', () => {
+    const html = renderDetailPanel();
+
+    const productAt = html.indexOf('>商品<');
+    const batchAt = html.indexOf('>引用批次<');
+    const qtyAt = html.indexOf('>数量<');
+    const amountAt = html.lastIndexOf('>金额<');
+    expect(productAt).toBeGreaterThan(-1);
+    expect(productAt).toBeLessThan(batchAt);
+    expect(batchAt).toBeLessThan(qtyAt);
+    expect(qtyAt).toBeLessThan(amountAt);
   });
 });

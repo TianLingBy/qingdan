@@ -700,8 +700,8 @@ export function DetailPanel({
                 <th>费用</th>
                 <th className="num">数量</th>
                 <th className="num">单价</th>
-                <th className="num">金额</th>
                 <th>备注</th>
+                <th className="num">金额</th>
               </tr>
             </thead>
             <tbody>
@@ -710,8 +710,8 @@ export function DetailPanel({
                   <td>{fee.feeName}</td>
                   <td className="num whitespace-nowrap">{formatQty(fee.qty)}</td>
                   <td className="num whitespace-nowrap">{formatMoney(fee.unitPrice)}</td>
-                  <td className="num whitespace-nowrap">{formatMoney(fee.amount)}</td>
                   <td style={{ color: 'var(--text-3)' }}>{fee.remark ?? '—'}</td>
+                  <td className="num whitespace-nowrap">{formatMoney(fee.amount)}</td>
                 </tr>
               ))}
             </tbody>
