@@ -1,8 +1,15 @@
 /**
  * 加工单 B 页面（`/processing-orders`，22 页 IA 第 4 页）。
  *
- * 视觉与字段对齐 `prototype.html` 的 `pages.b`：单号 / 物料 / 投入→产出 / 损耗 / 加工费 /
- * 状态 / 归属单，工具条上「新建加工单」，金额受「看价」权限控制（D27 / D79）。
+ * 外观对齐 v0.13 视觉稿 `design/v0.13/加工单B.html`（#337 单据组第五批）：
+ * 页头 `.p-head`、状态分段 `.seg`、列表 `.card[data-state]`、详情 `DetailHead` +
+ * `DocMeta` + `LinesFooter`；金额受「看价」权限控制（D27 / D79）。
+ *
+ * 与视觉稿的两处**故意不照抄**：
+ * - 分段里没有「草稿」：契约 `ProcessingOrderStatusSchema` 只有
+ *   进行中 / 在途 / 已完成 / 已取消（`packages/contracts/src/processing-orders.ts`），
+ *   画一个永远筛不出数据的按钮只会在测试里挂；
+ * - 页头没有「导出」：没有对应的导出端点，不画假按钮（与采购单页同口径）。
  *
  * 与原型不同的地方，都是本批接口口径决定的：
  * - **「完成 / 验收」需要 `processing.approve`**：一次填入损耗量，完成时扣材料、
@@ -26,9 +33,18 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { fetchEmployees } from '../../api/platform';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import {
+  DetailHead,
+  DetailMetaDot,
+  DocMeta,
+  DocPill,
+  LinesFooter,
+  type DocPillTone,
+} from '../../components/OrderDetailUI';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useCompanyLabel } from '../../lib/company-directory';
-import { employeeDirectoryKey } from '../../lib/employee-directory';
+import { employeeDirectoryKey, useEmployeeLabel } from '../../lib/employee-directory';
+import { resolveListState } from '../../lib/list-state';
 import {
   describeWriteError,
   isStaleVersionError,
@@ -70,12 +86,19 @@ import {
   type ShipDraft,
 } from './ship-flow';
 
-const STATUS_STYLE: Readonly<Record<ProcessingOrderStatus, string>> = {
-  进行中: 'bg-blue-50 text-blue-700',
+/**
+ * 状态色档（v0.13 `.st` 系列，见 `components/OrderDetailUI.tsx` 的选档规则）：
+ * 进行中还要人干活 → `now`；货在路上 → `transit`；已完成 → `ok`；已取消 → `cancel`。
+ *
+ * 以前这里用 Tailwind `bg-blue-50` 一类自拼色，结果「在途」在采购单是琥珀、在加工单
+ * 是蓝色、在冲正页又是第三种黄 —— 同一个状态在不同页变三种颜色的代价比换色板大得多。
+ */
+const STATUS_TONE: Readonly<Record<ProcessingOrderStatus, DocPillTone>> = {
+  进行中: 'now',
   // D94：料或成品在途，等收货方确认。
-  在途: 'bg-amber-50 text-amber-700',
-  已完成: 'bg-emerald-50 text-emerald-700',
-  已取消: 'bg-slate-100 text-slate-500',
+  在途: 'transit',
+  已完成: 'ok',
+  已取消: 'cancel',
 };
 
 const PAGE_DESCRIPTION =
@@ -207,9 +230,7 @@ export function validateDraft(
 }
 
 function StatusBadge({ status }: { status: ProcessingOrderStatus }) {
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[status]}`}>{status}</span>
-  );
+  return <DocPill label={status} tone={STATUS_TONE[status] ?? 'cancel'} />;
 }
 
 interface OrderFormProps {
@@ -740,6 +761,11 @@ interface DetailPanelProps {
   readonly order: ProcessingOrderDetail;
   readonly products: readonly Product[];
   readonly batches: readonly InventoryBatch[];
+  /**
+   * 经手人展示文案。契约里只有 `handlerId`，并且**无权查看负责人时服务端回 `null`**
+   * （Issue #227），所以这段文案由页面统一算好传进来，面板不自己查姓名簿。
+   */
+  readonly handlerLabel: string;
   readonly canViewPrice: boolean;
   readonly canUpdate: boolean;
   readonly canPrint: boolean;
@@ -804,6 +830,7 @@ export function DetailPanel({
   order,
   products,
   batches,
+  handlerLabel,
   canViewPrice,
   canUpdate,
   canPrint,
@@ -848,177 +875,253 @@ export function DetailPanel({
   const revokeBlocked = revokeShipBlockedText({ canShip, status: order.status });
   const receiveBlocked = receiveBlockedText({ canApprove: canReceive, status: order.status });
 
-  return (
-    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-mono text-sm text-slate-900">{order.orderNo}</h2>
-          <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-            <StatusBadge status={order.status} />
-            <span>{order.processorName}</span>
-            <span className="text-slate-300">|</span>
-            <span>成品：{productLabel(products, order.outputProductId)}</span>
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-sm text-slate-500 hover:text-slate-900"
-        >
-          关闭
-        </button>
-      </div>
+  /**
+   * 「完成 / 验收」的禁用原因。顺序仍是先权限后状态，但「在途」要单独说 ——
+   * D94 ② 之后在途的正确出口是「到货确认」，直接点完成会拿到 422，不如先把路指出来。
+   */
+  const completeBlocked = !canComplete
+    ? '当前身份没有 processing.approve 权限（完成会扣材料、建产出批次，属于审批动作）'
+    : order.status === '在途'
+      ? '这张单在途，请点「到货确认」入库；要退回可点「撤销发货」。'
+      : order.status === '进行中'
+        ? null
+        : `只有「进行中」的加工单能完成，当前是「${order.status}」`;
 
+  return (
+    <section className="card min-w-0 space-y-3 p-4">
+      <DetailHead
+        docLabel="加工单"
+        orderNo={order.orderNo}
+        pill={<StatusBadge status={order.status} />}
+        meta={
+          <>
+            <span>{order.processorName}</span>
+            <DetailMetaDot />
+            <span>成品：{productLabel(products, order.outputProductId)}</span>
+            <DetailMetaDot />
+            <span>开单 {formatDateTime(order.createdAt)}</span>
+            <DetailMetaDot />
+            <span>最近更新 {formatDateTime(order.updatedAt)}</span>
+            <DetailMetaDot />
+            <span>版本 {order.version}</span>
+            {order.status === '在途' && order.transitStage ? (
+              <>
+                <DetailMetaDot />
+                <span>
+                  在途：{order.transitStage === 'materials' ? '料段' : '成品段'} ·{' '}
+                  {order.transitTo === 'customer' ? '直发客户' : '回仓'}
+                </span>
+              </>
+            ) : null}
+          </>
+        }
+        onClose={onClose}
+        closeLabel="收起"
+      />
+
+      {/*
+        材料明细加一列「商品」：批次号本身看不出投的是什么料，而契约里一行只有
+        `batchId`，商品名要靠批次 → 商品映射回填。三列撑满 1100px 也会显得空。
+      */}
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[520px] text-left text-sm">
-          <thead className="border-b border-slate-200 text-xs text-slate-500">
+        <table className="w-full text-left" style={{ minWidth: '560px' }}>
+          <thead>
             <tr>
-              <th className="py-2">投入批次</th>
-              <th className="py-2">投入数量</th>
-              <th className="py-2">批次可用量</th>
+              <th>投入批次</th>
+              <th>商品</th>
+              <th className="num">投入数量</th>
+              <th className="num">批次可用量</th>
             </tr>
           </thead>
           <tbody>
             {order.materialBatchIds.map((row, index) => {
               const batch = batches.find((item) => item.id === row.batchId);
               return (
-                <tr key={`${row.batchId}-${index}`} className="border-b border-slate-100">
-                  <td className="py-2 font-mono text-xs">{batchLabel(batches, row.batchId)}</td>
-                  <td className="py-2">{formatQty(row.qty)}</td>
-                  <td className="py-2 text-slate-600">
+                <tr key={`${row.batchId}-${index}`} className="r-row">
+                  <td className="font-mono text-xs">{batchLabel(batches, row.batchId)}</td>
+                  <td style={{ color: 'var(--text-3)' }}>
+                    {batch ? productLabel(products, batch.productId) : '—'}
+                  </td>
+                  <td className="num whitespace-nowrap">{formatQty(row.qty)}</td>
+                  <td className="num whitespace-nowrap" style={{ color: 'var(--text-3)' }}>
                     {batch ? formatQty(batch.availableQty) : '—'}
                   </td>
                 </tr>
               );
             })}
           </tbody>
+          <LinesFooter
+            colSpan={3}
+            note={`共 ${order.materialBatchIds.length} 行批次 · 投入量由各行合计派生（F2b）`}
+            sum={formatQty(order.inputQty)}
+          />
         </table>
       </div>
 
       {order.fees.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs text-slate-500">
+          <table className="w-full text-left" style={{ minWidth: '560px' }}>
+            <thead>
               <tr>
-                <th className="py-2">费用</th>
-                <th className="py-2">数量</th>
-                <th className="py-2">单价</th>
-                <th className="py-2">金额</th>
-                <th className="py-2">备注</th>
+                <th>费用</th>
+                <th className="num">数量</th>
+                <th className="num">单价</th>
+                <th className="num">金额</th>
+                <th>备注</th>
               </tr>
             </thead>
             <tbody>
               {order.fees.map((fee, index) => (
-                <tr key={`${fee.feeName}-${index}`} className="border-b border-slate-100">
-                  <td className="py-2">{fee.feeName}</td>
-                  <td className="py-2">{formatQty(fee.qty)}</td>
-                  <td className="py-2">
+                <tr key={`${fee.feeName}-${index}`} className="r-row">
+                  <td>{fee.feeName}</td>
+                  <td className="num whitespace-nowrap">{formatQty(fee.qty)}</td>
+                  <td className="num whitespace-nowrap">
                     {canViewPrice ? formatMoney(fee.unitPrice) : MASKED_AMOUNT}
                   </td>
-                  <td className="py-2">{canViewPrice ? formatMoney(fee.amount) : MASKED_AMOUNT}</td>
-                  <td className="py-2 text-slate-600">{fee.remark ?? '—'}</td>
+                  <td className="num whitespace-nowrap">
+                    {canViewPrice ? formatMoney(fee.amount) : MASKED_AMOUNT}
+                  </td>
+                  <td style={{ color: 'var(--text-3)' }}>{fee.remark ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
+            <LinesFooter
+              colSpan={4}
+              note={`共 ${order.fees.length} 行费用 · 完成时按投入量摊入产出批次成本（D5 / D83）`}
+              sum={canViewPrice ? formatMoney(feeTotal) : MASKED_AMOUNT}
+            />
           </table>
         </div>
       )}
 
-      <dl className="grid gap-x-8 gap-y-2 rounded-lg bg-slate-50 px-4 py-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-        <div className="flex gap-2">
-          <dt className="text-slate-500">投入量</dt>
-          <dd className="font-medium">{formatQty(order.inputQty)}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">损耗量</dt>
-          <dd className="font-medium">{lossText}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">可售量</dt>
-          <dd className="font-medium">{sellableText}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">费用合计</dt>
-          <dd className="font-medium">{canViewPrice ? formatMoney(feeTotal) : MASKED_AMOUNT}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">产出批次</dt>
-          <dd className="font-medium">{order.outputBatchId ?? '完成时生成'}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">归属单</dt>
-          <dd className="font-mono text-xs">{order.attributionDoc ?? '—'}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">辅料</dt>
-          <dd className="font-medium">{order.auxMaterials ?? '—'}</dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">损失记录</dt>
-          <dd className="font-medium">
-            {order.lossRecord
+      {/*
+        「单据信息」用统一的三列网格（`单据详情.html`）：损耗 / 可售量还没验收时用 `dim`
+        弱化而不是写 0 —— 写 0 等于假装「零损耗」，会把批次成本算低（D5 / F3）。
+      */}
+      <DocMeta
+        columns={3}
+        items={[
+          { label: '加工厂', value: order.processorName },
+          { label: '成品', value: productLabel(products, order.outputProductId) },
+          { label: '经手', value: handlerLabel },
+          { label: '投入量', mono: true, value: formatQty(order.inputQty) },
+          {
+            label: '损耗量',
+            mono: true,
+            tone: order.lossQty === null ? 'dim' : undefined,
+            value: lossText,
+          },
+          {
+            label: '可售量',
+            mono: true,
+            tone: order.sellableQty === null ? 'dim' : undefined,
+            value: sellableText,
+          },
+          {
+            label: '费用合计',
+            mono: true,
+            tone: 'money',
+            value: canViewPrice ? formatMoney(feeTotal) : MASKED_AMOUNT,
+          },
+          {
+            label: '产出批次',
+            mono: true,
+            tone: order.outputBatchId === null ? 'dim' : undefined,
+            /*
+              契约只回 `outputBatchId`，没有 `outputBatchNo` —— 直接渲染就是一条裸 UUID，
+              对使用者没有意义。用同一份批次映射换回批次号（材料表也是这张表）。
+            */
+            value:
+              order.outputBatchId === null
+                ? '完成时生成'
+                : batchLabel(batches, order.outputBatchId),
+          },
+          {
+            label: '归属单',
+            mono: true,
+            tone: order.attributionDoc === null ? 'dim' : undefined,
+            value: order.attributionDoc ?? '—（仅全损耗需要）',
+          },
+          {
+            label: '辅料',
+            tone: order.auxMaterials === null ? 'dim' : undefined,
+            value: order.auxMaterials ?? '—',
+          },
+          {
+            label: '损失记录',
+            tone: order.lossRecord === null ? 'dim' : undefined,
+            value: order.lossRecord
               ? `${formatQty(order.lossRecord.lossQty)} / ${
                   canViewPrice ? formatMoney(order.lossRecord.amount) : MASKED_AMOUNT
                 } / ${formatDateTime(order.lossRecord.recordedAt)}`
-              : '—'}
-          </dd>
-        </div>
-        <div className="flex gap-2">
-          <dt className="text-slate-500">开单时间</dt>
-          <dd className="font-medium">{formatDateTime(order.createdAt)}</dd>
-        </div>
-      </dl>
+              : '—',
+          },
+          { label: '开单时间', mono: true, value: formatDateTime(order.createdAt) },
+        ]}
+      />
 
-      <div className="flex flex-wrap items-center gap-3">
+      {/*
+        动作区按状态分段出现（与采购单页同口径）：只在当前状态说得通的动作才画，
+        否则一排六个按钮里有四个是灰的，用户得逐个悬停才知道哪个能用。
+        「完成 / 验收」是 D94 ② 之前的一次性老路径，在途时明确指向「到货确认」。
+      */}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={onShip}
-          disabled={shipBlocked !== null || shipping}
-          className="rounded border border-amber-300 px-3 py-1.5 text-sm text-amber-800 disabled:opacity-40"
-          title={shipBlocked ?? undefined}
+          onClick={onEdit}
+          disabled={editBlocked !== null}
+          title={editBlocked ?? undefined}
+          className="btn"
         >
-          {shipping ? '提交中…' : '发货'}
+          编辑
         </button>
-        <button
-          type="button"
-          onClick={onReceive}
-          disabled={receiveBlocked !== null || receiving}
-          className="rounded border border-sky-300 px-3 py-1.5 text-sm text-sky-800 disabled:opacity-40"
-          title={receiveBlocked ?? undefined}
-        >
-          {receiving ? '确认中…' : '到货确认'}
-        </button>
-        <button
-          type="button"
-          onClick={onRevoke}
-          disabled={revokeBlocked !== null || revoking}
-          className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-700 disabled:opacity-40"
-          title={revokeBlocked ?? undefined}
-        >
-          {revoking ? '撤销中…' : '撤销发货'}
-        </button>
+        {order.status === '进行中' && (
+          <button
+            type="button"
+            onClick={onShip}
+            disabled={shipBlocked !== null || shipping}
+            title={shipBlocked ?? undefined}
+            className="btn"
+          >
+            {shipping ? '发货中…' : '发货'}
+          </button>
+        )}
+        {order.status === '在途' && (
+          <>
+            <button
+              type="button"
+              onClick={onReceive}
+              disabled={receiveBlocked !== null || receiving}
+              title={receiveBlocked ?? undefined}
+              className="btn btn-p"
+            >
+              {receiving ? '确认中…' : '到货确认'}
+            </button>
+            <button
+              type="button"
+              onClick={onRevoke}
+              disabled={revokeBlocked !== null || revoking}
+              title={revokeBlocked ?? undefined}
+              className="btn"
+            >
+              {revoking ? '撤销中…' : '撤销发货'}
+            </button>
+          </>
+        )}
         <button
           type="button"
           onClick={onComplete}
-          disabled={order.status !== '进行中' || !canComplete || completing}
-          className="rounded border border-emerald-300 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-40"
+          disabled={completeBlocked !== null || completing}
+          title={completeBlocked ?? undefined}
+          className="btn btn-p"
         >
           {completing ? '完成中…' : '完成 / 验收'}
         </button>
         <button
           type="button"
-          onClick={onEdit}
-          disabled={editBlocked !== null}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-          title={editBlocked ?? undefined}
-        >
-          编辑
-        </button>
-        <button
-          type="button"
           onClick={onCancel}
           disabled={!order.cancelable.allowed || !canCancel || canceling}
-          className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-700 disabled:opacity-40"
+          className="btn danger"
         >
           {canceling ? '取消中…' : '取消加工单'}
         </button>
@@ -1026,28 +1129,29 @@ export function DetailPanel({
           type="button"
           onClick={onPrint}
           disabled={printBlocked !== null}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
           title={printBlocked ?? undefined}
+          className="btn"
         >
           打印发厂联
         </button>
+      </div>
+
+      {/*
+        禁用原因都要说出口，不能只挂在 `title` 上 —— 鼠标不在按钮上时用户只看到「点不动」。
+        状态不对的不重复喊（按钮已经灰了），只把「缺哪个权限点」和「在途该走哪条路」写出来。
+      */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
         {cancelReason && <span className="text-xs text-slate-500">{cancelReason}</span>}
         {editBlocked && <span className="text-xs text-slate-500">{editBlocked}</span>}
         {printBlocked && <span className="text-xs text-slate-500">{printBlocked}</span>}
-        {!canComplete && order.status === '进行中' && (
-          <span className="text-xs text-slate-500">
-            完成 / 验收需要 processing.approve
-          </span>
-        )}
+        {completeBlocked && <span className="text-xs text-slate-500">{completeBlocked}</span>}
         {!canCancel && order.cancelable.allowed && (
           <span className="text-xs text-slate-500">当前身份无取消权限（processing.delete）</span>
         )}
-        {/**
-         * 缺权限时一律把「缺哪个权限点」摆出来；状态不对时不重复喊——
-         * 按钮已经置灰，再写一句「当前是进行中」只是噪音。
-         */}
-        {!canShip && <span className="text-xs text-slate-500">{shipBlocked}</span>}
-        {!canReceive && order.status === '在途' && (
+        {shipBlocked && order.status === '进行中' && (
+          <span className="text-xs text-slate-500">{shipBlocked}</span>
+        )}
+        {order.status === '在途' && receiveBlocked && (
           <span className="text-xs text-slate-500">{receiveBlocked}</span>
         )}
       </div>
@@ -1058,18 +1162,25 @@ export function DetailPanel({
        * （契约路由标了 `ai.reasonRequired`，原因走 `X-Reason` 头进审计）。
        */}
       {revokeBlocked === null && (
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            value={revokeReason}
-            onChange={(event) => onRevokeReasonChange(event.target.value)}
-            aria-label="撤销原因"
-            placeholder="撤销原因（必填，进审计）"
-            className="min-w-64 flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
-          />
-          <span className="text-xs text-slate-500">
-            撤销后回到「进行中」，在途分段与去向清空，可重新发货。
-          </span>
-          {revokeError && <span className="w-full text-xs text-rose-700">{revokeError}</span>}
+        <div className="mt-3 space-y-2 rounded-lg border border-rose-200 bg-rose-50 p-3">
+          <p className="text-sm font-medium text-rose-900">撤销发货</p>
+          <p className="text-xs text-rose-700">
+            撤销会把单据退回「进行中」，清掉这一单的在途分段与去向（不动库存流水），之后可重新发货。
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="min-w-64 flex-1 text-sm">
+              <span className="text-slate-600">撤销原因（必填，会记审计）</span>
+              <input
+                value={revokeReason}
+                onChange={(event) => onRevokeReasonChange(event.target.value)}
+                maxLength={200}
+                aria-label="撤销原因"
+                placeholder="例如：加工厂说料没收到，重新安排发货"
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+              />
+            </label>
+          </div>
+          {revokeError && <p className="text-xs text-rose-700">{revokeError}</p>}
         </div>
       )}
     </section>
@@ -1078,6 +1189,7 @@ export function DetailPanel({
 
 export function ProcessingOrdersPage() {
   const companyLabel = useCompanyLabel();
+  const employeeLabel = useEmployeeLabel();
   const queryClient = useQueryClient();
   const me = useQuery({ queryKey: authKeys.me, queryFn: authApi.me });
   const meData = me.data;
@@ -1653,32 +1765,31 @@ export function ProcessingOrdersPage() {
   const rows = list.data?.items ?? [];
   const nextCursor = list.data?.nextCursor ?? null;
   const detailOrder = detail.data;
+  const listState = resolveListState({
+    isPending: list.isPending,
+    hasError: list.isError,
+    isEmpty: rows.length === 0,
+  });
 
   return (
-    <section className="mx-auto max-w-7xl space-y-5">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+    <section className="mx-auto max-w-7xl space-y-4">
+      <div className="p-head">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">加工单 B</h1>
-          <p className="mt-1 max-w-3xl text-sm text-slate-500">{PAGE_DESCRIPTION}</p>
+          <div className="eyebrow">加工单 B · 投料与损耗</div>
+          <h1>加工单 B</h1>
+          <p className="sub">{PAGE_DESCRIPTION}</p>
         </div>
-        <button
-          type="button"
-          onClick={beginCreate}
-          disabled={!can('create') || companyIds.length === 0}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-        >
-          新建加工单
-        </button>
-      </header>
-
-      <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-        「发货」需要 <code className="font-mono">processing.ship</code>，「到货确认」需要{' '}
-        <code className="font-mono">processing.approve</code>：两步之间单据是「在途」，可以
-        撤销发货回「进行中」。到货确认后按 D5 扣减材料、生成产出批次并锁价。
-        「完成 / 验收」是一次性走完的老路径（<code className="font-mono">processing.approve</code>），损耗量只填一次，可售量为 0
-        时必须二次确认全损耗；提交带强 <code className="font-mono">If-Match</code>，版本冲突会
-        提示并同步最新状态。
-      </p>
+        <div className="actions">
+          <button
+            type="button"
+            onClick={beginCreate}
+            disabled={!can('create') || companyIds.length === 0}
+            className="btn-primary"
+          >
+            + 新建
+          </button>
+        </div>
+      </div>
 
       {meData && !canViewPrice && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -1696,7 +1807,25 @@ export function ProcessingOrdersPage() {
         </p>
       )}
 
-      <div className="flex flex-wrap gap-3 rounded-xl border border-slate-200 bg-white p-4">
+      {/*
+        工具条：状态用 `.seg` 分段（视觉稿 `加工单B.html` 就是分段，不是下拉）。
+        分段里只有契约认的四个状态 —— 视觉稿那段「草稿」是模板残留，契约
+        `PROCESSING_ORDER_STATES` 里没有草稿态，画出来就是个永远筛不出数据的按钮。
+      */}
+      <div className="toolbar">
+        <div className="seg" role="group" aria-label="按状态筛选">
+          {(['', '进行中', '在途', '已完成', '已取消'] as const).map((value) => (
+            <button
+              key={value === '' ? 'all' : value}
+              type="button"
+              className={status === value ? 'on' : undefined}
+              aria-pressed={status === value}
+              onClick={() => setStatus(value)}
+            >
+              {value === '' ? '全部状态' : value}
+            </button>
+          ))}
+        </div>
         {companyIds.length > 1 && (
           <select
             value={companyId}
@@ -1723,22 +1852,12 @@ export function ProcessingOrdersPage() {
             </option>
           ))}
         </select>
-        <select
-          value={status}
-          onChange={(event) => setStatus(event.target.value as typeof status)}
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">全部状态</option>
-          <option value="进行中">进行中</option>
-          <option value="在途">在途</option>
-          <option value="已完成">已完成</option>
-          <option value="已取消">已取消</option>
-        </select>
         <input
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder="按单号或加工厂名搜索"
-          className="min-w-56 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          placeholder="搜索单号、加工厂名"
+          aria-label="搜索单号或加工厂名"
+          className="search"
         />
       </div>
 
@@ -1813,93 +1932,94 @@ export function ProcessingOrdersPage() {
       {actionError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>}
       {notice && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{notice}</p>}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        {list.isPending ? (
-          <ListLoading label="正在加载加工单…" />
-        ) : list.error ? (
-          <ListError title="加工单加载失败" error={list.error} onRetry={() => void list.refetch()} />
-        ) : rows.length === 0 ? (
-          <ListEmpty title="暂无加工单。可调整筛选条件，或用右上角「新建加工单」开第一张。" />
-        ) : (
-          <table className="w-full min-w-[960px] text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+      {/*
+        列表（v0.13）：容器与 tbody 挂同一个 data-state，数据行 `r-row`、
+        三行状态行常驻且带 `st-tr st-*`，显隐交给 `app-v013.css`。
+        分页按游标契约写「上一批 / 下一批」（ListQuery 没有 total，画页码只能靠猜）。
+      */}
+      <div className="card" data-state={listState}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left" style={{ minWidth: '1040px' }}>
+            <thead>
               <tr>
-                <th className="px-4 py-3">单号</th>
-                <th className="px-4 py-3">加工厂</th>
-                <th className="px-4 py-3">成品</th>
-                <th className="px-4 py-3">投入 → 可售</th>
-                <th className="px-4 py-3">损耗</th>
-                <th className="px-4 py-3">费用合计</th>
-                <th className="px-4 py-3">状态</th>
-                <th className="px-4 py-3">归属单</th>
-                <th className="px-4 py-3 text-right">操作</th>
+                <th>单号</th>
+                <th>加工厂</th>
+                <th>成品</th>
+                <th className="num">投入 → 可售</th>
+                <th className="num">损耗</th>
+                <th className="num">费用</th>
+                <th>状态</th>
+                <th />
               </tr>
             </thead>
-            <tbody>
+            <tbody data-state={listState}>
+              <tr className="st-tr st-loading">
+                <td colSpan={8}>
+                  <ListLoading label="正在加载加工单…" />
+                </td>
+              </tr>
+              <tr className="st-tr st-error">
+                <td colSpan={8}>
+                  <ListError
+                    title="加工单加载失败"
+                    error={list.error}
+                    onRetry={() => void list.refetch()}
+                  />
+                </td>
+              </tr>
+              <tr className="st-tr st-empty">
+                <td colSpan={8}>
+                  <ListEmpty title="暂无加工单。可调整筛选条件，或用右上角「+ 新建」开第一张。" />
+                </td>
+              </tr>
               {rows.map((order) => (
-                <tr key={order.id} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-3">
+                <tr key={order.id} className="r-row">
+                  <td className="whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => setDetailId(order.id)}
-                      className="font-mono text-xs text-slate-900 underline-offset-2 hover:underline"
+                      className="font-mono text-xs underline-offset-2 hover:underline"
                     >
                       {order.orderNo}
                     </button>
                   </td>
-                  <td className="px-4 py-3">{order.processorName}</td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td className="whitespace-nowrap">{order.processorName}</td>
+                  <td style={{ color: 'var(--text-3)' }}>
                     {productLabel(products, order.outputProductId)}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs">
+                  <td className="num whitespace-nowrap">
                     {formatQty(order.inputQty)} →{' '}
                     {order.sellableQty === null ? '待验收' : formatQty(order.sellableQty)}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="num whitespace-nowrap">
                     {order.lossQty === null ? (
-                      <span className="text-xs text-slate-400">待验收</span>
+                      <span style={{ color: 'var(--text-3)' }}>待验收</span>
                     ) : (
                       formatQty(order.lossQty)
                     )}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="num whitespace-nowrap">
                     {canViewPrice
                       ? formatMoney(sumDecimal(order.fees.map((fee) => fee.amount)))
                       : MASKED_AMOUNT}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap">
                     <StatusBadge status={order.status} />
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                    {order.attributionDoc ?? '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
+                  <td className="whitespace-nowrap text-right">
+                    <div className="flex justify-end gap-1.5">
                       <button
                         type="button"
                         onClick={() => setDetailId(order.id)}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs"
+                        className="btn btn-s"
                       >
                         详情
                       </button>
                       <button
                         type="button"
-                        disabled={
-                          !can('approve') ||
-                          order.status !== '进行中' ||
-                          completeOrder.isPending
-                        }
-                        onClick={() => void withFreshDetail(order.id, beginComplete)}
-                        className="rounded border border-emerald-300 px-2 py-1 text-xs text-emerald-700 disabled:opacity-40"
-                        title={!can('approve') ? '需要 processing.approve' : undefined}
-                      >
-                        完成 / 验收
-                      </button>
-                      <button
-                        type="button"
                         disabled={!can('update') || !canViewPrice || order.status !== '进行中'}
                         onClick={() => void withFreshDetail(order.id, beginEdit)}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-40"
+                        className="btn btn-s"
                         title={!canViewPrice ? '无看价权限：看不到加工费就没法改单' : undefined}
                       >
                         编辑
@@ -1908,7 +2028,7 @@ export function ProcessingOrdersPage() {
                         type="button"
                         disabled={!can('delete') || order.status !== '进行中' || cancelOrder.isPending}
                         onClick={() => void withFreshDetail(order.id, askCancel)}
-                        className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 disabled:opacity-40"
+                        className="btn btn-s danger"
                       >
                         取消
                       </button>
@@ -1918,42 +2038,53 @@ export function ProcessingOrdersPage() {
               ))}
             </tbody>
           </table>
-        )}
+        </div>
+
+        <div className="pager">
+          <span className="count">
+            共 {rows.length} 条 · 第 {pageIndex + 1} 批
+          </span>
+          <div className="nav">
+            <button
+              type="button"
+              className="btn btn-s"
+              disabled={pageIndex === 0}
+              onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
+            >
+              上一批
+            </button>
+            <button
+              type="button"
+              className="btn btn-s"
+              disabled={!nextCursor}
+              onClick={() => {
+                if (!nextCursor) return;
+                setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
+                setPageIndex((index) => index + 1);
+              }}
+            >
+              下一批
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          disabled={pageIndex === 0}
-          onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          上一页
-        </button>
-        <span className="text-sm text-slate-500">第 {pageIndex + 1} 页</span>
-        <button
-          type="button"
-          disabled={!nextCursor}
-          onClick={() => {
-            if (!nextCursor) return;
-            setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
-            setPageIndex((index) => index + 1);
-          }}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          下一页
-        </button>
-      </div>
+      <p className="note">
+        「完成 / 验收」是一次性走完的老路径（同样要{' '}
+        <code className="font-mono">processing.approve</code>）：损耗量只填一次、事后不改，
+        可售量为 0 时必须二次确认全损耗。提交带强 <code className="font-mono">If-Match</code>，
+        版本冲突会提示并同步最新状态。「草稿」不在状态机里，所以分段里没有它。
+      </p>
 
       {detailId !== null && (
         <>
           {detail.isPending && (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
+            <p className="card p-4 text-sm" style={{ color: 'var(--text-3)' }}>
               正在加载加工单详情…
             </p>
           )}
           {detail.error && (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-red-700">
+            <p className="card p-4 text-sm" style={{ color: 'var(--danger-on-surface)' }}>
               {errorText(detail.error)}
             </p>
           )}
@@ -1962,6 +2093,17 @@ export function ProcessingOrdersPage() {
               order={detailOrder}
               products={products}
               batches={detailBatches}
+              /*
+                负责人无权可见时服务端回 null（Issue #227）——直接说「无权查看」，
+                不要退回 `—`：破折号会被误读成「这张单没填经手人」。
+              */
+              handlerLabel={
+                detailOrder.handlerId === null
+                  ? '—（无权查看负责人）'
+                  : detailOrder.handlerId === meData?.employeeId
+                    ? (meData?.displayName ?? '本人')
+                    : employeeLabel(detailOrder.handlerId)
+              }
               canViewPrice={canViewPrice}
               canUpdate={can('update')}
               canPrint={can('read')}
