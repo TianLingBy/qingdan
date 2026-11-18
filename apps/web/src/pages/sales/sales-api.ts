@@ -22,6 +22,7 @@
 
 import type {
   Customer,
+  CustomerDraft,
   InventoryBatch,
   PrintDocument,
   SalesOrder,
@@ -314,14 +315,76 @@ export function sumNullable(values: readonly (string | null)[]): string | null {
   return sumDecimal(known);
 }
 
+/** 开单现场建档的输入：表单控件给的都是字符串，转换放在 `buildCustomerDraft` 一处。 */
+export interface NewCustomerFields {
+  readonly name: string;
+  readonly contactName: string;
+  readonly contactPhone: string;
+  readonly creditTermDays: string;
+}
+
+export const EMPTY_NEW_CUSTOMER: NewCustomerFields = {
+  name: '',
+  contactName: '',
+  contactPhone: '',
+  creditTermDays: '',
+};
+
+/**
+ * 草档 → 建单入参（D100「静默建档」）。
+ *
+ * 三条边界：
+ * - 空串一律变「不传」而不是传 `''`：这几个字段在契约里是选填，传空串会建出一条
+ *   联系人叫「」的客户，事后在主数据页里跟「没填」看着一样却查不出区别；
+ * - 账期只接受纯数字：`Number('')` 是 0，会在用户什么都没填时悄悄把账期改成「现结」，
+ *   所以先判空串再转换；
+ * - **不带 `companyId`**：归属公司取单据自身的，前端传了服务端也不看（D100 第 4 条）。
+ */
+export function buildCustomerDraft(fields: NewCustomerFields): CustomerDraft {
+  const name = fields.name.trim();
+  const contactName = fields.contactName.trim();
+  const contactPhone = fields.contactPhone.trim();
+  const creditTermDays = fields.creditTermDays.trim();
+  return {
+    name,
+    ...(contactName === '' ? {} : { contactName }),
+    ...(contactPhone === '' ? {} : { contactPhone }),
+    ...(creditTermDays === '' || !/^\d{1,3}$/.test(creditTermDays)
+      ? {}
+      : { creditTermDays: Number(creditTermDays) }),
+  };
+}
+
 /** 提交前的本地校验：只挡「明显错」，字段级口径仍以服务端 422 为准。 */
 export function validateDraft(
   customerId: string,
   lines: readonly SalesLineDraft[],
   fees: readonly SalesFeeDraft[],
+  /**
+   * 开单现场建档（D100）：传了它就**不再要求** `customerId`，改为要求客户名称。
+   *
+   * 为什么不分两个函数：这两条是互斥的同一件事（「这单的客户是谁」），
+   * 分成两个校验函数后，调用方很容易两个都调、于是两条都报错。
+   */
+  newCustomer?: { readonly name: string; readonly creditTermDays: string } | null,
 ): string[] {
   const errors: string[] = [];
-  if (!customerId) errors.push('请选择客户');
+  if (newCustomer) {
+    const name = newCustomer.name.trim();
+    if (name === '') errors.push('新建客户：请填写客户名称');
+    else if (name.length > 64) errors.push('新建客户：客户名称最多 64 字');
+    /**
+     * 账期留空 = 现结（契约里 `creditTermDays` 可选）。填了就必须是 0–365 的整数：
+     * 放一个 `30天` 或 `-1` 过去，服务端 422 的报错路径在 `creditTermDays` 上，
+     * 用户看到的是「请求体不合法」，还不如在这里说清楚。
+     */
+    const term = newCustomer.creditTermDays.trim();
+    if (term !== '' && (!/^\d{1,3}$/.test(term) || Number(term) > 365)) {
+      errors.push('新建客户：账期填 0–365 的整数天数，留空表示现结');
+    }
+  } else if (!customerId) {
+    errors.push('请选择客户');
+  }
 
   if (lines.length === 0) errors.push(EMPTY_LINES_HINT);
   lines.forEach((line, index) => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ApiClient } from '../../api/client';
 import {
+  buildCustomerDraft,
   createSalesApi,
   lineAmountOf,
   orderTotalOf,
@@ -259,5 +260,71 @@ describe('开单前校验', () => {
   it('合法单据零报错（费用选填，一条都不填也能开）', () => {
     expect(validateDraft('cu1', [validLine], [])).toHaveLength(0);
     expect(validateDraft('cu1', [validLine], [validFee])).toHaveLength(0);
+  });
+});
+
+/* ---------------------- 开单现场建档（D100 静默建档） ---------------------- */
+
+describe('开单现场建档（D100）', () => {
+  const LINE = { productId: 'p1', batchIds: ['b1'], qty: '10', unitPrice: '12.5' };
+  const EMPTY_FIELDS = {
+    name: '张记建材',
+    contactName: '',
+    contactPhone: '',
+    creditTermDays: '',
+  };
+
+  it('buildCustomerDraft：选填留空就不传，不传空串', () => {
+    expect(buildCustomerDraft(EMPTY_FIELDS)).toEqual({ name: '张记建材' });
+    expect(
+      buildCustomerDraft({
+        name: '  张记建材  ',
+        contactName: '',
+        contactPhone: '',
+        creditTermDays: '',
+      }),
+    ).toEqual({ name: '张记建材' });
+    expect(
+      buildCustomerDraft({
+        name: '张记建材',
+        contactName: '张伟',
+        contactPhone: '13800138000',
+        creditTermDays: '30',
+      }),
+    ).toEqual({
+      name: '张记建材',
+      contactName: '张伟',
+      contactPhone: '13800138000',
+      creditTermDays: 30,
+    });
+  });
+
+  it('buildCustomerDraft：账期空串不会被 Number() 变成 0（那会把账期悄悄改成现结）', () => {
+    const draft = buildCustomerDraft({ ...EMPTY_FIELDS, creditTermDays: '' });
+    expect(draft).not.toHaveProperty('creditTermDays');
+  });
+
+  it('validateDraft：开了新建就不再要求客户 id，改要求名称', () => {
+    // 没有 customerId，但有草档 → 不该报「请选择客户」
+    const withDraft = validateDraft('', [LINE], [], {
+      name: '张记建材',
+      creditTermDays: '',
+    });
+    expect(withDraft).not.toContain('请选择客户');
+
+    // 草档名称为空 → 报新建客户的错
+    const emptyName = validateDraft('', [LINE], [], { name: '   ', creditTermDays: '' });
+    expect(emptyName).toContain('新建客户：请填写客户名称');
+    expect(emptyName).not.toContain('请选择客户');
+  });
+
+  it('validateDraft：账期只认 0–365 的整数', () => {
+    const bad = (days: string) =>
+      validateDraft('', [LINE], [], { name: '张记建材', creditTermDays: days });
+    expect(bad('30')).not.toContain('新建客户：账期填 0–365 的整数天数，留空表示现结');
+    expect(bad('')).not.toContain('新建客户：账期填 0–365 的整数天数，留空表示现结');
+    for (const days of ['30天', '-1', '366', '1.5']) {
+      expect(bad(days)).toContain('新建客户：账期填 0–365 的整数天数，留空表示现结');
+    }
   });
 });

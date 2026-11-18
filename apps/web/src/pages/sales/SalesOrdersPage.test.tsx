@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
 import { MASKED_AMOUNT } from '../../lib/decimal';
 import { authKeys } from '../auth/auth-api';
-import { DetailPanel, SalesOrdersPage } from './SalesOrdersPage';
+import { DetailPanel, NewCustomerInlineForm, SalesOrdersPage } from './SalesOrdersPage';
 import { salesQueryKeys } from './sales-api';
 
 const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
@@ -360,5 +360,41 @@ describe('v0.13 详情版式（#337）', () => {
     expect(productAt).toBeLessThan(batchAt);
     expect(batchAt).toBeLessThan(qtyAt);
     expect(qtyAt).toBeLessThan(amountAt);
+  });
+});
+
+/* ---------------------- 开单现场建档的内联表单（D100） ---------------------- */
+
+describe('开单现场建档的内联表单（D100）', () => {
+  const render = (fields: {
+    name: string;
+    contactName: string;
+    contactPhone: string;
+    creditTermDays: string;
+  }): string => renderToStaticMarkup(<NewCustomerInlineForm fields={fields} onChange={() => undefined} />);
+
+  it('四个输入齐全：名称必填，其余选填、账期留空即现结', () => {
+    const html = render({ name: '', contactName: '', contactPhone: '', creditTermDays: '' });
+
+    for (const label of ['新建客户名称', '新建客户联系人', '新建客户电话', '新建客户账期']) {
+      expect(html).toContain(`aria-label="${label}"`);
+    }
+    expect(html).toContain('客户名称（必填）');
+    expect(html).toContain('留空 = 现结');
+  });
+
+  it('不出现「已建档 / 待审核」之类提示（D100 静默建档：建档对员工透明）', () => {
+    const html = render({
+      name: '张记建材',
+      contactName: '张伟',
+      contactPhone: '',
+      creditTermDays: '30',
+    });
+
+    expect(html).not.toContain('已建档');
+    expect(html).not.toContain('待审核');
+    expect(html).not.toContain('已提交');
+    // 值应当回填到输入框，而不是只在说明文字里出现
+    expect(html).toContain('value="张记建材"');
   });
 });
