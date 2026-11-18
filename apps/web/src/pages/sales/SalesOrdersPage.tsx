@@ -60,8 +60,10 @@ import { authApi, authKeys } from '../auth/auth-api';
 import { extractIssues, masterdataApi, optionalText } from '../masterdata/masterdata-api';
 import { PaymentRequestPanel } from './PaymentRequestPanel';
 import {
+  EMPTY_NEW_CUSTOMER,
   RECEIPT_METHODS,
   batchOptionLabel,
+  buildCustomerDraft,
   feeAmountOf,
   lineAmountOf,
   nowLocalInput,
@@ -73,6 +75,7 @@ import {
   sumNullable,
   toIsoDateTime,
   validateDraft,
+  type NewCustomerFields,
   type SalesFeeDraft,
   type SalesLineDraft,
   type SalesOrderSort,
@@ -192,6 +195,70 @@ function StatusBadge({ status }: { status: SalesOrderStatus }) {
 
 // ============================ 开单 / 改单表单 ============================
 
+/**
+ * 开单现场建档的内联小表单（D100「静默建档」）。
+ *
+ * 为什么单独一个组件：它要在本仓「不带 jsdom」的测试里能被静态渲染断言
+ * （`OrderForm` 未导出且 props 二十多个，为一条断言造二十个 mock 不值），
+ * 而且「保存后才建档、界面不提示」这条口径集中在这里，读的时候不用翻整张表单。
+ *
+ * 字段只收「开单现场能知道」的四个（名称 + 联系人 + 电话 + 账期），其余留给主数据页补。
+ */
+export function NewCustomerInlineForm({
+  fields,
+  onChange,
+}: {
+  readonly fields: NewCustomerFields;
+  readonly onChange: (patch: Partial<NewCustomerFields>) => void;
+}) {
+  return (
+    <div className="mt-2 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-4">
+      <label className="text-sm">
+        <span className="text-slate-600">客户名称（必填）</span>
+        <input
+          aria-label="新建客户名称"
+          value={fields.name}
+          onChange={(event) => onChange({ name: event.target.value })}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="text-slate-600">联系人（选填）</span>
+        <input
+          aria-label="新建客户联系人"
+          value={fields.contactName}
+          onChange={(event) => onChange({ contactName: event.target.value })}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="text-slate-600">电话（选填）</span>
+        <input
+          aria-label="新建客户电话"
+          value={fields.contactPhone}
+          onChange={(event) => onChange({ contactPhone: event.target.value })}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+        />
+      </label>
+      <label className="text-sm">
+        <span className="text-slate-600">账期天数（选填）</span>
+        <input
+          aria-label="新建客户账期"
+          inputMode="numeric"
+          placeholder="留空 = 现结"
+          value={fields.creditTermDays}
+          onChange={(event) => onChange({ creditTermDays: event.target.value })}
+          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+        />
+      </label>
+      <p className="text-xs text-slate-500 sm:col-span-2 lg:col-span-4">
+        保存单据时一起建档，不必先去主数据页。建档对你是透明的 —— 保存成功后只提示单据保存，
+        不额外提示建档结果，也不需要建客户权限（有开单权即可）。
+      </p>
+    </div>
+  );
+}
+
 interface OrderFormProps {
   readonly editing: SalesOrderDetail | null;
   readonly companyIds: readonly string[];
@@ -203,6 +270,14 @@ interface OrderFormProps {
   readonly handlerName: string;
   readonly companyId: string;
   readonly customerId: string;
+  /**
+   * 开单现场建档（D100）：打开后客户不再从下拉里选，改为填一份最小草档，
+   * 随单据一起提交；服务端在同一事务里先建客户再建单。
+   */
+  readonly newCustomerOpen: boolean;
+  readonly newCustomer: NewCustomerFields;
+  readonly onNewCustomerToggle: (open: boolean) => void;
+  readonly onNewCustomerChange: (patch: Partial<NewCustomerFields>) => void;
   readonly lines: readonly SalesLineDraft[];
   readonly fees: readonly SalesFeeDraft[];
   readonly busy: boolean;
@@ -231,6 +306,10 @@ function OrderForm({
   handlerName,
   companyId,
   customerId,
+  newCustomerOpen,
+  newCustomer,
+  onNewCustomerToggle,
+  onNewCustomerChange,
   lines,
   fees,
   busy,
@@ -292,22 +371,29 @@ function OrderForm({
         </label>
         <label className="text-sm">
           <span className="text-slate-600">客户</span>
-          <select
-            required
-            value={customerId}
-            onChange={(event) => onCustomerChange(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-          >
-            <option value="">请选择客户</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {customer.name}
-              </option>
-            ))}
-            {customerId.length > 0 && !customers.some((item) => item.id === customerId) && (
-              <option value={customerId}>{`客户 ${shortId(customerId)}（已停用或不可见）`}</option>
-            )}
-          </select>
+          {newCustomerOpen ? (
+            <p className="mt-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
+              开单时新建：
+              <b>{newCustomer.name.trim() === '' ? '在下方填名称' : newCustomer.name.trim()}</b>
+            </p>
+          ) : (
+            <select
+              required
+              value={customerId}
+              onChange={(event) => onCustomerChange(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+            >
+              <option value="">请选择客户</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.name}
+                </option>
+              ))}
+              {customerId.length > 0 && !customers.some((item) => item.id === customerId) && (
+                <option value={customerId}>{`客户 ${shortId(customerId)}（已停用或不可见）`}</option>
+              )}
+            </select>
+          )}
         </label>
         <label className="text-sm">
           <span className="text-slate-600">经手人</span>
@@ -324,6 +410,25 @@ function OrderForm({
           </p>
         </div>
       </div>
+
+      {/**
+       * 开单现场建档（D100）：只能开单时用，编辑已有单据换客户得去主数据页选已有档案
+       * ——改单顺带建新客户会让「这张单原来卖给谁」无从追溯。
+       */}
+      {editing === null && (
+        <div>
+          <button
+            type="button"
+            onClick={() => onNewCustomerToggle(!newCustomerOpen)}
+            className="btn btn-s"
+          >
+            {newCustomerOpen ? '取消新建，改从已有客户里选' : '+ 新建客户'}
+          </button>
+          {newCustomerOpen && (
+            <NewCustomerInlineForm fields={newCustomer} onChange={onNewCustomerChange} />
+          )}
+        </div>
+      )}
 
       {(customers.length === 0 || products.length === 0 || batches.length === 0) && (
         <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
@@ -1241,6 +1346,14 @@ export function SalesOrdersPage() {
   const [editing, setEditing] = useState<SalesOrderDetail | null>(null);
   const [formCompanyId, setFormCompanyId] = useState('');
   const [formCustomerId, setFormCustomerId] = useState('');
+  /**
+   * 开单现场建档（D100）：`newCustomerOpen` 打开后客户不选下拉，改为填草档。
+   *
+   * 两个状态分开而不是「草档为空 = 没打开」：用户点了「+ 新建客户」但还没填名称时，
+   * 提交要报「请填客户名称」；没打开时提交要报「请选择客户」。合成一个状态这两句就分不清。
+   */
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
+  const [newCustomer, setNewCustomer] = useState<NewCustomerFields>({ ...EMPTY_NEW_CUSTOMER });
   const [lines, setLines] = useState<SalesLineDraft[]>([{ ...EMPTY_LINE }]);
   const [fees, setFees] = useState<SalesFeeDraft[]>([]);
   const [clientErrors, setClientErrors] = useState<string[]>([]);
@@ -1345,6 +1458,8 @@ export function SalesOrdersPage() {
     setFormOpen(false);
     setEditing(null);
     setFormCustomerId('');
+    setNewCustomerOpen(false);
+    setNewCustomer({ ...EMPTY_NEW_CUSTOMER });
     setLines([{ ...EMPTY_LINE }]);
     setFees([]);
     setClientErrors([]);
@@ -1387,7 +1502,14 @@ export function SalesOrdersPage() {
       }
       return salesApi.create({
         companyId: formCompanyId,
-        customerId: formCustomerId,
+        /**
+         * 二选一（D100）：开了「+ 新建客户」就只发草档，把 `customerId` 整个省掉。
+         * 两个都发会被服务端 422（`details.field = customerId`），所以这里必须是二选一
+         * 而不是「优先用草档」。
+         */
+        ...(newCustomerOpen
+          ? { customerDraft: buildCustomerDraft(newCustomer) }
+          : { customerId: formCustomerId }),
         handlerId: meData.employeeId,
         lines: payloadLines,
         fees: payloadFees,
@@ -1530,6 +1652,8 @@ export function SalesOrdersPage() {
   const beginCreate = () => {
     setEditing(null);
     setFormCustomerId('');
+    setNewCustomerOpen(false);
+    setNewCustomer({ ...EMPTY_NEW_CUSTOMER });
     setLines([{ ...EMPTY_LINE }]);
     setFees([]);
     setClientErrors([]);
@@ -1789,6 +1913,16 @@ export function SalesOrdersPage() {
           handlerName={meData?.displayName ?? '当前登录人'}
           companyId={formCompanyId}
           customerId={formCustomerId}
+          newCustomerOpen={newCustomerOpen}
+          newCustomer={newCustomer}
+          onNewCustomerToggle={(open) => {
+            setNewCustomerOpen(open);
+            // 双向切换时把另一条路清干净：否则「先选了客户、再改新建」会把旧 id 带着，
+            // 服务端两个都给 → 422。
+            if (open) setFormCustomerId('');
+            else setNewCustomer({ ...EMPTY_NEW_CUSTOMER });
+          }}
+          onNewCustomerChange={(patch) => setNewCustomer((current) => ({ ...current, ...patch }))}
           lines={lines}
           fees={fees}
           busy={save.isPending}
@@ -1820,7 +1954,12 @@ export function SalesOrdersPage() {
           }
           onSubmit={(event) => {
             event.preventDefault();
-            const errors = validateDraft(formCustomerId, lines, fees);
+            const errors = validateDraft(
+              formCustomerId,
+              lines,
+              fees,
+              newCustomerOpen ? newCustomer : null,
+            );
             setClientErrors(errors);
             if (errors.length > 0) return;
             save.mutate();
