@@ -213,6 +213,7 @@ const FULL_PERMS = {
   canShip: true,
   canComplete: true,
   canCancel: true,
+  canCreatePayment: true,
 };
 
 function renderDetailPanel(
@@ -233,6 +234,7 @@ function renderDetailPanel(
         canShip={perms.canShip ?? FULL_PERMS.canShip}
         canComplete={perms.canComplete ?? FULL_PERMS.canComplete}
         canCancel={perms.canCancel ?? FULL_PERMS.canCancel}
+        canCreatePayment={perms.canCreatePayment ?? FULL_PERMS.canCreatePayment}
         busy={false}
         onClose={() => undefined}
         onEdit={() => undefined}
@@ -240,6 +242,7 @@ function renderDetailPanel(
         onComplete={() => undefined}
         onCancel={() => undefined}
         onPrint={() => undefined}
+        onRefresh={() => undefined}
         onError={() => undefined}
       />
     </QueryClientProvider>,

@@ -37,6 +37,15 @@ export const PaymentRequestSchema = z.object({
   channel: PaymentChannelSchema,
   amount: z.string(),
   status: PaymentRequestStatusSchema,
+  /**
+   * 商户订单号（微信 `out_trade_no`）：回调靠它对齐幂等键，客服对账也靠它。
+   *
+   * 对外暴露无风险 —— 它是**我们自己生成的**号（`QD + 公司码 + 时间戳 + 随机`），
+   * 不带客户信息、不带金额，且客户在收银台上本来就看得见。
+   * 不暴露它的后果是：前端拿不到它就没法调 `payment.mock.confirm` 做端到端验证，
+   * 只能从 `qrContent` 里正则抠出来 —— 把内部标识的获取方式变成「解析另一段字符串」。
+   */
+  providerOrderNo: z.string(),
   qrContent: z.string().nullable(),
   payUrl: z.string().nullable(),
   expiresAt: z.string(),
