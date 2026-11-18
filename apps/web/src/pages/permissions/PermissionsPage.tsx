@@ -8,6 +8,7 @@ import { ACTION_WORDS, DOMAIN_WORDS } from '../employees/domain-words';
 import { authApi, authKeys } from '../auth/auth-api';
 import { allows, type ScopeAction } from '../../lib/access';
 import { actionSupport } from './action-support';
+import { resolveListState, type ListState } from '../../lib/list-state';
 
 /**
  * 权限设置页（22 页之第 17 页，#144）——岗位模板（D44「权限设置」= 岗位 + 个人覆盖）。
@@ -136,6 +137,11 @@ export function PermissionsPage() {
   });
 
   const positions = listQuery.data?.items ?? [];
+  const listState: ListState = resolveListState({
+    isPending: listQuery.isPending,
+    hasError: listQuery.error !== null,
+    isEmpty: positions.length === 0,
+  });
 
   const openCreate = () =>
     setEditor({ position: null, name: '', selection: {}, version: 0 });
@@ -183,96 +189,96 @@ export function PermissionsPage() {
         </p>
       )}
 
-      <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white">
-        {listQuery.isPending ? (
-          <ListLoading label="岗位列表加载中…" />
-        ) : listQuery.isError ? (
-          <ListError
-            title="岗位列表加载失败"
-            error={listQuery.error}
-            hint={
-              listQuery.error instanceof ApiError && listQuery.error.status === 403
-                ? '你没有权限设置权限（permission.read），请联系老板开通。'
-                : '请确认本地 API 已启动后重试。'
-            }
-            onRetry={() => void listQuery.refetch()}
-          />
-        ) : positions.length === 0 ? (
-          <ListEmpty title="还没有岗位模板。点击右上角「新建岗位」创建。" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-400">
-                  <th className="px-4 py-2.5 font-medium">岗位</th>
-                  <th className="px-4 py-2.5 font-medium">类型</th>
-                  <th className="px-4 py-2.5 font-medium">权限摘要</th>
-                  <th className="px-4 py-2.5 font-medium">状态</th>
-                  <th className="px-4 py-2.5 text-right font-medium">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((position) => (
-                  <tr key={position.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
-                    <td className="px-4 py-2.5">{position.name}</td>
-                    <td className="px-4 py-2.5 text-xs text-slate-600">
-                      {position.presetKey
-                        ? `预设 · ${PRESET_LABELS[position.presetKey] ?? position.presetKey}`
-                        : '自定义'}
-                    </td>
-                    <td className="px-4 py-2.5 text-xs text-slate-600">
-                      {position.actions
-                        .slice(0, 4)
-                        .map((entry) => `${labelOfDomain(entry.domain)}·${entry.actions.map(labelOfAction).join('')}`)
-                        .concat(position.actions.length > 4 ? [`…共 ${position.actions.length} 域`] : [])
-                        .join('、')}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <span
-                        className={[
-                          'rounded-full px-2 py-0.5 text-xs font-medium',
-                          position.status === '启用'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-slate-100 text-slate-500',
-                        ].join(' ')}
+      <div className="card" data-state={listState}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left">
+            <thead>
+              <tr>
+                <th>岗位</th>
+                <th>类型</th>
+                <th>权限摘要</th>
+                <th>状态</th>
+                <th className="text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody data-state={listState}>
+              <tr className="st-tr st-loading">
+                <td colSpan={5}>
+                  <ListLoading label="岗位列表加载中…" />
+                </td>
+              </tr>
+              <tr className="st-tr st-error">
+                <td colSpan={5}>
+                  <ListError
+                    title="岗位列表加载失败"
+                    error={listQuery.error ?? null}
+                    hint={
+                      listQuery.error instanceof ApiError && listQuery.error.status === 403
+                        ? '你没有权限设置权限（permission.read），请联系老板开通。'
+                        : '请确认本地 API 已启动后重试。'
+                    }
+                    onRetry={() => void listQuery.refetch()}
+                  />
+                </td>
+              </tr>
+              <tr className="st-tr st-empty">
+                <td colSpan={5}>
+                  <ListEmpty title="还没有岗位模板。点击右上角「新建岗位」创建。" />
+                </td>
+              </tr>
+              {positions.map((position) => (
+                <tr key={position.id} className="r-row">
+                  <td className="px-4 py-3">{position.name}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600">
+                    {position.presetKey
+                      ? `预设 · ${PRESET_LABELS[position.presetKey] ?? position.presetKey}`
+                      : '自定义'}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-600">
+                    {position.actions
+                      .slice(0, 4)
+                      .map((entry) => `${labelOfDomain(entry.domain)}·${entry.actions.map(labelOfAction).join('')}`)
+                      .concat(position.actions.length > 4 ? [`…共 ${position.actions.length} 域`] : [])
+                      .join('、')}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={position.status === '启用' ? 'text-emerald-600' : 'text-slate-400'}>
+                      {position.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <span className="inline-flex gap-1.5">
+                      <button
+                        type="button"
+                        disabled={!canUpdate}
+                        onClick={() => openEdit(position)}
+                        className="btn btn-s"
+                        title={canUpdate ? undefined : '当前身份没有 permission.update 权限'}
                       >
-                        {position.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      <span className="inline-flex gap-1.5">
+                        编辑模板
+                      </button>
+                      {position.status === '启用' && (
                         <button
                           type="button"
-                          disabled={!canUpdate}
-                          onClick={() => openEdit(position)}
-                          className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          title={canUpdate ? undefined : '当前身份没有 permission.update 权限'}
+                          disabled={disableMutation.isPending || !canDelete}
+                          onClick={() => disableMutation.mutate(position)}
+                          className="btn btn-s"
+                          title={
+                            canDelete
+                              ? '软删除；被员工占用的岗位会被拒绝'
+                              : '当前身份没有 permission.delete 权限'
+                          }
                         >
-                          编辑模板
+                          停用
                         </button>
-                        {position.status === '启用' && (
-                          <button
-                            type="button"
-                            disabled={disableMutation.isPending || !canDelete}
-                            onClick={() => disableMutation.mutate(position)}
-                            className="rounded border border-rose-200 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50 disabled:opacity-40"
-                            title={
-                              canDelete
-                                ? '软删除；被员工占用的岗位会被拒绝'
-                                : '当前身份没有 permission.delete 权限'
-                            }
-                          >
-                            停用
-                          </button>
-                        )}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                      )}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <p className="mt-3 text-xs text-slate-400">
