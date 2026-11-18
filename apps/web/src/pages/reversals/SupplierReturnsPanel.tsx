@@ -14,9 +14,9 @@ import type { SupplierReturn, SupplierReturnStatus } from '@qingdan/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../api/client';
-import { formatMoney, formatQty, MASKED_AMOUNT } from '../../lib/decimal';
+import { formatMoney, formatQty, MASKED_AMOUNT, sumDecimal } from '../../lib/decimal';
 import {
-  RETURN_STATUS_CLASS,
+  RETURN_STATUS_TONE,
   batchOptionLabel,
   batchLabelOf,
   idLabel,
@@ -30,16 +30,22 @@ import {
 } from './reversals-api';
 import {
   BasisNote,
-  EmptyState,
   ErrorBar,
   ErrorList,
   FIELD_CLASS,
   Field,
-  Kv,
-  StatusPill,
+  ReversalListCard,
+  ReversalPager,
   TableSkeleton,
 } from './reversals-ui';
-import { ListError } from '../../components/ListStates';
+import {
+  DetailHead,
+  DetailMetaDot,
+  DocMeta,
+  DocPill,
+  LinesFooter,
+} from '../../components/OrderDetailUI';
+import { resolveListState } from '../../lib/list-state';
 
 const EMPTY_LINE: ReturnLineDraft = { productId: '', batchIds: [], qty: '1', unitPrice: '' };
 
@@ -50,6 +56,8 @@ export interface SupplierReturnsPanelProps {
   readonly companyIds: readonly string[];
   readonly companyId: string;
   readonly onCompanyChange: (id: string) => void;
+  /** `supplier_return.delete`：只有它能取消 S 单（S 是三类冲正里唯一能取消的）。 */
+  readonly canCancel?: boolean;
   /** 测试用：让详情区在首帧就打开，便于静态渲染断言「完成」按钮。 */
   readonly initialDetailId?: string | null;
 }
@@ -61,6 +69,7 @@ export function SupplierReturnsPanel({
   companyIds,
   companyId,
   onCompanyChange,
+  canCancel = false,
   initialDetailId = null,
 }: SupplierReturnsPanelProps) {
   const queryClient = useQueryClient();
@@ -76,6 +85,8 @@ export function SupplierReturnsPanel({
   const [clientErrors, setClientErrors] = useState<string[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(initialDetailId);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
 
   useEffect(() => {
     setCursors([null]);
@@ -106,7 +117,9 @@ export function SupplierReturnsPanel({
   const purchaseOrders = useQuery({
     queryKey: reversalsQueryKeys.purchaseOrders(companyId),
     queryFn: () => reversalsApi.listPurchaseOrders(companyId || undefined),
-    enabled: formOpen,
+    // 列表与详情都要把「原采购单」显示成单号，不能只在开单时才拉（否则只剩 id 前 8 位）。
+    enabled: true,
+    staleTime: 5 * 60_000,
   });
   const batches = useQuery({
     queryKey: reversalsQueryKeys.batches(companyId),
@@ -117,7 +130,8 @@ export function SupplierReturnsPanel({
   const products = useQuery({
     queryKey: reversalsQueryKeys.products,
     queryFn: () => reversalsApi.listProducts(),
-    enabled: formOpen,
+    // 同上：明细的「商品」列要靠它显示商品名而不是 id 前缀。
+    enabled: true,
     staleTime: 5 * 60_000,
   });
 
@@ -182,6 +196,39 @@ export function SupplierReturnsPanel({
     },
   });
 
+  /**
+   * 取消进行中的 S 单（`supplier_return.cancel`）。
+   *
+   * 三类冲正里**只有 S 能取消**：R 单一旦生成就得走完、I 单只有审批。
+   * 原因必填——服务端用 `auditReason` 记审计，且它会写进 `X-Reason` 头。
+   */
+  const cancel = useMutation({
+    mutationFn: (row: SupplierReturn) =>
+      reversalsApi.supplierReturnCancel(row.id, row.version, cancelReason.trim()),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['reversals', 'supplier'] });
+      setCancelOpen(false);
+      setCancelReason('');
+      setActionError(null);
+    },
+    onError: (error) => {
+      setActionError(error instanceof ApiError ? error.message : '取消失败，请稍后重试');
+    },
+  });
+
+  const submitCancel = (row: SupplierReturn) => {
+    const reason = cancelReason.trim();
+    if (reason.length === 0) {
+      setActionError('取消必须填原因（1–200 字），它会记进审计。');
+      return;
+    }
+    if (reason.length > 200) {
+      setActionError('取消原因最多 200 字。');
+      return;
+    }
+    cancel.mutate(row);
+  };
+
   const askComplete = (row: SupplierReturn) => {
     /** 详情里的状态可能是旧的（别人刚完成/取消），别静默失败。 */
     if (row.status !== '进行中') {
@@ -200,6 +247,11 @@ export function SupplierReturnsPanel({
 
   const items = list.data?.items ?? [];
   const nextCursor = list.data?.nextCursor ?? null;
+  const listState = resolveListState({
+    isPending: list.isPending,
+    hasError: list.isError,
+    isEmpty: items.length === 0,
+  });
 
   return (
     <div className="space-y-3">
@@ -441,197 +493,256 @@ export function SupplierReturnsPanel({
         </section>
       ) : null}
 
-      <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-semibold text-slate-900">供应商退货单</h3>
-          <span className="text-xs text-slate-400">
-            共 {items.length} 条{canViewPrice ? '' : ' · 当前身份无看价权限，金额显示 —'}
-          </span>
-        </div>
-
-        {list.isError ? (
-          <ListError
-            title="列表加载失败"
-            error={list.error}
-            onRetry={() => void list.refetch()}
+      <ReversalListCard
+        title="供应商退货单"
+        meta={`共 ${items.length} 条${canViewPrice ? '' : ' · 当前身份无看价权限，金额显示 —'}`}
+        state={listState}
+        colCount={5}
+        minWidth="620px"
+        head={
+          <tr>
+            <th>单号</th>
+            <th>原采购单</th>
+            <th className="num">应退金额</th>
+            <th>状态</th>
+            <th />
+          </tr>
+        }
+        emptyText="还没有供应商退货单"
+        emptyHint="先从采购单里找出原单，再来这里登记冲正；S 单只处理退钱，不动库存。"
+        errorTitle="供应商退货单加载失败"
+        error={list.error}
+        onRetry={() => void list.refetch()}
+        pager={
+          <ReversalPager
+            batchIndex={pageIndex}
+            count={items.length}
+            hasNext={nextCursor !== null}
+            onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
+            onNext={() => {
+              if (nextCursor === null) return;
+              setCursors((current) => {
+                const next = current.slice(0, pageIndex + 1);
+                next[pageIndex + 1] = nextCursor;
+                return next;
+              });
+              setPageIndex((index) => index + 1);
+            }}
           />
-        ) : list.isPending ? (
-          <TableSkeleton />
-        ) : items.length === 0 ? (
-          <EmptyState
-            title="还没有供应商退货单"
-            hint="先从采购单里找出原单，再来这里登记冲正；S 单只处理退钱，不动库存。"
-          />
-        ) : (
-          <div className="mt-3 -mx-4 overflow-x-auto px-4">
-            <table className="w-full min-w-[620px] text-left text-sm">
-              <thead>
-                <tr className="text-xs text-slate-400">
-                  <th className="py-1.5 pr-3 font-medium">单号</th>
-                  <th className="py-1.5 pr-3 font-medium">原采购单</th>
-                  <th className="py-1.5 pr-3 font-medium">应退金额</th>
-                  <th className="py-1.5 pr-3 font-medium">状态</th>
-                  <th className="py-1.5 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item: SupplierReturn) => (
-                  <tr key={item.id} className="border-t border-slate-100">
-                    <td className="whitespace-nowrap py-2 pr-3 font-mono text-xs text-slate-700">
-                      {item.returnNo}
-                    </td>
-                    <td className="whitespace-nowrap py-2 pr-3 font-mono text-xs text-slate-500">
-                      {orderNoById.get(item.originalPurchaseOrderId) ?? idLabel(item.originalPurchaseOrderId)}
-                    </td>
-                    <td className="whitespace-nowrap py-2 pr-3 font-mono text-xs">
-                      {canViewPrice ? formatMoney(item.refundAmount) : MASKED_AMOUNT}
-                    </td>
-                    <td className="whitespace-nowrap py-2 pr-3">
-                      <StatusPill
-                        status={item.status}
-                        className={RETURN_STATUS_CLASS[item.status] ?? 'bg-slate-100 text-slate-500'}
-                      />
-                    </td>
-                    <td className="whitespace-nowrap py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setDetailId(item.id)}
-                        className="rounded-md border border-slate-300 px-2 py-0.5 text-xs text-slate-600"
-                      >
-                        查看
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-          <span>第 {pageIndex + 1} 页</span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={pageIndex === 0}
-              onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-              className="rounded-md border border-slate-300 px-2 py-1 disabled:opacity-40"
-            >
-              上一页
-            </button>
-            <button
-              type="button"
-              disabled={nextCursor === null}
-              onClick={() => {
-                if (nextCursor === null) return;
-                setCursors((current) => {
-                  const next = current.slice(0, pageIndex + 1);
-                  next[pageIndex + 1] = nextCursor;
-                  return next;
-                });
-                setPageIndex((index) => index + 1);
-              }}
-              className="rounded-md border border-slate-300 px-2 py-1 disabled:opacity-40"
-            >
-              下一页
-            </button>
-          </div>
-        </div>
-      </section>
+        }
+      >
+        {items.map((item: SupplierReturn) => (
+          <tr key={item.id} className="r-row">
+            <td className="whitespace-nowrap">
+              <button
+                type="button"
+                onClick={() => setDetailId(item.id)}
+                className="font-mono text-xs underline-offset-2 hover:underline"
+              >
+                {item.returnNo}
+              </button>
+            </td>
+            <td className="whitespace-nowrap font-mono text-xs" style={{ color: 'var(--text-3)' }}>
+              {orderNoById.get(item.originalPurchaseOrderId) ??
+                idLabel(item.originalPurchaseOrderId)}
+            </td>
+            <td className="num whitespace-nowrap">
+              {canViewPrice ? formatMoney(item.refundAmount) : MASKED_AMOUNT}
+            </td>
+            <td className="whitespace-nowrap">
+              <DocPill label={item.status} tone={RETURN_STATUS_TONE[item.status] ?? 'cancel'} />
+            </td>
+            <td className="whitespace-nowrap text-right">
+              <button type="button" onClick={() => setDetailId(item.id)} className="btn btn-s">
+                详情
+              </button>
+            </td>
+          </tr>
+        ))}
+      </ReversalListCard>
 
       {detailId !== null ? (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">退货单详情</h3>
-            <button
-              type="button"
-              onClick={() => setDetailId(null)}
-              className="rounded-md border border-slate-300 px-2 py-0.5 text-xs text-slate-600"
-            >
-              关闭
-            </button>
-          </div>
-
+        <section className="card min-w-0 p-4">
           {detail.isError ? (
-            <div className="mt-3">
-              <ErrorBar message="详情加载失败" onRetry={() => void detail.refetch()} />
-            </div>
+            <ErrorBar message="详情加载失败" onRetry={() => void detail.refetch()} />
           ) : detail.isPending || !detail.data ? (
             <TableSkeleton rows={2} />
           ) : (
-            <div className="mt-3 space-y-3">
-              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Kv label="单号">{detail.data.returnNo}</Kv>
-                <Kv label="状态">
-                  <StatusPill
-                    status={detail.data.status}
-                    className={RETURN_STATUS_CLASS[detail.data.status] ?? 'bg-slate-100 text-slate-500'}
+            <div className="space-y-3">
+              <DetailHead
+                docLabel="供应商退货单"
+                orderNo={detail.data.returnNo}
+                pill={
+                  <DocPill
+                    label={detail.data.status}
+                    tone={RETURN_STATUS_TONE[detail.data.status] ?? 'cancel'}
                   />
-                </Kv>
-                <Kv label="原采购单">
-                  {orderNoById.get(detail.data.originalPurchaseOrderId) ??
-                    idLabel(detail.data.originalPurchaseOrderId)}
-                </Kv>
-                <Kv label="应退金额">
-                  <span className="font-mono">
-                    {canViewPrice ? formatMoney(detail.data.refundAmount) : MASKED_AMOUNT}
-                  </span>
-                </Kv>
-              </dl>
+                }
+                meta={
+                  <>
+                    <span>只退钱，不动库存（F4c）</span>
+                    <DetailMetaDot />
+                    <span>
+                      原采购单{' '}
+                      {orderNoById.get(detail.data.originalPurchaseOrderId) ??
+                        idLabel(detail.data.originalPurchaseOrderId)}
+                    </span>
+                  </>
+                }
+                actions={
+                  <>
+                    {canCancel && detail.data.status === '进行中' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCancelOpen((open) => !open);
+                          setActionError(null);
+                        }}
+                        className="btn"
+                      >
+                        {cancelOpen ? '收起取消' : '取消单据'}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => askComplete(detail.data!)}
+                      disabled={
+                        !canApprove || detail.data.status !== '进行中' || complete.isPending
+                      }
+                      title={
+                        !canApprove
+                          ? '当前身份没有 supplier_return.approve 权限'
+                          : detail.data.status !== '进行中'
+                            ? '仅「进行中」状态的单据可完成'
+                            : undefined
+                      }
+                      className="btn btn-p"
+                    >
+                      {complete.isPending ? '完成中…' : '完成'}
+                    </button>
+                  </>
+                }
+                onClose={() => setDetailId(null)}
+              />
+
+              <DocMeta
+                columns={3}
+                items={[
+                  {
+                    label: '原采购单',
+                    mono: true,
+                    value:
+                      orderNoById.get(detail.data.originalPurchaseOrderId) ??
+                      idLabel(detail.data.originalPurchaseOrderId),
+                  },
+                  {
+                    label: '应退金额',
+                    mono: true,
+                    tone: 'money',
+                    value: canViewPrice
+                      ? formatMoney(detail.data.refundAmount)
+                      : MASKED_AMOUNT,
+                  },
+                  {
+                    label: '备注',
+                    tone: detail.data.remark ? undefined : 'dim',
+                    value: detail.data.remark ?? '—',
+                  },
+                ]}
+              />
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[520px] text-left text-sm">
+                <table className="w-full text-left" style={{ minWidth: '520px' }}>
                   <thead>
-                    <tr className="text-xs text-slate-400">
-                      <th className="py-1.5 pr-3 font-medium">商品</th>
-                      <th className="py-1.5 pr-3 font-medium">批次</th>
-                      <th className="py-1.5 pr-3 font-medium">数量</th>
-                      <th className="py-1.5 pr-3 font-medium">单价</th>
-                      <th className="py-1.5 font-medium">金额</th>
+                    <tr>
+                      <th>商品</th>
+                      <th>批次</th>
+                      <th className="num">数量</th>
+                      <th className="num">单价</th>
+                      <th className="num">金额</th>
                     </tr>
                   </thead>
                   <tbody>
                     {detail.data.lines.map((line, index) => (
-                      <tr key={`${line.productId}-${index}`} className="border-t border-slate-100">
-                        <td className="py-2 pr-3 text-xs">{productNameOf(productOptions, line.productId)}</td>
-                        <td className="py-2 pr-3 font-mono text-[11px] text-slate-500">
+                      <tr key={`${line.productId}-${index}`} className="r-row">
+                        <td className="text-xs">
+                          {productNameOf(productOptions, line.productId)}
+                        </td>
+                        <td className="font-mono text-xs" style={{ color: 'var(--text-3)' }}>
                           {line.batchIds.map((id) => batchLabelOf(batchOptions, id)).join(' / ')}
                         </td>
-                        <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{formatQty(line.qty)}</td>
-                        <td className="whitespace-nowrap py-2 pr-3 font-mono text-xs">
+                        <td className="num whitespace-nowrap">{formatQty(line.qty)}</td>
+                        <td className="num whitespace-nowrap">
                           {canViewPrice ? formatMoney(line.unitPrice) : MASKED_AMOUNT}
                         </td>
-                        <td className="whitespace-nowrap py-2 font-mono text-xs">
+                        <td className="num whitespace-nowrap">
                           {canViewPrice ? formatMoney(line.amount) : MASKED_AMOUNT}
                         </td>
                       </tr>
                     ))}
                   </tbody>
+                  <LinesFooter
+                    colSpan={4}
+                    note={`共 ${detail.data.lines.length} 行 · 数量不跨行合计（单位可能不同）`}
+                    sum={
+                      canViewPrice
+                        ? formatMoney(sumDecimal(detail.data.lines.map((line) => line.amount)))
+                        : MASKED_AMOUNT
+                    }
+                  />
                 </table>
               </div>
 
               {actionError ? <ErrorBar message={actionError} /> : null}
 
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => askComplete(detail.data!)}
-                  disabled={!canApprove || detail.data.status !== '进行中' || complete.isPending}
-                  title={
-                    !canApprove
-                      ? '当前身份没有 supplier_return.approve 权限'
-                      : detail.data.status !== '进行中'
-                        ? '仅「进行中」状态的单据可完成'
-                        : undefined
-                  }
-                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+              {cancelOpen && detail.data.status === '进行中' ? (
+                <div
+                  className="space-y-2 rounded-lg border p-3"
+                  style={{ borderColor: 'var(--line-2)', background: 'var(--surf-2)' }}
                 >
-                  {complete.isPending ? '完成中…' : '完成'}
-                </button>
-                <span className="text-[11px] leading-relaxed text-slate-400">
-                  完成即审批：会按批次出库并写库存流水，然后置为「已完成」；应付冲减尚未接入（见 #211）；冲正单据只追加，不可改、不可删（D47）。
-                </span>
-              </div>
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>
+                    取消这张供应商退货单
+                  </p>
+                  <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
+                    取消会把单据置为「已取消」并释放待执行的库存占用；只是留档，不物理删除（D47），不可撤销。
+                  </p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="min-w-64 flex-1 text-sm">
+                      <span style={{ color: 'var(--text-2)' }}>取消原因（必填，1–200 字）</span>
+                      <input
+                        value={cancelReason}
+                        onChange={(event) => setCancelReason(event.target.value)}
+                        maxLength={200}
+                        placeholder="例如：供应商确认不退货，改走补货"
+                        className={FIELD_CLASS}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={cancel.isPending}
+                      onClick={() => submitCancel(detail.data!)}
+                      className="btn btn-p"
+                    >
+                      {cancel.isPending ? '取消中…' : '确认取消'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCancelOpen(false);
+                        setCancelReason('');
+                      }}
+                      className="btn btn-ghost"
+                    >
+                      放弃
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
+                完成即审批：会按批次出库并写库存流水，然后置为「已完成」；应付冲减尚未接入（见 #211）。
+                冲正单据只追加，不可改、不可删（D47）。
+              </p>
             </div>
           )}
         </section>

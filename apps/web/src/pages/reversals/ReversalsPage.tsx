@@ -151,6 +151,7 @@ export function ReversalsView({
               canCreate={allows(scope, 'supplier_return', 'create')}
               canApprove={allows(scope, 'supplier_return', 'approve')}
               canViewPrice={allows(scope, 'supplier_return', 'view_price')}
+              canCancel={allows(scope, 'supplier_return', 'delete')}
               companyIds={companyIds}
               companyId={effectiveCompanyId}
               onCompanyChange={setCompanyId}
@@ -170,8 +171,9 @@ export function ReversalsView({
 
       <p className="note">
         冲正单据只追加，不可改、不可删（D47）；冲正后成本按 T1/T2/T3 更正（D37）。
-        三类单的「取消」能力并不对称：<b>S 单有取消、R 单没有</b>（`supplier-returns.ts` 有 cancel，
-        `customer-returns` 只有 complete）——客退一旦生成就得走完，两页因此长得不一样，不是漏画。
+        三类单的「取消」能力并不对称：<b>只有 S 供应商退货能取消</b>（`supplier_return.cancel`，
+        权限点是 <code>supplier_return.delete</code>，取消时释放待执行库存占用）——R 客户退货只有完成，
+        I 盘点只有审批，所以三栏长得不一样，不是漏画。
       </p>
     </section>
   );

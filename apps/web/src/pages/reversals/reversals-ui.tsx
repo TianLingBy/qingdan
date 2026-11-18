@@ -10,6 +10,8 @@
  */
 
 import type { ReactNode } from 'react';
+import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import type { ListState } from '../../lib/list-state';
 
 export { ListEmpty as EmptyState, ListLoading as TableSkeleton } from '../../components/ListStates';
 
@@ -45,6 +47,136 @@ export function StatusPill({
     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${className}`}>
       {status}
     </span>
+  );
+}
+
+/* ------------------------------ 列表卡片（v0.13） ------------------------------ */
+
+export interface ReversalPagerProps {
+  /** 当前是第几批（从 0 起）。 */
+  readonly batchIndex: number;
+  /** 本批条数。 */
+  readonly count: number;
+  readonly hasNext: boolean;
+  readonly onPrev: () => void;
+  readonly onNext: () => void;
+}
+
+/**
+ * 游标分页条 —— **不是页码条**。
+ *
+ * 三个 ListQuery 都是 `PageQuerySchema`（cursor / limit），服务端只回 `nextCursor`，
+ * 既没有 total 也没有 pageCount。所以这里只能写「共 N 条 · 第 M 批」+ 上一批 / 下一批；
+ * 画成「1 2 3 … 9」就得靠猜总页数，翻到空页时用户会以为系统坏了。
+ */
+export function ReversalPager({
+  batchIndex,
+  count,
+  hasNext,
+  onPrev,
+  onNext,
+}: ReversalPagerProps) {
+  return (
+    <div className="pager">
+      <span className="count">
+        共 {count} 条 · 第 {batchIndex + 1} 批
+      </span>
+      <div className="nav">
+        <button
+          type="button"
+          className="btn btn-s"
+          disabled={batchIndex === 0}
+          onClick={onPrev}
+        >
+          上一批
+        </button>
+        <button type="button" className="btn btn-s" disabled={!hasNext} onClick={onNext}>
+          下一批
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export interface ReversalListCardProps {
+  readonly title: string;
+  /** 标题右侧小字（条数 / 看价权限提示）。 */
+  readonly meta?: ReactNode;
+  readonly state: ListState;
+  /** 表头列数，三行状态行的 `colSpan` 必须等于它，否则表格会塌列。 */
+  readonly colCount: number;
+  /** `<tr>` 形式的表头单元格。 */
+  readonly head: ReactNode;
+  readonly minWidth?: string;
+  /** 数据行（每条自带 `r-row`）。 */
+  readonly children: ReactNode;
+  readonly emptyText: string;
+  readonly emptyHint?: ReactNode;
+  readonly errorTitle: string;
+  readonly error?: unknown;
+  readonly onRetry: () => void;
+  readonly pager?: ReactNode;
+}
+
+/**
+ * 冲正页三栏共用的列表卡片。
+ *
+ * 四态**不写条件渲染**：容器与 `tbody` 挂同一个 `data-state`，数据行与三个状态行
+ * 常驻 DOM，由 `app-v013.css` 的 `[data-state]` / `tbody > tr.st-tr` 规则决定谁可见
+ * （见 `styles/README.md`）。这样切换状态时表头宽度与列宽都不跳。
+ */
+export function ReversalListCard({
+  title,
+  meta,
+  state,
+  colCount,
+  head,
+  minWidth,
+  children,
+  emptyText,
+  emptyHint,
+  errorTitle,
+  error,
+  onRetry,
+  pager,
+}: ReversalListCardProps) {
+  return (
+    <section className="card min-w-0" data-state={state}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-3">
+        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
+          {title}
+        </h3>
+        {meta ? (
+          <span className="text-xs" style={{ color: 'var(--text-3)' }}>
+            {meta}
+          </span>
+        ) : null}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left" style={minWidth ? { minWidth } : undefined}>
+          <thead>{head}</thead>
+          <tbody data-state={state}>
+            {children}
+            <tr className="st-tr st-loading">
+              <td colSpan={colCount}>
+                <ListLoading label="正在加载…" />
+              </td>
+            </tr>
+            <tr className="st-tr st-error">
+              <td colSpan={colCount}>
+                <ListError title={errorTitle} error={error} onRetry={onRetry} />
+              </td>
+            </tr>
+            <tr className="st-tr st-empty">
+              <td colSpan={colCount}>
+                <ListEmpty title={emptyText} hint={emptyHint} />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {pager}
+    </section>
   );
 }
 
