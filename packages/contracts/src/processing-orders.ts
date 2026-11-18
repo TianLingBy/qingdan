@@ -362,14 +362,20 @@ export type ProcessingOrderUpdateInput = z.infer<typeof ProcessingOrderUpdateInp
 /**
  * 发货入参（D94 ②/④）：B 单在途按**单头**决定，不按明细行。
  *
- * 两段在途用同一个端点上报：`transitStage` 说货在哪一段（料在路上 / 成品在路上），
- * `transitTo` 说最终去哪（回仓 / 直发客户）。两个字段都是发货时必填——
- * 少一个就说不清「多少东西压在哪」，在途量统计会失真。
+ * 两段在途用同一个端点上报，但两段**字段不同**：
+ * - `materials`：料在路上。方向只有一个——单据头上的加工厂，所以只发 `transitStage`。
+ * - `finished`：成品在路上。要发 `transitTo`（回仓 / 直发客户）+ `lossQty`。
+ *
+ * 为什么料段不收 `transitTo`（#333 复核）：加工厂已经是单据头的唯一真源
+ * （`processing_order.processor_id`），再让发货时填一个「回仓 / 直发客户」，
+ * 等于在「料还在去加工厂的路上」时先记下一个成品去向；两个字段不一致时没人知道信谁。
+ * 料段不写，`processing_order.transit_to` 留 NULL（该列本来可空）。
  */
 export const ProcessingOrderShipInputSchema = z
   .object({
     transitStage: z.enum(['materials', 'finished']),
-    transitTo: z.enum(['warehouse', 'customer']),
+    /** 只有 finished 段必填：成品出厂去哪。materials 段带上即报错。 */
+    transitTo: z.enum(['warehouse', 'customer']).optional(),
     /**
      * finished 段发货必须给出验收损耗：产出批次数量与成本要在发货事务内锁定。
      * materials 段不接收这两个字段，避免把验收口径提前写进运输阶段。
@@ -379,6 +385,20 @@ export const ProcessingOrderShipInputSchema = z
     confirmFullLoss: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
+    if (value.transitStage === 'finished' && value.transitTo === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['transitTo'],
+        message: 'finished 段发货必须填写 transitTo（回仓 / 直发客户）',
+      });
+    }
+    if (value.transitStage === 'materials' && value.transitTo !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['transitTo'],
+        message: 'transitTo 只能用于 finished 段发货（料段去哪由单据上的加工厂决定）',
+      });
+    }
     if (value.transitStage === 'finished' && value.lossQty === undefined) {
       ctx.addIssue({
         code: 'custom',
@@ -490,7 +510,7 @@ export const PROCESSING_ORDER_ROUTES: readonly RouteDef[] = [
     domain: 'processing',
     action: 'ship',
     summary:
-      '加工发货：进行中 → 在途，带 transitStage（料/成品在路上）+ transitTo（回仓/直发客户，D94 ②）',
+      '加工发货：进行中 → 在途。materials 段只带 transitStage（料去加工厂，方向由单据上的加工厂决定）；finished 段带 transitTo（回仓/直发客户）+ lossQty（D94 ②）',
     audit: { kind: 'write' },
     ai: { policy: 'forbid', reasonRequired: true },
     requiresIfMatch: true,

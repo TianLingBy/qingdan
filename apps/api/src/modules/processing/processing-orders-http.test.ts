@@ -227,9 +227,25 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       headers: writeHeaders(warehouseCookie, nextRequestId('transit-denied'), {
         'if-match': '"1"',
       }),
-      payload: { transitStage: 'materials', transitTo: 'warehouse' },
+      payload: { transitStage: 'materials' },
     });
     expect(denied.statusCode).toBe(403);
+
+    /**
+     * #333 复核：料段不许带成品去向。走 HTTP 而不是只走契约单测，是因为真正会踩坑的是
+     * 「前端照旧传了两段共用的 transitTo」——服务端必须在进入用例之前就拦住，
+     * 而不是悄悄写进 `processing_order.transit_to`。
+     */
+    const withDest = await app.inject({
+      method: 'POST',
+      url: `/api/v1/processing-orders/${order.id}/ship`,
+      headers: writeHeaders(ownerCookie, nextRequestId('transit-dest-reject'), {
+        'if-match': '"1"',
+      }),
+      payload: { transitStage: 'materials', transitTo: 'warehouse' },
+    });
+    expect(withDest.statusCode).toBe(422);
+    expect(withDest.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
 
     const shipped = await app.inject({
       method: 'POST',
@@ -237,7 +253,7 @@ describe('processing 加工单 HTTP（PGlite + seed 演示租户）', () => {
       headers: writeHeaders(ownerCookie, nextRequestId('transit-ship'), {
         'if-match': '"1"',
       }),
-      payload: { transitStage: 'materials', transitTo: 'warehouse' },
+      payload: { transitStage: 'materials' },
     });
     expect(shipped.statusCode).toBe(200);
     expect(shipped.json()).toMatchObject({

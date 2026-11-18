@@ -162,14 +162,17 @@ export function validateShipDraft(draft: ShipDraft, order: ProcessingOrderDetail
 /**
  * 提交入参：**按段裁字段**。
  *
- * `materials` 段只发 `transitStage` + `transitTo`——契约对「料段带 lossQty /
- * custodianId / confirmFullLoss」是报错而不是忽略，多带一个字段就 422。
+ * - `materials`：只发 `transitStage`。料往加工厂去，去向就是单据上的加工厂，
+ *   契约对「料段带 transitTo」现在是报错（#333 复核：原来会写入一个成品去向）。
+ * - `finished`：发 `transitTo` + `lossQty`，可选 `custodianId` / `confirmFullLoss`。
+ *
+ * 契约对多余字段是报错而不是忽略，多带一个就 422，所以这里逐个挑而不是整体展开。
  */
 export function buildShipInput(draft: ShipDraft): ProcessingOrderShipInput {
-  const base = { transitStage: draft.transitStage, transitTo: draft.transitTo } as const;
-  if (draft.transitStage === 'materials') return base;
+  if (draft.transitStage === 'materials') return { transitStage: 'materials' };
   return {
-    ...base,
+    transitStage: 'finished',
+    transitTo: draft.transitTo,
     lossQty: draft.lossQty.trim(),
     ...(draft.custodianId.trim() === '' ? {} : { custodianId: draft.custodianId.trim() }),
     ...(draft.confirmFullLoss ? { confirmFullLoss: true } : {}),

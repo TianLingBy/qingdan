@@ -532,13 +532,36 @@ describe('加工单契约（processing）', () => {
     ).toBe(false);
   });
 
-  it('发货入参：materials 不收验收字段；finished 必须带 lossQty（D94）', () => {
+  it('发货入参：materials 只带 transitStage；finished 必须带 transitTo + lossQty（D94 / #333）', () => {
+    // 料段：方向就是单据上的加工厂，只发分段。
+    expect(ProcessingOrderShipInputSchema.safeParse({ transitStage: 'materials' }).success).toBe(
+      true,
+    );
+    /**
+     * 料段带成品去向必须报错：#333 复核之前这里允许，结果「料还在去加工厂的路上」
+     * 的记录里躺着一个 `transit_to = 'warehouse'`，读单的人会以为料要回仓。
+     */
     expect(
       ProcessingOrderShipInputSchema.safeParse({
         transitStage: 'materials',
         transitTo: 'warehouse',
       }).success,
-    ).toBe(true);
+    ).toBe(false);
+    // 料段也不收验收字段（损耗还没发生）。
+    expect(
+      ProcessingOrderShipInputSchema.safeParse({
+        transitStage: 'materials',
+        lossQty: '2',
+      }).success,
+    ).toBe(false);
+    // 成品段缺去向：说不清货往仓还是往客户。
+    expect(
+      ProcessingOrderShipInputSchema.safeParse({
+        transitStage: 'finished',
+        lossQty: '2',
+      }).success,
+    ).toBe(false);
+    // 成品段缺损耗：产出批次数量与成本要在发货事务内锁定。
     expect(
       ProcessingOrderShipInputSchema.safeParse({
         transitStage: 'finished',
@@ -554,13 +577,6 @@ describe('加工单契约（processing）', () => {
         confirmFullLoss: false,
       }).success,
     ).toBe(true);
-    expect(
-      ProcessingOrderShipInputSchema.safeParse({
-        transitStage: 'materials',
-        transitTo: 'warehouse',
-        lossQty: '2',
-      }).success,
-    ).toBe(false);
   });
 
   it('完成结果：status 字面量「已完成」，产出批次 / 损失记录可空（D5 / G2）', () => {

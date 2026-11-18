@@ -1,9 +1,13 @@
 /**
- * 加工发货弹层（D94 ②）：整单选一个在途分段与去向，不是逐行。
+ * 加工发货弹层（D94 ②）：整单选一个在途分段，成品段再选去向；不是逐行。
  *
  * 为什么整单一个分段而不是按行：加工单只有「料进厂」和「成品出厂」两段物流，
  * 每张单在同一时刻只可能在其中一段上（契约把 `transitStage` 放在单据头，
  * 不是明细行）。逐行反而会造出「半张单在料段、半张在成品段」这种不存在的状态。
+ *
+ * 为什么料段没有「去向」下拉（#333 复核）：料往加工厂去，方向由单据上的加工厂
+ * 唯一决定，这里只把它显示出来，不让用户选。原来两段共用 warehouse/customer 下拉，
+ * 料在路上时会写入一个成品去向，读单的人会以为料要回仓。
  *
  * 外观照 `purchase/ShipDialog.tsx`：`fixed inset-0` 遮罩 + 居中卡片，不引新 UI 库。
  * 本仓没有 `components/` 级的通用弹窗——采购那张就是这么写的，这里保持一致。
@@ -21,6 +25,8 @@ import {
 export interface ProcessingShipDialogProps {
   readonly orderNo: string;
   readonly inputQty: string;
+  /** 单据上的加工厂：料段的去向**就是它**，只读展示，不给下拉。 */
+  readonly processorName: string;
   readonly draft: ShipDraft;
   readonly errors: readonly string[];
   /** 保管人候选（`EmployeeSummary` 精简后的 `{id,name}`）；没权限时为空数组。 */
@@ -36,6 +42,7 @@ export interface ProcessingShipDialogProps {
 export function ProcessingShipDialog({
   orderNo,
   inputQty,
+  processorName,
   draft,
   errors,
   custodians,
@@ -79,8 +86,8 @@ export function ProcessingShipDialog({
         </div>
 
         <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-          一段物流一个分段：<b>料</b>是材料在去加工厂路上，<b>成品</b>是货往仓或客户走。
-          成品段要在发货时承诺损耗量，因为验收口径跟着成品一起走。
+          一段物流一个分段：<b>料</b>是材料在去加工厂路上（去哪就是本单的加工厂，不用选）；
+          <b>成品</b>是货往仓或客户走。成品段要在发货时承诺损耗量，因为验收口径跟着成品一起走。
         </p>
 
         <div className="mt-4 space-y-3 text-sm">
@@ -106,19 +113,35 @@ export function ProcessingShipDialog({
             </select>
           </label>
 
-          <label className="block">
-            <span className="text-slate-600">去向</span>
-            <select
-              aria-label="在途去向"
-              value={draft.transitTo}
-              disabled={busy}
-              onChange={(event) => onChange({ transitTo: event.target.value as TransitTo })}
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
-            >
-              <option value="warehouse">{TRANSIT_LABEL.warehouse}</option>
-              <option value="customer">{TRANSIT_LABEL.customer}</option>
-            </select>
-          </label>
+          {finishedStage ? (
+            <label className="block">
+              <span className="text-slate-600">去向</span>
+              <select
+                aria-label="在途去向"
+                value={draft.transitTo}
+                disabled={busy}
+                onChange={(event) => onChange({ transitTo: event.target.value as TransitTo })}
+                className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
+              >
+                <option value="warehouse">{TRANSIT_LABEL.warehouse}</option>
+                <option value="customer">{TRANSIT_LABEL.customer}</option>
+              </select>
+            </label>
+          ) : (
+            /**
+             * 料段不给下拉：方向由单据上的加工厂唯一决定。只读展示是为了让人确认
+             * 「料是送到这家」，而不是给一个能改的方向（改了与单据头冲突）。
+             */
+            <div>
+              <span className="text-slate-600">去向</span>
+              <p
+                className="mt-1 w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700"
+                aria-label="料段去向"
+              >
+                加工厂 · {processorName}
+              </p>
+            </div>
+          )}
 
           {finishedStage && (
             <>
