@@ -66,6 +66,8 @@ const ME_WITH_PRICE = {
 function seedClient(input: {
   readonly me: typeof ME_WITH_PRICE;
   readonly orders: readonly PurchaseOrder[];
+  /** 页码模式的总条数（D95）：不传就按本页行数算，即「只有一页」。 */
+  readonly total?: number;
 }): ReturnType<typeof createQueryClient> {
   const client = createQueryClient();
   client.setQueryData(authKeys.me, input.me);
@@ -77,9 +79,18 @@ function seedClient(input: {
       supplierId: undefined,
       status: undefined,
       keyword: undefined,
-      cursor: null,
+      page: 1,
+      pageSize: 20,
+      sort: 'createdAt',
+      order: 'desc',
     }),
-    { items: [...input.orders], nextCursor: null },
+    {
+      items: [...input.orders],
+      total: input.total ?? input.orders.length,
+      page: 1,
+      pageSize: 20,
+      nextCursor: null,
+    },
   );
   return client;
 }
@@ -375,12 +386,35 @@ describe('v0.13 版式（#337）', () => {
     }
   });
 
-  it('游标分页写「上一批 / 下一批」，不画页码', () => {
+  it('页码条画「共 N 张 / 共 K 页」，不再是游标的「第 M 批」', () => {
+    // 45 张、每页 20 → 3 页（最后一页 5 张）。总数必须是服务端 total，
+    // 不是本页行数：按行数算永远只有 1 页，翻页按钮会一直是灰的。
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER], total: 45 }));
+
+    expect(html).toContain('共 45 张');
+    expect(html).toContain('/ 3 页');
+    expect(html).toContain('上一页');
+    expect(html).toContain('下一页');
+    expect(html).toContain('aria-label="页码"');
+    // 游标模式的措辞必须消失，否则用户会以为这是「分批加载」而不是分页
+    expect(html).not.toContain('上一批');
+    expect(html).not.toContain('下一批');
+    expect(html).not.toContain('第 1 批');
+  });
+
+  it('只有排序白名单里的三列可点（单号 / 货款 / 开单时间），其余表头是纯文本', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
-    expect(html).toContain('上一批');
-    expect(html).toContain('下一批');
-    expect(html).not.toContain('下一页');
+    for (const label of ['单号', '货款', '开单时间']) {
+      expect(html).toContain(`title="按${label}排序"`);
+    }
+    // 供应商 / 物料 / 数量 / 状态 后端没有排序白名单，点了只会 422 —— 不画箭头
+    expect(html).not.toContain('title="按供应商排序"');
+    expect(html).not.toContain('title="按数量排序"');
+    expect(html).not.toContain('title="按状态排序"');
+    // 默认按开单时间倒序（列表默认看最新的）
+    expect(html).toContain('aria-sort="descending"');
+    expect(html).not.toContain('aria-sort="ascending"');
   });
 
   it('在途在列表里是 transit（蓝）档，不与「进行中」同色（D94）', () => {

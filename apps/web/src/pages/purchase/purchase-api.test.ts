@@ -55,6 +55,31 @@ describe('采购单接口封装', () => {
     expect(calls[0]?.init.credentials).toBe('include');
   });
 
+  it('页码模式带上 page / pageSize / sort / order，且不带 cursor（D95，两者互斥否则 422）', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const api = createPurchaseApi(
+      new ApiClient({
+        baseUrl: '/api/v1',
+        fetchImpl: async (input, init) => {
+          calls.push({ url: String(input), init: init ?? {} });
+          return jsonResponse(
+            { items: [], total: 0, page: 2, pageSize: 20, nextCursor: null },
+            200,
+          );
+        },
+      }),
+    );
+
+    await api.list({ page: 2, pageSize: 20, sort: 'totalAmount', order: 'asc' });
+
+    const url = calls[0]?.url ?? '';
+    expect(url).toBe(
+      '/api/v1/purchase-orders?page=2&pageSize=20&sort=totalAmount&order=asc',
+    );
+    // cursor 与 page 同时发会被后端 422 —— 这里必须一个都不带
+    expect(url).not.toContain('cursor');
+  });
+
   it('创建不带单号（服务端生成 D16），PUT 语义用 POST', async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const api = createPurchaseApi(

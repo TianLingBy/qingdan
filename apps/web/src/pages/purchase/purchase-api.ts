@@ -22,8 +22,14 @@ import type {
   SupplierDraft,
 } from '@qingdan/contracts';
 import { ApiClient, apiClient } from '../../api/client';
-import type { PageResult } from '../masterdata/masterdata-api';
 
+/**
+ * 采购单列表的查询条件。
+ *
+ * 两套分页参数并存（D95）：`cursor`/`limit` 是老的游标模式，`page`/`pageSize` 是新的
+ * 页码模式。**不能同时给**——后端 `resolvePaging` 会 422。页码模式下响应带 `total`，
+ * 前端才画得出「共 N 张」与页数。
+ */
 export interface PurchaseOrderListFilters {
   readonly companyId?: string;
   readonly supplierId?: string;
@@ -31,6 +37,26 @@ export interface PurchaseOrderListFilters {
   readonly keyword?: string;
   readonly cursor?: string | null;
   readonly limit?: number;
+  /** 页码模式（D95）：第几页，从 1 起。 */
+  readonly page?: number;
+  /** 页码模式：每页条数，与 `limit` 同义。 */
+  readonly pageSize?: number;
+  /** 排序字段，只能是后端白名单里的三个（D95），多写一个会被 422。 */
+  readonly sort?: PurchaseOrderSort;
+  /** 排序方向，默认 desc。 */
+  readonly order?: 'asc' | 'desc';
+}
+
+/** 后端 `PurchaseOrderListQuerySchema.sort` 的排序白名单，一一对应，别在这里加列。 */
+export type PurchaseOrderSort = 'orderNo' | 'totalAmount' | 'createdAt';
+
+/** 页码模式的列表响应：比游标模式多 `total`/`page`/`pageSize`。 */
+export interface PagedPurchaseOrders {
+  readonly items: PurchaseOrder[];
+  readonly total: number;
+  readonly page: number;
+  readonly pageSize: number;
+  readonly nextCursor: string | null;
 }
 
 function listQuery(
@@ -42,7 +68,11 @@ function listQuery(
     status: filters.status,
     keyword: filters.keyword,
     cursor: filters.cursor ?? undefined,
-    limit: filters.limit ?? 50,
+    limit: filters.limit,
+    page: filters.page,
+    pageSize: filters.pageSize,
+    sort: filters.sort,
+    order: filters.order,
   };
 }
 
@@ -53,7 +83,7 @@ function ifMatch(version: number): Record<string, string> {
 export function createPurchaseApi(client: ApiClient = apiClient) {
   return {
     list: (filters: PurchaseOrderListFilters = {}) =>
-      client.get<PageResult<PurchaseOrder>>('/purchase-orders', { query: listQuery(filters) }),
+      client.get<PagedPurchaseOrders>('/purchase-orders', { query: listQuery(filters) }),
     detail: (id: string) => client.get<PurchaseOrderDetail>(`/purchase-orders/${id}`),
     create: (input: PurchaseOrderCreateInput) =>
       client.post<PurchaseOrder>('/purchase-orders', input),
@@ -103,13 +133,7 @@ export type PurchaseApi = ReturnType<typeof createPurchaseApi>;
 export const purchaseApi = createPurchaseApi();
 
 export const purchaseQueryKeys = {
-  list: (filters: {
-    companyId?: string;
-    supplierId?: string;
-    status?: PurchaseOrderStatus;
-    keyword?: string;
-    cursor?: string | null;
-  }) => ['purchase-orders', 'list', filters] as const,
+  list: (filters: PurchaseOrderListFilters) => ['purchase-orders', 'list', filters] as const,
   detail: (id: string | null) => ['purchase-orders', 'detail', id] as const,
   /** 明细里只有 productId，商品名要另查主数据映射；主数据页用同一个键，可共享缓存。 */
   products: ['masterdata', 'products', { limit: 200 }] as const,
