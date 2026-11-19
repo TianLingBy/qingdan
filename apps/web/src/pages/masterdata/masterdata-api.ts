@@ -10,6 +10,7 @@ import type {
   ProcessorQuote,
   ProcessorQuoteCreateInput,
   ProcessorUpdateInput,
+  ScopeMatrix,
   Supplier,
   SupplierCreateInput,
   SupplierUpdateInput,
@@ -26,10 +27,8 @@ export interface MeResponse {
   readonly tenantId: string;
   readonly displayName: string;
   readonly companyIds: string[];
-  readonly scope: readonly {
-    readonly domain: string;
-    readonly actions: readonly string[];
-  }[];
+  /** 功能域 × 动作矩阵（契约 `ScopeMatrixSchema`），写入口权限三态都靠它判断。 */
+  readonly scope: ScopeMatrix;
 }
 
 export interface MasterdataListFilters {

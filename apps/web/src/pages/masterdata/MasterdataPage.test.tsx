@@ -93,6 +93,74 @@ describe('商品资料页', () => {
     expect(html).toContain('暂无数据');
   });
 
+  it('写入口按 scope 三态：无权限禁用并在 title 写明缺哪个 scope，不藏按钮', () => {
+    const client = createQueryClient();
+    client.setQueryData(masterdataQueryKeys.me, {
+      employeeId: 'e1',
+      tenantId: 't1',
+      displayName: '测试员工',
+      companyIds: [PRODUCT.companyId],
+      // 只有 read：创建 / 编辑 / 删除都该禁用
+      scope: [{ domain: 'product', actions: ['read'] }],
+    });
+    client.setQueryData(
+      masterdataQueryKeys.list('products', {
+        keyword: undefined,
+        cursor: null,
+      }),
+      { items: [PRODUCT], nextCursor: null },
+    );
+
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <ProductsPage />
+      </QueryClientProvider>,
+    );
+
+    // 按钮仍在 DOM 里（不 return null 藏起来），只是 disabled + title 说明缺哪个 scope
+    expect(html).toContain('新增商品');
+    expect(html).toContain('编辑');
+    expect(html).toContain('删除');
+    expect(html).toContain('需要 product.create 权限');
+    expect(html).toContain('需要 product.update 权限');
+    expect(html).toContain('需要 product.delete 权限');
+    expect(html).toContain('disabled=""');
+  });
+
+  it('四态由 data-state 驱动：三行状态行常驻 tbody，数据行只带 r-row', () => {
+    const client = createQueryClient();
+    client.setQueryData(masterdataQueryKeys.me, {
+      employeeId: 'e1',
+      tenantId: 't1',
+      displayName: '测试员工',
+      companyIds: [PRODUCT.companyId],
+      scope: [{ domain: 'product', actions: ['read', 'create', 'update', 'delete'] }],
+    });
+    client.setQueryData(
+      masterdataQueryKeys.list('products', {
+        keyword: undefined,
+        cursor: null,
+      }),
+      { items: [PRODUCT], nextCursor: null },
+    );
+
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <ProductsPage />
+      </QueryClientProvider>,
+    );
+
+    expect(html).toContain('data-state="filled"');
+    expect(html).toContain('st-tr st-loading');
+    expect(html).toContain('st-tr st-error');
+    expect(html).toContain('st-tr st-empty');
+    // 数据行只带 r-row，不能带 st-tr（否则 filled 状态下会被隐藏，#337）
+    expect(html).toContain('class="r-row"');
+    expect(html).not.toContain('r-row st-tr');
+    // 有 create 权限时新增按钮不禁用
+    expect(html).not.toContain('需要 product.create 权限');
+  });
+
   it('供应商页与加工厂页也完成真实路由组件接线', () => {
     const supplier: Supplier = {
       id: 's1',

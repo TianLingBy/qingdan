@@ -9,6 +9,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import { allows, type ScopeAction } from '../../lib/access';
+import { useCompanyLabel } from '../../lib/company-directory';
+import { resolveListState } from '../../lib/list-state';
 import {
   extractIssues,
   formatPrice,
@@ -21,6 +24,22 @@ import {
 
 export type MasterdataKind = 'products' | 'suppliers' | 'processors' | 'customers';
 type MasterdataItem = Product | Supplier | Processor | Customer;
+
+/** 页面 → 权限域（写入口按 `domain.create/update/delete` 做三态，不写死角色名）。 */
+const DOMAIN: Record<MasterdataKind, 'product' | 'supplier' | 'processor' | 'customer'> = {
+  products: 'product',
+  suppliers: 'supplier',
+  processors: 'processor',
+  customers: 'customer',
+};
+
+/** 搜索占位按后端真实命中列写（各 `*ListQuerySchema` 的 `keyword` 口径）。 */
+const SEARCH_PLACEHOLDER: Record<MasterdataKind, string> = {
+  products: '名称 / 别名',
+  customers: '名称 / 联系人',
+  suppliers: '名称 / 联系人',
+  processors: '名称 / 联系人',
+};
 
 interface FormState {
   companyId: string;
@@ -417,14 +436,16 @@ function ProcessorQuotes({ processor }: { processor: Processor }) {
       {createQuote.error && (
         <p className="mt-3 text-sm text-red-700">{errorText(createQuote.error)}</p>
       )}
-      <div className="mt-4 overflow-x-auto">
-        {quotes.isPending ? (
-          <ListLoading label="报价加载中…" rows={2} />
-        ) : quotes.error ? (
-          <ListError title="报价加载失败" error={quotes.error} onRetry={() => void quotes.refetch()} />
-        ) : quotes.data.items.length === 0 ? (
-          <ListEmpty title="暂无报价记录。" />
-        ) : (
+      {/* 报价子表同样走四态（data-state 驱动，状态行常驻） */}
+      <div
+        className="mt-4 overflow-x-auto"
+        data-state={resolveListState({
+          isPending: quotes.isPending,
+          hasError: quotes.error !== null,
+          isEmpty: (quotes.data?.items.length ?? 0) === 0,
+        })}
+      >
+        <div className="st-block st-filled">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-xs text-slate-500">
               <tr>
@@ -435,7 +456,7 @@ function ProcessorQuotes({ processor }: { processor: Processor }) {
               </tr>
             </thead>
             <tbody>
-              {quotes.data.items.map((quote: ProcessorQuote) => (
+              {(quotes.data?.items ?? []).map((quote: ProcessorQuote) => (
                 <tr key={quote.id} className="border-b border-slate-100">
                   <td className="py-2">{quote.quoteDate}</td>
                   <td className="py-2">{quote.processName}</td>
@@ -445,7 +466,16 @@ function ProcessorQuotes({ processor }: { processor: Processor }) {
               ))}
             </tbody>
           </table>
-        )}
+        </div>
+        <div className="st-block st-loading">
+          <ListLoading label="报价加载中…" rows={2} />
+        </div>
+        <div className="st-block st-error">
+          <ListError title="报价加载失败" error={quotes.error ?? null} onRetry={() => void quotes.refetch()} />
+        </div>
+        <div className="st-block st-empty">
+          <ListEmpty title="暂无报价记录。" />
+        </div>
       </div>
     </section>
   );
@@ -454,7 +484,9 @@ function ProcessorQuotes({ processor }: { processor: Processor }) {
 export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   const copy = PAGE_COPY[kind];
   const queryClient = useQueryClient();
+  const companyLabel = useCompanyLabel();
   const [keyword, setKeyword] = useState('');
+  const [companyId, setCompanyId] = useState('');
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [pageIndex, setPageIndex] = useState(0);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -464,6 +496,13 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
 
   const me = useQuery({ queryKey: masterdataQueryKeys.me, queryFn: masterdataApi.me });
   const companyIds = me.data?.companyIds ?? [];
+  const domain = DOMAIN[kind];
+  /** 写入口三态：有权限可点；无权限禁用并在 title 写明缺哪个 scope（不藏按钮）。 */
+  const can = (action: ScopeAction) => allows(me.data?.scope, domain, action);
+  const canCreate = can('create');
+  const canUpdate = can('update');
+  const canDelete = can('delete');
+  const denyText = (action: ScopeAction) => `需要 ${domain}.${action} 权限`;
   const canViewPrice =
     me.data?.scope.some(
       (entry) => entry.domain === 'product' && entry.actions.includes('view_price'),
@@ -478,15 +517,17 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   useEffect(() => {
     setCursors([null]);
     setPageIndex(0);
-  }, [keyword]);
+  }, [keyword, companyId]);
 
   const filters: MasterdataListFilters = {
     keyword: optionalText(keyword),
+    companyId: optionalText(companyId),
     cursor: cursors[pageIndex] ?? null,
   };
   const list = useQuery({
     queryKey: masterdataQueryKeys.list(kind, {
       keyword: filters.keyword,
+      companyId: filters.companyId,
       cursor: filters.cursor,
     }),
     queryFn: async () => {
@@ -611,6 +652,15 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   const issues = save.error instanceof ApiError ? extractIssues(save.error.details) : [];
   const rows = (list.data?.items ?? []) as MasterdataItem[];
   const nextCursor = list.data?.nextCursor ?? null;
+  /**
+   * 列表四态（v0.13）：只算一个字符串交给容器与 tbody 的 `data-state`，
+   * 三个状态行常驻 DOM、由 CSS 显隐，不写 JSX 三元分支（见 styles/README.md §四态）。
+   */
+  const listState = resolveListState({
+    isPending: list.isPending,
+    hasError: list.error !== null,
+    isEmpty: rows.length === 0,
+  });
 
   return (
     <section className="mx-auto max-w-7xl space-y-5">
@@ -622,7 +672,9 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
         <button
           type="button"
           onClick={beginCreate}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+          disabled={!canCreate}
+          title={canCreate ? undefined : denyText('create')}
+          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           新增{copy.singular}
         </button>
@@ -632,9 +684,25 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
         <input
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
-          placeholder={kind === 'products' ? '按名称或别名搜索（不按编号）' : '按名称或联系人搜索'}
+          placeholder={SEARCH_PLACEHOLDER[kind]}
           className="min-w-64 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
         />
+        {/* 公司筛选：`*ListQuerySchema` 都有 companyId 参数，后端已支持。 */}
+        {companyIds.length > 1 && (
+          <select
+            value={companyId}
+            onChange={(event) => setCompanyId(event.target.value)}
+            aria-label="按公司筛选"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          >
+            <option value="">全部公司</option>
+            {companyIds.map((id) => (
+              <option key={id} value={id} title={id}>
+                {companyLabel(id)}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {formOpen && (
@@ -668,31 +736,46 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
         </p>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        {list.isPending ? (
-          <ListLoading label={`正在加载${copy.title}…`} />
-        ) : list.error ? (
-          <ListError
-            title={`${copy.title}加载失败`}
-            error={list.error}
-            onRetry={() => void list.refetch()}
-          />
-        ) : rows.length === 0 ? (
-          <ListEmpty title="暂无数据。可调整筛选条件或新增一条记录。" />
-        ) : (
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+      {/*
+        列表区（v0.13）。四态由容器与 tbody 上的 `data-state` 驱动，**不写 JSX 分支**：
+        `app-v013.css` 的 `tbody[data-state] > tr.st-tr.st-*` 负责显隐，表头宽度不随状态变。
+        数据行只带 `r-row`，**不要带 `st-tr`**（会落在「默认隐藏」规则里，见 #337）。
+      */}
+      <div className="card" data-state={listState}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left">
+            <thead>
               <tr>
-                <th className="px-4 py-3">编号</th>
-                <th className="px-4 py-3">名称</th>
-                <th className="px-4 py-3">补充信息</th>
-                {kind === 'products' && <th className="px-4 py-3">默认售价</th>}
-                <th className="px-4 py-3 text-right">操作</th>
+                <th>编号</th>
+                <th>名称</th>
+                <th>补充信息</th>
+                {kind === 'products' && <th className="num">默认售价</th>}
+                <th className="text-right">操作</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody data-state={listState}>
+              {/* 三个状态行常驻 DOM，CSS 按 data-state 只显示其中一个 */}
+              <tr className="st-tr st-loading">
+                <td colSpan={kind === 'products' ? 5 : 4}>
+                  <ListLoading label={`正在加载${copy.title}…`} rows={4} />
+                </td>
+              </tr>
+              <tr className="st-tr st-error">
+                <td colSpan={kind === 'products' ? 5 : 4}>
+                  <ListError
+                    title={`${copy.title}加载失败`}
+                    error={list.error ?? null}
+                    onRetry={() => void list.refetch()}
+                  />
+                </td>
+              </tr>
+              <tr className="st-tr st-empty">
+                <td colSpan={kind === 'products' ? 5 : 4}>
+                  <ListEmpty title="暂无数据。可调整筛选条件或新增一条记录。" />
+                </td>
+              </tr>
               {rows.map((item) => (
-                <tr key={item.id} className="border-b border-slate-100 last:border-0">
+                <tr key={item.id} className="r-row">
                   <td className="px-4 py-3 text-slate-500">{readNumber(item, kind) ?? '—'}</td>
                   <td className="px-4 py-3 font-medium">{item.name}</td>
                   <td className="px-4 py-3 text-slate-600">{readExtra(item, kind) || '—'}</td>
@@ -713,15 +796,18 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                       <button
                         type="button"
                         onClick={() => beginEdit(item)}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs"
+                        disabled={!canUpdate}
+                        title={canUpdate ? undefined : denyText('update')}
+                        className="rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         编辑
                       </button>
                       <button
                         type="button"
-                        disabled={disable.isPending}
+                        disabled={!canDelete || disable.isPending}
                         onClick={() => askDisable(item)}
-                        className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 disabled:opacity-40"
+                        title={canDelete ? undefined : denyText('delete')}
+                        className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         删除
                       </button>
@@ -731,9 +817,14 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
               ))}
             </tbody>
           </table>
-        )}
+        </div>
       </div>
 
+      {/*
+        游标分页：只保留「上一页 / 下一页」。
+        TODO(#341): 页码条——主数据仍是 `PageQuerySchema`（只有 cursor/limit），
+        后端补 total 之后再按 v0.13 的 `.pager` 画页码与总数。
+      */}
       <div className="flex items-center justify-end gap-2">
         <button
           type="button"
