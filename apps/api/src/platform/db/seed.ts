@@ -174,6 +174,15 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('purchase', ['read', 'create', 'update', 'approve', 'ship']),
       ...perms('product', ['read', 'create', 'update']),
       ...perms('supplier', ['read', 'create', 'update']),
+      // 加工厂档案与供应商同性质 —— 采购去找加工厂、谈价格、建档。此前只有
+      // supplier 没有 processor，等于「能建供应商却建不了加工厂」。
+      ...perms('processor', ['read', 'create', 'update']),
+      // 找加工厂下单本来是采购跟单的活。此前采购预设整块没有 processing 域，
+      // 建加工单只能靠老板，而 approve（到货确认/完成）仍归老板与经理。
+      ...perms('processing', ['read', 'create']),
+      // 供应商退货由采购发起并确认出库。此前采购预设没有 supplier_return 任何一格，
+      // 连发起都做不了；cancel 仍归老板（作废是高争议动作）。
+      ...perms('supplier_return', ['read', 'create', 'approve']),
       ...perms('inventory_qty', ['read']),
       // D71：采购可录盘盈盘亏（两个方向都可发起），审批仍归老板/经理。
       ...perms('stocktake', ['read', 'create', 'delete']),
