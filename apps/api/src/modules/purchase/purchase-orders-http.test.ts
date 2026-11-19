@@ -182,6 +182,27 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
         { ...LINE, transitTo: 'processor', processorId: PROCESSOR_ID },
       ],
     });
+
+    // 详情必须回行号：前端发的是 `line.lineNo`，不是数组下标。
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/api/v1/purchase-orders/${order.id}`,
+      headers: writeHeaders(ownerCookie, nextRequestId('transit-detail')),
+    });
+    expect(detail.json().lines.map((line: { lineNo: number }) => line.lineNo)).toEqual([1]);
+
+    // 不存在的行号一律拒绝（不能只挡「超出条数」，行号将来可能有空洞）。
+    const ghostLine = await app.inject({
+      method: 'POST',
+      url: `/api/v1/purchase-orders/${order.id}/ship`,
+      headers: writeHeaders(ownerCookie, nextRequestId('transit-ghost'), {
+        'if-match': '"1"',
+      }),
+      payload: { lines: [{ lineNo: 3, transitTo: 'warehouse' }] },
+    });
+    expect(ghostLine.statusCode).toBe(422);
+    expect(ghostLine.json()).toMatchObject({ details: { lineNo: 3 } });
+
     const denied = await app.inject({
       method: 'POST',
       url: `/api/v1/purchase-orders/${order.id}/ship`,

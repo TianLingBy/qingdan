@@ -20,8 +20,8 @@ const ORDER: PurchaseOrderDetail = {
   status: '进行中',
   handlerId: 'e1',
   lines: [
-    { productId: 'p1', qty: '500', unitPrice: '8.6', amount: '4300' },
-    { productId: 'p2', qty: '200', unitPrice: '3.2', amount: '640' },
+    { lineNo: 1, productId: 'p1', qty: '500', unitPrice: '8.6', amount: '4300' },
+    { lineNo: 2, productId: 'p2', qty: '200', unitPrice: '3.2', amount: '640' },
   ],
   fees: [],
   goodsAmount: '4940',
@@ -127,7 +127,7 @@ describe('发货去向草稿', () => {
 });
 
 describe('提交入参', () => {
-  it('lineNo 按明细顺序号从 1 起，每行都显式发', () => {
+  it('lineNo 取明细自带的行号，每行都显式发', () => {
     const input = buildShipInput(ORDER, [
       { transitTo: 'warehouse', processorId: '' },
       { transitTo: 'processor', processorId: '  proc-2  ' },
@@ -136,6 +136,23 @@ describe('提交入参', () => {
       { lineNo: 1, transitTo: 'warehouse' },
       { lineNo: 2, transitTo: 'processor', processorId: 'proc-2' },
     ]);
+  });
+
+  it('行号有空洞时照原样发，不按数组下标重排', () => {
+    // 服务端建单时按顺序编号，但行可能被整行替换过；这里刻意造一个「3、7」的视图，
+    // 证明前端发的是服务端给的行号，而不是自己数出来的 1、2。
+    const gapped: PurchaseOrderDetail = {
+      ...ORDER,
+      lines: [
+        { lineNo: 3, productId: 'p1', qty: '500', unitPrice: '8.6', amount: '4300' },
+        { lineNo: 7, productId: 'p2', qty: '200', unitPrice: '3.2', amount: '640' },
+      ],
+    };
+    const input = buildShipInput(gapped, [
+      { transitTo: 'warehouse', processorId: '' },
+      { transitTo: 'warehouse', processorId: '' },
+    ]);
+    expect(input.lines.map((line) => line.lineNo)).toEqual([3, 7]);
   });
 
   it('去仓库的行不带 processorId（契约里那是直发专用字段）', () => {

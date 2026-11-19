@@ -105,6 +105,15 @@ export type PurchaseOrderLine = z.infer<typeof PurchaseOrderLineSchema>;
  */
 export const PurchaseOrderLineViewSchema = z
   .object({
+    /**
+     * 行号（该单内稳定，1 起，建单时由服务端按顺序落库）。
+     *
+     * **只在视图里出现，创建入参没有它**：开单人提交的是一个数组，行号由服务端定；
+     * 定完就必须回给前端 —— 发货入参 `PurchaseOrderShipInputSchema.lines[].lineNo`
+     * 要按它定位行。此前视图没有这个字段，前端只能拿数组下标当行号，
+     * 而「下标」正是契约注释里点名会「并发改单后错位、把货发错地方」的东西。
+     */
+    lineNo: z.number().int().min(1),
     ...purchaseOrderLineShape,
     unitPrice: NonNegativeDecimal.nullable(),
     amount: NonNegativeDecimal.nullable(),
