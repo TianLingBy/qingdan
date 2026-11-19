@@ -57,6 +57,11 @@ describe('商品资料页', () => {
     expect(html).toContain('10kg/箱');
     expect(html).toContain('无看价权限或未设置');
     expect(html).toContain('新增商品');
+    // 拆列（#338 §2.1）：别名 / 规格 / 单位 各独立一列，不再合并成「补充信息」
+    expect(html).toContain('别名');
+    expect(html).toContain('规格');
+    expect(html).toContain('单位');
+    expect(html).not.toContain('补充信息');
     // 主数据已去掉状态：不再有状态列，操作列提供「删除」而不是「停用」。
     expect(html).not.toContain('状态');
     expect(html).not.toContain('停用');
