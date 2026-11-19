@@ -175,6 +175,20 @@ function formatDateTime(value: string): string {
   }).format(date);
 }
 
+/** 列表用的短时间：`11-19 08:12`。表格里塞完整年月日会把「操作」列挤出卡片（同 A / B 页）。 */
+function formatShortDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  }).format(date);
+}
+
 function productLabel(products: readonly Product[], productId: string): string {
   const hit = products.find((item) => item.id === productId);
   return hit ? hit.name : `商品 ${shortId(productId)}`;
@@ -187,6 +201,24 @@ function batchLabel(batches: readonly InventoryBatch[], batchId: string): string
 
 function totalLineQty(lines: readonly { readonly qty: string }[]): string {
   return lines.length === 0 ? '0' : sumDecimal(lines.map((line) => line.qty));
+}
+
+/**
+ * 列表「商品」列：一单可能多行多商品。
+ *
+ * 只写首行商品名会让人以为整单就这一种货（视觉稿的样例数据恰好都是单行单商品）；
+ * 全列出来又会把「操作」列挤出卡片。折中：首行名 + 「等 N 种」，
+ * N 取**不同商品数**而不是行数——同一商品两行仍然只有一种货。
+ */
+function orderProductSummary(
+  products: readonly Product[],
+  lines: readonly { readonly productId: string }[],
+): string {
+  const first = lines[0];
+  if (!first) return '—';
+  const distinct = new Set(lines.map((line) => line.productId)).size;
+  const label = productLabel(products, first.productId);
+  return distinct > 1 ? `${label} 等 ${distinct} 种` : label;
 }
 
 function StatusBadge({ status }: { status: SalesOrderStatus }) {
@@ -2009,13 +2041,14 @@ export function SalesOrdersPage() {
       */}
       <div className="card" data-state={listState}>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px] text-left">
+          <table className="w-full min-w-[1120px] text-left">
             <thead>
               <tr>
                 <SortableHead field="orderNo" current={sort} order={order} onSort={handleSort}>
                   单号
                 </SortableHead>
                 <th>客户</th>
+                <th>商品</th>
                 <th className="num">数量</th>
                 <SortableHead
                   field="totalAmount"
@@ -2037,12 +2070,12 @@ export function SalesOrdersPage() {
             <tbody data-state={listState}>
               {/* 三个状态行：同一 tbody 内，CSS 按 data-state 只显示其中一个 */}
               <tr className="st-tr st-loading">
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <ListLoading label="正在加载销售单…" />
                 </td>
               </tr>
               <tr className="st-tr st-error">
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <ListError
                     title="销售单加载失败"
                     error={list.error ?? null}
@@ -2051,7 +2084,7 @@ export function SalesOrdersPage() {
                 </td>
               </tr>
               <tr className="st-tr st-empty">
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <ListEmpty title="暂无销售单。可调整筛选条件，或用右上角「+ 新建」开第一张。" />
                 </td>
               </tr>
@@ -2067,6 +2100,7 @@ export function SalesOrdersPage() {
                     </button>
                   </td>
                   <td className="px-4 py-3">{order.customerName}</td>
+                  <td className="px-4 py-3">{orderProductSummary(products, order.lines)}</td>
                   <td className="px-4 py-3 font-mono text-xs">{formatQty(totalLineQty(order.lines))}</td>
                   <td className="px-4 py-3">
                     {canViewPrice ? formatMoney(order.totalAmount) : MASKED_AMOUNT}
@@ -2082,16 +2116,14 @@ export function SalesOrdersPage() {
                     */}
                     {order.handlerId ? employeeLabel(order.handlerId) : '—'}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{formatDateTime(order.createdAt)}</td>
+                  <td className="px-4 py-3 text-slate-600">{formatShortDateTime(order.createdAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => setDetailId(order.id)}
-                        className="btn btn-s"
-                      >
-                        详情
-                      </button>
+                      {/*
+                        这一格原来还有「详情」——和点单号进的是同一个页面，纯冗余。
+                        补「商品」列后 9 列装不下 1150px 的卡片，先去掉重复入口，
+                        留下三个改状态的按钮。
+                      */}
                       <button
                         type="button"
                         disabled={!can('update') || !canViewPrice || order.status !== '进行中'}

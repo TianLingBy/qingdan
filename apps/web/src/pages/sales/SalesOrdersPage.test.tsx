@@ -12,6 +12,7 @@ const COMPANY_ID = '00000000-0000-4000-8000-000000000001';
 const CUSTOMER_ID = '00000000-0000-4000-8000-000000000201';
 const PRODUCT_ID = '00000000-0000-4000-8000-000000000101';
 const BATCH_ID = '00000000-0000-4000-8000-000000000401';
+const SECOND_PRODUCT_ID = '00000000-0000-4000-8000-000000000102';
 
 const PRODUCT: Product = {
   id: PRODUCT_ID,
@@ -66,10 +67,15 @@ const ME_WITH_PRICE = {
 function seedClient(input: {
   readonly me: typeof ME_WITH_PRICE;
   readonly orders: readonly SalesOrder[];
+  /** 商品簿：列表「商品」列靠它把 productId 换回名字。 */
+  readonly products?: readonly Product[];
 }): ReturnType<typeof createQueryClient> {
   const client = createQueryClient();
   client.setQueryData(authKeys.me, input.me);
-  client.setQueryData(salesQueryKeys.products, { items: [PRODUCT], nextCursor: null });
+  client.setQueryData(salesQueryKeys.products, {
+    items: [...(input.products ?? [PRODUCT])],
+    nextCursor: null,
+  });
   client.setQueryData(salesQueryKeys.customers('', ''), { items: [], nextCursor: null });
   client.setQueryData(
     salesQueryKeys.list({
@@ -113,6 +119,45 @@ describe('销售单 E 页面', () => {
     expect(html).toContain('+ 新建');
     // 数量合计来自明细行，不是单头字段
     expect(html).toContain('>10<');
+    // 开单时间用短格式（`11/08 10:00`，与 A / B 页同款）：表格里塞完整年月日会把操作列挤出卡片。
+    expect(html).toContain('11/08 10:00');
+    expect(html).not.toContain('2026/11/08');
+  });
+
+  it('列表「商品」列：单商品写名字，多商品补「等 N 种」', () => {
+    // 一单多行多商品时，只写首行商品名会让人以为整单就这一种货。
+    const single = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
+    expect(single).toContain('不锈钢合页 4寸');
+    expect(single).not.toContain('等 2 种');
+
+    const second: Product = {
+      ...PRODUCT,
+      id: SECOND_PRODUCT_ID,
+      productNo: 'P-1002',
+      name: '铝合金拉手 128mm',
+    };
+    const twoKinds: SalesOrder = {
+      ...ORDER,
+      lines: [ORDER.lines[0]!, { ...ORDER.lines[0]!, productId: SECOND_PRODUCT_ID }],
+    };
+    const multi = renderPage(
+      seedClient({ me: ME_WITH_PRICE, orders: [twoKinds], products: [PRODUCT, second] }),
+    );
+    expect(multi).toContain('不锈钢合页 4寸 等 2 种');
+  });
+
+  it('同一商品拆成两行只算一种货，不写成「等 2 种」', () => {
+    const twoLines: SalesOrder = {
+      ...ORDER,
+      lines: [ORDER.lines[0]!, { ...ORDER.lines[0]!, qty: '5', amount: '62.5' }],
+    };
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [twoLines] }));
+
+    expect(html).toContain('不锈钢合页 4寸');
+    // 「种」按不同商品数算，不是按行数——否则一单分两批发的同一商品会被说成两种。
+    expect(html).not.toContain('等 2 种');
+    // 数量仍然按行合计（10 + 5）。
+    expect(html).toContain('>15<');
   });
 
   it('无看价权限时成交额遮罩，页面不出现任何已格式化金额（D79）', () => {
