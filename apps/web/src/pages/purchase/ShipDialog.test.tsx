@@ -14,8 +14,8 @@ const ORDER: PurchaseOrderDetail = {
   status: '进行中',
   handlerId: 'e1',
   lines: [
-    { productId: 'p1', qty: '500', unitPrice: '8.6', amount: '4300' },
-    { productId: 'p2', qty: '200', unitPrice: '3.2', amount: '640' },
+    { lineNo: 1, productId: 'p1', qty: '500', unitPrice: '8.6', amount: '4300' },
+    { lineNo: 2, productId: 'p2', qty: '200', unitPrice: '3.2', amount: '640' },
   ],
   fees: [],
   goodsAmount: '4940',

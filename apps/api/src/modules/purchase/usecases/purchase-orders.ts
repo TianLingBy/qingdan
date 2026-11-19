@@ -210,8 +210,10 @@ function purchaseBatchPlan(order: PurchaseOrder): {
   readonly allocation: ReturnType<typeof allocatePurchaseFees>;
 } {
   const products = new Map<number, string>();
-  const allocationLines = order.lines.map((line, index) => {
-    const lineNo = index + 1;
+  const allocationLines = order.lines.map((line) => {
+    // 用视图回的行号，不再用数组下标：两者今天相等只是「插入时按顺序编号」的巧合，
+    // 一旦某行被删/重排就会分叉，而发货入参是按行号定位的。
+    const lineNo = line.lineNo;
     products.set(lineNo, line.productId);
     if (line.unitPrice === null || line.amount === null) {
       throw new AppError('VALIDATION_FAILED', '采购单入库需要看价权限');
@@ -607,13 +609,16 @@ export async function shipPurchaseOrder(ctx: PurchaseOrderWriteContext): Promise
     }
 
     const requested = new Map(input.lines.map((line) => [line.lineNo, line]));
+    // 用「这张单真实存在的行号」判定，而不是 `lineNo <= lines.length`：
+    // 行号一旦有空洞，后者会放行一个不存在的行，且下面遍历时静默丢掉它。
+    const knownLineNos = new Set(order.lines.map((line) => line.lineNo));
     for (const lineNo of requested.keys()) {
-      if (lineNo < 1 || lineNo > order.lines.length) {
+      if (!knownLineNos.has(lineNo)) {
         throw new AppError('VALIDATION_FAILED', '发货明细行不存在', { lineNo });
       }
     }
-    const directions = order.lines.map((line, index) => {
-      const lineNo = index + 1;
+    const directions = order.lines.map((line) => {
+      const lineNo = line.lineNo;
       const explicit = requested.get(lineNo);
       const transitTo = explicit?.transitTo ?? line.transitTo ?? 'warehouse';
       const processorId =
@@ -639,9 +644,11 @@ export async function shipPurchaseOrder(ctx: PurchaseOrderWriteContext): Promise
       transitTo: 'warehouse' | 'processor';
       processorId: string | null;
     }> = [];
+    // 按行号取去向，不用 `directions[lineNo - 1]`：下标只是一条「行号连续」的隐含假设。
+    const directionByLineNo = new Map(directions.map((line) => [line.lineNo, line]));
     for (const line of allocation.lines) {
       const productId = products.get(line.lineNo);
-      const direction = directions[line.lineNo - 1];
+      const direction = directionByLineNo.get(line.lineNo);
       if (!productId || !direction) {
         throw new AppError('INTERNAL_ERROR', '采购发货行映射缺失', { lineNo: line.lineNo });
       }

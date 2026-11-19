@@ -212,8 +212,11 @@ function decimal(value: string | number): string {
   return String(value);
 }
 
-function mapLine(row: LineRow): PurchaseOrderLine {
+function mapLine(row: LineRow): PurchaseOrder['lines'][number] {
   return {
+    // 行号必须回给前端：发货入参按它定位行（`PurchaseOrderShipInputSchema`），
+    // 前端拿不到就只能用数组下标，并发改单后会指错行。
+    lineNo: row.line_no,
     productId: row.product_id,
     qty: decimal(row.qty),
     unitPrice: decimal(row.unit_price),
@@ -277,8 +280,8 @@ async function queryHeader(
 async function queryLines(
   ctx: PurchaseOrderRepoContext,
   orderIds: readonly string[],
-): Promise<Map<string, PurchaseOrderLine[]>> {
-  const grouped = new Map<string, PurchaseOrderLine[]>();
+): Promise<Map<string, PurchaseOrder['lines'][number][]>> {
+  const grouped = new Map<string, PurchaseOrder['lines'][number][]>();
   if (orderIds.length === 0) return grouped;
 
   const result = await ctx.tx.query<LineRow & { order_id: string }>(

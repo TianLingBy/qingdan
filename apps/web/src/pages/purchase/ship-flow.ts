@@ -139,12 +139,11 @@ export function validateDirections(
 }
 
 /**
- * 提交入参：`lineNo` 取 `order.lines` 的**顺序号（1 起）**。
+ * 提交入参：`lineNo` 取明细行**自带的 `lineNo`**（视图字段，服务端建单时落库的行号）。
  *
- * 为什么只能这样：视图 `PurchaseOrderLineViewSchema` 没有 `lineNo` 字段，而服务端
- * 收发货时就是按 `order.lines` 的下标算 `lineNo = index + 1`（`usecases/purchase-orders.ts`）。
- * 契约注释担心的「并发改单后下标错位」由「发货前先取最新详情 + 强 ETag」兜住：
- * 真被别人改过，`If-Match` 会 409 而不是把货发到错行。
+ * 曾经只能用 `index + 1`：视图 `PurchaseOrderLineViewSchema` 没有 `lineNo`，而发货入参
+ * 是按行号定位的。现在视图补上了这个字段，前端不再自己数 —— 数组下标在并发改单
+ * （后端行被删/重排）后会错位，指错行等于把货发到错的地方。
  *
  * **每一行都显式发**（不依赖「未列出按回仓库」的缺省）——少一条隐式约定，少一处错。
  */
@@ -153,15 +152,15 @@ export function buildShipInput(
   directions: readonly ShipDirection[],
 ): PurchaseOrderShipInput {
   return {
-    lines: order.lines.map((_line, index) => {
+    lines: order.lines.map((line, index) => {
       const direction = directions[index] ?? { transitTo: 'warehouse', processorId: '' };
       return direction.transitTo === 'processor'
         ? {
-            lineNo: index + 1,
+            lineNo: line.lineNo,
             transitTo: 'processor' as const,
             processorId: direction.processorId.trim(),
           }
-        : { lineNo: index + 1, transitTo: 'warehouse' as const };
+        : { lineNo: line.lineNo, transitTo: 'warehouse' as const };
     }),
   };
 }
