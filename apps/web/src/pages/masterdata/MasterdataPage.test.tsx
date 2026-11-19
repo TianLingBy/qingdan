@@ -217,6 +217,13 @@ describe('商品资料页', () => {
     expect(supplierHtml).toContain('供应商档案');
     expect(supplierHtml).toContain('测试供应商');
     expect(supplierHtml).toContain('纸箱');
+    // 供应商表头拆列（改稿清单 §2.3）：供货物料、主联系人各独立成列，不再有合并的「补充信息」。
+    expect(supplierHtml).toContain('供货物料');
+    expect(supplierHtml).toContain('主联系人');
+    expect(supplierHtml).not.toContain('补充信息');
+    // 主联系人列同时带出联系电话
+    expect(supplierHtml).toContain('李经理');
+    expect(supplierHtml).toContain('10000000000');
 
     const processorClient = createQueryClient();
     processorClient.setQueryData(masterdataQueryKeys.me, me);

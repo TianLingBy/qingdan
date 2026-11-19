@@ -285,7 +285,7 @@ function EntityForm({
 
         {(kind === 'suppliers' || kind === 'processors' || kind === 'customers') && (
           <label className="text-sm">
-            <span className="text-slate-600">联系人</span>
+            <span className="text-slate-600">{kind === 'suppliers' ? '主联系人' : '联系人'}</span>
             <input
               value={form.contactName}
               onChange={(event) => onChange('contactName', event.target.value)}
@@ -326,10 +326,12 @@ function EntityForm({
               />
             </label>
             <label className="text-sm sm:col-span-2">
-              <span className="text-slate-600">供货物料（逗号分隔）</span>
+              {/* 上限来自契约 `SuppliedMaterialsSchema`：最多 20 项、每项 ≤64 字 */}
+              <span className="text-slate-600">供货物料（逗号分隔，最多 20 项）</span>
               <input
                 value={form.suppliedMaterials}
                 onChange={(event) => onChange('suppliedMaterials', event.target.value)}
+                placeholder="如 纸箱、胶带"
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
@@ -670,8 +672,16 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
     isEmpty: rows.length === 0,
   });
   const isProducts = kind === 'products';
-  /** 商品页把「补充信息」拆成 别名 / 规格 / 单位 三列（改稿清单 §2.1）。 */
-  const colCount = isProducts ? 7 : 4;
+  const isSuppliers = kind === 'suppliers';
+  /**
+   * 列结构按页不同（改稿清单 §2.1 / §2.3）：
+   * - 商品：补充信息 → 别名 / 规格 / 单位 三列，另加默认售价列
+   * - 供应商：补充信息 → 供货物料 / 主联系人（含电话）两列
+   * - 加工厂 / 客户：仍是单列补充信息
+   * 编号 + 名称 + 中间列 + 操作
+   */
+  const midColCount = isProducts ? 3 : isSuppliers ? 2 : 1;
+  const colCount = 2 + midColCount + (isProducts ? 1 : 0) + 1;
 
   return (
     <section className="mx-auto max-w-7xl space-y-5">
@@ -765,6 +775,11 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                     <th>规格</th>
                     <th>单位</th>
                   </>
+                ) : isSuppliers ? (
+                  <>
+                    <th>供货物料</th>
+                    <th>主联系人</th>
+                  </>
                 ) : (
                   <th>补充信息</th>
                 )}
@@ -802,6 +817,26 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                       <td className="px-4 py-3 text-slate-600">{item.aliases.join('、') || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{item.specification ?? '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{item.unit}</td>
+                    </>
+                  ) : isSuppliers && 'suppliedMaterials' in item ? (
+                    <>
+                      <td className="px-4 py-3 text-slate-600">
+                        {item.suppliedMaterials.join('、') || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {item.contactName ? (
+                          <>
+                            {item.contactName}
+                            {item.contactPhone && (
+                              <span className="ml-1 font-mono text-xs text-slate-400">
+                                {item.contactPhone}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
                     </>
                   ) : (
                     <td className="px-4 py-3 text-slate-600">{readExtra(item, kind) || '—'}</td>
