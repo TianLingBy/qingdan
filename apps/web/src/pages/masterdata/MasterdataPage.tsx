@@ -12,6 +12,7 @@ import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useCompanyLabel } from '../../lib/company-directory';
 import { resolveListState } from '../../lib/list-state';
+import { ContactDrawer } from './ContactDrawer';
 import {
   extractIssues,
   formatPrice,
@@ -509,6 +510,8 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   const [editing, setEditing] = useState<MasterdataItem | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [selectedProcessor, setSelectedProcessor] = useState<Processor | null>(null);
+  /** 对接人抽屉：客户 / 供应商 / 加工厂三页共用，商品页没有（契约无 product contacts）。 */
+  const [contactTarget, setContactTarget] = useState<MasterdataItem | null>(null);
 
   const me = useQuery({ queryKey: masterdataQueryKeys.me, queryFn: masterdataApi.me });
   const companyIds = me.data?.companyIds ?? [];
@@ -657,6 +660,7 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
     setForm(formFromItem(item, kind));
     setFormOpen(true);
     setSelectedProcessor(null);
+    setContactTarget(null);
   };
   const askDisable = (item: MasterdataItem) => {
     if (globalThis.confirm?.(`确认删除“${item.name}”吗？删除后不能恢复。`) === false) {
@@ -871,15 +875,6 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                   )}
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
-                      {kind === 'processors' && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedProcessor(item as Processor)}
-                          className="rounded border border-slate-300 px-2 py-1 text-xs"
-                        >
-                          价目
-                        </button>
-                      )}
                       <button
                         type="button"
                         onClick={() => beginEdit(item)}
@@ -889,6 +884,26 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                       >
                         编辑
                       </button>
+                      {kind === 'processors' && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProcessor(item as Processor)}
+                          className="rounded border border-slate-300 px-2 py-1 text-xs"
+                        >
+                          价目
+                        </button>
+                      )}
+                      {/* 对接人：客户 / 供应商 / 加工厂三页有（商品页契约里没有对接人）。
+                          读权限即可打开；写操作不在本抽屉，见 ContactDrawer 头注释。 */}
+                      {kind !== 'products' && (
+                        <button
+                          type="button"
+                          onClick={() => setContactTarget(item)}
+                          className="rounded border border-slate-300 px-2 py-1 text-xs"
+                        >
+                          对接人
+                        </button>
+                      )}
                       <button
                         type="button"
                         disabled={!canDelete || disable.isPending}
@@ -940,6 +955,15 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
         <ProcessorQuotes
           processor={selectedProcessor}
           canQuote={allows(me.data?.scope, 'processor', 'create')}
+        />
+      )}
+      {contactTarget && kind !== 'products' && (
+        <ContactDrawer
+          kind={kind}
+          entityId={contactTarget.id}
+          entityName={contactTarget.name}
+          entityLabel={copy.singular}
+          onClose={() => setContactTarget(null)}
         />
       )}
     </section>
