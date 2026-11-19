@@ -42,6 +42,9 @@ const LINE = {
   amount: '25',
 } as const;
 
+/** 视图行：在入参行之上多一个服务端落的行号（发货按它定位行）。 */
+const LINE_VIEW = { ...LINE, lineNo: 1 } as const;
+
 const FEE = {
   feeName: '运费',
   qty: '2',
@@ -59,7 +62,7 @@ const ORDER = {
   supplierName: '李四供应链',
   status: '进行中',
   handlerId: HANDLER_ID,
-  lines: [LINE],
+  lines: [LINE_VIEW],
   fees: [FEE],
   goodsAmount: '25',
   feeAmount: '20',
@@ -214,16 +217,25 @@ describe('采购单契约（purchase）', () => {
 
     // 视图 schema（金额可空）继承了同一份校验——两处只有一份定义。
     expect(
-      PurchaseOrderLineViewSchema.safeParse({ ...LINE, unitPrice: null, amount: null }).success,
+      PurchaseOrderLineViewSchema.safeParse({ ...LINE_VIEW, unitPrice: null, amount: null }).success,
     ).toBe(true);
     expect(
       PurchaseOrderLineViewSchema.safeParse({
-        ...LINE,
+        ...LINE_VIEW,
         unitPrice: null,
         amount: null,
         transitTo: 'processor',
       }).success,
     ).toBe(false);
+
+    // 视图必须回行号：发货入参靠它定位行，缺了前端就只能数下标。
+    expect(
+      PurchaseOrderLineViewSchema.safeParse({ ...LINE, unitPrice: null, amount: null }).success,
+    ).toBe(false);
+    expect(PurchaseOrderLineViewSchema.safeParse({ ...LINE_VIEW, lineNo: 0 }).success).toBe(false);
+    // 创建入参反过来不该带行号（服务端按顺序编号）：多传的键被 strip，不会落进 payload。
+    const createLine = PurchaseOrderLineSchema.parse({ ...LINE_VIEW });
+    expect(Object.keys(createLine)).not.toContain('lineNo');
 
     // 发货入参：至少 1 行，行用 lineNo 定位（数组下标并发改单后会错位）。
     expect(PurchaseOrderShipInputSchema.safeParse({ lines: [] }).success).toBe(false);

@@ -45,7 +45,7 @@ const ORDER: PurchaseOrder = {
   supplierName: '宁波塑料厂',
   status: '进行中',
   handlerId: 'e1',
-  lines: [{ productId: PRODUCT_ID, qty: '500', unitPrice: '8.6', amount: '4300' }],
+  lines: [{ lineNo: 1, productId: PRODUCT_ID, qty: '500', unitPrice: '8.6', amount: '4300' }],
   fees: [{ feeName: '运费', qty: '1', unitPrice: '100', amount: '100', remark: null }],
   goodsAmount: '4300',
   feeAmount: '100',
