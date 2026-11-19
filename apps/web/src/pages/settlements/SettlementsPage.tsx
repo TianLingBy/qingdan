@@ -44,6 +44,7 @@ import {
   lossNote,
   settlementQueryKeys,
   settlementsApi,
+  sourceDocShort,
   sourceDocText,
 } from './settlements-api';
 
@@ -62,6 +63,27 @@ function formatDateTime(value: string): string {
   ).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(
     date.getMinutes(),
   ).padStart(2, '0')}`;
+}
+
+/**
+ * 列表用的短时间：`11-19 08:57`。
+ *
+ * C 单是财务凭证，「哪天生成的」必须能一眼看到（视觉稿也有一列「日期」）；
+ * 但完整年月日占宽太多，年份挪到详情面板。
+ */
+function formatShortDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  })
+    .format(date)
+    .replace(/\//g, '-');
 }
 
 /**
@@ -612,7 +634,7 @@ export function SettlementsPage() {
       */}
       <div className="card" data-state={listState}>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left">
+          <table className="w-full min-w-[1060px] text-left">
             <thead>
               <tr>
                 <th>单号</th>
@@ -623,17 +645,18 @@ export function SettlementsPage() {
                 <th className="num">毛利率</th>
                 <th className="num">提成</th>
                 <th>状态</th>
+                <th>日期</th>
                 <th className="text-right">操作</th>
               </tr>
             </thead>
             <tbody data-state={listState}>
               <tr className="st-tr st-loading">
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <ListLoading label="正在加载结算单…" />
                 </td>
               </tr>
               <tr className="st-tr st-error">
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <ListError
                     title="结算单加载失败"
                     error={list.error}
@@ -642,7 +665,7 @@ export function SettlementsPage() {
                 </td>
               </tr>
               <tr className="st-tr st-empty">
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <ListEmpty title="暂无结算单。结算单不手工开：先在销售单 E / 内部交易单 N 里把单据完成，系统会自动生成草稿（D19）。" />
                 </td>
               </tr>
@@ -658,7 +681,8 @@ export function SettlementsPage() {
                     </button>
                   </td>
                   <td className="whitespace-nowrap text-slate-600">
-                    {sourceDocText(order.sourceDocType, order.sourceDocId, docNoOf(order))}
+                    {/* 列表用紧凑写法（单号自带 E / N 前缀），省宽给「日期」和「操作」 */}
+                    {sourceDocShort(order.sourceDocType, order.sourceDocId, docNoOf(order))}
                   </td>
                   <td className="num">
                     <Money value={order.totalSaleAmount} canView={canViewPrice} />
@@ -677,6 +701,9 @@ export function SettlementsPage() {
                   </td>
                   <td>
                     <StatusBadge status={order.status} />
+                  </td>
+                  <td className="whitespace-nowrap text-slate-600">
+                    {formatShortDateTime(order.createdAt)}
                   </td>
                   <td>
                     <div className="flex justify-end gap-2">

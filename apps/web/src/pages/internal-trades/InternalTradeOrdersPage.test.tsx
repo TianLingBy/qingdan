@@ -171,15 +171,40 @@ function renderDetail(order: InternalTradeOrderDetail, options: RenderDetailOpti
 }
 
 describe('内部交易单 N 页面', () => {
-  it('列表渲染单号、方向、内部价、在途量与四态状态', () => {
+  it('列表渲染单号、方向、商品、内部价与状态', () => {
     const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
 
     expect(html).toContain('内部交易单 N');
     expect(html).toContain('N-0001-20261108-0001');
     expect(html).toContain('演示公司 → 二公司');
+    // 「商品」列：明细只回 productId，靠商品簿换成名字（视觉稿也有这一列）。
+    expect(html).toContain('不锈钢合页 4寸');
     expect(html).toContain('¥125.00');
     expect(html).toContain('在途');
     expect(html).toContain('新建内部交易单');
+  });
+
+  it('列表「商品」列：同一商品拆两行仍是一种货，不写「等 2 种」', () => {
+    // 拆行是很常见的（一批一个批次），按行数算会把一单一种货说成两种。
+    const split: InternalTradeOrder = {
+      ...ORDER,
+      lines: [ORDER.lines[0]!, { ...ORDER.lines[0]!, qty: '5', amount: '62.5' }],
+    };
+    const html = renderPage(seedClient({ me: OWNER, orders: [split] }));
+
+    expect(html).toContain('不锈钢合页 4寸');
+    expect(html).not.toContain('等 2 种');
+    // 数量仍按行合计（10 + 5）。
+    expect(html).toContain('>15<');
+  });
+
+  it('列表把开单时间收成短格式，年份留给详情面板（否则「操作」列出卡片）', () => {
+    const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
+
+    expect(html).toContain('11-08 10:00');
+    expect(html).not.toContain('2026-11-08 10:00');
+    // 在途量已从列表移到详情：列表里「在途」状态已经说明货在路上，具体锁多少在详情看。
+    expect(html).not.toContain('>在途量<');
   });
 
   it('「在途」单据渲染「到货确认」按钮，已完成 / 已取消不渲染（#211 口径变更）', () => {

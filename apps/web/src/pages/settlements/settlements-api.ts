@@ -187,6 +187,19 @@ export function sourceDocText(
 }
 
 /**
+ * 列表用的紧凑文案：C 单号 / E、N 单号都以类型字母开头（`E-…` / `N-…`），
+ * 所以列表里不再重复「销售单 E ·」这五个字——省下来的 ~90px 正好让 10 列进 1150px 卡片。
+ * 详情面板仍用 `sourceDocText` 的完整写法。
+ */
+export function sourceDocShort(
+  type: SettlementSourceDocType,
+  id: string,
+  docNo?: string | null,
+): string {
+  return docNo ?? `${type} · ${id.slice(0, 8)}`;
+}
+
+/**
  * 毛利率展示：契约里是**比例**（`0.5` = 50%），不是百分比数字。
  * 用定点乘法换百分比，保留 2 位；负数（毛利为负）照原样带负号。
  */
