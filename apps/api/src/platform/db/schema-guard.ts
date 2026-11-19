@@ -78,6 +78,9 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // 同上，也是纯数据 backfill，理由一致：采购预设缺这八格的表现是「建不了加工单、
   // 建不了加工厂、供应商退货发起不了」，全部是按钮灰掉而非报错，只能靠启动期提示。
   '20261120020000_purchase_preset_holes_backfill.sql',
+  // 同上。这一条更严重：customer_return 整块在非老板预设里都不存在，
+  // 表现是「销售建不了客户退货、仓管确认不了」，整个功能只有老板能用。
+  '20261120030000_customer_return_preset_backfill.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {
