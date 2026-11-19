@@ -63,6 +63,7 @@ import {
   purchaseQueryKeys,
   sumDecimal,
   type NewSupplierFields,
+  type PurchaseOrderSort,
 } from './purchase-api';
 import { ShipDialog } from './ShipDialog';
 import {
@@ -91,6 +92,41 @@ const STATUS_TONE: Readonly<Record<PurchaseOrderStatus, DocPillTone>> = {
 
 const PAGE_DESCRIPTION =
   '原材料采购：选供应商、填物料与单价，费用行可含运费 / 杂费（不得为负，最低 0）。单号由服务端生成（D16）；完成时费用按明细金额占比摊入批次成本（D83）。';
+
+/**
+ * 可排序表头（D95）。点一次切方向，再点换字段。
+ *
+ * 排序真发给服务端、不是只排当前页：一页 20 行，用户点「货款」想看的是
+ * **全部单里最大的**，只排这 20 行会让最大值藏在第 3 页看不见——看起来还挺正常，
+ * 比没有排序更糟。所以只有后端白名单里那三列（单号 / 货款 / 开单时间）能点，
+ * 其余列表头保持纯文本，不画一个点了没反应的箭头。
+ */
+function SortableHead(props: {
+  readonly field: PurchaseOrderSort;
+  readonly current: PurchaseOrderSort;
+  readonly order: 'asc' | 'desc';
+  readonly onSort: (field: PurchaseOrderSort) => void;
+  readonly className?: string;
+  readonly children: React.ReactNode;
+}) {
+  const active = props.current === props.field;
+  const ariaSort = active ? (props.order === 'asc' ? 'ascending' : 'descending') : 'none';
+  return (
+    <th className={props.className} aria-sort={ariaSort} data-sort={active ? '' : undefined}>
+      <button
+        type="button"
+        onClick={() => props.onSort(props.field)}
+        className="inline-flex items-center gap-1 font-medium hover:text-slate-900"
+        title={`按${typeof props.children === 'string' ? props.children : '该列'}排序`}
+      >
+        {props.children}
+        <span aria-hidden="true" className="text-xs text-slate-400">
+          {active ? (props.order === 'asc' ? '↑' : '↓') : '↕'}
+        </span>
+      </button>
+    </th>
+  );
+}
 
 interface LineDraft {
   productId: string;
@@ -976,8 +1012,15 @@ export function PurchaseOrdersPage() {
   const [supplierFilter, setSupplierFilter] = useState('');
   const [status, setStatus] = useState<'' | PurchaseOrderStatus>('');
   const [keyword, setKeyword] = useState('');
-  const [cursors, setCursors] = useState<(string | null)[]>([null]);
-  const [pageIndex, setPageIndex] = useState(0);
+  /**
+   * 页码模式（D95）。原来是 `cursors: (string|null)[]` + `pageIndex` 的游标栈：
+   * 游标下「上一页」得靠回退栈、页码只能显示「第 N 批」且不知道总页数。
+   * 采购单是后端三个试点之一，列表已回 `total`，页码条能画 `1 / 12 页 · 共 N 张`。
+   */
+  const [page, setPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [sort, setSort] = useState<PurchaseOrderSort>('createdAt');
+  const [order, setOrder] = useState<'asc' | 'desc'>('desc');
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<PurchaseOrderDetail | null>(null);
@@ -1039,8 +1082,7 @@ export function PurchaseOrdersPage() {
   }, [companyIds, formCompanyId]);
 
   useEffect(() => {
-    setCursors([null]);
-    setPageIndex(0);
+    setPage(1);
   }, [companyId, supplierFilter, status, keyword]);
 
   const filters = useMemo(
@@ -1049,9 +1091,12 @@ export function PurchaseOrdersPage() {
       supplierId: optionalText(supplierFilter),
       status: status || undefined,
       keyword: optionalText(keyword),
-      cursor: cursors[pageIndex] ?? null,
+      page,
+      pageSize,
+      sort,
+      order,
     }),
-    [companyId, supplierFilter, status, keyword, cursors, pageIndex],
+    [companyId, supplierFilter, status, keyword, page, pageSize, sort, order],
   );
 
   const list = useQuery({
@@ -1419,8 +1464,26 @@ export function PurchaseOrdersPage() {
   };
 
   const serverIssues = save.error instanceof ApiError ? extractIssues(save.error.details) : [];
+  /**
+   * 切排序。点同一列就翻方向，点别的列换字段并回到 `desc`（列表默认看最新的）。
+   * 换排序后必须回第 1 页：第 5 页的「货款最大」在新排序下没有意义，还可能直接超界。
+   */
+  const handleSort = (field: PurchaseOrderSort) => {
+    if (field === sort) {
+      setOrder((current) => (current === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSort(field);
+      setOrder('desc');
+    }
+    setPage(1);
+  };
   const rows = list.data?.items ?? [];
-  const nextCursor = list.data?.nextCursor ?? null;
+  /**
+   * 页码模式（D95）：`total` 才是真的总条数。为 null 说明后端走了游标模式（老端点），
+   * 这时不画页码条——画了也点不动，用户会以为翻页坏了。
+   */
+  const total = list.data?.total ?? null;
+  const totalPages = total === null ? null : Math.max(1, Math.ceil(total / pageSize));
   const detailOrder = detail.data;
   const listState = resolveListState({
     isPending: list.isPending,
@@ -1583,20 +1646,39 @@ export function PurchaseOrdersPage() {
       {/*
         列表（v0.13）：容器与 tbody 挂同一个 data-state，数据行 `r-row`、
         三行状态行常驻且带 `st-tr st-*`，显隐交给 `app-v013.css`。
-        分页按游标契约写「上一批 / 下一批」（ListQuery 没有 total，画页码只能靠猜）。
+        分页走页码模式（D95）：后端回 `total`，页码条画「共 N 张 · / K 页」，
+        可点的表头只限排序白名单里的单号 / 货款 / 开单时间三列。
       */}
       <div className="card" data-state={listState}>
         <div className="overflow-x-auto">
           <table className="w-full text-left" style={{ minWidth: '920px' }}>
             <thead>
               <tr>
-                <th>单号</th>
+                <SortableHead field="orderNo" current={sort} order={order} onSort={handleSort}>
+                  单号
+                </SortableHead>
                 <th>供应商</th>
                 <th>物料</th>
                 <th className="num">数量</th>
-                <th className="num">货款</th>
+                <SortableHead
+                  field="totalAmount"
+                  current={sort}
+                  order={order}
+                  onSort={handleSort}
+                  className="num"
+                >
+                  货款
+                </SortableHead>
                 <th>状态</th>
-                <th className="num">开单时间</th>
+                <SortableHead
+                  field="createdAt"
+                  current={sort}
+                  order={order}
+                  onSort={handleSort}
+                  className="num"
+                >
+                  开单时间
+                </SortableHead>
                 <th />
               </tr>
             </thead>
@@ -1682,33 +1764,43 @@ export function PurchaseOrdersPage() {
           </table>
         </div>
 
-        <div className="pager">
-          <span className="count">
-            共 {rows.length} 条 · 第 {pageIndex + 1} 批
-          </span>
-          <div className="nav">
-            <button
-              type="button"
-              className="btn btn-s"
-              disabled={pageIndex === 0}
-              onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-            >
-              上一批
-            </button>
-            <button
-              type="button"
-              className="btn btn-s"
-              disabled={!nextCursor}
-              onClick={() => {
-                if (!nextCursor) return;
-                setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
-                setPageIndex((index) => index + 1);
-              }}
-            >
-              下一批
-            </button>
+        {/*
+          页码条（v0.13 `.pager`）。`total` 为 null 说明后端还走游标模式（老端点），
+          这时不画页码条更好——画了也点不动，用户会以为坏了。
+        */}
+        {totalPages !== null && (
+          <div className="pager">
+            <span className="count">共 {total} 张</span>
+            <div className="nav">
+              <button
+                type="button"
+                className="btn btn-s"
+                disabled={page <= 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                上一页
+              </button>
+              <input
+                value={page}
+                aria-label="页码"
+                inputMode="numeric"
+                onChange={(event) => {
+                  const next = Number.parseInt(event.target.value, 10);
+                  if (Number.isFinite(next)) setPage(Math.min(totalPages, Math.max(1, next)));
+                }}
+              />
+              <span className="of">/ {totalPages} 页</span>
+              <button
+                type="button"
+                className="btn btn-s"
+                disabled={page >= totalPages}
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              >
+                下一页
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {detailId !== null && (
