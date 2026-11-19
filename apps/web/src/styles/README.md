@@ -123,6 +123,7 @@ tbody[data-state="error"] > tr.st-tr.st-error{display:table-row}
 | 侧栏 | `sidebar`、`brand`、`sb-nav`、`sb-domain`、`sb-link`（当前页加 `on`） |
 | 顶栏 | `topbar`、`crumb`（含 `sep` / `cur`）、`snapshot`、`actions` |
 | 区块容器 | `panel`（`--bg-1` 底 + `--r-panel` 圆角 + `--line-1` 描边）、`panel-h` 标题行 |
+| 列表容器 | `card`（`app-v013.css` 里带 `table` / `thead th` / `tbody td` 的内边距规则，五张单据页都用它）。**自带 `overflow:hidden`**：表格要横向滚动必须套一层 `overflow-x-auto`，否则是直接裁断而不是出滚动条 |
 | 表格 | `table`、`num`（等宽数字列）、`thead th` 已 sticky |
 | 按钮 | `btn` + `btn-p`（主要）/ `btn-s`（次要）/ `btn-ghost`（幽灵）/ `btn-g`（危险），尺寸 `btn-g` |
 | 状态徽章 | `badge` + `st-*` 语义色，或 `chip` |
@@ -134,7 +135,8 @@ tbody[data-state="error"] > tr.st-tr.st-error{display:table-row}
 
 ## 不要用的类名
 
-- **`.card` / `.cards` / `.cards-view` / `.card-h` / `.card-sub`**：v0.13 里这些是**卡片视图切换控件**的样式，不是通用容器。要容器用 `panel`。
+- **`.cards` / `.cards-view`**：**卡片视图切换控件**。`.cards` 默认 `display:none`，只有挂在 `.card.cards-view` 下才显示成网格。别当容器用 —— 容器用上面的 `card`（列表）或 `panel`（区块）。
+- **`.card-h` / `.card-sub`**：卡片标题 / 副标题的**文字样式**，不是容器。
 - **`.d` / `.a` / `.s` / `.c`**：这是**权限字母**（删 / 增 / 查 / 改）的缩写，别当尺寸类用。
 - **`.drag-tip` / `.code-btn` / `.comp-row` / `.comp-eq`**：这几组是设计稿里「演示/说明」专用，产品页不需要。
 - **任何直接写死颜色值**：一律走 `var(--*)`。设计稿的 `!important` 只用在亮色主题覆盖、圆角规范、reduced-motion、打印这四处，你新写的样式不该出现 `!important`。
