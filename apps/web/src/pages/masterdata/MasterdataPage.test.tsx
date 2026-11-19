@@ -241,7 +241,10 @@ describe('商品资料页', () => {
     );
     expect(processorHtml).toContain('加工厂档案');
     expect(processorHtml).toContain('测试加工厂');
-    expect(processorHtml).toContain('报价');
+    // 行操作按钮文案按改稿清单 §2.4 由「报价」改为「价目」；主联系人独立成列且不显示电话。
+    expect(processorHtml).toContain('价目');
+    expect(processorHtml).toContain('主联系人');
+    expect(processorHtml).toContain('王师傅');
   });
 
   it('客户档案页渲染联系人、电话与账期，且不出现任何金额列', () => {

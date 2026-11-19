@@ -285,7 +285,9 @@ function EntityForm({
 
         {(kind === 'suppliers' || kind === 'processors' || kind === 'customers') && (
           <label className="text-sm">
-            <span className="text-slate-600">{kind === 'suppliers' ? '主联系人' : '联系人'}</span>
+            <span className="text-slate-600">
+              {kind === 'customers' ? '联系人' : '主联系人'}
+            </span>
             <input
               value={form.contactName}
               onChange={(event) => onChange('contactName', event.target.value)}
@@ -399,6 +401,10 @@ export function ProcessorQuotes({
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="font-semibold">{processor.name} · 历史加工报价</h2>
+      {/* 口径（改稿清单 §2.4）：价目只增不改，调价按生效日期新增一条，历史行不动 */}
+      <p className="mt-1 text-xs text-slate-500">
+        价目只增不改：调价请按新的生效日期新增一条，历史价目原样保留。
+      </p>
       <form
         className="mt-4 grid gap-3 sm:grid-cols-4"
         onSubmit={(event) => {
@@ -459,7 +465,7 @@ export function ProcessorQuotes({
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-xs text-slate-500">
               <tr>
-                <th className="py-2">日期</th>
+                <th className="py-2">生效日期</th>
                 <th className="py-2">工序</th>
                 <th className="py-2">单价</th>
                 <th className="py-2">备注</th>
@@ -780,6 +786,9 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                     <th>供货物料</th>
                     <th>主联系人</th>
                   </>
+                ) : kind === 'processors' ? (
+                  /* 加工厂只有 contactName，无联系电话，故本列不带电话（改稿清单 §2.4） */
+                  <th>主联系人</th>
                 ) : (
                   <th>补充信息</th>
                 )}
@@ -852,7 +861,7 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                           onClick={() => setSelectedProcessor(item as Processor)}
                           className="rounded border border-slate-300 px-2 py-1 text-xs"
                         >
-                          报价
+                          价目
                         </button>
                       )}
                       <button
