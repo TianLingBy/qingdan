@@ -75,6 +75,9 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // 的口径本可以不入册。登记它是因为后果同样不可接受：三个预设的发货按钮会永久 403，
   // 而这类「功能静默半瘫」在运行时不报错，只能靠启动期检出来提示先去跑 migrate。
   '20261120010000_purchase_ship_preset_backfill.sql',
+  // 同上，也是纯数据 backfill，理由一致：采购预设缺这八格的表现是「建不了加工单、
+  // 建不了加工厂、供应商退货发起不了」，全部是按钮灰掉而非报错，只能靠启动期提示。
+  '20261120020000_purchase_preset_holes_backfill.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

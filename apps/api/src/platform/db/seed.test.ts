@@ -94,6 +94,41 @@ describe('seed（演示租户）', () => {
     }
   });
 
+  it('#414 护栏抓到的采购预设漏洞：加工单/加工厂/供应商退货三块都补上了', async () => {
+    // 背景：这几格不是「口径未定」，是「业务上明明有人该做，但那个预设整块没有这个域」。
+    // 采购能建供应商却建不了加工厂、能跟单却建不了加工单、能发起退货却确认不了。
+    const rows = await test.database.query<{ domain: string; action: string }>(
+      `SELECT pp.domain, pp.action
+         FROM position p
+         JOIN position_permission pp ON pp.position_id = p.id
+        WHERE p.tenant_id = $1
+          AND p.preset_key = 'purchase'
+          AND pp.granted = true`,
+      [DEMO_IDS.tenantId],
+    );
+    const granted = new Set(rows.rows.map((row) => `${row.domain}.${row.action}`));
+
+    // 补齐的八格。每一格都对应一个「此前点不到的按钮」。
+    for (const scope of [
+      'processing.read',
+      'processing.create',
+      'processor.read',
+      'processor.create',
+      'processor.update',
+      'supplier_return.read',
+      'supplier_return.create',
+      'supplier_return.approve',
+    ]) {
+      expect(granted.has(scope)).toBe(true);
+    }
+
+    // 刻意没补的三格 —— 它们要么动库存与成本、要么是高争议动作，仍归老板/经理。
+    // 写成反向断言，防止有人「顺手补全」时把审批权一起放给采购。
+    for (const scope of ['processing.approve', 'processing.ship', 'supplier_return.delete']) {
+      expect(granted.has(scope)).toBe(false);
+    }
+  });
+
   it('重复执行幂等：不重复建岗位/员工', async () => {
     await seed(test.database);
 
