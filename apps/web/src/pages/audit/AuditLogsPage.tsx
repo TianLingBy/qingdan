@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import type { AuditLog } from '@qingdan/contracts';
 import { platformAdminApi } from '../../api/platform-admin';
 import { ApiError } from '../../api/client';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
@@ -35,21 +36,10 @@ export function AuditLogsPage() {
   const logs = listQuery.data?.items ?? [];
   const nextCursor = listQuery.data?.nextCursor ?? null;
 
-  const filtered = useMemo(() => {
-    const actor = actorKeyword.trim().toLowerCase();
-    const object = objectKeyword.trim().toLowerCase();
-    return logs.filter((log) => {
-      if (actor !== '') {
-        const haystack = `${log.actorType} ${log.actorId}`.toLowerCase();
-        if (!haystack.includes(actor)) return false;
-      }
-      if (object !== '') {
-        const haystack = `${log.objectType} ${log.objectId ?? ''}`.toLowerCase();
-        if (!haystack.includes(object)) return false;
-      }
-      return true;
-    });
-  }, [logs, actorKeyword, objectKeyword]);
+  const filtered = useMemo(
+    () => filterAuditLogs(logs, actorKeyword, objectKeyword),
+    [logs, actorKeyword, objectKeyword],
+  );
 
   const listState: ListState = resolveListState({
     isPending: listQuery.isPending,
@@ -181,4 +171,28 @@ export function AuditLogsPage() {
 /** 长 uuid 只显示前 8 位，完整值放 title 悬浮。 */
 function shortId(id: string): string {
   return id.length > 12 ? `${id.slice(0, 8)}…` : id;
+}
+
+/**
+ * 客户端筛选（纯函数，便于单测）：操作人按 `actorType + actorId` 匹配、对象按
+ * `objectType + objectId` 匹配，大小写不敏感；空关键字不过滤。后端暂无 keyword 参数。
+ */
+export function filterAuditLogs(
+  logs: readonly AuditLog[],
+  actorKeyword: string,
+  objectKeyword: string,
+): AuditLog[] {
+  const actor = actorKeyword.trim().toLowerCase();
+  const object = objectKeyword.trim().toLowerCase();
+  return logs.filter((log) => {
+    if (actor !== '') {
+      const haystack = `${log.actorType} ${log.actorId}`.toLowerCase();
+      if (!haystack.includes(actor)) return false;
+    }
+    if (object !== '') {
+      const haystack = `${log.objectType} ${log.objectId ?? ''}`.toLowerCase();
+      if (!haystack.includes(object)) return false;
+    }
+    return true;
+  });
 }
