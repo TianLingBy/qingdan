@@ -77,6 +77,9 @@ const POSITIONS: readonly PositionSeed[] = [
         'inventory_qty', 'inventory_flow', 'company', 'profit_report'].flatMap((domain) =>
         perms(domain, ['read']),
       ),
+      // D94 把发货从 update 拆成独立的 ship；经理要能在采购员/仓管不在时代班发货，
+      // 属于预设口径补全（不是逻辑修复）。
+      ...perms('purchase', ['ship']),
       // D71：经理可录盘盈/盘亏，且按 D47「老板或经理审批」必须持 approve。
       ...perms('stocktake', ['read', 'create', 'delete', 'approve']),
       ...perms('employee', ['read']),
@@ -155,7 +158,8 @@ const POSITIONS: readonly PositionSeed[] = [
       // D47「理货可发起减少调整申请」+ D71：仓管只给删减（盘亏），不给盘盈。
       ...perms('stocktake', ['read', 'delete']),
       ...perms('processing', ['read', 'update']),
-      ...perms('purchase', ['read']),
+      // D94 把发货从 update 拆成独立的 ship；仓管是实际出库人，口径补全。
+      ...perms('purchase', ['read', 'ship']),
       ...perms('workbench', ['read']),
     ],
   },
@@ -166,7 +170,8 @@ const POSITIONS: readonly PositionSeed[] = [
     isSystem: true,
     presetKey: 'purchase',
     permissions: [
-      ...perms('purchase', ['read', 'create', 'update', 'approve']),
+      // D94 把发货从 update 拆成独立的 ship；采购员是实际发货人，口径补全。
+      ...perms('purchase', ['read', 'create', 'update', 'approve', 'ship']),
       ...perms('product', ['read', 'create', 'update']),
       ...perms('supplier', ['read', 'create', 'update']),
       ...perms('inventory_qty', ['read']),

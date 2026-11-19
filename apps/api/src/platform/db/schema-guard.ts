@@ -69,6 +69,12 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // 权限设置页授予「看经手人」也 500。读端只是查不到授权（回 403），不会崩，
   // 但写端崩在初始化阶段，比读端 403 严重得多。
   '20261116154500_allow_view_handler_action.sql',
+  // D94 / #402：给存量租户的经理 / 纯仓管 / 采购三个预设补授 `purchase.ship`。
+  //
+  // 这条是**纯数据 backfill**，缺了不会 500，也不会撞约束——按上面「只登记代码硬依赖」
+  // 的口径本可以不入册。登记它是因为后果同样不可接受：三个预设的发货按钮会永久 403，
+  // 而这类「功能静默半瘫」在运行时不报错，只能靠启动期检出来提示先去跑 migrate。
+  '20261120010000_purchase_ship_preset_backfill.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

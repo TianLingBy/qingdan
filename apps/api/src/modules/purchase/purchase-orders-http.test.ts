@@ -16,12 +16,14 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
  *   - 已完成不可改、不可取消（422）；有下游不可取消（409）；
  *   - D83 负数费用 422；
  *   - D52.1 AI 凭证开单 / 取消 → 403 AI_ACTION_FORBIDDEN；
+ *   - 撤销发货必须带 X-Reason（D94 ⑤），审计保留原文；
  *   - 写操作成功审计落 audit_log（D51），普通读不记。
  */
 
 const PUBLIC_BASE_URL = 'https://qingdan.example';
 
 const OWNER_PHONE = '10000000001';
+const SALES_PHONE = '10000000003';
 const WAREHOUSE_PHONE = '10000000004';
 const OUTSIDE_PHONE = '10000000005';
 
@@ -72,6 +74,7 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
   let test: TestDatabase;
   let app: FastifyInstance;
   let ownerCookie: string;
+  let salesCookie: string;
   let warehouseCookie: string;
   let outsideCookie: string;
 
@@ -167,6 +170,7 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
     });
     await app.ready();
     ownerCookie = await login(app, OWNER_PHONE, 'req-po-login-owner');
+    salesCookie = await login(app, SALES_PHONE, 'req-po-login-sales');
     warehouseCookie = await login(app, WAREHOUSE_PHONE, 'req-po-login-warehouse');
     outsideCookie = await login(app, OUTSIDE_PHONE, 'req-po-login-outside');
   });
@@ -203,10 +207,12 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
     expect(ghostLine.statusCode).toBe(422);
     expect(ghostLine.json()).toMatchObject({ details: { lineNo: 3 } });
 
+    // D94 口径补全后纯仓管已持有 purchase.ship（实际出库人），
+    // 改用只有销售域的岗位验证「无 ship 权限 → 403」。
     const denied = await app.inject({
       method: 'POST',
       url: `/api/v1/purchase-orders/${order.id}/ship`,
-      headers: writeHeaders(warehouseCookie, nextRequestId('transit-denied'), {
+      headers: writeHeaders(salesCookie, nextRequestId('transit-denied'), {
         'if-match': '"1"',
       }),
       payload: { lines: [{ lineNo: 1, transitTo: 'warehouse' }] },
@@ -237,6 +243,52 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
     expect(received.json()).toMatchObject({ status: '已完成', version: 3 });
   });
 
+  it('撤销发货：缺 X-Reason 422；带原因成功，且审计保留原文', async () => {
+    const order = await createOne(nextRequestId('revoke-reason'));
+    const shipped = await app.inject({
+      method: 'POST',
+      url: `/api/v1/purchase-orders/${order.id}/ship`,
+      headers: writeHeaders(ownerCookie, nextRequestId('revoke-reason-ship'), {
+        'if-match': '"1"',
+      }),
+      payload: { lines: [{ lineNo: 1, transitTo: 'warehouse' }] },
+    });
+    expect(shipped.statusCode).toBe(200);
+
+    const missing = await app.inject({
+      method: 'POST',
+      url: `/api/v1/purchase-orders/${order.id}/ship/revoke`,
+      headers: writeHeaders(ownerCookie, nextRequestId('revoke-reason-missing'), {
+        'if-match': '"2"',
+      }),
+    });
+    expect(missing.statusCode).toBe(422);
+    expect(missing.json()).toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(missing.json().details.header).toBe('X-Reason');
+
+    const reason = '供应商临时缺货，改天再发';
+    const revoked = await app.inject({
+      method: 'POST',
+      url: `/api/v1/purchase-orders/${order.id}/ship/revoke`,
+      headers: writeHeaders(ownerCookie, nextRequestId('revoke-reason-ok'), {
+        'if-match': '"2"',
+        'x-reason': reason,
+      }),
+    });
+    expect(revoked.statusCode).toBe(200);
+    expect(revoked.json()).toMatchObject({ status: '进行中', version: 3 });
+
+    const audit = await test.database.query<{ reason: string | null }>(
+      `SELECT reason
+         FROM audit_log
+        WHERE action = 'purchase.order.ship.revoke'
+          AND object_id = $1
+          AND result = 'success'`,
+      [order.id],
+    );
+    expect(audit.rows[0]?.reason).toBe(reason);
+  });
+
   it('未登录 → 401；无 purchase.create → 403', async () => {
     const anonymous = await app.inject({
       method: 'GET',
@@ -246,7 +298,7 @@ describe('purchase 采购单 HTTP（PGlite + seed 演示租户）', () => {
     expect(anonymous.statusCode).toBe(401);
     expect(anonymous.json()).toMatchObject({ code: 'UNAUTHENTICATED' });
 
-    // 纯仓管只有 purchase.read。
+    // 纯仓管只有 purchase.read / purchase.ship（D94 口径），没有 create。
     const list = await app.inject({
       method: 'GET',
       url: '/api/v1/purchase-orders',
