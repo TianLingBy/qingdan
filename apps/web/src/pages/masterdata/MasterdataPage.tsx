@@ -669,6 +669,9 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
     hasError: list.error !== null,
     isEmpty: rows.length === 0,
   });
+  const isProducts = kind === 'products';
+  /** 商品页把「补充信息」拆成 别名 / 规格 / 单位 三列（改稿清单 §2.1）。 */
+  const colCount = isProducts ? 7 : 4;
 
   return (
     <section className="mx-auto max-w-7xl space-y-5">
@@ -756,20 +759,28 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
               <tr>
                 <th>编号</th>
                 <th>名称</th>
-                <th>补充信息</th>
-                {kind === 'products' && <th className="num">默认售价</th>}
+                {isProducts ? (
+                  <>
+                    <th>别名</th>
+                    <th>规格</th>
+                    <th>单位</th>
+                  </>
+                ) : (
+                  <th>补充信息</th>
+                )}
+                {isProducts && <th className="num">默认售价</th>}
                 <th className="text-right">操作</th>
               </tr>
             </thead>
             <tbody data-state={listState}>
               {/* 三个状态行常驻 DOM，CSS 按 data-state 只显示其中一个 */}
               <tr className="st-tr st-loading">
-                <td colSpan={kind === 'products' ? 5 : 4}>
+                <td colSpan={colCount}>
                   <ListLoading label={`正在加载${copy.title}…`} rows={4} />
                 </td>
               </tr>
               <tr className="st-tr st-error">
-                <td colSpan={kind === 'products' ? 5 : 4}>
+                <td colSpan={colCount}>
                   <ListError
                     title={`${copy.title}加载失败`}
                     error={list.error ?? null}
@@ -778,7 +789,7 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                 </td>
               </tr>
               <tr className="st-tr st-empty">
-                <td colSpan={kind === 'products' ? 5 : 4}>
+                <td colSpan={colCount}>
                   <ListEmpty title="暂无数据。可调整筛选条件或新增一条记录。" />
                 </td>
               </tr>
@@ -786,8 +797,16 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                 <tr key={item.id} className="r-row">
                   <td className="px-4 py-3 text-slate-500">{readNumber(item, kind) ?? '—'}</td>
                   <td className="px-4 py-3 font-medium">{item.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{readExtra(item, kind) || '—'}</td>
-                  {kind === 'products' && (
+                  {isProducts && 'aliases' in item ? (
+                    <>
+                      <td className="px-4 py-3 text-slate-600">{item.aliases.join('、') || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.specification ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.unit}</td>
+                    </>
+                  ) : (
+                    <td className="px-4 py-3 text-slate-600">{readExtra(item, kind) || '—'}</td>
+                  )}
+                  {isProducts && (
                     <td className="px-4 py-3">{formatPrice(readPrice(item, kind))}</td>
                   )}
                   <td className="px-4 py-3">
