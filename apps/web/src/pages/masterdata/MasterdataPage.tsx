@@ -782,7 +782,8 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                   /* 加工厂只有 contactName，无联系电话，故本列不带电话（改稿清单 §2.4） */
                   <th>主联系人</th>
                 ) : (
-                  <th>补充信息</th>
+                  /* 客户：主联系人独立成列（姓名 + 电话副标），账期只在表单里维护（改稿清单 §2.2） */
+                  <th>主联系人</th>
                 )}
                 {isProducts && <th className="num">默认售价</th>}
                 <th className="text-right">操作</th>
@@ -839,6 +840,21 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                         )}
                       </td>
                     </>
+                  ) : kind === 'customers' && 'contactPhone' in item ? (
+                    <td className="px-4 py-3 text-slate-600">
+                      {item.contactName ? (
+                        <>
+                          {item.contactName}
+                          {item.contactPhone && (
+                            <span className="ml-1 font-mono text-xs text-slate-400">
+                              {item.contactPhone}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                   ) : (
                     <td className="px-4 py-3 text-slate-600">{readExtra(item, kind) || '—'}</td>
                   )}

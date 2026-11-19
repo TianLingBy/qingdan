@@ -246,7 +246,7 @@ describe('商品资料页', () => {
     expect(processorHtml).toContain('王师傅');
   });
 
-  it('客户档案页渲染联系人、电话与账期，且不出现任何金额列', () => {
+  it('客户档案页主联系人独立成列（姓名+电话），且不出现任何金额列', () => {
     const customer: Customer = {
       id: 'c1',
       tenantId: 't1',
@@ -285,8 +285,11 @@ describe('商品资料页', () => {
 
     expect(html).toContain('客户档案');
     expect(html).toContain('测试客户');
+    // 表头按改稿清单 §2.2：主联系人独立成列，姓名后带电话；不再有合并的「补充信息」列。
+    expect(html).toContain('主联系人');
     expect(html).toContain('赵老板');
-    expect(html).toContain('账期 30 天');
+    expect(html).toContain('13900000000');
+    expect(html).not.toContain('补充信息');
     expect(html).toContain('新增客户');
     // 客户没有金额口径（D49 注释），页面不得出现售价列
     expect(html).not.toContain('默认售价');
