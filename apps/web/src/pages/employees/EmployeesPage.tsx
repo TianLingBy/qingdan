@@ -17,6 +17,13 @@ import { PermissionOverridePanel } from './PermissionOverridePanel';
  * 隐私口径：手机号只展示脱敏值；数据可见范围由服务端判定（D15，前端隐藏不算数）。
  */
 
+/** 状态分段（视觉稿口径：全部 / 在职 / 停用）。 */
+const STATUS_TABS = [
+  { value: '', label: '全部' },
+  { value: '在职', label: '在职' },
+  { value: '停用', label: '停用' },
+] as const;
+
 export function EmployeesPage() {
   const employeesQuery = useQuery({
     queryKey: ['employees'],
@@ -38,18 +45,39 @@ export function EmployeesPage() {
     employeeId: null,
   });
   const [keyword, setKeyword] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [companyFilter, setCompanyFilter] = useState('');
 
   const employees = employeesQuery.data?.items ?? [];
+  /**
+   * 筛选一律**本地过滤**：`fetchEmployees()` 固定 `limit=100` 且不传参数，
+   * 后端是否支持 keyword/status/companyId 未证实（改稿清单 §六.5），不自造查询参数。
+   */
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
-    if (kw === '') return employees;
-    return employees.filter(
-      (e) =>
+    const meId = meQuery.data?.employeeId;
+    return employees.filter((e) => {
+      // 契约：is_owner 员工除本人外不可读；等 me 到了再过滤，避免首屏闪掉本人
+      if (e.isOwner && meId !== undefined && e.id !== meId) return false;
+      if (statusFilter !== '' && e.status !== statusFilter) return false;
+      if (companyFilter !== '' && !e.companies.some((c) => c.companyId === companyFilter)) {
+        return false;
+      }
+      if (kw === '') return true;
+      return (
         e.name.toLowerCase().includes(kw) ||
         e.employeeNo.includes(kw) ||
-        e.phoneMasked.includes(kw),
-    );
-  }, [employees, keyword]);
+        e.phoneMasked.includes(kw)
+      );
+    });
+  }, [employees, keyword, statusFilter, companyFilter, meQuery.data?.employeeId]);
+
+  /** 公司筛选项：从员工档案里的 companies 聚合（不额外打组织接口）。 */
+  const companyOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    employees.forEach((e) => e.companies.forEach((c) => map.set(c.companyId, c.companyName)));
+    return [...map.entries()];
+  }, [employees]);
 
   const canOpenPanel = meQuery.data !== undefined;
   /** 列表四态：交给容器与 tbody 的 `data-state` 驱动，不写 JSX 三元分支。 */
@@ -68,11 +96,43 @@ export function EmployeesPage() {
             已接真实接口
           </span>
         </div>
+      </div>
+
+      {/* 工具条（照样板页 `.toolbar` + `.seg`）：状态分段 + 公司下拉 + 搜索，全为本地过滤 */}
+      <div className="toolbar mt-4">
+        <div className="seg" role="group" aria-label="按状态筛选">
+          {STATUS_TABS.map((tab) => (
+            <button
+              key={tab.value || 'all'}
+              type="button"
+              className={statusFilter === tab.value ? 'on' : undefined}
+              aria-pressed={statusFilter === tab.value}
+              onClick={() => setStatusFilter(tab.value)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {companyOptions.length > 1 && (
+          <select
+            value={companyFilter}
+            onChange={(event) => setCompanyFilter(event.target.value)}
+            aria-label="按公司筛选"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          >
+            <option value="">全部公司</option>
+            {companyOptions.map(([id, name]) => (
+              <option key={id} value={id} title={id}>
+                {name}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           type="search"
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
-          placeholder="按姓名 / 工号 / 手机号后四位筛选"
+          placeholder="姓名 / 工号"
           className="w-64 rounded border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-slate-400"
         />
       </div>
