@@ -94,7 +94,7 @@ describe('工作台版式', () => {
     expect(html).not.toContain('采购单待审核');
   });
 
-  it('加载中只出骨架，不出数字', () => {
+  it('加载中：容器挂 data-state=loading，骨架可见、笔数显示占位符', () => {
     const html = renderToStaticMarkup(
       <WorkbenchView
         displayName="张明"
@@ -107,8 +107,10 @@ describe('工作台版式', () => {
       />,
     );
 
+    expect(html).toContain('data-state="loading"');
     expect(html).toContain('aria-label="待办加载中"');
-    expect(html).not.toContain('当前没有待办');
+    // 加载时笔数显示占位符，不显示 0 —— 0 会被读成「今天真没活」
+    expect(html).toContain('<b>—</b>');
   });
 
   it('页面里没有「占位数据」字样 —— 待办接的是真接口', () => {
@@ -150,17 +152,21 @@ describe('入口卡片', () => {
 });
 
 describe('待办面板', () => {
-  it('空状态与列表互斥', () => {
+  it('四态同一条 DOM：data-state 决定显示哪个分支（不写条件渲染）', () => {
     const empty = renderToStaticMarkup(<TodoPanel todos={[]} loading={false} emptyHint="说明文案" />);
+    expect(empty).toContain('data-state="empty"');
     expect(empty).toContain('当前没有待办');
     expect(empty).toContain('说明文案');
 
     const list = renderToStaticMarkup(
       <TodoPanel todos={TODO_FIXTURES} loading={false} emptyHint="说明文案" />,
     );
+    expect(list).toContain('data-state="filled"');
     expect(list).toContain('采购单待审核');
     expect(list).toContain('3 笔');
-    expect(list).not.toContain('当前没有待办');
+    // 四个分支常驻 DOM（由 app-v013.css 的 [data-state] > .st-block 切显示），
+    // 所以 filled 时空态文案也在 DOM 里 —— 靠 CSS 隐藏，不靠不渲染。
+    expect(list.match(/class="st-block st-/g)).toHaveLength(4);
   });
 
   it('说明文案讲清「没看到不等于没有」', () => {
