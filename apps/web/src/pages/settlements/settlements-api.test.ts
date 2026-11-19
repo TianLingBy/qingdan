@@ -12,6 +12,7 @@ import {
   formatCommissionRate,
   formatRate,
   lossNote,
+  sourceDocShort,
   sourceDocText,
 } from './settlements-api';
 
@@ -76,6 +77,14 @@ describe('脱敏与不可确认的原因（D78 / D19）', () => {
 describe('来源单与提成归属人（契约只回 id）', () => {
   it('来源单显示「类型 + id 前 8 位」', () => {
     expect(sourceDocText('E', '01a1bf69-545e-7265-b209-ff4f133e169e')).toBe('销售单 E · 01a1bf69');
+  });
+
+  it('列表用紧凑写法：单号自带 E / N 前缀，不再重复类型中文名', () => {
+    // 省下的 ~90px 正好让 10 列（含新增的「日期」）进 1150px 卡片。
+    expect(sourceDocShort('E', '01a1bf69-545e-7265-b209-ff4f133e169e', 'E-0001-20261109-0002')).toBe(
+      'E-0001-20261109-0002',
+    );
+    expect(sourceDocShort('N', '01a1bf69-545e-7265-b209-ff4f133e169e')).toBe('N · 01a1bf69');
   });
 
   it('详情拿到来源单单号时显示真实单号，不再露 id 前缀', () => {

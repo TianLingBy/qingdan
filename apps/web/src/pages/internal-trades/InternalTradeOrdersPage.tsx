@@ -93,6 +93,58 @@ function formatDateTime(value: string): string {
 }
 
 /**
+ * 列表用的短时间：`11-19 08:57`。
+ *
+ * 表格里塞完整年月日（`2026-11-18 00:57`）会多占 50 多 px，加了「商品」列之后
+ * 「操作」就出卡片了；年份在列表里没人看，详情面板里仍是完整时间。
+ */
+function formatShortDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Shanghai',
+  })
+    .format(date)
+    .replace(/\//g, '-');
+}
+
+/**
+ * 列表「商品」文案：首行商品名（超长截断、悬停看全名），多商品时补「等 N 种」。
+ *
+ * `N` 按**不同商品数**算，不是按行数——同一商品拆两行（分两个批次发）仍是一种货。
+ * 「等 N 种」放在截断之外：名字被截掉的时候，那才是这一列唯一还有信息量的部分。
+ */
+function ProductCell({
+  products,
+  lines,
+}: {
+  readonly products: readonly Product[];
+  readonly lines: readonly { readonly productId: string }[];
+}) {
+  const first = lines[0];
+  if (!first) return <span className="text-slate-400">—</span>;
+  const name = productNameOf(products, first.productId);
+  const kinds = new Set(lines.map((line) => line.productId)).size;
+  return (
+    <>
+      <span className="inline-block max-w-[140px] truncate align-bottom" title={name}>
+        {name}
+      </span>
+      {kinds > 1 ? (
+        <span className="ml-1 text-xs" style={{ color: 'var(--text-3)' }}>
+          等 {kinds} 种
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/**
  * 四态 → v0.13 `.st` 色档（映射本身在 api 层，这里只负责渲染）。
  *
  * **在途单独一档（`transit` 蓝）**：它是 D68② 给 N 单加的中间态，和「进行中」长得一样
@@ -1256,14 +1308,14 @@ export function InternalTradeOrdersPage() {
       */}
       <div className="card" data-state={listState}>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px] text-left">
+          <table className="w-full min-w-[1120px] text-left">
             <thead>
               <tr>
                 <th>单号</th>
                 <th>发出 → 接收</th>
+                <th>商品</th>
                 <th className="num">数量</th>
                 <th className="num">内部价</th>
-                <th className="num">在途量</th>
                 <th>状态</th>
                 <th>经手人</th>
                 <th>开单时间</th>
@@ -1303,25 +1355,24 @@ export function InternalTradeOrdersPage() {
                     </button>
                   </td>
                   <td>{tradeRouteText(order)}</td>
+                  <td className="max-w-[190px] text-slate-600">
+                    <ProductCell products={products.data?.items ?? []} lines={order.lines} />
+                  </td>
                   <td className="num">{formatQty(totalLineQty(order.lines))}</td>
                   <td className="num">{formatMoney(order.internalPrice)}</td>
-                  <td className="num">{formatQty(order.inTransitQty)}</td>
                   <td>
                     <StatusBadge status={order.status} />
                   </td>
                   <td className="text-slate-600">
                     {order.handlerId ? employeeLabel(order.handlerId) : '—'}
                   </td>
-                  <td className="text-slate-600">{formatDateTime(order.createdAt)}</td>
+                  <td className="text-slate-600">{formatShortDateTime(order.createdAt)}</td>
                   <td>
                     <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDetailId(order.id)}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs"
-                      >
-                        详情
-                      </button>
+                      {/*
+                        单号本身就是「进详情」的入口，行内不再单独放「详情」按钮：
+                        多一个按钮就把「操作」列挤出卡片（同 E / C 页）。
+                      */}
                       <button
                         type="button"
                         disabled={!can('update') || !canEdit(order.status)}

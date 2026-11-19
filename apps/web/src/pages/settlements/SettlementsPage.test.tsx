@@ -107,7 +107,9 @@ describe('结算单 C 页面', () => {
 
     expect(html).toContain('结算单 C');
     expect(html).toContain('C-0001-20261108-0001');
-    expect(html).toContain('销售单 E · 01a1bf69');
+    // 列表用紧凑写法：单号自带 E / N 前缀，不再重复「销售单 E ·」（详情面板才用完整写法）
+    expect(html).toContain('E · 01a1bf69');
+    expect(html).not.toContain('销售单 E · 01a1bf69');
     expect(html).toContain('¥200.00');
     expect(html).toContain('¥100.00');
     // 毛利率是比例 0.5 → 50.00%，不是 0.50%
@@ -183,11 +185,19 @@ describe('结算单 C 页面', () => {
     expect(html).not.toContain('st-tr r-row');
   });
 
-  it('空列表时 data-state 切到 empty，状态行 colSpan 等于表头列数（9 列不塌）', () => {
+  it('空列表时 data-state 切到 empty，状态行 colSpan 等于表头列数（10 列不塌）', () => {
     const html = renderPage(seedClient({ me: FULL, orders: [] }));
 
     expect(html).toContain('data-state="empty"');
-    expect(html).toContain('colSpan="9"');
+    expect(html).toContain('colSpan="10"');
+  });
+
+  it('列表有「日期」列：财务要看这张凭证哪天生成的（短格式，年份在详情）', () => {
+    const html = renderPage(seedClient({ me: FULL, orders: [ORDER] }));
+
+    expect(html).toContain('>日期<');
+    expect(html).toContain('11-08 10:00');
+    expect(html).not.toContain('2026-11-08 10:00');
   });
 
   it('状态徽标走 v0.13 语义档：待确认=bad、已结算=ok，不再是各页自拼的 Tailwind 底色', () => {
