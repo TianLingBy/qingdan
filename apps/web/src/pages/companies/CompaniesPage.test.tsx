@@ -84,6 +84,12 @@ describe('公司管理页（#144）', () => {
     });
     expect(html).toContain('还没有公司');
   });
+
+  it('首屏未取数：data-state=loading 且不含数据行（#396）', () => {
+    const html = render(<CompaniesPage />, () => {});
+    expect(html).toContain('data-state="loading"');
+    expect(html).not.toContain('r-row');
+  });
 });
 
 describe('权限设置页（#144）', () => {

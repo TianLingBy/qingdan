@@ -1,3 +1,4 @@
+import type { Position } from '@qingdan/contracts';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -122,5 +123,70 @@ describe('权限矩阵的端点支撑标注（#255）', () => {
     const html = renderEditor();
 
     expect(html).toContain('部分动作当前没有端点支撑，勾了只是预授权，等功能上线才生效');
+  });
+});
+
+/**
+ * #396：补四态 + 编辑模板/停用入口的 scope 三态。
+ */
+const POSITION: Position = {
+  id: 'pos1',
+  tenantId: 't1',
+  name: '纯仓管',
+  presetKey: 'warehouse',
+  actions: [{ domain: 'inventory_qty', actions: ['read', 'create'] }],
+  status: '启用',
+  version: 2,
+  createdAt: '2026-11-09T00:00:00.000Z',
+  updatedAt: '2026-11-09T00:00:00.000Z',
+};
+
+function renderWithPosition(permissionActions: readonly string[]): string {
+  const client = createQueryClient();
+  client.setQueryData(authKeys.me, {
+    employeeId: 'e1',
+    tenantId: 't1',
+    displayName: '张明',
+    companyIds: ['c1'],
+    scope: [{ domain: 'permission', actions: permissionActions }],
+  } satisfies TestMe);
+  client.setQueryData(['admin', 'positions'], { items: [POSITION], nextCursor: null });
+  return renderToStaticMarkup(
+    <QueryClientProvider client={client}>
+      <PermissionsPage />
+    </QueryClientProvider>,
+  );
+}
+
+describe('权限设置页四态与写入口（#396）', () => {
+  it('首屏未取数：data-state=loading', () => {
+    const client = createQueryClient();
+    client.setQueryData(authKeys.me, {
+      employeeId: 'e1',
+      tenantId: 't1',
+      displayName: '张明',
+      companyIds: ['c1'],
+      scope: [{ domain: 'permission', actions: ['read'] }],
+    } satisfies TestMe);
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <PermissionsPage />
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('data-state="loading"');
+  });
+
+  it('无 permission.update 时「编辑模板」禁用且文案含 permission.update', () => {
+    const html = renderWithPosition(['read']);
+    expect(html).toContain('编辑模板');
+    expect(html).toContain('permission.update');
+    expect(html).toContain('disabled');
+  });
+
+  it('无 permission.delete 时「停用」禁用且文案含 permission.delete', () => {
+    const html = renderWithPosition(['read', 'update']);
+    expect(html).toContain('停用');
+    expect(html).toContain('permission.delete');
+    expect(html).toContain('disabled');
   });
 });
