@@ -127,6 +127,38 @@ function assertHumanCredential(principal: Principal, action: string): void {
   }
 }
 
+const REVOKE_REASON_MAX_LENGTH = 200;
+
+/**
+ * D94 ⑤ 规定撤销发货必须说明原因，不能只靠前端拦。
+ *
+ * `ai.reasonRequired` 的平台闸门只约束 AI 凭证；人工用 curl 仍可能绕过页面。
+ * 撤销会把在途货退回进行中，并反向恢复库存/产出批次，所以原因必须与业务
+ * 在同一事务前校验并写入审计。前端同样限制 1–200 字，这里保持一致。
+ */
+function requireRevokeReason(reason: string | null): string {
+  const normalized = reason?.trim() ?? '';
+  if (normalized === '') {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      '撤销采购发货必须提供 X-Reason',
+      { header: 'X-Reason' },
+    );
+  }
+  if (normalized.length > REVOKE_REASON_MAX_LENGTH) {
+    throw new AppError(
+      'VALIDATION_FAILED',
+      `撤销采购发货原因不能超过 ${REVOKE_REASON_MAX_LENGTH} 字`,
+      {
+        header: 'X-Reason',
+        maxLength: REVOKE_REASON_MAX_LENGTH,
+        actualLength: normalized.length,
+      },
+    );
+  }
+  return normalized;
+}
+
 function issuesOf(error: { issues: readonly { path: PropertyKey[]; message: string }[] }): unknown[] {
   return error.issues.map((issue) => ({
     path: issue.path.map(String).join('.'),
@@ -704,6 +736,8 @@ export async function revokePurchaseOrderShip(
   assertHumanCredential(principal, '撤销采购发货');
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
+  // 校验在 withAudit 之前：失败就不开事务，不留「已撤销但没原因」的行。
+  const reason = requireRevokeReason(ctx.request.auditReason);
   const audit = auditEventOf(ctx.request, principal, 'purchase.order.ship.revoke', id, {});
 
   const order = await withAudit(database, audit, async (tx) => {
@@ -736,7 +770,7 @@ export async function revokePurchaseOrderShip(
       beforeStatus: state.status,
       afterStatus: result.status,
       version: result.version,
-      reason: ctx.request.auditReason,
+      reason,
     };
     return result;
   });

@@ -35,11 +35,15 @@ const UPDATE_ONLY_SCOPE: ScopeMatrix = [
   { domain: 'purchase', actions: ['read', 'create', 'update', 'view_price'] },
 ];
 
+const REVOKE_REASON = '司机临时取消，货退回厂里';
+
 interface FakeRequestInput {
   readonly principal: Principal;
   readonly params?: Record<string, unknown>;
   readonly headers?: Record<string, string>;
   readonly body?: unknown;
+  /** 真实请求由 X-Reason 头解析出来；撤销发货必填。 */
+  readonly auditReason?: string | null;
 }
 
 function makeRequest(input: FakeRequestInput): FastifyRequest {
@@ -51,7 +55,7 @@ function makeRequest(input: FakeRequestInput): FastifyRequest {
     headers: input.headers ?? {},
     ip: '127.0.0.1',
     auditSource: 'web',
-    auditReason: null,
+    auditReason: input.auditReason ?? null,
   } as unknown as FastifyRequest;
 }
 
@@ -179,6 +183,7 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
     id: string,
     version = 2,
     overrides: Partial<Principal> = {},
+    auditReason: string | null = REVOKE_REASON,
   ): Promise<PurchaseOrder> {
     const { reply } = makeReply();
     return revokePurchaseOrderShip({
@@ -187,6 +192,7 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
         principal: principal(overrides),
         params: { id },
         headers: { 'if-match': `"${version}"` },
+        auditReason,
       }),
       reply,
     });
@@ -354,6 +360,46 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
       [order.id],
     );
     expect(flows.rows.map((row) => row.delta)).toEqual(['2', '3', '-2', '-3']);
+  });
+
+  it('撤销发货必须带 1–200 字原因：缺失 / 空白 / 超长在开事务前拒绝，合法原因写进审计', async () => {
+    const order = await createOne();
+    await ship(order.id, [{ lineNo: 1, transitTo: 'warehouse' }]);
+
+    // D94 ⑤：`ai.reasonRequired` 只拦 AI 凭证，人工用 curl 仍可能绕过页面。
+    await expect(revoke(order.id, 2, {}, null)).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { header: 'X-Reason' },
+    });
+    await expect(revoke(order.id, 2, {}, '   ')).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { header: 'X-Reason' },
+    });
+    await expect(revoke(order.id, 2, {}, '退'.repeat(201))).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { header: 'X-Reason', actualLength: 201 },
+    });
+
+    // 校验在 withAudit 之前：失败不开事务，订单仍在途、也没有撤销审计行。
+    const state = await test.database.query<{ status: string }>(
+      'SELECT status FROM purchase_order WHERE id = $1',
+      [order.id],
+    );
+    expect(state.rows[0]?.status).toBe('在途');
+
+    const revoked = await revoke(order.id, 2, {}, `  ${REVOKE_REASON}  `);
+    expect(revoked).toMatchObject({ status: '进行中', version: 3 });
+
+    const audit = await test.database.query<{ reason: string }>(
+      `SELECT changes->>'reason' AS reason
+         FROM audit_log
+        WHERE action = 'purchase.order.ship.revoke'
+          AND object_id = $1
+          AND result = 'success'`,
+      [order.id],
+    );
+    // 写进审计的是 trim 后的原因，不是原样回放头里的空白。
+    expect(audit.rows[0]?.reason).toBe(REVOKE_REASON);
   });
 
   it('完成与到货确认收紧权限：只有 update 没有 approve/ship → 403', async () => {

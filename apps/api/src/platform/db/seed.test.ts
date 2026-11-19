@@ -77,6 +77,23 @@ describe('seed（演示租户）', () => {
     expect([...(warehouseStocktake?.actions ?? [])].sort()).toEqual(['delete', 'read']);
   });
 
+  it('D94 口径补全：经理 / 纯仓管 / 采购三个预设都含 purchase.ship', async () => {
+    const rows = await test.database.query<{ preset_key: string; action: string }>(
+      `SELECT p.preset_key, pp.action
+         FROM position p
+         JOIN position_permission pp ON pp.position_id = p.id
+        WHERE p.tenant_id = $1
+          AND p.preset_key IN ('manager', 'warehouse', 'purchase')
+          AND pp.domain = 'purchase'
+          AND pp.granted = true`,
+      [DEMO_IDS.tenantId],
+    );
+    for (const presetKey of ['manager', 'warehouse', 'purchase']) {
+      const actions = rows.rows.filter((row) => row.preset_key === presetKey).map((row) => row.action);
+      expect(actions).toContain('ship');
+    }
+  });
+
   it('重复执行幂等：不重复建岗位/员工', async () => {
     await seed(test.database);
 
