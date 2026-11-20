@@ -159,6 +159,27 @@ function requireScope(
   }
 }
 
+/**
+ * D106：动作判权 = 有权限点 **或** 自己就是这张单的经手人。
+ *
+ * 「或负责人」这一半不需要额外配置：能开单说明预设里给了 create，那自己开的单
+ * 就该能改、能发、能确认 —— 否则会出现「开得了单却推进不了」的死态（D106 之前
+ * 内部交易的发货、到货全靠老板，就是这个死态）。
+ * 权限点那一半留给管理者：要把别人的单推到终态，走显式授权。
+ */
+function requireScopeOrHandler(
+  principal: Principal,
+  action: 'read' | 'create' | 'update' | 'ship' | 'delete' | 'approve',
+  handlerId: string,
+): void {
+  if (allowsScope(principal.scope, 'internal_trade', action)) return;
+  if (handlerId === principal.actorId) return;
+  throw new AppError(
+    'FORBIDDEN',
+    `缺少 internal_trade.${action} 权限，且这张单不是你的`,
+  );
+}
+
 /** 契约里开单与取消均为 ai.policy=forbid；修改允许。 */
 function assertHumanCredential(principal: Principal, action: string): void {
   if (principal.actorType === 'ai') {
@@ -429,7 +450,6 @@ export async function updateInternalTradeOrder(
 ): Promise<InternalTradeOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'internal_trade.order.update');
-  requireScope(principal, 'update');
   const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
 
   const id = parseOrderId(ctx.request);
@@ -446,6 +466,10 @@ export async function updateInternalTradeOrder(
   );
 
   const order = await withAudit(database, audit, async (tx) => {
+    // D106：改单多一次读，只为拿 handlerId —— 换的是「经手人改不了自己开的单」这个死态。
+    const before = await repo.loadInternalTradeOrderState(repoContext(tx, principal), id);
+    if (!before) throw new AppError('NOT_FOUND', '内部交易单不存在');
+    requireScopeOrHandler(principal, 'update', before.handlerId);
     const updated = await repo.updateInternalTradeOrder(
       repoContext(tx, principal),
       id,
@@ -478,7 +502,6 @@ export async function cancelInternalTradeOrder(
 ): Promise<InternalTradeOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'internal_trade.order.cancel');
-  requireScope(principal, 'delete');
   assertHumanCredential(principal, '取消内部交易单');
   const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
 
@@ -489,6 +512,8 @@ export async function cancelInternalTradeOrder(
     repo.loadInternalTradeOrderState(repoContext(tx, principal), id),
   );
   if (!state) throw new AppError('NOT_FOUND', '内部交易单不存在');
+  // D106：取消是「本单动作」，经手人自己的单自己作废，不必等有 internal_trade.delete 的人。
+  requireScopeOrHandler(principal, 'delete', state.handlerId);
   if (state.version !== expectedVersion) {
     throw new AppError(
       'VERSION_CONFLICT',
@@ -538,7 +563,6 @@ export async function dispatchInternalTradeOrder(
 ): Promise<InternalTradeOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'internal_trade.order.dispatch');
-  requireScope(principal, 'ship');
   assertHumanCredential(principal, '确认内部交易发货');
   const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
   parseDispatchInput(ctx.request.body);
@@ -549,6 +573,8 @@ export async function dispatchInternalTradeOrder(
     repo.loadInternalTradeOrderState(repoContext(tx, principal), id),
   );
   if (!state) throw new AppError('NOT_FOUND', '内部交易单不存在');
+  // D106：发货判权按「internal_trade.ship 或本单经手人」—— 能开单的人该能把货发出去。
+  requireScopeOrHandler(principal, 'ship', state.handlerId);
   if (state.version !== expectedVersion) {
     throw new AppError('VERSION_CONFLICT', '内部交易单版本与 If-Match 不一致，请重新读取后重试', {
       expected: expectedVersion,
@@ -605,7 +631,6 @@ export async function revokeDispatchInternalTradeOrder(
 ): Promise<InternalTradeOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'internal_trade.order.dispatch_revoke');
-  requireScope(principal, 'ship');
   assertHumanCredential(principal, '撤销内部交易发货');
   const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
   const input = parseDispatchRevokeInput(ctx.request.body);
@@ -616,6 +641,8 @@ export async function revokeDispatchInternalTradeOrder(
     repo.loadInternalTradeOrderState(repoContext(tx, principal), id),
   );
   if (!state) throw new AppError('NOT_FOUND', '内部交易单不存在');
+  // D106：撤销发货是发货的逆向操作，判权口径与发货一致（internal_trade.ship 或本单经手人）。
+  requireScopeOrHandler(principal, 'ship', state.handlerId);
   if (state.version !== expectedVersion) {
     throw new AppError('VERSION_CONFLICT', '内部交易单版本与 If-Match 不一致，请重新读取后重试', {
       expected: expectedVersion,
@@ -670,7 +697,6 @@ export async function receiveInternalTradeOrder(
 ): Promise<InternalTradeOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'internal_trade.order.receive');
-  requireScope(principal, 'approve');
   assertHumanCredential(principal, '确认内部交易到货');
   const canViewPrice = allowsScope(principal.scope, 'internal_trade', 'view_price');
   parseReceiveInput(ctx.request.body);
@@ -681,6 +707,8 @@ export async function receiveInternalTradeOrder(
     repo.loadInternalTradeOrderState(repoContext(tx, principal), id),
   );
   if (!state) throw new AppError('NOT_FOUND', '内部交易单不存在');
+  // D106：到货确认是审批动作，判权按「internal_trade.approve 或本单经手人」。
+  requireScopeOrHandler(principal, 'approve', state.handlerId);
   if (state.version !== expectedVersion) {
     throw new AppError('VERSION_CONFLICT', '内部交易单版本与 If-Match 不一致，请重新读取后重试', {
       expected: expectedVersion,

@@ -134,6 +134,8 @@ function requireScope(
   if (!allowsScope(principal.scope, 'sales', action)) {
     throw new AppError('FORBIDDEN', `缺少 sales.${action} 权限`);
   }
+}
+
 /**
  * D106：动作判权 = 有权限点 **或** 自己就是这张单的经手人。
  *
@@ -150,7 +152,6 @@ function requireScopeOrHandler(
   if (allowsScope(principal.scope, 'sales', action)) return;
   if (handlerId === principal.actorId) return;
   throw new AppError('FORBIDDEN', `缺少 sales.${action} 权限，且这张单不是你的`);
-}
 }
 
 function assertCompanyVisible(principal: Principal, companyId: string): void {
