@@ -319,17 +319,18 @@ describe('platform 登录闭环（PGlite + seed 演示租户）', () => {
     expect(body.isOwner).toBe(false);
 
     const ids = body.entries.map((entry) => entry.id);
-    // 销售岗位（seed）持 sales / customer / product / inventory_qty / settlement。
+    // 销售岗位（seed）持 sales / customer / product / inventory_qty / settlement，
+    // 以及 internal_trade.read（看本司发出的调拨单）与 commission.read（看自己的提成）。
     expect(ids).toContain('sales-orders');
     expect(ids).toContain('customers');
     expect(ids).toContain('products');
     expect(ids).toContain('inventory');
     expect(ids).toContain('settlements');
     expect(ids).toContain('flow');
+    expect(ids).toContain('internal-trades');
     // 无权限的入口根本不在返回体里。
     expect(ids).not.toContain('purchase-orders');
     expect(ids).not.toContain('processing-orders');
-    expect(ids).not.toContain('internal-trades');
     expect(ids).not.toContain('audit-logs');
     expect(ids).not.toContain('permissions');
     expect(ids.length).toBeLessThan(20);
