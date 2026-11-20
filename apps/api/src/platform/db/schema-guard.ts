@@ -84,6 +84,14 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // 同上。internal_trade 与 commission 两个域此前在非老板预设里几乎没有格子：
   // 内部交易的发货与到货确认没人能做，销售看不见自己的提成比例。
   '20261120040000_internal_trade_commission_presets_backfill.sql',
+  // 第 11 个动作 read_all 的 CHECK 放宽 + 四类单据的 read_all 与几个动作补授权。
+  // 缺了它的后果是「写端撞 CHECK」—— 权限设置页勾「看全部」直接 500，
+  // 而读端只是 403 看不见，比这条轻得多。
+  '20261120050000_read_all_action_and_presets.sql',
+  // 上面那条漏了老板预设的 read_all：老板的授权行是 seed 时按当时的 ALL_ACTIONS
+  // 展开的，read_all 后加进来，老库里就没这一格。缺了它前端「看谁的」下拉不出现、
+  // `?scope=all` 直接 403 —— 表现为「老板也不能看全部」，静默而不报错。
+  '20261120060000_owner_read_all_backfill.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {
