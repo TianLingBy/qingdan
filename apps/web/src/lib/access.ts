@@ -1,5 +1,5 @@
-import { allowsScope, type ScopeMatrix } from '@qingdan/contracts';
-import { ROUTE_TABLE, type RouteEntry } from '../router/routes';
+import { allowsScope, type ScopeMatrix, type WorkbenchEntry } from '@qingdan/contracts';
+import { ROUTE_TABLE, type Domain, type RouteEntry } from '../router/routes';
 
 /**
  * 页面 × 权限域对照表（#5 验收第 1 条：入口按 `scope` 显隐，**不写死角色名**）。
@@ -71,7 +71,39 @@ export function visibleRoutes(scope: ScopeMatrix | undefined): readonly RouteEnt
 /**
  * 工作台入口卡片：去掉「登录页」与「工作台自己」——
  * 首页不需要给自己一个回首页的入口。
+ *
+ * @deprecated 仅测试与离线推导用。真页面消费 `/auth/me` 下发的 `entries`
+ * （见 `servedEntries`）：入口清单归后端算，前端不再自己推导（Issue #227）。
  */
 export function workbenchEntries(scope: ScopeMatrix | undefined): readonly RouteEntry[] {
   return visibleRoutes(scope).filter((entry) => entry.id !== 'workbench');
+}
+
+/**
+ * 入口卡片的渲染结构：字段与路由表同形，但**不**锁死在本地 literal union 上 ——
+ * 入口清单由后端下发（Issue #227），本地路由表只是同源的镜像。
+ */
+export interface EntryCard {
+  readonly id: string;
+  readonly path: string;
+  readonly page: string;
+  readonly title: string;
+  readonly domain: Domain;
+}
+
+/**
+ * 把 `/auth/me` 下发的入口清单转成页面渲染用的结构（Issue #227）。
+ *
+ * 后端字段与 `RouteEntry` 同源（id / path / page / title / domain），
+ * 唯一差异是 `domain`：后端是普通字符串，web 侧是本地联合类型 `Domain`，
+ * 在这里按字段收窄一次 —— 权限判断已经在后端做完，这里不参与判定。
+ */
+export function servedEntries(entries: readonly WorkbenchEntry[] | undefined): readonly EntryCard[] {
+  return (entries ?? []).map((entry) => ({
+    id: entry.id,
+    path: entry.path,
+    page: entry.page,
+    title: entry.title,
+    domain: entry.domain as Domain,
+  }));
 }

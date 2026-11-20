@@ -15,11 +15,11 @@
  *   过滤，后端还不支持，见 #354 第 3 条）。宁可少一块，不留一块假的。
  */
 
-import type { ScopeMatrix, TodoItem } from '@qingdan/contracts';
+import type { TodoItem } from '@qingdan/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useMemo } from 'react';
-import { workbenchEntries } from '../../lib/access';
+import { servedEntries, type EntryCard } from '../../lib/access';
 import { isImplementedPage } from '../../router/implemented';
 import type { RouteEntry } from '../../router/routes';
 import { authApi, authKeys } from '../auth/auth-api';
@@ -103,8 +103,8 @@ function Kpi({ label, value, unit }: KpiProps) {
 }
 
 export interface EntryCardsProps {
-  readonly entries: readonly RouteEntry[];
-  readonly onOpen: (path: RouteEntry['path']) => void;
+  readonly entries: readonly EntryCard[];
+  readonly onOpen: (path: string) => void;
 }
 
 /** 入口卡片区：只渲染 `entries`（已按 scope 过滤），组件本身不判权限。 */
@@ -119,7 +119,10 @@ export function EntryCards({ entries, onOpen }: EntryCardsProps) {
 
   return (
     <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {entries.map((entry) => (
+      {entries.map((entry) => {
+        // 后端下发的 id 是普通字符串；这里只用它查本地文案与「待实现」标记，不参与判权。
+        const id = entry.id as RouteEntry['id'];
+        return (
         <li key={entry.id} className="min-w-0">
           <a
             href={entry.path}
@@ -132,18 +135,19 @@ export function EntryCards({ entries, onOpen }: EntryCardsProps) {
           >
             <span className="flex items-start justify-between gap-2">
               <span className="text-sm font-medium text-slate-900">{entry.title}</span>
-              {isImplementedPage(entry.id) ? null : (
+              {isImplementedPage(id) ? null : (
                 <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
                   待实现
                 </span>
               )}
             </span>
             <span className="mt-1 block text-xs leading-relaxed text-slate-500">
-              {PAGE_BLURB[entry.id]}
+              {PAGE_BLURB[id]}
             </span>
           </a>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }
@@ -224,10 +228,10 @@ export function TodoPanel({ todos, loading, emptyHint }: TodoPanelProps) {
 export interface WorkbenchViewProps {
   readonly displayName: string;
   readonly companyCount: number;
-  readonly entries: readonly RouteEntry[];
+  readonly entries: readonly EntryCard[];
   readonly todos: readonly TodoItem[];
   readonly loading: boolean;
-  readonly onOpen: (path: RouteEntry['path']) => void;
+  readonly onOpen: (path: string) => void;
   /** 测试注入固定时间，避免问候语随跑测时段变化。 */
   readonly now?: Date;
 }
@@ -317,8 +321,8 @@ export function WorkbenchPage() {
   const navigate = useNavigate();
   const me = useQuery({ queryKey: authKeys.me, queryFn: () => authApi.me() });
 
-  const scope: ScopeMatrix | undefined = me.data?.scope;
-  const entries = useMemo(() => workbenchEntries(scope), [scope]);
+  // 入口清单由后端按 scope 现算下发（Issue #227），前端不再自己推导。
+  const entries = useMemo(() => servedEntries(me.data?.entries), [me.data?.entries]);
 
   // 真接口：`GET /api/v1/todos`（D89）。等身份下来再发 —— 没登录时发出去只会拿 401。
   const todos = useQuery({
