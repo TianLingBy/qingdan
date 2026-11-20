@@ -750,6 +750,13 @@ export function InternalTradeOrdersPage() {
   const employeeLabel = useEmployeeLabel();
 
   const [status, setStatus] = useState<'' | InternalTradeOrderStatus>('');
+  /**
+   * 看谁的（D106）。空串 = 不传参数，由服务端按权限定。
+   *
+   * 只在有 `internal_trade.read_all` 时给这个开关 —— 没权限的人拿到一个切不动的下拉框
+   * 比没有更糟：他会以为「全部」里应该有别人的单，只是自己点不动。
+   */
+  const [scopeFilter, setScopeFilter] = useState<'' | 'mine' | 'all'>('');
   const [fromFilter, setFromFilter] = useState('');
   const [toFilter, setToFilter] = useState('');
   const [keyword, setKeyword] = useState('');
@@ -788,8 +795,9 @@ export function InternalTradeOrdersPage() {
       status: status || undefined,
       keyword: keyword.trim() || undefined,
       cursor: cursors[pageIndex] ?? null,
+      scope: scopeFilter || undefined,
     }),
-    [fromFilter, toFilter, status, keyword, cursors, pageIndex],
+    [fromFilter, toFilter, status, keyword, cursors, pageIndex, scopeFilter],
   );
 
   const list = useQuery({
@@ -1199,6 +1207,26 @@ export function InternalTradeOrdersPage() {
             </button>
           ))}
         </div>
+        {/*
+          看谁的（D106）。只在有 `internal_trade.read_all` 时才给这个下拉 ——
+          没权限的人看到一个切不动的框，会以为「全部」里该有别人的单。
+        */}
+        {can('read_all') && (
+          <select
+            value={scopeFilter}
+            onChange={(event) => {
+              setScopeFilter(event.target.value as '' | 'mine' | 'all');
+              // 换「看谁的」等于换了一组数据，旧游标指向的位置在新集合里没有意义。
+              setCursors([null]);
+              setPageIndex(0);
+            }}
+            aria-label="看谁的单据"
+          >
+            <option value="">默认（按我的权限）</option>
+            <option value="mine">只看我经手的</option>
+            <option value="all">全部</option>
+          </select>
+        )}
         <select
           value={fromFilter}
           onChange={(event) => setFromFilter(event.target.value)}

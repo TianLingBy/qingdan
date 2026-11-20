@@ -65,6 +65,13 @@ export interface SalesOrderListFilters {
   readonly sort?: SalesOrderSort;
   /** 排序方向，默认 desc。 */
   readonly order?: 'asc' | 'desc';
+  /**
+   * 看谁的：`mine` 只看自己经手的、`all` 看全部（D106）。
+   *
+   * **不传时由服务端按权限决定**：有 `sales.read_all` 就看全部，没有就只看自己的。
+   * 这里不设前端默认值 —— 前端猜一个，就会与后端的判定在某个权限组合下不一致。
+   */
+  readonly scope?: 'mine' | 'all';
 }
 
 /** 后端 `SalesOrderListQuerySchema` 的排序白名单，多写一个会被 422 挡回来。 */
@@ -93,6 +100,8 @@ function listQuery(
     pageSize: filters.pageSize,
     sort: filters.sort,
     order: filters.order,
+    // 显式白名单映射：接口上加了字段但这里不写，参数永远发不出去（D106）。
+    scope: filters.scope,
   };
 }
 

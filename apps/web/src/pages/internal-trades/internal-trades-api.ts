@@ -47,6 +47,13 @@ export interface InternalTradeListFilters {
   readonly keyword?: string;
   readonly cursor?: string | null;
   readonly limit?: number;
+  /**
+   * 看谁的：`mine` 只看自己经手的、`all` 看全部（D106）。
+   *
+   * **不传时由服务端按权限决定**：有 `internal_trade.read_all` 就看全部，没有就只看自己的。
+   * 这里不设前端默认值 —— 前端猜一个，就会与后端的判定在某个权限组合下不一致。
+   */
+  readonly scope?: 'mine' | 'all';
 }
 
 function listQuery(
@@ -59,6 +66,7 @@ function listQuery(
     keyword: filters.keyword,
     cursor: filters.cursor ?? undefined,
     limit: filters.limit ?? 50,
+    scope: filters.scope,
   };
 }
 
