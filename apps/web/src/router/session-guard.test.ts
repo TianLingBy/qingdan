@@ -9,7 +9,9 @@ const ME: MeResponse = {
   tenantId: 't1',
   displayName: '张明',
   companyIds: ['c1'],
+  isOwner: false,
   scope: [{ domain: 'product', actions: ['read'] }],
+  entries: [],
 };
 
 function freshClient(): QueryClient {

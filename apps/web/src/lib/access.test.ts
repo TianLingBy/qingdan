@@ -1,7 +1,7 @@
 import type { ScopeMatrix } from '@qingdan/contracts';
 import { describe, expect, it } from 'vitest';
 import { ROUTE_TABLE } from '../router/routes';
-import { PAGE_SCOPE, allows, canAccessPage, visibleRoutes, workbenchEntries } from './access';
+import { PAGE_SCOPE, allows, canAccessPage, servedEntries, visibleRoutes, workbenchEntries } from './access';
 
 /**
  * 前端权限只做显隐（D4/D15/D27）。这里锁的是「scope → 哪些页面可见」的口径，
@@ -133,5 +133,21 @@ describe('scope → 可见页面', () => {
     expect(allows(SALES_SCOPE, 'purchase', 'read')).toBe(false);
     expect(allows(undefined, 'sales', 'read')).toBe(false);
     expect(allows(SALES_SCOPE, 'sales', 'view_price')).toBe(true);
+  });
+});
+
+describe('servedEntries（Issue #227：入口清单由后端下发，前端不再推导）', () => {
+  it('原样采用后端给的清单，不掺本地路由表', () => {
+    // 后端只给了两个入口 —— 前端就应该只渲染两个，不能因为本地 ROUTE_TABLE 有 22 条而变多。
+    const served = servedEntries([
+      { id: 'sales-orders', path: '/sales-orders', page: '销售单 E', title: '销售单 E', domain: '单据与结算' },
+      { id: 'products', path: '/products', page: '商品资料', title: '商品资料', domain: '主数据' },
+    ]);
+    expect(served.map((entry) => entry.id)).toEqual(['sales-orders', 'products']);
+    expect(served.map((entry) => entry.path)).toEqual(['/sales-orders', '/products']);
+  });
+
+  it('身份还没下来（undefined）时是空清单，不退化成「全都可以进」', () => {
+    expect(servedEntries(undefined)).toEqual([]);
   });
 });

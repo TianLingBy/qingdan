@@ -1,4 +1,4 @@
-import type { ScopeMatrix } from '@qingdan/contracts';
+import type { ScopeMatrix, WorkbenchEntry } from '@qingdan/contracts';
 import type { ApiClient } from '../../api/client';
 import { ApiError, apiClient } from '../../api/client';
 
@@ -14,8 +14,12 @@ export interface MeResponse {
   readonly tenantId: string;
   readonly displayName: string;
   readonly companyIds: string[];
+  /** 老板 / 员工身份位（Issue #227）：账号属性，不是前端可切换的视角。 */
+  readonly isOwner: boolean;
   /** 功能域 × 动作；前端只做显隐，判定一律以后端为准（D4/D15/D27）。 */
   readonly scope: ScopeMatrix;
+  /** 工作台入口清单：后端按 scope 现算下发，前端不自己推导（Issue #227）。 */
+  readonly entries: readonly WorkbenchEntry[];
 }
 
 export interface LoginInput {
