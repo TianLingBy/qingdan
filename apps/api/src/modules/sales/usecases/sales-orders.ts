@@ -134,6 +134,23 @@ function requireScope(
   if (!allowsScope(principal.scope, 'sales', action)) {
     throw new AppError('FORBIDDEN', `缺少 sales.${action} 权限`);
   }
+/**
+ * D106：动作判权 = 有权限点 **或** 自己就是这张单的经手人。
+ *
+ * 「或负责人」这一半不需要额外配置：能开单说明预设里给了 create，那自己开的单
+ * 就该能改、能发、能确认 —— 否则会出现「开得了单却推进不了」的死态（D106 之前
+ * 销售的发货、签收、取消全靠老板，就是这个死态）。
+ * 权限点那一半留给管理者：要把别人的单推到终态，走显式授权。
+ */
+function requireScopeOrHandler(
+  principal: Principal,
+  action: 'read' | 'create' | 'update' | 'ship' | 'approve' | 'delete' | 'export',
+  handlerId: string,
+): void {
+  if (allowsScope(principal.scope, 'sales', action)) return;
+  if (handlerId === principal.actorId) return;
+  throw new AppError('FORBIDDEN', `缺少 sales.${action} 权限，且这张单不是你的`);
+}
 }
 
 function assertCompanyVisible(principal: Principal, companyId: string): void {
@@ -435,13 +452,7 @@ async function loadSalesOrderDetail(
   if (!order) return null;
   const downstream = await repo.hasDirectDownstream(
     repoContext(tx, principal),
-    {
-      id: order.id,
-      companyId: order.companyId,
-      customerId: order.customerId,
-      status: order.status,
-      version: order.version,
-    },
+    { id: order.id, companyId: order.companyId },
   );
   return {
     ...order,
@@ -637,7 +648,7 @@ export async function updateSalesOrder(
 ): Promise<SalesOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.update');
-  requireScope(principal, 'update');
+  const mayUpdate = allowsScope(principal.scope, 'sales', 'update');
 
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -647,6 +658,13 @@ export async function updateSalesOrder(
   });
 
   const order = await withAudit(database, audit, async (tx) => {
+    // D106：改单多一次读（只为拿 handlerId）。改单是低频动作，这一次查询换的是
+    // 「销售改不了自己开的单」这个死态。
+    const before = await repo.loadSalesOrderState(repoContext(tx, principal), id);
+    if (!before) throw new AppError('NOT_FOUND', '销售单不存在');
+    if (!mayUpdate && before.handlerId !== principal.actorId) {
+      throw new AppError('FORBIDDEN', '缺少 sales.update 权限，且这张单不是你的');
+    }
     const updated = await repo.updateSalesOrder(
       repoContext(tx, principal),
       id,
@@ -682,7 +700,7 @@ export async function cancelSalesOrder(
 ): Promise<SalesOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.cancel');
-  requireScope(principal, 'delete');
+  const mayCancel = allowsScope(principal.scope, 'sales', 'delete');
   assertHumanCredential(principal, '取消销售单');
 
   const id = parseOrderId(ctx.request);
@@ -692,6 +710,9 @@ export async function cancelSalesOrder(
     repo.loadSalesOrderState(repoContext(tx, principal), id),
   );
   if (!state) throw new AppError('NOT_FOUND', '销售单不存在');
+  if (!mayCancel && state.handlerId !== principal.actorId) {
+    throw new AppError('FORBIDDEN', '缺少 sales.delete 权限，且这张单不是你的');
+  }
   if (state.version !== expectedVersion) {
     throw new AppError(
       'VERSION_CONFLICT',
@@ -998,7 +1019,7 @@ export async function shipSalesOrder(
 ): Promise<SalesOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.ship');
-  requireScope(principal, 'ship');
+  const mayShip = allowsScope(principal.scope, 'sales', 'ship');
   assertHumanCredential(principal, '销售出库（会锁定库存与结算额）');
 
   const id = parseOrderId(ctx.request);
@@ -1014,6 +1035,9 @@ export async function shipSalesOrder(
     const context = repoContext(tx, principal);
     const state = await repo.lockSalesOrderState(context, id);
     if (!state) throw new AppError('NOT_FOUND', '销售单不存在');
+    if (!mayShip && state.handlerId !== principal.actorId) {
+      throw new AppError('FORBIDDEN', '缺少 sales.ship 权限，且这张单不是你的');
+    }
     if (state.version !== expectedVersion) {
       throw new AppError(
         'VERSION_CONFLICT',
@@ -1085,7 +1109,7 @@ export async function completeSalesOrder(
 ): Promise<SalesOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.complete');
-  requireScope(principal, 'approve');
+  const mayComplete = allowsScope(principal.scope, 'sales', 'approve');
   assertHumanCredential(principal, '签收销售单（会把应收挂上）');
 
   const id = parseOrderId(ctx.request);
@@ -1101,6 +1125,9 @@ export async function completeSalesOrder(
     const context = repoContext(tx, principal);
     const state = await repo.lockSalesOrderState(context, id);
     if (!state) throw new AppError('NOT_FOUND', '销售单不存在');
+    if (!mayComplete && state.handlerId !== principal.actorId) {
+      throw new AppError('FORBIDDEN', '缺少 sales.approve 权限，且这张单不是你的');
+    }
     if (state.version !== expectedVersion) {
       throw new AppError(
         'VERSION_CONFLICT',

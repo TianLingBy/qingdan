@@ -354,9 +354,6 @@ export async function getPurchaseOrder(ctx: PurchaseOrderContext): Promise<Purch
     const downstream = await repo.hasDirectDownstream(repoContext(tx, principal), {
       id: order.id,
       companyId: order.companyId,
-      supplierId: order.supplierId,
-      status: order.status,
-      version: order.version,
     });
     return { ...order, cancelable: canCancel(order.status, downstream) };
   });

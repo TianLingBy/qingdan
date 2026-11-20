@@ -30,6 +30,8 @@ export interface InternalTradeOrderRepoContext {
 }
 
 export interface InternalTradeOrderListQuery {
+  /** 只看这个人经手的单（D106）。由 usecase 按 scope 与 read_all 权限解析后传入；repo 不认识权限模型。 */
+  readonly handlerId?: string;
   readonly fromCompanyId?: string;
   readonly toCompanyId?: string;
   readonly status?: InternalTradeOrderStatus;
@@ -53,6 +55,8 @@ export interface InternalTradeOrderState {
   readonly companyId: string;
   readonly fromCompanyId: string;
   readonly toCompanyId: string;
+  /** 经手人（D106）：自己开的单自己就能改、能发、能确认到货，不需要额外权限点。 */
+  readonly handlerId: string;
   readonly status: InternalTradeOrderStatus;
   readonly version: number;
 }
@@ -88,6 +92,7 @@ interface StateRow {
   company_id: string;
   from_company_id: string;
   to_company_id: string;
+  handler_id: string;
   status: string;
   version: number;
 }
@@ -324,7 +329,7 @@ export async function loadInternalTradeOrderState(
   id: string,
 ): Promise<InternalTradeOrderState | null> {
   const result = await ctx.tx.query<StateRow>(
-    `SELECT id, company_id, from_company_id, to_company_id, status, version
+    `SELECT id, company_id, from_company_id, to_company_id, handler_id, status, version
        FROM internal_trade_order
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -338,6 +343,7 @@ export async function loadInternalTradeOrderState(
     companyId: row.company_id,
     fromCompanyId: row.from_company_id,
     toCompanyId: row.to_company_id,
+    handlerId: row.handler_id,
     status: row.status as InternalTradeOrderStatus,
     version: row.version,
   };
@@ -370,7 +376,7 @@ export async function listBatchIdsForOrder(
  */
 export async function hasDirectDownstream(
   ctx: InternalTradeOrderRepoContext,
-  state: InternalTradeOrderState,
+  state: { readonly id: string; readonly companyId: string },
 ): Promise<boolean> {
   const result = await ctx.tx.query<{ exists: boolean }>(
     `SELECT EXISTS (

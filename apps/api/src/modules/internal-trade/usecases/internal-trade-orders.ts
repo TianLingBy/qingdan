@@ -356,10 +356,6 @@ export async function getInternalTradeOrder(
     const downstream = await repo.hasDirectDownstream(context, {
       id: order.id,
       companyId: order.fromCompanyId,
-      fromCompanyId: order.fromCompanyId,
-      toCompanyId: order.toCompanyId,
-      status: order.status,
-      version: order.version,
     });
     return {
       ...order,
