@@ -61,13 +61,10 @@ export const OWNER_ONLY: readonly OwnerOnlyEntry[] = [
   { scope: 'permission.create', reason: '建岗位是授权行为本身，只给老板' },
   { scope: 'permission.delete', reason: '删岗位会让上面的人瞬间失去权限，只给老板' },
 
-  // ─── 外部集成与提成规则：配置类，改一次影响全员 ──────────────────────
+  // ─── 外部集成：密钥类，改一次影响所有对外调用 ────────────────────────
   { scope: 'api_integration.create', reason: 'API 密钥是凭据，只给老板（财务/采购都看不到）' },
   { scope: 'api_integration.read', reason: '同上 —— 能读就等于能拿到密钥' },
   { scope: 'api_integration.delete', reason: '吊销密钥会影响所有集成调用，只给老板' },
-  { scope: 'commission.create', reason: '提成规则决定谁拿多少钱，只给老板' },
-  { scope: 'commission.read', reason: '提成规则里含费率，等同薪酬信息' },
-  { scope: 'commission.delete', reason: '删规则会让历史提成无法重算，只给老板' },
 
   // ─── 破坏性动作：删除单据与主数据 ──────────────────────────────────
   { scope: 'customer.delete', reason: '删客户档案会影响挂在它上面的一切单据，只给老板' },
@@ -99,28 +96,6 @@ export const OWNER_ONLY: readonly OwnerOnlyEntry[] = [
     reason:
       '加工发货（进行中 → 在途，分料段/成品段）。仓管只有 processing.read+update，没有 ship。' +
       '若加工发货实际由仓管做，这是漏的；若由采购跟单，采购预设也没有 processing 域。',
-    pendingDecision: true,
-  },
-  {
-    scope: 'internal_trade.create',
-    reason: '内部交易（公司之间调货）整块只有老板能做 —— 是「业务量少所以先不派」还是「本来就只该老板」，未定',
-    pendingDecision: true,
-  },
-  {
-    scope: 'internal_trade.update',
-    reason:
-      '内部交易单的修改。内贸整块只有老板能做 —— 「业务量少所以先不派」还是「本来就只该老板」未定，' +
-      '所以这张表里内贸五格都标了待裁定，而不是当成「有意只给老板」',
-    pendingDecision: true,
-  },
-  {
-    scope: 'internal_trade.approve',
-    reason: '内部交易到货确认，同上',
-    pendingDecision: true,
-  },
-  {
-    scope: 'internal_trade.ship',
-    reason: '内部交易发货/撤销发货，同上',
     pendingDecision: true,
   },
   {
