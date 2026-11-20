@@ -109,6 +109,8 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('customer', ['read', 'create', 'update']),
       ...perms('product', ['read']),
       ...perms('inventory_qty', ['read']),
+      // 客户退货由销售登记（客户先找销售）；approve 归仓管 —— 货回到库房才算数。
+      ...perms('customer_return', ['read', 'create']),
       ...perms('settlement', ['read']),
       ...perms('workbench', ['read']),
     ],
@@ -127,6 +129,8 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('inventory_flow', ['read', 'create']),
       ...perms('stocktake', ['read']),
       ...perms('processing', ['read']),
+      // 一岗兼两职：客户退货既由本人登记、也由本人收货确认。
+      ...perms('customer_return', ['read', 'create', 'approve']),
       ...perms('workbench', ['read']),
     ],
   },
@@ -158,6 +162,8 @@ const POSITIONS: readonly PositionSeed[] = [
       // D47「理货可发起减少调整申请」+ D71：仓管只给删减（盘亏），不给盘盈。
       ...perms('stocktake', ['read', 'delete']),
       ...perms('processing', ['read', 'update']),
+      // 客户退货的实物动作：货回到库房才谈得上退款。create 归销售。
+      ...perms('customer_return', ['read', 'approve']),
       // D94 把发货从 update 拆成独立的 ship；仓管是实际出库人，口径补全。
       ...perms('purchase', ['read', 'ship']),
       ...perms('workbench', ['read']),
