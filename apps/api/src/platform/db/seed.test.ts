@@ -129,6 +129,47 @@ describe('seed（演示租户）', () => {
     }
   });
 
+  it('#414 派生的第二个洞：internal_trade 与 commission 不再只有老板能用', async () => {
+    // 补之前：内部交易的发货与到货确认没有任何非老板预设能做；
+    // 提成比例整块只有老板能看 —— 销售算不出自己的提成。
+    const rows = await test.database.query<{ preset_key: string; name: string; domain: string; action: string }>(
+      `SELECT p.preset_key, p.name, pp.domain, pp.action
+         FROM position p
+         JOIN position_permission pp ON pp.position_id = p.id
+        WHERE p.tenant_id = $1
+          AND pp.domain IN ('internal_trade', 'commission')
+          AND pp.granted = true
+        ORDER BY p.preset_key, p.name, pp.domain, pp.action`,
+      [DEMO_IDS.tenantId],
+    );
+
+    const pick = (name: string, domain: string) =>
+      [
+        ...new Set(
+          rows.rows
+            .filter((row) => row.name === name && row.domain === domain)
+            .map((row) => row.action),
+        ),
+      ].sort();
+
+    // 经理：开单与改单（调拨要决策），read 与 view_handler 来自 flatMap。
+    expect(pick('经理', 'internal_trade')).toEqual(
+      expect.arrayContaining(['create', 'read', 'update', 'view_handler']),
+    );
+    // 纯仓管：发出侧发货 + 接收侧到货确认，不参与开单。
+    expect(pick('纯仓管', 'internal_trade')).toEqual(['approve', 'read', 'ship']);
+    // 两个销售型预设都只看，不参与实物动作。
+    expect(pick('销售', 'internal_trade')).toEqual(['read']);
+    expect(pick('销售+仓管', 'internal_trade')).toEqual(['read']);
+    // 采购不涉及内部交易 —— 反向断言，防顺手铺全。
+    expect(pick('采购', 'internal_trade')).toEqual([]);
+
+    // 提成比例：销售看得到自己的，财务能改，采购看不到。
+    expect(pick('销售', 'commission')).toEqual(['read']);
+    expect(pick('财务+销售', 'commission')).toEqual(['create', 'delete', 'read']);
+    expect(pick('纯仓管', 'commission')).toEqual([]);
+  });
+
   it('重复执行幂等：不重复建岗位/员工', async () => {
     await seed(test.database);
 

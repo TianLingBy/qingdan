@@ -89,6 +89,9 @@ const POSITIONS: readonly PositionSeed[] = [
       ...['purchase', 'processing', 'sales', 'internal_trade'].flatMap((domain) =>
         perms(domain, ['view_handler']),
       ),
+      // 内部交易单要有人决定「调多少、什么内部价」—— 这是经理的活。发货与到货
+      // 确认（ship / approve）归仓管，取消（delete）仍归老板。
+      ...perms('internal_trade', ['create', 'update']),
       // D89：工作台待办是公共入口，所有预设岗位默认给 read（不含审批动作本身）。
       ...perms('workbench', ['read']),
       // D98：主数据去重审核（合并两条档案）默认给经理，其余岗位默认无；
@@ -110,6 +113,10 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('product', ['read']),
       ...perms('inventory_qty', ['read']),
       ...perms('settlement', ['read']),
+      // 看自己公司发出的调拨单（知道货什么时候到）；不参与开单与确认。
+      ...perms('internal_trade', ['read']),
+      // 提成比例对销售本人透明 —— 激励要能自己算出来，藏起来只会变成猜。
+      ...perms('commission', ['read']),
       ...perms('workbench', ['read']),
     ],
   },
@@ -127,6 +134,9 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('inventory_flow', ['read', 'create']),
       ...perms('stocktake', ['read']),
       ...perms('processing', ['read']),
+      // 销售侧要看调拨单与提成比例（一岗兼两职，销售那一半的需求一样在）。
+      ...perms('internal_trade', ['read']),
+      ...perms('commission', ['read']),
       ...perms('workbench', ['read']),
     ],
   },
@@ -142,6 +152,8 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('audit', ['read']),
       ...perms('sales', ['read', 'view_price']),
       ...perms('payment', ['read', 'create']),
+      // 提成比例是财务定的配置（D77）。销售只看 read，改与删归财务。
+      ...perms('commission', ['read', 'create', 'delete']),
       ...perms('workbench', ['read']),
     ],
   },
@@ -160,6 +172,9 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('processing', ['read', 'update']),
       // D94 把发货从 update 拆成独立的 ship；仓管是实际出库人，口径补全。
       ...perms('purchase', ['read', 'ship']),
+      // 内部交易单的实物动作：发出侧发货（锁定本司批次）、接收侧到货确认
+      // （把批次转入本司）。开单与改单归经理，取消归老板。
+      ...perms('internal_trade', ['read', 'ship', 'approve']),
       ...perms('workbench', ['read']),
     ],
   },

@@ -78,6 +78,9 @@ export const REQUIRED_MIGRATIONS: readonly string[] = [
   // 同上，也是纯数据 backfill，理由一致：采购预设缺这八格的表现是「建不了加工单、
   // 建不了加工厂、供应商退货发起不了」，全部是按钮灰掉而非报错，只能靠启动期提示。
   '20261120020000_purchase_preset_holes_backfill.sql',
+  // 同上。internal_trade 与 commission 两个域此前在非老板预设里几乎没有格子：
+  // 内部交易的发货与到货确认没人能做，销售看不见自己的提成比例。
+  '20261120040000_internal_trade_commission_presets_backfill.sql',
 ];
 
 export class SchemaOutOfDateError extends Error {

@@ -18,6 +18,7 @@ import { createTestDatabase, type TestDatabase } from '../../testing/pglite.js';
 
 const PUBLIC_BASE_URL = 'https://qingdan.example';
 const OWNER_PHONE = '10000000001';
+const MANAGER_PHONE = '10000000002';
 const WAREHOUSE_PHONE = '10000000004';
 
 const TO_COMPANY_ID = '01900000-0000-7000-8000-000000006101';
@@ -72,6 +73,7 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
   let test: TestDatabase;
   let app: FastifyInstance;
   let ownerCookie: string;
+  let managerCookie: string;
   let warehouseCookie: string;
 
   async function createOrder(
@@ -148,6 +150,7 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
     });
     await app.ready();
     ownerCookie = await login(app, OWNER_PHONE, 'req-internal-login-owner');
+    managerCookie = await login(app, MANAGER_PHONE, 'req-internal-login-manager');
     warehouseCookie = await login(
       app,
       WAREHOUSE_PHONE,
@@ -177,8 +180,9 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
         'req-internal-no-perm-list',
       ),
     });
-    expect(list.statusCode).toBe(403);
-    expect(list.json()).toMatchObject({ code: 'FORBIDDEN' });
+    // 纯仓管现在有 internal_trade.read —— 发货与到货确认是它的实物动作，
+    // 看得见单子才谈得上操作。这里断言它**能读**，下面 create 仍然 403。
+    expect(list.statusCode).toBe(200);
 
     const create = await app.inject({
       method: 'POST',
@@ -547,7 +551,9 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
     const forbidden = await app.inject({
       method: 'POST',
       url: `/api/v1/internal-trade-orders/${created.id}/dispatch`,
-      headers: writeHeaders(warehouseCookie, 'req-internal-dispatch-403', {
+      // 经理有 internal_trade.create / update（开单与改单），但没有 ship ——
+      // 发货是仓管的实物动作。用它验「有单侧权限但无实物权限」仍然 403。
+      headers: writeHeaders(managerCookie, 'req-internal-dispatch-403', {
         'if-match': '"1"',
       }),
       payload: { confirm: true },
@@ -609,7 +615,7 @@ describe('internal-trade N 单 HTTP（PGlite + seed 演示租户）', () => {
     const forbidden = await app.inject({
       method: 'POST',
       url: `/api/v1/internal-trade-orders/${created.id}/dispatch-revoke`,
-      headers: writeHeaders(warehouseCookie, 'req-internal-revoke-403', {
+      headers: writeHeaders(managerCookie, 'req-internal-revoke-403', {
         'if-match': '"2"',
       }),
       payload: { confirm: true, reason: '无权限' },
