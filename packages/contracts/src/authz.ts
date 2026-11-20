@@ -32,8 +32,24 @@ export const ScopeEntrySchema = z.object({
     'billing',
     'workbench',
   ]),
+  /**
+   * 这里的动作清单必须与 `domains.ts` 的 `ACTIONS` 保持一致（`domains.test.ts` 有交叉断言）。
+   * 单独写一份是因为 zod 要 tuple 字面量，从 `ACTIONS` 派生会丢掉类型推断。
+   */
   actions: z.array(
-    z.enum(['read', 'create', 'update', 'approve', 'ship', 'delete', 'merge', 'view_price', 'view_handler', 'export']),
+    z.enum([
+      'read',
+      'read_all',
+      'create',
+      'update',
+      'approve',
+      'ship',
+      'delete',
+      'merge',
+      'view_price',
+      'view_handler',
+      'export',
+    ]),
   ),
 });
 

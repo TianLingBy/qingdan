@@ -50,7 +50,23 @@ const ALL_DOMAINS = [
   'permission', 'company', 'profit_report', 'audit', 'api_integration', 'workbench', 'payment',
 ] as const;
 
-const ALL_ACTIONS = ['read', 'create', 'update', 'approve', 'ship', 'delete', 'merge', 'view_price', 'view_handler', 'export'] as const;
+/**
+ * 全部动作（D4 + D90 view_handler + D98 merge + D106 read_all）。
+ * 必须与 `packages/contracts/src/domains.ts` 的 `ACTIONS` 一致 —— 老板按这份清单全量下发。
+ */
+const ALL_ACTIONS = [
+  'read',
+  'read_all',
+  'create',
+  'update',
+  'approve',
+  'ship',
+  'delete',
+  'merge',
+  'view_price',
+  'view_handler',
+  'export',
+] as const;
 
 function perms(domain: string, actions: readonly string[]): Perm[] {
   return actions.map((action) => [domain, action] as const);
@@ -107,6 +123,19 @@ export const POSITIONS: readonly PositionSeed[] = [
       ...['customer', 'supplier', 'processor', 'product'].flatMap((domain) =>
         perms(domain, ['merge']),
       ),
+      // D106：员工之间默认互相看不了单，看全部要有 read_all。经理是「管这摊事」的岗位，
+      // 四类单据都给。纯仓管与采购刻意不给 —— 仓管的视角是货不是单，采购只看自己跟的。
+      ...['sales', 'purchase', 'processing', 'internal_trade'].flatMap((domain) =>
+        perms(domain, ['read_all']),
+      ),
+      // D106：两个「把单推到终态」的审批动作归经理 —— 销售签收 = 确认收入，
+      // 加工到货 = 确认损耗与产出，都要有人复核（D94 拆发货与确认时说的
+      // 「能发货的人不一定能确认收入」）。
+      ...perms('sales', ['approve']),
+      ...perms('processing', ['approve']),
+      // D42 原文「改批次价须走 platform 审批（老板 / 经理 / 财务可审批）」——
+      // 这句 11 月就写进决策了，seed 里一直只有老板。不是新口径，是补落地。
+      ...perms('inventory_qty', ['approve']),
     ],
   },
   {
@@ -167,6 +196,12 @@ export const POSITIONS: readonly PositionSeed[] = [
       // 提成比例是财务定的配置（D77）。销售只看 read，改与删归财务。
       ...perms('commission', ['read', 'create', 'delete']),
       ...perms('workbench', ['read']),
+      // D106：财务要核全公司的单（对账、算应收），四类都给 read_all。
+      ...['sales', 'purchase', 'processing', 'internal_trade'].flatMap((domain) =>
+        perms(domain, ['read_all']),
+      ),
+      // D42：成本更正审批人里写了财务（老板 / 经理 / 财务），这里补上。
+      ...perms('inventory_qty', ['approve']),
     ],
   },
   {

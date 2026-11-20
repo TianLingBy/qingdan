@@ -332,6 +332,8 @@ describe('销售单契约（sales）', () => {
       'order',
       'page',
       'pageSize',
+      // D106：看谁的（不传按权限走）。须排在 sort 前，`sort()` 是字典序。
+      'scope',
       'sort',
       'status',
     ]);

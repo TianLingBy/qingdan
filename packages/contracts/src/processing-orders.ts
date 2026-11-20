@@ -291,6 +291,15 @@ export const ProcessingOrderListQuerySchema = PageQuerySchema.extend({
   /** 按下单时记的对接人筛（#368）；老单据没记对接人，不会被命中。 */
   processorContactId: z.string().uuid().optional(),
   status: ProcessingOrderStatusSchema.optional(),
+  /**
+   * 看谁的（D106）。不传时**按权限走**：有 `processing.read_all` 就看全部，没有就只看自己经手的。
+   *
+   * `mine` 只返回 `handler_id` 是我的；`all` 要求 `processing.read_all`，没有就 403。
+   *
+   * 为什么不传时默认给全部、让前端自己上传 `mine`：那样前端漏传一次就等于全员互相能看单，
+   * 而「默认最小」的错法只是少看几张 —— 用户当场就会发现并去勾权限。两害相权取轻。
+   */
+  scope: z.enum(['mine', 'all']).optional(),
   keyword: z.string().min(1).max(64).optional(),
 });
 

@@ -181,6 +181,15 @@ const SalesOrderFilterFields = {
    * 想看「所有单」就不传这个参数，别用「空对接人」去表达「全部」。
    */
   customerContactId: z.string().uuid().optional(),
+  /**
+   * 看谁的（D106）。不传时**按权限走**：有 `sales.read_all` 就看全部，没有就只看自己经手的。
+   *
+   * `mine` 只返回 `handler_id` 是我的；`all` 要求 `sales.read_all`，没有就 403。
+   *
+   * 为什么不传时默认给全部、让前端自己上传 `mine`：那样前端漏传一次就等于全员互相能看单，
+   * 而「默认最小」的错法只是少看几张 —— 用户当场就会发现并去勾权限。两害相权取轻。
+   */
+  scope: z.enum(['mine', 'all']).optional(),
   status: SalesOrderStatusSchema.optional(),
   keyword: z.string().min(1).max(64).optional(),
 };

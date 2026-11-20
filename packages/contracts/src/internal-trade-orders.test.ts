@@ -480,6 +480,8 @@ describe('内部交易单契约（internal-trade）', () => {
       'fromCompanyId',
       'keyword',
       'limit',
+      // D106：看谁的（不传按权限走）。
+      'scope',
       'status',
       'toCompanyId',
     ]);
