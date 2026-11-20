@@ -357,7 +357,14 @@ function EntityForm({
   );
 }
 
-function ProcessorQuotes({ processor }: { processor: Processor }) {
+export function ProcessorQuotes({
+  processor,
+  canQuote,
+}: {
+  processor: Processor;
+  /** `processor.create` —— 后端 `createQuote` 用的是 create，不是 update（后端说了算）。 */
+  canQuote: boolean;
+}) {
   const queryClient = useQueryClient();
   const [quoteDate, setQuoteDate] = useState(new Date().toISOString().slice(0, 10));
   const [processName, setProcessName] = useState('');
@@ -421,7 +428,8 @@ function ProcessorQuotes({ processor }: { processor: Processor }) {
         />
         <button
           type="submit"
-          disabled={createQuote.isPending}
+          disabled={!canQuote || createQuote.isPending}
+          title={canQuote ? undefined : '需要 processor.create 权限'}
           className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           记录报价
@@ -849,7 +857,12 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
         </button>
       </div>
 
-      {selectedProcessor && <ProcessorQuotes processor={selectedProcessor} />}
+      {selectedProcessor && (
+        <ProcessorQuotes
+          processor={selectedProcessor}
+          canQuote={allows(me.data?.scope, 'processor', 'create')}
+        />
+      )}
     </section>
   );
 }
