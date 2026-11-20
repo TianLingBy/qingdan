@@ -112,6 +112,8 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('customer', ['read', 'create', 'update']),
       ...perms('product', ['read']),
       ...perms('inventory_qty', ['read']),
+      // 客户退货由销售登记（客户先找销售）；approve 归仓管 —— 货回到库房才算数。
+      ...perms('customer_return', ['read', 'create']),
       ...perms('settlement', ['read']),
       // 看自己公司发出的调拨单（知道货什么时候到）；不参与开单与确认。
       ...perms('internal_trade', ['read']),
@@ -134,6 +136,8 @@ const POSITIONS: readonly PositionSeed[] = [
       ...perms('inventory_flow', ['read', 'create']),
       ...perms('stocktake', ['read']),
       ...perms('processing', ['read']),
+      // 一岗兼两职：客户退货既由本人登记、也由本人收货确认。
+      ...perms('customer_return', ['read', 'create', 'approve']),
       // 销售侧要看调拨单与提成比例（一岗兼两职，销售那一半的需求一样在）。
       ...perms('internal_trade', ['read']),
       ...perms('commission', ['read']),
@@ -170,6 +174,8 @@ const POSITIONS: readonly PositionSeed[] = [
       // D47「理货可发起减少调整申请」+ D71：仓管只给删减（盘亏），不给盘盈。
       ...perms('stocktake', ['read', 'delete']),
       ...perms('processing', ['read', 'update']),
+      // 客户退货的实物动作：货回到库房才谈得上退款。create 归销售。
+      ...perms('customer_return', ['read', 'approve']),
       // D94 把发货从 update 拆成独立的 ship；仓管是实际出库人，口径补全。
       ...perms('purchase', ['read', 'ship']),
       // 内部交易单的实物动作：发出侧发货（锁定本司批次）、接收侧到货确认

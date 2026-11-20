@@ -170,6 +170,41 @@ describe('seed（演示租户）', () => {
     expect(pick('纯仓管', 'commission')).toEqual([]);
   });
 
+  it('#414 护栏抓到的最大一个洞：customer_return 不再只有老板能用', async () => {
+    // 补之前的状态：customer_return 整块在任何非老板预设里都不存在 —— 连 create 都没有。
+    // 前端 ReversalsPage 已按 customer_return.create / .approve 判权限，
+    // 所以销售的「新建客户退货」和仓管的「确认」按钮全是灰的。
+    const rows = await test.database.query<{ preset_key: string; name: string; action: string }>(
+      `SELECT p.preset_key, p.name, pp.action
+         FROM position p
+         JOIN position_permission pp ON pp.position_id = p.id
+        WHERE p.tenant_id = $1
+          AND pp.domain = 'customer_return'
+          AND pp.granted = true
+        ORDER BY p.preset_key, p.name, pp.action`,
+      [DEMO_IDS.tenantId],
+    );
+
+    // 按预设名归组（两个 'sales' 的 preset_key 相同，只有 name 能区分）。
+    const byName = new Map<string, Set<string>>();
+    for (const row of rows.rows) {
+      const key = `${row.preset_key}/${row.name}`;
+      if (!byName.has(key)) byName.set(key, new Set());
+      byName.get(key)!.add(row.action);
+    }
+
+    // 销售：能登记（客户先找销售），能看。
+    expect([...(byName.get('sales/销售') ?? [])].sort()).toEqual(['create', 'read']);
+    // 销售+仓管：一岗兼两职，登记与确认都要。
+    expect([...(byName.get('sales/销售+仓管') ?? [])].sort()).toEqual(['approve', 'create', 'read']);
+    // 纯仓管：只确认入库，不登记（create 归销售）。
+    expect([...(byName.get('warehouse/纯仓管') ?? [])].sort()).toEqual(['approve', 'read']);
+
+    // 财务刻意没有 —— 退款走结算模块（settlement），customer_return.approve 只管入库。
+    // 写成反向断言，防有人「顺手补全」时把入库确认也放给财务。
+    expect(byName.has('finance/财务+销售')).toBe(false);
+  });
+
   it('重复执行幂等：不重复建岗位/员工', async () => {
     await seed(test.database);
 
