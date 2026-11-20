@@ -8,6 +8,7 @@ import {
   CustomersPage,
   ProcessorsPage,
   ProductsPage,
+  ProcessorQuotes,
   SuppliersPage,
   deleteErrorText,
 } from './MasterdataPage';
@@ -275,5 +276,39 @@ describe('商品资料页', () => {
     expect(html).toContain('新增客户');
     // 客户没有金额口径（D49 注释），页面不得出现售价列
     expect(html).not.toContain('默认售价');
+  });
+});
+
+describe('加工厂报价面板', () => {
+  const PROCESSOR: Processor = {
+    id: 'pr1',
+    tenantId: 't1',
+    companyId: '00000000-0000-4000-8000-000000000001',
+    processorNo: null,
+    name: '测试加工厂',
+    contactName: '王师傅',
+    version: 1,
+    createdAt: '2026-11-08T00:00:00.000Z',
+    updatedAt: '2026-11-08T00:00:00.000Z',
+  };
+
+  const renderQuotes = (canQuote: boolean) =>
+    renderToStaticMarkup(
+      <QueryClientProvider client={createQueryClient()}>
+        <ProcessorQuotes processor={PROCESSOR} canQuote={canQuote} />
+      </QueryClientProvider>,
+    );
+
+  it('无 processor.create 时「记录报价」禁用并写明缺哪个 scope', () => {
+    const html = renderQuotes(false);
+    expect(html).toContain('记录报价');
+    expect(html).toContain('需要 processor.create 权限');
+    expect(html).toContain('disabled=""');
+  });
+
+  it('有 processor.create 时「记录报价」可点', () => {
+    const html = renderQuotes(true);
+    expect(html).toContain('记录报价');
+    expect(html).not.toContain('需要 processor.create 权限');
   });
 });
