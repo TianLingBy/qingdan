@@ -29,7 +29,7 @@ type PresetKey =
   | 'picking'
   | 'warehouse';
 
-interface PositionSeed {
+export interface PositionSeed {
   readonly id: string;
   readonly name: string;
   readonly kind: '预设' | '自定义';
@@ -56,7 +56,15 @@ function perms(domain: string, actions: readonly string[]): Perm[] {
   return actions.map((action) => [domain, action] as const);
 }
 
-const POSITIONS: readonly PositionSeed[] = [
+/**
+ * 出厂预设岗位。
+ *
+ * **导出是为了让 `preset-coverage.test.ts` 能对着契约逐格校验**（#414）：
+ * 契约里每个 `domain.action` 要么被某个非老板预设授予，要么在
+ * `preset-coverage.ts` 的 `OWNER_ONLY` 里声明「有意只给老板」。
+ * 漏掉的后果是按钮消失 —— 类型检查、现有测试、403 响应都看不见。
+ */
+export const POSITIONS: readonly PositionSeed[] = [
   {
     id: '01900000-0000-7000-8000-000000000011',
     name: '老板',
