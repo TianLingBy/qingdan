@@ -357,6 +357,11 @@ export async function listSalesOrders(
       OR c.name ILIKE ${keywordParam} ESCAPE '\\'
     )`);
   }
+  // D106：`scope=mine` 由用例层折算成 handlerId 传下来，undefined 表示不筛。
+  if (query.handlerId !== undefined) {
+    params.push(query.handlerId);
+    where.push(`o.handler_id = $${params.length}::uuid`);
+  }
   const paging = resolvePaging({
     // resolvePaging 只看「有没有 cursor」这一个事实，解码后的 id 就够当凭据。
     cursor: query.cursor === undefined ? undefined : query.cursor.id,
@@ -1812,6 +1817,8 @@ export interface SalesOrderExportQuery {
   readonly customerContactId?: string;
   readonly status?: SalesOrderStatus;
   readonly keyword?: string;
+  /** D106：只看这个人经手的单（`scope=mine`）。`undefined` = 不筛。 */
+  readonly handlerId?: string;
   /** 行数上限：内部统一按 `maxRows + 1` 取，多出一行即判定超限（不静默截断）。 */
   readonly maxRows: number;
 }
@@ -1874,6 +1881,12 @@ export async function exportSalesOrders(
       o.order_no ILIKE ${keywordParam} ESCAPE '\\'
       OR c.name ILIKE ${keywordParam} ESCAPE '\\'
     )`);
+  }
+
+  // D106：导出与列表同口径，`scope=mine` 由用例层折算成 handlerId 传下来。
+  if (query.handlerId !== undefined) {
+    params.push(query.handlerId);
+    where.push(`o.handler_id = $${params.length}::uuid`);
   }
 
   params.push(query.maxRows + 1);

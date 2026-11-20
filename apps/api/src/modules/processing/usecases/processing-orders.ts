@@ -75,6 +75,8 @@ interface ParsedListQuery {
   readonly keyword?: string;
   readonly cursor?: CursorPayload;
   readonly limit: number;
+  /** 只看这个人经手的单（D106）。`undefined` = 不筛。 */
+  readonly handlerId?: string;
 }
 
 function headerValue(request: FastifyRequest, name: string): string | undefined {
@@ -127,6 +129,24 @@ function requireScopeOrHandler(
   if (allowsScope(principal.scope, 'processing', action)) return;
   if (handlerId === principal.actorId) return;
   throw new AppError('FORBIDDEN', `缺少 processing.${action} 权限，且这张单不是你的`);
+}
+
+/**
+ * D106：列表的 `scope` 解析成 handlerId。
+ *
+ * 默认值按权限走而不是按参数 —— 前端漏传的后果应该是「少看几张」而不是「全员互看」。
+ * 显式传 `all` 但没有 `processing.read_all` 直接 403。
+ */
+function resolveScopeHandlerId(
+  principal: Principal,
+  requested: 'mine' | 'all' | undefined,
+): string | undefined {
+  const canReadAll = allowsScope(principal.scope, 'processing', 'read_all');
+  const scope = requested ?? (canReadAll ? 'all' : 'mine');
+  if (scope === 'all' && !canReadAll) {
+    throw new AppError('FORBIDDEN', '缺少 processing.read_all 权限，不能看全部单据');
+  }
+  return scope === 'mine' ? principal.actorId : undefined;
 }
 
 function parseCompleteInput(body: unknown) {
@@ -219,7 +239,10 @@ function issuesOf(
   }));
 }
 
-function parseListQuery(request: FastifyRequest): ParsedListQuery {
+function parseListQuery(
+  request: FastifyRequest,
+  principal: Principal,
+): ParsedListQuery {
   const parsed = ProcessingOrderListQuerySchema.safeParse(request.query);
   if (!parsed.success) {
     throw new AppError('VALIDATION_FAILED', '查询参数不合法', {
@@ -241,6 +264,7 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
     keyword: parsed.data.keyword,
     cursor,
     limit: clampLimit(parsed.data.limit),
+    handlerId: resolveScopeHandlerId(principal, parsed.data.scope),
   };
 }
 
@@ -346,7 +370,7 @@ export async function listProcessingOrders(
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'processing.order.list.read');
   requireScope(principal, 'read');
-  const query = parseListQuery(ctx.request);
+  const query = parseListQuery(ctx.request, principal);
 
   return withTenant(database, principal.tenantId, (tx) =>
     repo.listProcessingOrders(repoContext(tx, principal), query),

@@ -78,6 +78,8 @@ interface ParsedListQuery {
   readonly pageSize?: number;
   readonly sort?: 'orderNo' | 'totalAmount' | 'createdAt';
   readonly order?: 'asc' | 'desc';
+  /** 只看这个人经手的单（D106）。`undefined` = 不筛。 */
+  readonly handlerId?: string;
 }
 
 function headerValue(request: FastifyRequest, name: string): string | undefined {
@@ -126,6 +128,24 @@ function requireScopeOrHandler(
   if (allowsScope(principal.scope, 'purchase', action)) return;
   if (handlerId === principal.actorId) return;
   throw new AppError('FORBIDDEN', `缺少 purchase.${action} 权限，且这张单不是你的`);
+}
+
+/**
+ * D106：列表的 `scope` 解析成 handlerId。
+ *
+ * 默认值按权限走而不是按参数 —— 前端漏传的后果应该是「少看几张」而不是「全员互看」。
+ * 显式传 `all` 但没有 `purchase.read_all` 直接 403。
+ */
+function resolveScopeHandlerId(
+  principal: Principal,
+  requested: 'mine' | 'all' | undefined,
+): string | undefined {
+  const canReadAll = allowsScope(principal.scope, 'purchase', 'read_all');
+  const scope = requested ?? (canReadAll ? 'all' : 'mine');
+  if (scope === 'all' && !canReadAll) {
+    throw new AppError('FORBIDDEN', '缺少 purchase.read_all 权限，不能看全部单据');
+  }
+  return scope === 'mine' ? principal.actorId : undefined;
 }
 
 /** D15：创建必须落在调用者可见公司集合内（服务端判定，前端传参不能放大）。 */
@@ -184,7 +204,10 @@ function issuesOf(error: { issues: readonly { path: PropertyKey[]; message: stri
   }));
 }
 
-function parseListQuery(request: FastifyRequest): ParsedListQuery {
+function parseListQuery(
+  request: FastifyRequest,
+  principal: Principal,
+): ParsedListQuery {
   const parsed = PurchaseOrderListQuerySchema.safeParse(request.query);
   if (!parsed.success) {
     throw new AppError('VALIDATION_FAILED', '查询参数不合法', { issues: issuesOf(parsed.error) });
@@ -210,6 +233,7 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
     pageSize: parsed.data.pageSize,
     sort: parsed.data.sort,
     order: parsed.data.order,
+    handlerId: resolveScopeHandlerId(principal, parsed.data.scope),
   };
 }
 
@@ -342,7 +366,7 @@ export async function listPurchaseOrders(ctx: PurchaseOrderContext): Promise<{
   const database = requireDatabase(ctx, 'purchase.order.list.read');
   requireScope(principal, 'read');
 
-  const query = parseListQuery(ctx.request);
+  const query = parseListQuery(ctx.request, principal);
 
   const canViewPrice = allowsScope(principal.scope, 'purchase', 'view_price');
   const page = await withTenant(database, principal.tenantId, (tx) =>

@@ -322,6 +322,11 @@ export async function listProcessingOrders(
       OR p.name ILIKE ${keywordParam} ESCAPE '\\'
     )`);
   }
+  // D106：`scope=mine` 由用例层折算成 handlerId 传下来，undefined 表示不筛。
+  if (query.handlerId !== undefined) {
+    params.push(query.handlerId);
+    where.push(`o.handler_id = $${params.length}::uuid`);
+  }
   if (query.cursor !== undefined) {
     params.push(query.cursor.id);
     where.push(`o.id < $${params.length}::uuid`);
