@@ -131,16 +131,6 @@ export const OWNER_ONLY: readonly OwnerOnlyEntry[] = [
     pendingDecision: true,
   },
   {
-    scope: 'customer_return.create',
-    reason: '客户退货单由谁发起没定：销售（对客）还是仓管（实际收货）都说得通，两边现在都没有',
-    pendingDecision: true,
-  },
-  {
-    scope: 'supplier_return.create',
-    reason: '供应商退货单由谁发起没定：采购（对供应商）还是仓管（实际出货）都说得通，两边现在都没有',
-    pendingDecision: true,
-  },
-  {
     scope: 'inventory_qty.approve',
     reason:
       '成本更正审批。经理有 inventory_qty.read 但没有 approve —— 而 D47 定的「老板或经理审批」是盘点单，' +
@@ -163,43 +153,16 @@ export const OWNER_ONLY: readonly OwnerOnlyEntry[] = [
     pendingDecision: true,
   },
 
-  // ─── 护栏第一次跑出来的：这五格是真漏，不是「有意只给老板」 ──────────
-  // 它们的共同点是「业务上明明有人该做，但那个预设整块没有这个域」。
-  // 按 #414 的规矩本单不改授权（一类一单，别混），先收进这里并标待裁定，
-  // 补授权的活另开单。
-  {
-    scope: 'processing.create',
-    reason:
-      '建加工单。采购预设整块没有 processing 域（只有 purchase/product/supplier/inventory_qty/stocktake/settlement），' +
-      '但找加工厂下单本来就是采购跟单的活 —— **这是漏的**，只是补授权要单独一单',
-    pendingDecision: true,
-  },
-  {
-    scope: 'processor.create',
-    reason:
-      '建加工厂档案。采购能建供应商（supplier.create），但建不了加工厂 —— ' +
-      '而加工厂是采购去找的，**这是漏的**',
-    pendingDecision: true,
-  },
-  {
-    scope: 'processor.update',
-    reason: '改加工厂档案（联系人、地址、报价）。与 processor.create 同源，**这是漏的**',
-    pendingDecision: true,
-  },
-  {
-    scope: 'customer_return.approve',
-    reason:
-      '客户退货完成（R 单：进行中 → 已完成）。销售只有 sales 域的 approve 都没有，' +
-      '客户退货谁来确认收货与退款未定 —— 可能是仓管（实际收货）也可能是财务（退款）',
-    pendingDecision: true,
-  },
-  {
-    scope: 'supplier_return.approve',
-    reason:
-      '供应商退货完成（S 单：进行中 → 已完成）。采购预设没有 supplier_return 域任何一格 —— ' +
-      '发起与确认都做不了，**这是漏的**',
-    pendingDecision: true,
-  },
+  // ─── 护栏第一次跑出来、后来已补授权的那几格 ────────────────────────
+  // 它们原本被收在这里标 pendingDecision，后来各自单开了补授权 PR：
+  //   processing.create / processor.create / processor.update / supplier_return.approve
+  //     → #416（PR `10b2c5f`）采购预设补 processing / processor / supplier_return
+  //   customer_return.create / customer_return.approve
+  //     → #417（PR `1f10afe`）销售补 create、纯仓管补 approve
+  //   supplier_return.create → 同上 #416
+  //
+  // **它们不在这里了**，因为确实已经有人能做。这本身就是第 3 条用例在起作用：
+  // 一旦某格被别人持有，`OWNER_ONLY` 里那条就变成谎话，测试会逼着删掉。
 ];
 
 /**
