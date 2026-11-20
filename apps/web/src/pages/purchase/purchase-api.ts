@@ -45,6 +45,13 @@ export interface PurchaseOrderListFilters {
   readonly sort?: PurchaseOrderSort;
   /** 排序方向，默认 desc。 */
   readonly order?: 'asc' | 'desc';
+  /**
+   * 看谁的：`mine` 只看自己经手的、`all` 看全部（D106）。
+   *
+   * **不传时由服务端按权限决定**：有 `purchase.read_all` 就看全部，没有就只看自己的。
+   * 这里不设前端默认值 —— 前端猜一个，就会与后端的判定在某个权限组合下不一致。
+   */
+  readonly scope?: 'mine' | 'all';
 }
 
 /** 后端 `PurchaseOrderListQuerySchema.sort` 的排序白名单，一一对应，别在这里加列。 */
@@ -73,6 +80,7 @@ function listQuery(
     pageSize: filters.pageSize,
     sort: filters.sort,
     order: filters.order,
+    scope: filters.scope,
   };
 }
 
