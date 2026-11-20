@@ -76,21 +76,14 @@ export const OWNER_ONLY: readonly OwnerOnlyEntry[] = [
   { scope: 'processing.delete', reason: '加工单作废会丢材料与产出的对应关系，只给老板' },
   { scope: 'supplier_return.delete', reason: '退货单作废会导致应付对不上，只给老板' },
 
-  // ─── 待裁定：下面是真判断不了「该给谁」的 ────────────────────────────
-  {
-    scope: 'sales.approve',
-    reason:
-      'D94 把「发货」与「签收」拆开，理由是「能发货的人不一定能确认收入」；但**谁该确认收入**没有拍板。' +
-      '财务预设只有 settlement/sales.read，销售预设连 approve 都没有 —— 现在只有老板能签收。',
-    pendingDecision: true,
-  },
-  {
-    scope: 'processing.approve',
-    reason:
-      '加工到货确认（在途 → 已完成）。采购预设没有 processing 域任何权限，仓管只有 read+update。' +
-      '按「到货确认走 approve 与改单 update 分离」（D94 ④）的口径，仓管现在确认不了到货。',
-    pendingDecision: true,
-  },
+  // ─── 待裁定 / 待补齐：下面是真的还没定的 ──────────────────────────────
+  //
+  // D106（2026-11-20）之后从这里移走三条 —— `sales.approve`（客户签收）、
+  // `processing.approve`（加工到货确认）、`inventory_qty.approve`（成本更正审批）：
+  // 前两条按负责人拍板给了经理（「把单推到终态」属管理职责），
+  // 第三条是 D42 早就写过的口径（老板 / 经理 / 财务可审批）补落地。
+  // 它们从这里消失本身就是这个文件的第 3 条用例在起作用 ——
+  // 授权补上之后，「只有一个预设持有」不再成立，条目必须跟着改，否则测试红。
   {
     scope: 'processing.ship',
     reason:
@@ -103,13 +96,6 @@ export const OWNER_ONLY: readonly OwnerOnlyEntry[] = [
     reason:
       '内部交易的作废。内贸整块只有老板能做，是否该派给谁未定；' +
       '作废会影响两家公司的库存与结算，即便派出去也该比普通单据更严',
-    pendingDecision: true,
-  },
-  {
-    scope: 'inventory_qty.approve',
-    reason:
-      '成本更正审批。经理有 inventory_qty.read 但没有 approve —— 而 D47 定的「老板或经理审批」是盘点单，' +
-      '成本更正是否同口径未明确。',
     pendingDecision: true,
   },
   {

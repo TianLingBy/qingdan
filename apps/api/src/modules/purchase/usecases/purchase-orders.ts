@@ -78,6 +78,8 @@ interface ParsedListQuery {
   readonly pageSize?: number;
   readonly sort?: 'orderNo' | 'totalAmount' | 'createdAt';
   readonly order?: 'asc' | 'desc';
+  /** 只看这个人经手的单（D106）。`undefined` = 不筛。 */
+  readonly handlerId?: string;
 }
 
 function headerValue(request: FastifyRequest, name: string): string | undefined {
@@ -108,6 +110,42 @@ function requireScope(
   if (!allowsScope(principal.scope, 'purchase', action)) {
     throw new AppError('FORBIDDEN', `缺少 purchase.${action} 权限`);
   }
+}
+
+/**
+ * D106：动作判权 = 有权限点 **或** 自己就是这张单的经手人。
+ *
+ * 「或负责人」这一半不需要额外配置：能开单说明预设里给了 create，那自己开的单
+ * 就该能改、能发、能确认 —— 否则会出现「开得了单却推进不了」的死态（D106 之前
+ * 采购的发货、收货连经手人都得等老板，就是这个死态）。
+ * 权限点那一半留给管理者：要把别人的单推到终态，走显式授权。
+ */
+function requireScopeOrHandler(
+  principal: Principal,
+  action: 'read' | 'create' | 'update' | 'approve' | 'ship' | 'delete',
+  handlerId: string,
+): void {
+  if (allowsScope(principal.scope, 'purchase', action)) return;
+  if (handlerId === principal.actorId) return;
+  throw new AppError('FORBIDDEN', `缺少 purchase.${action} 权限，且这张单不是你的`);
+}
+
+/**
+ * D106：列表的 `scope` 解析成 handlerId。
+ *
+ * 默认值按权限走而不是按参数 —— 前端漏传的后果应该是「少看几张」而不是「全员互看」。
+ * 显式传 `all` 但没有 `purchase.read_all` 直接 403。
+ */
+function resolveScopeHandlerId(
+  principal: Principal,
+  requested: 'mine' | 'all' | undefined,
+): string | undefined {
+  const canReadAll = allowsScope(principal.scope, 'purchase', 'read_all');
+  const scope = requested ?? (canReadAll ? 'all' : 'mine');
+  if (scope === 'all' && !canReadAll) {
+    throw new AppError('FORBIDDEN', '缺少 purchase.read_all 权限，不能看全部单据');
+  }
+  return scope === 'mine' ? principal.actorId : undefined;
 }
 
 /** D15：创建必须落在调用者可见公司集合内（服务端判定，前端传参不能放大）。 */
@@ -166,7 +204,10 @@ function issuesOf(error: { issues: readonly { path: PropertyKey[]; message: stri
   }));
 }
 
-function parseListQuery(request: FastifyRequest): ParsedListQuery {
+function parseListQuery(
+  request: FastifyRequest,
+  principal: Principal,
+): ParsedListQuery {
   const parsed = PurchaseOrderListQuerySchema.safeParse(request.query);
   if (!parsed.success) {
     throw new AppError('VALIDATION_FAILED', '查询参数不合法', { issues: issuesOf(parsed.error) });
@@ -192,6 +233,7 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
     pageSize: parsed.data.pageSize,
     sort: parsed.data.sort,
     order: parsed.data.order,
+    handlerId: resolveScopeHandlerId(principal, parsed.data.scope),
   };
 }
 
@@ -324,7 +366,7 @@ export async function listPurchaseOrders(ctx: PurchaseOrderContext): Promise<{
   const database = requireDatabase(ctx, 'purchase.order.list.read');
   requireScope(principal, 'read');
 
-  const query = parseListQuery(ctx.request);
+  const query = parseListQuery(ctx.request, principal);
 
   const canViewPrice = allowsScope(principal.scope, 'purchase', 'view_price');
   const page = await withTenant(database, principal.tenantId, (tx) =>
@@ -354,9 +396,6 @@ export async function getPurchaseOrder(ctx: PurchaseOrderContext): Promise<Purch
     const downstream = await repo.hasDirectDownstream(repoContext(tx, principal), {
       id: order.id,
       companyId: order.companyId,
-      supplierId: order.supplierId,
-      status: order.status,
-      version: order.version,
     });
     return { ...order, cancelable: canCancel(order.status, downstream) };
   });
@@ -446,7 +485,6 @@ export async function updatePurchaseOrder(
 ): Promise<PurchaseOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'purchase.order.update');
-  requireScope(principal, 'update');
 
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -457,6 +495,10 @@ export async function updatePurchaseOrder(
   });
 
   const order = await withAudit(database, audit, async (tx) => {
+    // D106：改单多一次读，只为拿 handlerId —— 换的是「采购改不了自己开的单」这个死态。
+    const before = await repo.loadPurchaseOrderState(repoContext(tx, principal), id);
+    if (!before) throw new AppError('NOT_FOUND', '采购单不存在');
+    requireScopeOrHandler(principal, 'update', before.handlerId);
     const updated = await repo.updatePurchaseOrder(
       repoContext(tx, principal),
       id,
@@ -492,7 +534,6 @@ export async function cancelPurchaseOrder(
 ): Promise<PurchaseOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'purchase.order.cancel');
-  requireScope(principal, 'delete');
   assertHumanCredential(principal, '取消采购单');
 
   const id = parseOrderId(ctx.request);
@@ -502,6 +543,8 @@ export async function cancelPurchaseOrder(
     repo.loadPurchaseOrderState(repoContext(tx, principal), id),
   );
   if (!state) throw new AppError('NOT_FOUND', '采购单不存在');
+  // D106：取消是「本单动作」，经手人自己的单自己作废，不必等有 purchase.delete 的人。
+  requireScopeOrHandler(principal, 'delete', state.handlerId);
   if (state.version !== expectedVersion) {
     throw new AppError('VERSION_CONFLICT', '采购单版本与 If-Match 不一致，请重新读取后重试', {
       expected: expectedVersion,
@@ -558,7 +601,6 @@ export async function cancelPurchaseOrder(
 export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Promise<PurchaseOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'purchase.order.complete');
-  requireScope(principal, 'approve');
   assertHumanCredential(principal, '完成采购单');
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -567,6 +609,8 @@ export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Pro
     const context = repoContext(tx, principal);
     const state = await repo.loadPurchaseOrderState(context, id);
     if (!state) throw new AppError('NOT_FOUND', '采购单不存在');
+    // D106：完成会锁成本，判权按「purchase.approve 或本单经手人」。
+    requireScopeOrHandler(principal, 'approve', state.handlerId);
     if (state.version !== expectedVersion) throw new AppError('VERSION_CONFLICT', '采购单版本与 If-Match 不一致');
     if (state.status !== '进行中') throw new AppError('VALIDATION_FAILED', '只有进行中的采购单可以完成');
     const order = await repo.getPurchaseOrder(context, id);
@@ -612,7 +656,6 @@ export async function completePurchaseOrder(ctx: PurchaseOrderWriteContext): Pro
 export async function shipPurchaseOrder(ctx: PurchaseOrderWriteContext): Promise<PurchaseOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'purchase.order.ship');
-  requireScope(principal, 'ship');
   assertHumanCredential(principal, '采购发货');
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -623,6 +666,8 @@ export async function shipPurchaseOrder(ctx: PurchaseOrderWriteContext): Promise
     const context = repoContext(tx, principal);
     const state = await repo.loadPurchaseOrderState(context, id);
     if (!state) throw new AppError('NOT_FOUND', '采购单不存在');
+    // D106：发货判权按「purchase.ship 或本单经手人」—— 能开单的人该能自己把货发出去。
+    requireScopeOrHandler(principal, 'ship', state.handlerId);
     if (state.version !== expectedVersion) {
       throw new AppError('VERSION_CONFLICT', '采购单版本与 If-Match 不一致', {
         expected: expectedVersion,
@@ -732,7 +777,6 @@ export async function revokePurchaseOrderShip(
 ): Promise<PurchaseOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'purchase.order.ship.revoke');
-  requireScope(principal, 'ship');
   assertHumanCredential(principal, '撤销采购发货');
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -744,6 +788,8 @@ export async function revokePurchaseOrderShip(
     const context = repoContext(tx, principal);
     const state = await repo.loadPurchaseOrderState(context, id);
     if (!state) throw new AppError('NOT_FOUND', '采购单不存在');
+    // D106：撤销发货是发货的逆向操作，判权口径与发货一致（purchase.ship 或本单经手人）。
+    requireScopeOrHandler(principal, 'ship', state.handlerId);
     if (state.version !== expectedVersion) {
       throw new AppError('VERSION_CONFLICT', '采购单版本与 If-Match 不一致', {
         expected: expectedVersion,
@@ -788,7 +834,6 @@ export async function receivePurchaseOrder(
 ): Promise<PurchaseOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'purchase.order.receive');
-  requireScope(principal, 'approve');
   assertHumanCredential(principal, '采购到货确认');
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -798,6 +843,8 @@ export async function receivePurchaseOrder(
     const context = repoContext(tx, principal);
     const state = await repo.loadPurchaseOrderState(context, id);
     if (!state) throw new AppError('NOT_FOUND', '采购单不存在');
+    // D106：到货确认与完成同为审批动作，判权按「purchase.approve 或本单经手人」。
+    requireScopeOrHandler(principal, 'approve', state.handlerId);
     if (state.version !== expectedVersion) {
       throw new AppError('VERSION_CONFLICT', '采购单版本与 If-Match 不一致', {
         expected: expectedVersion,

@@ -72,6 +72,24 @@ function requireScope(principal: Principal, action: 'export'): void {
 }
 
 /**
+ * D106：导出的 `scope` 解析成 handlerId。
+ *
+ * 导出与列表必须同口径 —— 列表只看自己的、导出能导全部就是绕过。
+ * 默认值按权限走：漏传的后果是「少导几张」，而不是「全员互看」。
+ */
+function resolveScopeHandlerId(
+  principal: Principal,
+  requested: 'mine' | 'all' | undefined,
+): string | undefined {
+  const canReadAll = allowsScope(principal.scope, 'purchase', 'read_all');
+  const scope = requested ?? (canReadAll ? 'all' : 'mine');
+  if (scope === 'all' && !canReadAll) {
+    throw new AppError('FORBIDDEN', '缺少 purchase.read_all 权限，不能看全部单据');
+  }
+  return scope === 'mine' ? principal.actorId : undefined;
+}
+
+/**
  * 金额统一两位小数（四舍五入）。
  *
  * 纯字符串运算，不经过 number：金额是 decimal 字符串（D54），
@@ -139,6 +157,8 @@ export async function exportPurchaseOrders(
   requireScope(principal, 'export');
   assertNoPagingParams(ctx.request.query);
   const query = parseExportQuery(ctx.request);
+  // 导出与列表同口径（D106）：列表只看自己的、导出能导全部就是绕过。
+  const handlerId = resolveScopeHandlerId(principal, query.scope);
   const canViewPrice = allowsScope(principal.scope, 'purchase', 'view_price');
 
   const result = await withTenant(database, principal.tenantId, (tx) =>
@@ -150,6 +170,7 @@ export async function exportPurchaseOrders(
         supplierContactId: query.supplierContactId,
         status: query.status,
         keyword: query.keyword,
+        handlerId,
         maxRows: EXPORT_MAX_ROWS,
       },
     ),

@@ -1118,7 +1118,12 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
       () =>
         revokeDispatchInternalTradeOrder(
           writeCtx(
-            { scope: [{ domain: 'internal_trade', actions: ['update', 'delete'] }] },
+            {
+              // D106：经手人自己的单可以撤，所以「没有 ship」的拒绝要换一个不是经手人的身份。
+              scope: [{ domain: 'internal_trade', actions: ['update', 'delete'] }],
+              actorId: DEMO_IDS.managerEmployeeId,
+              employeeId: DEMO_IDS.managerEmployeeId,
+            },
             {
               params: { id: created.id },
               body: { confirm: true, reason: '没有出权限还想撤' },
@@ -1140,5 +1145,28 @@ describe('internal-trade N 单用例（PGlite + seed 演示租户）', () => {
     const revoked = await revokeDispatchInternalTradeOrder(ctx);
     expect(revoked).toMatchObject({ status: '进行中', version: 3, inTransitQty: '0' });
     expect(state.headers.ETag).toBe('"3"');
+  });
+
+  it('D106 经手人自带豁免：一个权限点都没有，自己开的单也能发货 / 到货', async () => {
+    // 一个权限点都不给：能通过只可能来自「本单经手人」这一半。
+    const handlerOnly = { scope: [] as ScopeMatrix };
+
+    const created = await createOne();
+    await dispatchInternalTradeOrder(
+      writeCtx(handlerOnly, {
+        params: { id: created.id },
+        body: { confirm: true },
+        headers: { 'if-match': '"1"' },
+      }).ctx,
+    );
+    await expect(
+      receiveInternalTradeOrder(
+        writeCtx(handlerOnly, {
+          params: { id: created.id },
+          body: { confirm: true },
+          headers: { 'if-match': '"2"' },
+        }).ctx,
+      ),
+    ).resolves.toMatchObject({ status: '已完成' });
   });
 });

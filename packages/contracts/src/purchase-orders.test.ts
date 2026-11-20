@@ -434,6 +434,8 @@ describe('采购单契约（purchase）', () => {
       'order',
       'page',
       'pageSize',
+      // D106：看谁的（不传按权限走）。须排在 sort 前，`sort()` 是字典序。
+      'scope',
       'sort',
       'status',
       // #368：按对接人筛（须排在 `supplierId` 前，`sort()` 是字典序）。

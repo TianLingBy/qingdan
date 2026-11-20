@@ -403,29 +403,40 @@ describe('purchase A 采购单完成用例（PGlite + seed 演示租户）', () 
   });
 
   it('完成与到货确认收紧权限：只有 update 没有 approve/ship → 403', async () => {
+    // D106：经手人自己的单可以推进，所以「没有 approve / ship」的拒绝必须换一个不是经手人的身份。
+    const notHandler = {
+      scope: UPDATE_ONLY_SCOPE,
+      actorId: DEMO_IDS.managerEmployeeId,
+      employeeId: DEMO_IDS.managerEmployeeId,
+    };
     const direct = await createOne();
-    await expectAppError(
-      finish(direct.id, 1, { scope: UPDATE_ONLY_SCOPE }),
-      'FORBIDDEN',
-    );
+    await expectAppError(finish(direct.id, 1, notHandler), 'FORBIDDEN');
 
     const shipOnlyDenied = await createOne();
     await expectAppError(
-      ship(
-        shipOnlyDenied.id,
-        [{ lineNo: 1, transitTo: 'warehouse' }],
-        1,
-        { scope: UPDATE_ONLY_SCOPE },
-      ),
+      ship(shipOnlyDenied.id, [{ lineNo: 1, transitTo: 'warehouse' }], 1, notHandler),
       'FORBIDDEN',
     );
 
     const receiveDenied = await createOne();
     await ship(receiveDenied.id, [{ lineNo: 1, transitTo: 'warehouse' }]);
-    await expectAppError(
-      receive(receiveDenied.id, 2, { scope: UPDATE_ONLY_SCOPE }),
-      'FORBIDDEN',
-    );
+    await expectAppError(receive(receiveDenied.id, 2, notHandler), 'FORBIDDEN');
+  });
+
+  it('D106 经手人自带豁免：一个权限点都没有，也是自己开的单就能完成 / 发货 / 收货', async () => {
+    // 一个权限点都不给：能通过只可能来自「本单经手人」这一半。
+    const handlerOnly = { scope: [] as ScopeMatrix };
+
+    const completed = await createOne();
+    await expect(finish(completed.id, 1, handlerOnly)).resolves.toMatchObject({
+      order: { status: '已完成' },
+    });
+
+    const shipped = await createOne();
+    await ship(shipped.id, [{ lineNo: 1, transitTo: 'warehouse' }], 1, handlerOnly);
+    await expect(receive(shipped.id, 2, handlerOnly)).resolves.toMatchObject({
+      status: '已完成',
+    });
   });
 
   it('完成：逐行建批次 + 入库流水，成本锁定单价、保管人=经手人、完成审计', async () => {

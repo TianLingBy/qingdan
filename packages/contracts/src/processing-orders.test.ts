@@ -677,6 +677,8 @@ describe('加工单契约（processing）', () => {
       // #368：按对接人筛（须排在 `processorId` 前，`sort()` 是字典序）。
       'processorContactId',
       'processorId',
+      // D106：看谁的（不传按权限走）。
+      'scope',
       'status',
     ]);
 

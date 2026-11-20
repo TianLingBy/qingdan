@@ -503,11 +503,17 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
   });
 
   it('发货只认 ship，到货只认 approve；只有 update → 403', async () => {
+    // D106：经手人自己的单可以推进，所以「没有 ship / approve」的拒绝必须换一个不是经手人的身份。
+    const notHandler = {
+      scope: UPDATE_ONLY_SCOPE,
+      actorId: DEMO_IDS.managerEmployeeId,
+      employeeId: DEMO_IDS.managerEmployeeId,
+    };
     const created = await createOne();
     await expectAppError(
       shipProcessingOrder(
         writeCtx(
-          { scope: UPDATE_ONLY_SCOPE },
+          notHandler,
           {
             params: { id: created.id },
             headers: { 'if-match': '"1"' },
@@ -522,7 +528,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     await expectAppError(
       receiveProcessingOrder(
         writeCtx(
-          { scope: UPDATE_ONLY_SCOPE },
+          notHandler,
           { params: { id: created.id }, headers: { 'if-match': '"2"' } },
         ).ctx,
       ),
@@ -533,7 +539,7 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
     await expectAppError(
       completeProcessingOrder(
         writeCtx(
-          { scope: UPDATE_ONLY_SCOPE },
+          notHandler,
           {
             params: { id: completeDenied.id },
             headers: { 'if-match': '"1"' },
@@ -543,6 +549,39 @@ describe('processing 加工单用例（PGlite + seed 演示租户）', () => {
       ),
       'FORBIDDEN',
     );
+  });
+
+  it('D106 经手人自带豁免：一个权限点都没有，自己开的单也能发货 / 到货 / 完成', async () => {
+    // 一个权限点都不给：能通过只可能来自「本单经手人」这一半。
+    const handlerOnly = { scope: [] as ScopeMatrix };
+
+    const materials = await createOne();
+    await shipProcessingOrder(
+      writeCtx(handlerOnly, {
+        params: { id: materials.id },
+        headers: { 'if-match': '"1"' },
+        body: { transitStage: 'materials' },
+      }).ctx,
+    );
+    await expect(
+      receiveProcessingOrder(
+        writeCtx(handlerOnly, {
+          params: { id: materials.id },
+          headers: { 'if-match': '"2"' },
+        }).ctx,
+      ),
+    ).resolves.toMatchObject({ status: '进行中' });
+
+    const completed = await createOne();
+    await expect(
+      completeProcessingOrder(
+        writeCtx(handlerOnly, {
+          params: { id: completed.id },
+          headers: { 'if-match': '"1"' },
+          body: { lossQty: '4' },
+        }).ctx,
+      ),
+    ).resolves.toMatchObject({ status: '已完成' });
   });
 
   it('完成：全损耗需要确认，写入快照并生成 C 草稿', async () => {

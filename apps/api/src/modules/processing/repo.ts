@@ -30,6 +30,8 @@ export interface ProcessingOrderRepoContext {
 }
 
 export interface ProcessingOrderListQuery {
+  /** 只看这个人经手的单（D106）。由 usecase 按 scope 与 read_all 权限解析后传入；repo 不认识权限模型。 */
+  readonly handlerId?: string;
   readonly companyId?: string;
   readonly processorId?: string;
   /** 按对接人筛（#368）。 */
@@ -62,6 +64,8 @@ export interface ProcessingOrderState {
   readonly companyId: string;
   /** 单头加工厂：改单换对接人时要拿它校验「同加工厂」（#306）。 */
   readonly processorId: string;
+  /** 经手人（D106）：自己开的单自己就能改、能发、能确认到货，不需要额外权限点。 */
+  readonly handlerId: string;
   readonly status: ProcessingOrderStatus;
   readonly inputQty: string;
   readonly lossQty: string | null;
@@ -112,6 +116,7 @@ interface StateRow {
   id: string;
   company_id: string;
   processor_id: string;
+  handler_id: string;
   status: string;
   input_qty: string | number;
   loss_qty: string | number | null;
@@ -317,6 +322,11 @@ export async function listProcessingOrders(
       OR p.name ILIKE ${keywordParam} ESCAPE '\\'
     )`);
   }
+  // D106：`scope=mine` 由用例层折算成 handlerId 传下来，undefined 表示不筛。
+  if (query.handlerId !== undefined) {
+    params.push(query.handlerId);
+    where.push(`o.handler_id = $${params.length}::uuid`);
+  }
   if (query.cursor !== undefined) {
     params.push(query.cursor.id);
     where.push(`o.id < $${params.length}::uuid`);
@@ -379,6 +389,7 @@ export async function loadProcessingOrderState(
     `SELECT id,
             company_id,
             processor_id,
+            handler_id,
             status,
             trim_scale(input_qty) AS input_qty,
             trim_scale(loss_qty) AS loss_qty,
@@ -401,6 +412,7 @@ export async function loadProcessingOrderState(
     id: row.id,
     companyId: row.company_id,
     processorId: row.processor_id,
+    handlerId: row.handler_id,
     status: row.status as ProcessingOrderStatus,
     inputQty: decimal(row.input_qty),
     lossQty: nullableDecimal(row.loss_qty),

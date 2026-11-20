@@ -337,6 +337,7 @@ paths:
                             type: string
                             enum:
                               - read
+                              - read_all
                               - create
                               - update
                               - approve
@@ -813,6 +814,7 @@ paths:
                           type: string
                           enum:
                             - read
+                            - read_all
                             - create
                             - update
                             - approve
@@ -932,6 +934,7 @@ paths:
                           type: string
                           enum:
                             - read
+                            - read_all
                             - create
                             - update
                             - approve
@@ -1281,6 +1284,7 @@ paths:
                           type: string
                           enum:
                             - read
+                            - read_all
                             - create
                             - update
                             - approve
@@ -1479,6 +1483,7 @@ paths:
                         type: string
                         enum:
                           - read
+                          - read_all
                           - create
                           - update
                           - approve
@@ -5148,6 +5153,14 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mine
+              - all
         - name: status
           in: query
           required: false
@@ -6157,6 +6170,14 @@ paths:
               - 在途
               - 已完成
               - 已取消
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mine
+              - all
         - name: keyword
           in: query
           required: false
@@ -7089,6 +7110,14 @@ paths:
               - 在途
               - 已完成
               - 已取消
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mine
+              - all
         - name: keyword
           in: query
           required: false
@@ -7779,6 +7808,14 @@ paths:
               - 在途
               - 已完成
               - 已取消
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mine
+              - all
         - name: keyword
           in: query
           required: false
@@ -8783,6 +8820,14 @@ paths:
             type: string
             format: uuid
             pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mine
+              - all
         - name: status
           in: query
           required: false
@@ -8864,6 +8909,14 @@ paths:
               - 在途
               - 已完成
               - 已取消
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mine
+              - all
         - name: keyword
           in: query
           required: false
@@ -9592,6 +9645,7 @@ paths:
                           type: string
                           enum:
                             - read
+                            - read_all
                             - create
                             - update
                             - approve
@@ -10216,6 +10270,7 @@ components:
                   type: string
                   enum:
                     - read
+                    - read_all
                     - create
                     - update
                     - approve
@@ -10332,6 +10387,7 @@ components:
                   type: string
                   enum:
                     - read
+                    - read_all
                     - create
                     - update
                     - approve
@@ -11390,6 +11446,7 @@ components:
                   type: string
                   enum:
                     - read
+                    - read_all
                     - create
                     - update
                     - approve

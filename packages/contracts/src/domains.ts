@@ -38,8 +38,13 @@ export type DomainKey = keyof typeof DOMAINS;
 export const DOMAIN_KEYS = Object.keys(DOMAINS) as DomainKey[];
 
 /**
- * 10 动作（D4 底层模型 + D90 view_handler + D98 merge）：
- * 查 / 建 / 编 / 审 / 出（出库/发货）/ 删 / 合并 / 看价 / 看经手人 / 导。
+ * 11 动作（D4 底层模型 + D90 view_handler + D98 merge + D106 read_all）：
+ * 查 / 看全部 / 建 / 编 / 审 / 出（出库/发货）/ 删 / 合并 / 看价 / 看经手人 / 导。
+ *
+ * 「看全部」为什么单独一个动作、不复用 read：`read` 的语义是「能看单」，
+ * 而员工之间默认不该互相看单（负责人看自己经手的）。要跨人看，就得再给一格
+ * `<域>.read_all`。这样老板能把「能看自己那几张」和「能看全公司」分开给 ——
+ * 推销员需要前者，经理需要后者，两者的风险完全不同。
  *
  * 「合并」为什么单独一个动作、不复用 update：合并会把两条档案揉成一条并停用被合并的那条，
  * 影响范围远超「改一个字段」——单据上的引用会被改写、审核台的待办会被批量收口、错合了要回滚。
@@ -48,6 +53,7 @@ export const DOMAIN_KEYS = Object.keys(DOMAINS) as DomainKey[];
  */
 export const ACTIONS = {
   read: '查',
+  read_all: '看全部',
   create: '建',
   update: '编',
   approve: '审',

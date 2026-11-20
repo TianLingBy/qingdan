@@ -40,6 +40,9 @@ export const DOMAIN_WORDS: readonly { key: string; label: string }[] = [
 
 export const ACTION_WORDS: readonly { key: string; label: string }[] = [
   { key: 'read', label: '查' },
+  // D106：`read` 是「能看单」，`read_all` 是「能看别人的单」。两者分开给 ——
+  // 推销员只要前者，经理要后者，风险完全不同。
+  { key: 'read_all', label: '看全部' },
   { key: 'create', label: '建' },
   { key: 'update', label: '编' },
   { key: 'approve', label: '审' },

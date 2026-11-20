@@ -93,6 +93,8 @@ interface ParsedListQuery {
   readonly pageSize?: number;
   readonly sort?: 'orderNo' | 'totalAmount' | 'createdAt';
   readonly order?: 'asc' | 'desc';
+  /** 只看这个人经手的单（D106）。`undefined` = 不筛。 */
+  readonly handlerId?: string;
 }
 
 function headerValue(
@@ -136,6 +138,42 @@ function requireScope(
   }
 }
 
+/**
+ * D106：动作判权 = 有权限点 **或** 自己就是这张单的经手人。
+ *
+ * 「或负责人」这一半不需要额外配置：能开单说明预设里给了 create，那自己开的单
+ * 就该能改、能发、能确认 —— 否则会出现「开得了单却推进不了」的死态（D106 之前
+ * 销售的发货、签收、取消全靠老板，就是这个死态）。
+ * 权限点那一半留给管理者：要把别人的单推到终态，走显式授权。
+ */
+function requireScopeOrHandler(
+  principal: Principal,
+  action: 'read' | 'create' | 'update' | 'ship' | 'approve' | 'delete' | 'export',
+  handlerId: string,
+): void {
+  if (allowsScope(principal.scope, 'sales', action)) return;
+  if (handlerId === principal.actorId) return;
+  throw new AppError('FORBIDDEN', `缺少 sales.${action} 权限，且这张单不是你的`);
+}
+
+/**
+ * D106：列表 / 导出的 `scope` 解析成 handlerId。
+ *
+ * 默认值按权限走而不是按参数 —— 前端漏传的后果应该是「少看几张」而不是「全员互看」。
+ * 显式传 `all` 但没有 `sales.read_all` 直接 403，避免「传了就生效」的错觉。
+ */
+function resolveScopeHandlerId(
+  principal: Principal,
+  requested: 'mine' | 'all' | undefined,
+): string | undefined {
+  const canReadAll = allowsScope(principal.scope, 'sales', 'read_all');
+  const scope = requested ?? (canReadAll ? 'all' : 'mine');
+  if (scope === 'all' && !canReadAll) {
+    throw new AppError('FORBIDDEN', '缺少 sales.read_all 权限，不能看全部单据');
+  }
+  return scope === 'mine' ? principal.actorId : undefined;
+}
+
 function assertCompanyVisible(principal: Principal, companyId: string): void {
   if (!principal.companyIds.includes(companyId)) {
     throw new AppError('FORBIDDEN', '调用者对该销售单所属公司无权限', {
@@ -163,7 +201,10 @@ function issuesOf(error: {
   }));
 }
 
-function parseListQuery(request: FastifyRequest): ParsedListQuery {
+function parseListQuery(
+  request: FastifyRequest,
+  principal: Principal,
+): ParsedListQuery {
   const parsed = SalesOrderListQuerySchema.safeParse(request.query);
   if (!parsed.success) {
     throw new AppError('VALIDATION_FAILED', '查询参数不合法', {
@@ -193,6 +234,7 @@ function parseListQuery(request: FastifyRequest): ParsedListQuery {
     pageSize: parsed.data.pageSize,
     sort: parsed.data.sort,
     order: parsed.data.order,
+    handlerId: resolveScopeHandlerId(principal, parsed.data.scope),
   };
 }
 
@@ -305,7 +347,7 @@ export async function listSalesOrders(ctx: SalesOrderContext): Promise<{
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.list.read');
   requireScope(principal, 'read');
-  const query = parseListQuery(ctx.request);
+  const query = parseListQuery(ctx.request, principal);
 
   const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
   const page = await withTenant(database, principal.tenantId, (tx) =>
@@ -371,6 +413,8 @@ export async function exportSalesOrders(
   assertHumanCredential(principal, '导出销售单列表');
   assertNoPagingParams(ctx.request.query);
   const query = parseExportQuery(ctx.request);
+  // 导出与列表同口径（D106）：列表只看自己的、导出能导全部就是绕过。
+  const handlerId = resolveScopeHandlerId(principal, query.scope);
   const canViewPrice = allowsScope(principal.scope, 'sales', 'view_price');
 
   const result = await withTenant(database, principal.tenantId, (tx) =>
@@ -380,6 +424,7 @@ export async function exportSalesOrders(
       customerContactId: query.customerContactId,
       status: query.status,
       keyword: query.keyword,
+      handlerId,
       maxRows: EXPORT_MAX_ROWS,
     }),
   );
@@ -435,13 +480,7 @@ async function loadSalesOrderDetail(
   if (!order) return null;
   const downstream = await repo.hasDirectDownstream(
     repoContext(tx, principal),
-    {
-      id: order.id,
-      companyId: order.companyId,
-      customerId: order.customerId,
-      status: order.status,
-      version: order.version,
-    },
+    { id: order.id, companyId: order.companyId },
   );
   return {
     ...order,
@@ -637,7 +676,7 @@ export async function updateSalesOrder(
 ): Promise<SalesOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.update');
-  requireScope(principal, 'update');
+  const mayUpdate = allowsScope(principal.scope, 'sales', 'update');
 
   const id = parseOrderId(ctx.request);
   const expectedVersion = parseIfMatchVersion(ctx.request);
@@ -647,6 +686,13 @@ export async function updateSalesOrder(
   });
 
   const order = await withAudit(database, audit, async (tx) => {
+    // D106：改单多一次读（只为拿 handlerId）。改单是低频动作，这一次查询换的是
+    // 「销售改不了自己开的单」这个死态。
+    const before = await repo.loadSalesOrderState(repoContext(tx, principal), id);
+    if (!before) throw new AppError('NOT_FOUND', '销售单不存在');
+    if (!mayUpdate && before.handlerId !== principal.actorId) {
+      throw new AppError('FORBIDDEN', '缺少 sales.update 权限，且这张单不是你的');
+    }
     const updated = await repo.updateSalesOrder(
       repoContext(tx, principal),
       id,
@@ -682,7 +728,7 @@ export async function cancelSalesOrder(
 ): Promise<SalesOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.cancel');
-  requireScope(principal, 'delete');
+  const mayCancel = allowsScope(principal.scope, 'sales', 'delete');
   assertHumanCredential(principal, '取消销售单');
 
   const id = parseOrderId(ctx.request);
@@ -692,6 +738,9 @@ export async function cancelSalesOrder(
     repo.loadSalesOrderState(repoContext(tx, principal), id),
   );
   if (!state) throw new AppError('NOT_FOUND', '销售单不存在');
+  if (!mayCancel && state.handlerId !== principal.actorId) {
+    throw new AppError('FORBIDDEN', '缺少 sales.delete 权限，且这张单不是你的');
+  }
   if (state.version !== expectedVersion) {
     throw new AppError(
       'VERSION_CONFLICT',
@@ -998,7 +1047,7 @@ export async function shipSalesOrder(
 ): Promise<SalesOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.ship');
-  requireScope(principal, 'ship');
+  const mayShip = allowsScope(principal.scope, 'sales', 'ship');
   assertHumanCredential(principal, '销售出库（会锁定库存与结算额）');
 
   const id = parseOrderId(ctx.request);
@@ -1014,6 +1063,9 @@ export async function shipSalesOrder(
     const context = repoContext(tx, principal);
     const state = await repo.lockSalesOrderState(context, id);
     if (!state) throw new AppError('NOT_FOUND', '销售单不存在');
+    if (!mayShip && state.handlerId !== principal.actorId) {
+      throw new AppError('FORBIDDEN', '缺少 sales.ship 权限，且这张单不是你的');
+    }
     if (state.version !== expectedVersion) {
       throw new AppError(
         'VERSION_CONFLICT',
@@ -1085,7 +1137,7 @@ export async function completeSalesOrder(
 ): Promise<SalesOrder> {
   const principal = requirePrincipal(ctx.request);
   const database = requireDatabase(ctx, 'sales.order.complete');
-  requireScope(principal, 'approve');
+  const mayComplete = allowsScope(principal.scope, 'sales', 'approve');
   assertHumanCredential(principal, '签收销售单（会把应收挂上）');
 
   const id = parseOrderId(ctx.request);
@@ -1101,6 +1153,9 @@ export async function completeSalesOrder(
     const context = repoContext(tx, principal);
     const state = await repo.lockSalesOrderState(context, id);
     if (!state) throw new AppError('NOT_FOUND', '销售单不存在');
+    if (!mayComplete && state.handlerId !== principal.actorId) {
+      throw new AppError('FORBIDDEN', '缺少 sales.approve 权限，且这张单不是你的');
+    }
     if (state.version !== expectedVersion) {
       throw new AppError(
         'VERSION_CONFLICT',

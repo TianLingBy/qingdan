@@ -40,6 +40,8 @@ export interface PurchaseOrderRepoContext {
 }
 
 export interface PurchaseOrderListQuery {
+  /** 只看这个人经手的单（D106）。由 usecase 按 scope 与 read_all 权限解析后传入；repo 不认识权限模型。 */
+  readonly handlerId?: string;
   readonly companyId?: string;
   readonly supplierId?: string;
   /** 按对接人筛（#368）。 */
@@ -104,6 +106,8 @@ export interface PurchaseOrderState {
   readonly companyId: string;
   /** 单头供应商：改单换对接人时要拿它校验「同供应商」（#306）。 */
   readonly supplierId: string;
+  /** 经手人（D106）：自己开的单自己就能改、能发、能收货，不需要额外权限点。 */
+  readonly handlerId: string;
   readonly status: PurchaseOrderStatus;
   readonly version: number;
 }
@@ -152,6 +156,7 @@ interface StateRow {
   id: string;
   company_id: string;
   supplier_id: string;
+  handler_id: string;
   status: string;
   version: number;
 }
@@ -362,6 +367,11 @@ export async function listPurchaseOrders(
       OR s.name ILIKE ${keywordParam} ESCAPE '\\'
     )`);
   }
+  // D106：`scope=mine` 由用例层折算成 handlerId 传下来，undefined 表示不筛。
+  if (query.handlerId !== undefined) {
+    params.push(query.handlerId);
+    where.push(`o.handler_id = $${params.length}::uuid`);
+  }
   const paging = resolvePaging({
     // resolvePaging 只看「有没有 cursor」这一个事实，解码后的 id 就够当凭据。
     cursor: query.cursor === undefined ? undefined : query.cursor.id,
@@ -483,7 +493,7 @@ export async function loadPurchaseOrderState(
   id: string,
 ): Promise<PurchaseOrderState | null> {
   const result = await ctx.tx.query<StateRow>(
-    `SELECT id, company_id, supplier_id, status, version
+    `SELECT id, company_id, supplier_id, handler_id, status, version
        FROM purchase_order
       WHERE id = $1::uuid
         AND tenant_id = $2
@@ -496,6 +506,7 @@ export async function loadPurchaseOrderState(
     id: row.id,
     companyId: row.company_id,
     supplierId: row.supplier_id,
+    handlerId: row.handler_id,
     status: row.status as PurchaseOrderStatus,
     version: row.version,
   };
@@ -509,7 +520,7 @@ export async function loadPurchaseOrderState(
  */
 export async function hasDirectDownstream(
   ctx: PurchaseOrderRepoContext,
-  state: PurchaseOrderState,
+  state: { readonly id: string; readonly companyId: string },
 ): Promise<boolean> {
   const result = await ctx.tx.query<{ exists: boolean }>(
     `SELECT EXISTS (
@@ -1549,6 +1560,8 @@ export interface PurchaseOrderExportQuery {
   readonly supplierContactId?: string;
   readonly status?: PurchaseOrderStatus;
   readonly keyword?: string;
+  /** D106：只看这个人经手的单（`scope=mine`）。`undefined` = 不筛。 */
+  readonly handlerId?: string;
   /** 行数上限：内部统一按 `maxRows + 1` 取，多出一行即判定超限（不静默截断）。 */
   readonly maxRows: number;
 }
@@ -1609,6 +1622,12 @@ export async function exportPurchaseOrders(
       o.order_no ILIKE ${keywordParam} ESCAPE '\\'
       OR s.name ILIKE ${keywordParam} ESCAPE '\\'
     )`);
+  }
+
+  // D106：导出与列表同口径，`scope=mine` 由用例层折算成 handlerId 传下来。
+  if (query.handlerId !== undefined) {
+    params.push(query.handlerId);
+    where.push(`o.handler_id = $${params.length}::uuid`);
   }
 
   params.push(query.maxRows + 1);
