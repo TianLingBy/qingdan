@@ -45,7 +45,7 @@
 ## 五、冻结标记
 
 - 分支：main
-- commit：以 tag `backend-v1.0.1` 指向的 commit（`3437aef`）为准
+- commit：以 tag `backend-v1.0.1` 指向的 commit 为准（含 #428 修复，业务代码停在 `3437aef`）
 - 冻结后 `git log --oneline <tag>..main -- apps/api packages/contracts apps/api/migrations docs/api/openapi.yaml` 应当只看到 `[unfreeze]` 的提交；出现别的就是有人绕过了规矩。
 
 ## 六、基线更新：`backend-v1.0.1`（2026-11-21 12:55）
