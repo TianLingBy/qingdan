@@ -1,7 +1,8 @@
 name: frozen-guard
 
-# 后端已于 2026-11-21 冻结（docs/BACKEND-FROZEN.md，tag `backend-v1.0.1`）。
-# 这个守卫只做一件事：动了冻结清单却没在 PR 标题写 `[unfreeze]` 就红，逼人把「为什么要动后端」写下来。
+# 后端 2026-11-21 **完全冻结**（docs/BACKEND-FROZEN.md 第七节，tag `backend-v1.0.2`）。
+# 只要 PR 碰了冻结清单就红——没有标题豁免、没有 `[unfreeze]` 口子。
+# 真要动，得先改这个 workflow 本身，那是一次公开、可审计的动作。
 
 on:
   pull_request:
@@ -15,17 +16,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unfreeze-declared:
-    name: unfreeze-declared
+  backend-frozen:
+    name: backend-frozen
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: 冻结清单的改动必须声明 [unfreeze]
+      - name: 冻结清单不许再动
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
@@ -51,13 +51,8 @@ jobs:
             echo "没动冻结清单，放行。"
             exit 0
           fi
-          echo "动了这些冻结文件：$hit"
-          case "$PR_TITLE" in
-            *"[unfreeze]"*)
-              echo "标题已声明 [unfreeze]，放行。"
-              ;;
-            *)
-              echo "::error::后端已冻结（docs/BACKEND-FROZEN.md）：动了冻结清单的 PR，标题必须带 \`[unfreeze]\`，正文写清为什么动、不动会怎样、影响哪些端点与表。"
-              exit 1
-              ;;
-          esac
+          echo "::error::后端已完全冻结（docs/BACKEND-FROZEN.md）：下面这些文件不许再改。$hit"
+          echo ""
+          echo "允许的前端改造范围：apps/web/**、docs/**（除 docs/api/openapi.yaml）。"
+          echo "若确有阻塞性缺陷，先在 issue 里带复现步骤与日志说明，由负责人决定是否改本守卫——PR 标题加什么前缀都没用。"
+          exit 1
