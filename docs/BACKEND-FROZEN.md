@@ -58,3 +58,14 @@
 - 允许动的也照样走 `[unfreeze]` + 补回归测试；顺手优化、重构、加字段、换写法一律不做。
 - 新需求（新的统计口径、新字段、新端点）**不进冻结期**，等前端与设计对齐之后统一评估。
 
+## 七、完全冻结（2026-11-21 13:15，用户二次定调）
+
+用户原话：「后端完全冻结。」——上一节那条 `[unfreeze]` 的口子也收了。
+
+- **冻结清单上的文件，一个都不许再改**：`apps/api/**`、`packages/contracts/**`、`apps/api/migrations/**`、`docs/api/openapi.yaml`、`apps/cli/**`、`apps/mcp/**`。
+- **`[unfreeze]` 前缀不再是通行证**。`.github/workflows/frozen-guard.yml` 已改成「碰冻结清单就红」，标题写什么都不放行。
+- 唯一的合法改法：先改守卫本身（一次公开、可审计的动作），并在 issue 里带复现步骤与日志说明为什么必须动。**P0 真 bug 也走这条路**，没有例外。
+- 冻结基线：tag **`backend-v1.0.2`**（业务代码仍停在 `3437aef`，本 tag 只包含冻结文本与守卫的变更）。
+- 允许动的范围：`apps/web/**`、`docs/**`（除 `docs/api/openapi.yaml`）、`.github/**` 里与前端/协作相关的 workflow。
+- 前端改造的规范边界写在 `docs/ui/frontend-change-rules.md`，派给前端（何永上 / `Meow-Yay`）的 issue 都引用它。
+
