@@ -1,0 +1,63 @@
+name: frozen-guard
+
+# 后端已于 2026-11-21 冻结（docs/BACKEND-FROZEN.md，tag `backend-v1.0.1`）。
+# 这个守卫只做一件事：动了冻结清单却没在 PR 标题写 `[unfreeze]` 就红，逼人把「为什么要动后端」写下来。
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frozen-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  unfreeze-declared:
+    name: unfreeze-declared
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 冻结清单的改动必须声明 [unfreeze]
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          # 与 docs/BACKEND-FROZEN.md 第一节的表格一一对应。
+          FROZEN=(
+            apps/api
+            packages/contracts
+            apps/cli
+            apps/mcp
+            docs/api/openapi.yaml
+          )
+          git fetch --no-tags --quiet origin "$BASE_REF"
+          changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          hit=""
+          for path in "${FROZEN[@]}"; do
+            while IFS= read -r file; do
+              case "$file" in
+                "$path"|"$path"/*) hit="$hit"$'\n'"$file" ;;
+              esac
+            done <<< "$changed"
+          done
+          if [ -z "$hit" ]; then
+            echo "没动冻结清单，放行。"
+            exit 0
+          fi
+          echo "动了这些冻结文件：$hit"
+          case "$PR_TITLE" in
+            *"[unfreeze]"*)
+              echo "标题已声明 [unfreeze]，放行。"
+              ;;
+            *)
+              echo "::error::后端已冻结（docs/BACKEND-FROZEN.md）：动了冻结清单的 PR，标题必须带 \`[unfreeze]\`，正文写清为什么动、不动会怎样、影响哪些端点与表。"
+              exit 1
+              ;;
+          esac

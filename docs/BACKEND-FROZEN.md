@@ -45,5 +45,16 @@
 ## 五、冻结标记
 
 - 分支：main
-- commit：以 tag `backend-v1.0.0` 指向的 commit 为准
+- commit：以 tag `backend-v1.0.1` 指向的 commit（`3437aef`）为准
 - 冻结后 `git log --oneline <tag>..main -- apps/api packages/contracts apps/api/migrations docs/api/openapi.yaml` 应当只看到 `[unfreeze]` 的提交；出现别的就是有人绕过了规矩。
+
+## 六、基线更新：`backend-v1.0.1`（2026-11-21 12:55）
+
+用户 12:54 明确要求「不要再改了，现在问题很多，现在的前端与设计稿完全不一样」——工作重心整体转前端/设计，后端从「可以冻」转为「**冻结期，除真 bug 外不停手**」。
+
+- 基线从 `6154f6d`（`backend-v1.0.0`）前移到 **`3437aef`**（tag `backend-v1.0.1`），中间唯一一笔是 #428 的 `[unfreeze]` 修复（加工厂汇总 500）。
+- **新增 CI 守卫** `.github/workflows/frozen-guard.yml`：动了冻结清单却在 PR 标题里没写 `[unfreeze]` → 直接红。这条是机器执行的，不靠自觉。
+- 冻结期内允许动的只有两类：①**P0/P1 真 bug**（有复现路径、有日志/证据）②冻结文本本身（本文件、`docs/decisions.md`）。
+- 允许动的也照样走 `[unfreeze]` + 补回归测试；顺手优化、重构、加字段、换写法一律不做。
+- 新需求（新的统计口径、新字段、新端点）**不进冻结期**，等前端与设计对齐之后统一评估。
+
