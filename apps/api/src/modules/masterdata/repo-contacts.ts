@@ -37,6 +37,12 @@ interface ContactKindSpec {
   readonly orderTable: string;
   readonly orderOwnerColumn: string;
   /**
+   * 单据表上「这一单算多少钱」的列。客户/供应商标的 `total_amount` 同名列可以直接用，
+   * 但 `processing_order` 没有这一列（只有 `fee_amount` 加工费、`material_cost_amount`
+   * 材料成本），写死列名会让加工厂汇总 100% 报 42703（#427）。
+   */
+  readonly orderAmountColumn: string;
+  /**
    * 单据表上的「这次是谁来下单」列（迁移 `20261118060000_masterdata_contacts.sql`
    * 第 195-211 行加的三个可空引用）。
    *
@@ -58,6 +64,7 @@ export const CONTACT_SPECS: Readonly<Record<ContactKind, ContactKindSpec>> = {
     hasLegacyPhone: true,
     orderTable: 'sales_order',
     orderOwnerColumn: 'customer_id',
+    orderAmountColumn: 'total_amount',
     orderContactColumn: 'customer_contact_id',
     label: '客户',
   },
@@ -69,6 +76,7 @@ export const CONTACT_SPECS: Readonly<Record<ContactKind, ContactKindSpec>> = {
     hasLegacyPhone: true,
     orderTable: 'purchase_order',
     orderOwnerColumn: 'supplier_id',
+    orderAmountColumn: 'total_amount',
     orderContactColumn: 'supplier_contact_id',
     label: '供应商',
   },
@@ -80,6 +88,8 @@ export const CONTACT_SPECS: Readonly<Record<ContactKind, ContactKindSpec>> = {
     hasLegacyPhone: false,
     orderTable: 'processing_order',
     orderOwnerColumn: 'processor_id',
+    // 加工单没有 total_amount，累计金额口径是加工费（#427）。
+    orderAmountColumn: 'fee_amount',
     orderContactColumn: 'processor_contact_id',
     label: '加工厂',
   },
@@ -501,7 +511,8 @@ export async function aggregateSummary(
   const spec = CONTACT_SPECS[kind];
   const result = await ctx.tx.query<ContactSummaryRow>(
     `WITH scoped AS (
-       SELECT o.id, o.order_no, o.status, o.total_amount, o.created_at,
+       SELECT o.id, o.order_no, o.status,
+              o.${spec.orderAmountColumn} AS total_amount, o.created_at,
               o.${spec.orderContactColumn} AS contact_id
          FROM ${spec.orderTable} o
         WHERE o.tenant_id = $1
@@ -622,7 +633,7 @@ export async function aggregateByContact(
   const result = await ctx.tx.query<ContactGroupRow>(
     `WITH scoped AS (
        SELECT o.${spec.orderContactColumn} AS contact_id,
-              o.total_amount,
+              o.${spec.orderAmountColumn} AS total_amount,
               o.created_at
          FROM ${spec.orderTable} o
         WHERE o.tenant_id = $1
