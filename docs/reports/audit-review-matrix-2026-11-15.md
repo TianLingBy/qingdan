@@ -4,6 +4,13 @@
 
 **口径**：approve 端点的检索条件是精确匹配 `action: 'approve'`，全仓共 6 条（`packages/contracts/src/cost-adjustments.ts:182`、`packages/contracts/src/cost-adjustments.ts:196`、`packages/contracts/src/processing-orders.ts:395`、`packages/contracts/src/purchase-orders.ts:223`、`packages/contracts/src/settlement-orders.ts:201`、`packages/contracts/src/stocktakes.ts:258`）。每条结论后括注 `文件:行号`；查不到的写「未找到证据」，不做推断；不引用未在代码或文档中出现的决策编号。
 
+> **后续状态（2026-11-21 补记，原文一律不改）**
+>
+> - **`GET /api/v1/todos`（第 120 行那段）**：原文结论是「该接口在契约与后端均未找到证据」。**这条已被 D89 反转** —— 端点现在是 `packages/contracts/src/todos.ts` 的 `workbench.todos.read`，实现在 `apps/api/src/modules/workbench/`，前端 `apps/web/src/pages/workbench/workbench-api.ts` 已在调用（PR #384）。原文引用的 `workbench-mock.ts:9` 那行 TODO 注释随着该文件被删除一起消失了。
+> - **approve 端点的条数**：原文写的 6 条是 11-15 的实数。D94 之后「销售单签收」与「加工单到货确认 / 完成」也走 `approve`，D106 又新增了 `read_all` 动作。**当前真源是 `docs/api/feature-matrix.md`（由 `node tools/gen-feature-matrix.mjs` 从契约生成，CI 保证不漂移）**，不要再拿本文的条数当统计依据。
+>
+> 为什么保留原文：这是「当时的证据」，删掉就失去「某天仓库真实长什么样」的记录。
+
 ---
 
 ## 1. 契约层：所有 `action: 'approve'` 的端点
