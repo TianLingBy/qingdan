@@ -1,8 +1,8 @@
-# 四态与组件对照（给 repo 的对接稿）
+# 四态与组件对照（新 UI v3.0 · 给 repo 的对接稿）
 
 - 目的：这份设计稿要上传到 `TianLingBy/qingdan`，本文件把「设计稿怎么落到 `apps/web`」讲清楚，**只写能直接抄的东西**，不重复业务口径。
 - 对照基准：`docs/ui/frontend-change-rules.md`（#431 指定验收口径）+ `apps/web/src/lib/list-state.ts` + `apps/web/src/styles/app-v013.css:38-53` + `apps/web/src/styles/README.md` §四态。
-- 设计稿本体：`UI重构\新UI\index.html`（单文件；下文行号按 2026-11-24 版本）。
+- 设计稿本体：`design/v3.0/index.html`（单文件；下文行号按 2026-11-24 版本）。
 
 ## 一、四态：设计稿已经是 CSS 驱动，可以照抄
 
