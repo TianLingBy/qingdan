@@ -5,13 +5,15 @@ import { inventoryApi, type InventoryBatchFilters } from './inventory-api';
 
 function clientWith(payload: unknown) {
   const calls: { input: string; init?: RequestInit }[] = [];
-  const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-    calls.push({ input: String(input), init });
-    return new Response(JSON.stringify(payload), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  });
+  const fetchImpl = vi.fn(
+    async (input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ input: String(input), init });
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  );
   return {
     calls,
     client: new ApiClient({
@@ -68,15 +70,59 @@ describe('库存页面 API 封装', () => {
     expect(decrease.calls[0]?.input).toBe('/api/v1/stocktakes/decreases');
   });
 
+  it('批次页码模式只发送 page / pageSize / sort / order，不与 cursor 混用', async () => {
+    const { calls, client } = clientWith({
+      items: [],
+      total: 0,
+      page: 2,
+      pageSize: 20,
+      nextCursor: null,
+    });
+    await inventoryApi.listBatches(
+      {
+        companyId: '00000000-0000-4000-8000-000000000001',
+        keyword: 'PB-0001',
+        page: 2,
+        pageSize: 20,
+        sort: 'availableQty',
+        order: 'desc',
+      },
+      client,
+    );
+
+    expect(calls[0]?.input).toBe(
+      '/api/v1/inventory/batches?companyId=00000000-0000-4000-8000-000000000001&keyword=PB-0001&page=2&pageSize=20&sort=availableQty&order=desc',
+    );
+    expect(calls[0]?.input).not.toContain('cursor=');
+    expect(calls[0]?.input).not.toContain('limit=');
+  });
+
+  it('低库存预警按公司读取真接口', async () => {
+    const { calls, client } = clientWith({ items: [] });
+    await inventoryApi.listAlerts(
+      '00000000-0000-4000-8000-000000000001',
+      client,
+    );
+
+    expect(calls[0]?.input).toBe(
+      '/api/v1/inventory/alerts?companyId=00000000-0000-4000-8000-000000000001',
+    );
+  });
+
   it('盘点审批发送强 If-Match', async () => {
-    const { calls, client } = clientWith({ id: 's1', approvable: { allowed: false, reason: null } });
+    const { calls, client } = clientWith({
+      id: 's1',
+      approvable: { allowed: false, reason: null },
+    });
     await inventoryApi.approveStocktake('s1', 7, client);
     const headers = new Headers(calls[0]?.init?.headers);
     expect(headers.get('If-Match')).toBe('"7"');
   });
 
   it('decimal 比较不使用浮点数', () => {
-    expect(compareDecimal('123456789012.123456', '123456789012.123455')).toBe(1);
+    expect(compareDecimal('123456789012.123456', '123456789012.123455')).toBe(
+      1,
+    );
     expect(compareDecimal('1.000000', '1')).toBe(0);
     expect(compareDecimal('0.1', '0.2')).toBe(-1);
   });
