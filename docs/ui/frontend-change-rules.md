@@ -56,7 +56,7 @@
    - 复用 `app-v013.css` 已有的：`panel`、`card`、`btn` 家族、`chip`、`crumb`、`table`、`pager`、`sk`（骨架）、`r-row`、`st-tr`、`st-block`
    - 稿子新引入、repo 里**还没有**的：`list-card`、`.tf`（列表页脚条）、`lg-form` / `lg-alert`（登录表单）—— 这些进 `app-v30.css`
    - 禁止：行内 `style=`、新造 CSS 变量名、新引 UI 库 / 图标库 / CSS-in-JS
-3. **图标**：稿子里 24 枚新图标（`四态与组件对照-给repo.md` §五：`pg-first`/`pg-prev`/`pg-next`/`pg-last`/`clock`/`trend`/`trash`/`pencil`/`key`/`shield`/`refresh`/`calendar`/`filter`/`arrow-in`/`arrow-out`/`adjust`/`ticket`/`check`/`undo`/`copy`/`star`/`pin`/`split`）按现有 `viewBox="0 0 24 24"`、`stroke=currentColor`、`stroke-width=1.6`、默认 18px 的规范进图标组件，不许引图标库。
+3. **图标**：稿子里共 **23 枚**图标（`四态与组件对照-给repo.md` §五：`pg-first`/`pg-prev`/`pg-next`/`pg-last`/`clock`/`trend`/`trash`/`pencil`/`key`/`shield`/`refresh`/`calendar`/`filter`/`arrow-in`/`arrow-out`/`adjust`/`ticket`/`check`/`undo`/`copy`/`star`/`pin`/`split`）按现有 `viewBox="0 0 24 24"`、`stroke=currentColor`、`stroke-width=1.6`、默认 18px 的规范进图标组件，不许引图标库。
 
 ## 四、四态与权限态（硬性）
 
@@ -114,7 +114,7 @@ pnpm -r build                                           # 五包构建过
 
 ## 八、分批顺序（按这个来，别跳）
 
-**第 0 步（前置，单独一个 PR）**：把 v3.0 样式搬进 `apps/web/src/styles/app-v30.css` + 24 枚图标进组件。这步不做，后面每页都会各写一套。
+**第 0 步（前置，单独一个 PR）——✅ 已完成**：v3.0 样式在 `apps/web/src/styles/app-v30.css`（586 行，`index.css` 已 `@import`），图标在 `apps/web/src/components/icons/Icon.tsx`（**23 枚**，`<Icon name="pg-next" />`），由 #443 / PR #446 于 2026-11-24 合入（`98e351d`）。各批直接引用，不要再各写一套。
 
 1. **单据 5 页 + 冲正页**（`/purchase-orders`、`/processing-orders`、`/sales-orders`、`/internal-trades`、`/settlements`、`/reversals`）—— #431
 2. **主数据 4 页 + 员工页**（`/products` `/customers` `/suppliers` `/processors`、`/employees`）—— #432
