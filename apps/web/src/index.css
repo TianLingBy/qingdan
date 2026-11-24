@@ -9,6 +9,12 @@
 @import "./styles/tokens-v013.css";
 @import "./styles/app-v013.css";
 
+/* v3.0 底座（#443 第 0 步）：只含 v3.0 稿子新增、上述两份没有的类
+ * （list-card / .tf / .tw / lg-* / ent-*），外加 --v30-* 变量桥接。
+ * 必须排在 app-v013.css 之后——它只覆盖自己新写的选择器，不抢 v0.13 的类。
+ * 范围与不搬清单见 styles/app-v30.css 头注释。 */
+@import "./styles/app-v30.css";
+
 /*
  * 浏览器基线见 docs/decisions.md D56：
  * Win10 22H2 + Edge（Chromium/Edge 111 级别）；不支持 IE11 与兼容模式。

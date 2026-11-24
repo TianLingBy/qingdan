@@ -1,0 +1,586 @@
+/* ============================================================
+   轻单 v3.0 · 样式底座（#443 第 0 步）
+   ------------------------------------------------------------
+   来源：design/v3.0/index.html 的 <style> 段（L16–574）。
+   落库原则（#443 正文）：
+     1. app-v013.css 已有的类一律复用，本文件**不重复定义**；
+     2. 只搬稿子新增、repo 里 0 命中的那几组；
+     3. 颜色 / 圆角冲突以 tokens-v013.css 为准；
+        真需要新变量时走 `--v30-` 前缀，不悄悄改旧变量；
+     4. 不搬原型外壳（`.phone` / `.stage`，本版稿子里已不存在）与全局 reset。
+
+   ------------------------------------------------------------------
+   一、本文件搬了什么（逐条对应稿子行号）
+   ------------------------------------------------------------------
+   | 类 | 稿子 | 说明 |
+   |---|---|---|
+   | `.list-card`                | L573       | 列表卡容器：非 filled 态收起页脚分页 |
+   | `.tf`                       | L250/458   | 列表卡页脚条（左「共 N 条 · 合计」，右分页） |
+   | `.pager` 子元素补充          | L450–457   | `button.on` / `.per` / `.dots` / svg 尺寸（父级 `.pager` 复用 v0.13，不重写） |
+   | `.tw` / `.tw.tight`         | L233/529   | 表格横向滚动容器（v0.13 靠 Tailwind 的 overflow-x-auto，v3.0 用它） |
+   | `.lg-*`（产品部分）          | L381–421   | 登录页：左品牌右表单、`.lg-field` / `.lg-code` / `.lg-submit` / `data-state` 三态 / `.lg-alert` |
+   | `.ent-*` / `.lg-ok`         | L506–515   | 入企页（joined / invalid） |
+   | `@keyframes lgDotPulse/spin` | L394/496  | 上面两组用到的动效 |
+
+   ------------------------------------------------------------------
+   二、本文件**没有**搬什么（避免和 app-v013 打两套）
+   ------------------------------------------------------------------
+   - **外壳布局**：`.app` / `.sb` / `.nav` / `.top` / `.page` / `.ph` / `.acts`
+     → repo 已有 `shell` / `sidebar` / `main` / `topbar` / `wrap` / `p-head`，五批页面沿用后者。
+   - **`.card` / `.btn` / `.chip` / `.kpi` / `.chain` / `.feed` / `.todo` / `.pager` 本体**
+     → app-v013.css 已定义，本文件只在确实缺子元素时补（见上表第 3 行）。
+   - **四态机制（`.st-block` / `.st-tr` / `.st-ico` / `.st-title` / `.st-desc` / `.st-actions`）**
+     → app-v013.css:38–70 是权威版本，**不要**在本文件重定义：稿子的 `.st-ico` 是 54px、
+     repo 是 96px（整页空态用），两套并存会被后加载的规则覆盖（对照稿 §一 已点名）。
+   - **`.state` / `.ico`**（稿子 L251–255 的面板空态）→ 同上，用 repo 的 `.st-box` + `.st-ico`。
+   - **全局 reset 与 `:root` 原始米白色板**（稿子 L17–45）→ 会把现有页面砸掉，见 README §2。
+   - **`@media print` 打印客户联**（稿子 L423–447）→ 属第一批单据页，单独提。
+   - **原型演示外壳**（与 `.phone` / `.stage` 同类，本版稿子里已无 `.phone`/`.stage`，
+     但登录页仍留了三样）：`.lg-ver`（右下角「Qingdan · 新 UI v3.0」版本水印）、
+     `.lg-theme`（右上角主题切换浮钮）、`.lg-mock`（「模拟一次登录失败」+ 演示口令
+     提示那两行）。这三样只服务设计稿自身的演示，**不是产品样式**，产品页面里不会出现。
+
+   ------------------------------------------------------------------
+   三、与 tokens-v013 的差异（#443 要求列清）
+   ------------------------------------------------------------------
+   | 稿子 | tokens-v013 | 处理 |
+   |---|---|---|
+   | `--bg #f5f4f0`（米白） | `--bg-0 #FFFFFF`（亮）/ `#0A0E0C`（暗） | 用 repo，**不引入米白底** |
+   | `--accent #dc4a26`（朱砂） | `--accent-light #3C5A4E`（亮）/ `#B6D0BE`（暗） | 用 repo，**不引入朱砂** |
+   | `--surface #ffffff` / `--surface-2` | `--bg-2` / `--surf-2` | 桥接到 repo 变量 |
+   | `--ink / --ink-2 / --ink-3` | `--text-1 / --text-2 / --text-3` | 桥接 |
+   | `--line / --line-2` | `--line-1 / --line-2` | 桥接 |
+   | `--bad / --ok` | `--danger-on-surface` / `--ok` | 桥接 |
+   | `--warn #b87407` | **无对应** | 暂不引入：本文件搬过来的类没有一处用到 warn，`tokens-v013` 也没有对应令牌，留到真需要时再走 `--v30-` 前缀新增 |
+   | `--r 12px` | `--r-card 12px` | 一致，直接用 `--r-card` |
+   | `color-mix(... , var(--accent) 14%, transparent)` | `--a-10 ~ --a-32` 一组 | 换成 `--a-*`（Edge 111 对 color-mix 恰在边界，用变量更稳） |
+
+   加载顺序：`index.css` 里排在 `app-v013.css` **之后**，只覆盖本文件新写的选择器。
+   ============================================================ */
+
+/* ============================================================
+   §1 变量桥接
+   ------------------------------------------------------------
+   只做「v3.0 名字 → v0.13 令牌」的映射，不改任何既有变量的值。
+   页面层写 `var(--v30-ink)` 即可，暗色/亮色跟随 tokens-v013 自动切换。
+   ============================================================ */
+:root {
+  --v30-bg: var(--bg-0);
+  --v30-surface: var(--bg-2);
+  --v30-surface-2: var(--surf-2);
+  --v30-line: var(--line-1);
+  --v30-line-2: var(--line-2);
+  --v30-ink: var(--text-1);
+  --v30-ink-2: var(--text-2);
+  --v30-ink-3: var(--text-3);
+  /* 强调色：实心按钮 / 标记块用 deep（配 on-accent 有对比度），描边 / 文字用 light */
+  --v30-accent: var(--accent-light);
+  --v30-accent-solid: var(--accent-deep);
+  --v30-on-accent: var(--on-accent);
+  --v30-bad: var(--danger-on-surface);
+  --v30-ok: var(--ok);
+  --v30-r: var(--r-card);
+  --v30-shadow: var(--sh-1);
+  --v30-shadow-lg: var(--sh-2);
+  --v30-ease: var(--ease-out);
+}
+
+/* ============================================================
+   §2 列表卡与页脚（`.list-card` / `.tf`）
+   ------------------------------------------------------------
+   稿子 L233 / L250 / L458 / L573。
+   父级 `.card` 与 `.pager` 都复用 app-v013，这里只补新名字与新子元素。
+   `.list-card` 的作用是给「列表页」一个可被四态收起的页脚：
+   空 / 加载 / 出错时页脚分页消失，避免「0 条却显示第 1 页」。
+   ============================================================ */
+.tw {
+  overflow-x: auto;
+}
+/* 紧凑列：列多的单据列表用它，不改字号只收左右内边距（稿子 L529–532） */
+.tw.tight th,
+.tw.tight td {
+  padding: 0 9px;
+}
+.tw.tight th:first-child,
+.tw.tight td:first-child {
+  padding-left: 14px;
+}
+.tw.tight th:last-child,
+.tw.tight td:last-child {
+  padding-right: 14px;
+}
+
+/* 列表页脚条：左边汇总、右边分页（稿子 L250） */
+.tf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--v30-line);
+  font-size: var(--fs-12, 12px);
+  color: var(--v30-ink-3);
+}
+.tf .pager {
+  margin-left: auto;
+}
+/* 四态收起：只有 filled 才显示分页（稿子 L573）。
+   加载/空/错误态由 app-v013 的 data-state 规则控制行显示，这条只管页脚。 */
+.list-card:not([data-state="filled"]) .tf .pager {
+  display: none;
+}
+
+/* 分页控件子元素（稿子 L450–457）。
+   父级 `.pager` 的布局在 app-v013.css:372，不重写；
+   圆角按 #443「冲突以 tokens-v013 为准」保留 v0.13 的胶囊形，不搬稿子的 8px。 */
+.pager button.on {
+  background: var(--v30-accent-solid);
+  border-color: var(--v30-accent-solid);
+  color: var(--v30-on-accent);
+}
+/* 页脚分页的按钮底。
+   注意这里写的是 `.tf .pager button`（v3.0 新引入的页脚上下文，app-v013 里没有
+   这个复合选择器），**不是**覆盖 `app-v013.css:400` 的 `.pager button` —— 按 #443
+   「已有的类不重复定义」，v0.13 的分页按钮本体一个字节都不动。
+   为什么要这一条：`app-v013.css:400` 没写 background，而 index.css 有意删掉了全局
+   `button{background:none}`（README §2），暗色下按钮会落到浏览器默认浅底 → 白底白字。
+   老的 `.pager` 那处缺口不属本单，已在 #443 评论里报给负责人单独修。 */
+.tf .pager button {
+  background: transparent;
+  cursor: pointer;
+}
+.pager button:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+.pager .per {
+  margin-left: 8px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--v30-line-2);
+  border-radius: var(--r-control);
+  background: var(--v30-surface);
+  font-size: var(--fs-12, 12px);
+  color: var(--v30-ink-2);
+}
+.pager .dots {
+  padding: 0 2px;
+  color: var(--v30-ink-3);
+  font-size: var(--fs-12, 12px);
+}
+.pager svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ============================================================
+   §3 登录页（`.lg-*`，稿子 L381–421）
+   ------------------------------------------------------------
+   给 #435（何永上）用。布局是「左品牌 6 : 右表单 4」，
+   与 #435 正文里「居中卡片」的旧写法不同——对照稿 §二 已写明以本稿为主。
+   三态走 `data-state="idle|loading|error"`，`.lg-alert` 常驻 DOM 只在 error 显形。
+   ============================================================ */
+.lg-wrap {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  background: var(--v30-bg);
+}
+.lg-brand {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 64px 72px;
+  border-right: 1px solid var(--v30-line);
+}
+/* 网格底纹：用 currentColor 的低透明度，避免写死颜色 */
+.lg-brand::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--a-06) 1px, transparent 1px),
+    linear-gradient(90deg, var(--a-06) 1px, transparent 1px);
+  background-size: 36px 36px;
+  -webkit-mask-image: linear-gradient(135deg, #000, transparent 72%);
+  mask-image: linear-gradient(135deg, #000, transparent 72%);
+}
+/* 鼠标跟随点阵（设计稿的 #lgFx）。#435 若不做交互层，这一块可以整段不用 */
+@property --lgDot {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 1.4px;
+}
+#lgFx {
+  --lgDot: 1.4px;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.5s ease, visibility 0s;
+  background-image: radial-gradient(
+    circle at center,
+    var(--v30-accent) var(--lgDot),
+    transparent calc(var(--lgDot) + 0.5px)
+  );
+  background-size: 26px 26px;
+  -webkit-mask-image: radial-gradient(210px circle at var(--mx, 32%) var(--my, 42%), #000, transparent 72%);
+  mask-image: radial-gradient(210px circle at var(--mx, 32%) var(--my, 42%), #000, transparent 72%);
+  animation: lgDotPulse 5.2s ease-in-out infinite;
+}
+#lgFx.on {
+  opacity: 0.5;
+  visibility: visible;
+  transition: opacity 0.28s ease-out, visibility 0s;
+}
+#lgFx.leaving {
+  opacity: 0;
+  visibility: visible;
+  transition: opacity 0.5s ease, visibility 0s;
+}
+@keyframes lgDotPulse {
+  0%,
+  100% {
+    --lgDot: 1.1px;
+  }
+  50% {
+    --lgDot: 2.1px;
+  }
+}
+
+.lg-mark {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--v30-accent-solid);
+  color: var(--v30-on-accent);
+  font-weight: 800;
+  font-size: 17px;
+}
+.lg-slogan {
+  position: relative;
+  margin: 48px 0 16px;
+  font-size: 38px;
+  font-weight: 700;
+  line-height: 1.28;
+  letter-spacing: -0.015em;
+  max-width: 16ch;
+}
+.lg-slogan em {
+  font-style: normal;
+  color: var(--v30-accent);
+}
+.lg-sub {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  color: var(--v30-ink-2);
+  font-size: 13.5px;
+  max-width: 46ch;
+  line-height: 1.9;
+  letter-spacing: 0.07em;
+}
+.lg-sub span {
+  display: block;
+}
+.lg-sub span:first-child {
+  color: var(--v30-ink);
+}
+.lg-foot {
+  position: absolute;
+  left: 72px;
+  bottom: 40px;
+  color: var(--v30-ink-3);
+  font: 500 11px var(--mono);
+}
+
+.lg-formpane {
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  background: var(--v30-surface);
+}
+.lg-form {
+  width: min(380px, 100%);
+}
+.lg-form h2 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 700;
+}
+.lg-form .lg-hint {
+  margin: 0 0 28px;
+  color: var(--v30-ink-3);
+  font-size: 13px;
+}
+.lg-field {
+  margin-bottom: 16px;
+}
+.lg-field label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--v30-ink-2);
+}
+.lg-field input {
+  width: 100%;
+  height: 44px;
+  padding: 0 13px;
+  border: 1px solid var(--v30-line-2);
+  border-radius: 10px;
+  background: var(--v30-bg);
+  font: inherit;
+  outline: 0;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.lg-field input:focus {
+  border-color: var(--v30-accent);
+  box-shadow: 0 0 0 3px var(--a-14);
+}
+.lg-field input.err {
+  border-color: var(--v30-bad);
+}
+.lg-code {
+  display: flex;
+  gap: 8px;
+}
+.lg-code button {
+  flex: none;
+  padding: 0 14px;
+  border: 1px solid var(--v30-line-2);
+  border-radius: 10px;
+  background: var(--v30-surface);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--v30-ink);
+  white-space: nowrap;
+}
+.lg-code button:hover {
+  border-color: var(--v30-accent);
+  color: var(--v30-accent);
+}
+.lg-code button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.lg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 0 20px;
+  font-size: 12.5px;
+  color: var(--v30-ink-2);
+}
+.lg-row label {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  cursor: pointer;
+}
+.lg-submit {
+  width: 100%;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-radius: 10px;
+  background: var(--v30-accent-solid);
+  color: var(--v30-on-accent);
+  font-size: 14px;
+  font-weight: 700;
+  transition: opacity 0.18s, transform 0.12s;
+}
+.lg-submit:hover {
+  opacity: 0.9;
+}
+.lg-submit:active {
+  transform: scale(0.99);
+}
+.lg-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.lg-submit svg {
+  width: 16px;
+  height: 16px;
+}
+/* 稿子 L417–420 的 `.lg-ver`（版本水印）与 `.lg-theme`（主题切换浮钮）是演示外壳，
+   按 #443 不搬，见文件头「二、没有搬什么」最后一条。 */
+
+/* 错误告警条：常驻 DOM，`.lg-form[data-state="error"]` 才显形（稿子 L488–492） */
+.lg-alert {
+  display: none;
+  gap: 9px;
+  align-items: flex-start;
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.lg-alert svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 1px;
+}
+.lg-form[data-state="error"] .lg-alert {
+  display: flex;
+  background: var(--a-10);
+  color: var(--v30-bad);
+}
+.lg-form[data-state="error"] .lg-field input {
+  border-color: var(--v30-bad);
+}
+.lg-form[data-state="loading"] .lg-field {
+  opacity: 0.7;
+}
+.lg-alt {
+  margin: 18px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--v30-ink-3);
+}
+.lg-alt button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--v30-accent);
+}
+.lg-alt svg {
+  width: 14px;
+  height: 14px;
+}
+/* 成功条（入企页「已加入」用） */
+.lg-ok {
+  display: none;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  background: var(--a-10);
+  color: var(--v30-ok);
+}
+.lg-ok svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 1px;
+}
+
+/* ============================================================
+   §4 入企页（`.ent-*`，稿子 L506–515）
+   ------------------------------------------------------------
+   与登录页同一族（同样 6:4 分栏），`data-state="joined"` 显示成功条。
+   ============================================================ */
+.ent-wrap {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  background: var(--v30-bg);
+}
+.ent-brand {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 64px 72px;
+  border-right: 1px solid var(--v30-line);
+}
+.ent-pane {
+  display: grid;
+  place-items: center;
+  padding: 40px;
+  background: var(--v30-surface);
+}
+.ent-card {
+  width: min(400px, 100%);
+}
+.ent-co {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--v30-line);
+  border-radius: 12px;
+  margin-bottom: 18px;
+}
+.ent-co .ava {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--v30-accent-solid);
+  color: var(--v30-on-accent);
+  font-weight: 700;
+}
+.ent-co b {
+  display: block;
+  font-size: 13.5px;
+}
+.ent-co small {
+  color: var(--v30-ink-3);
+  font-size: 12px;
+}
+.ent-form[data-state="joined"] .lg-ok {
+  display: flex;
+}
+
+/* ============================================================
+   §5 响应式与动效降级
+   ============================================================ */
+@media (max-width: 900px) {
+  .lg-wrap,
+  .ent-wrap {
+    grid-template-columns: 1fr;
+  }
+  .lg-brand,
+  .ent-brand {
+    display: none;
+  }
+  .lg-formpane,
+  .ent-pane {
+    min-height: 100vh;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #lgFx {
+    animation: none;
+  }
+  .spin {
+    animation: none;
+  }
+}
+
+/* 转圈（登录提交中，稿子 L495） */
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
