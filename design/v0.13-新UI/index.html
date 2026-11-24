@@ -1,0 +1,2186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>轻单 · 管理工作台</title>
+<script>
+(function () {
+  var p = {};
+  try { p = JSON.parse(localStorage.getItem('qd-wb') || '{}'); } catch (e) {}
+  var t = p.theme || 'system';
+  if (t === 'system') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.dataset.theme = t;
+})();
+</script>
+<style>
+:root {
+  --bg: #f5f4f0; --surface: #ffffff; --surface-2: #faf9f6; --hover: #f0eee8;
+  --line: #e8e5dd; --line-2: #d7d3c8;
+  --ink: #17160f; --ink-2: #5c5a50; --ink-3: #939084;
+  --accent: #dc4a26;
+  --now: #2563eb; --transit: #7455d6; --ok: #12875f; --warn: #b87407; --bad: #d1344c;
+  --shadow: 0 1px 2px rgba(23,22,15,.04), 0 8px 24px -12px rgba(23,22,15,.10);
+  --shadow-lg: 0 24px 64px -16px rgba(23,22,15,.28);
+  --sb: 248px; --row: 50px; --fs: 14px; --r: 12px;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  --ease: cubic-bezier(.2,.8,.2,1);
+}
+[data-theme="dark"] {
+  --bg: #0e0e0c; --surface: #171613; --surface-2: #1c1b17; --hover: #23221d;
+  --line: #2a2924; --line-2: #3b3932;
+  --ink: #f1efe8; --ink-2: #b0ada2; --ink-3: #78756b;
+  --now: #6b9bff; --transit: #a48cf5; --ok: #3fc493; --warn: #e0a233; --bad: #f2647a;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  --shadow-lg: 0 24px 64px -16px rgba(0,0,0,.7);
+}
+[data-density="compact"] { --row: 40px; }
+* { box-sizing: border-box; }
+html { font-size: var(--fs); color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 1rem/1.55 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+svg.ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.mono { font-family: var(--mono); font-size: .93em; letter-spacing: -.01em; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--ink-3); }
+.kbd { font: 500 11px var(--mono); padding: 2px 6px; border: 1px solid var(--line-2); border-radius: 5px; color: var(--ink-3); background: var(--surface); }
+
+/* 外壳 */
+.app { display: grid; grid-template-columns: var(--sb) minmax(0, 1fr); height: 100vh; height: 100dvh; transition: grid-template-columns .32s var(--ease); }
+.app.collapsed { --sb: 68px; }
+.sb { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--line); background: var(--bg); overflow: hidden; }
+.sb-head { padding: 18px 16px 12px; }
+.brand { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 2px; }
+.logo { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 9px; background: var(--ink); color: var(--bg); font-weight: 800; font-size: 15px; }
+.brand b { font-size: 16px; letter-spacing: .02em; white-space: nowrap; }
+.brand i { font: 500 11px var(--mono); color: var(--ink-3); font-style: normal; }
+.co { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 14px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); text-align: left; transition: border-color .2s; }
+.co:hover { border-color: var(--line-2); }
+.co span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; font-size: 13px; }
+.co svg { color: var(--ink-3); width: 14px; height: 14px; }
+.nav { position: relative; flex: 1; overflow-y: auto; padding: 8px 10px 16px; scrollbar-width: thin; }
+.nav.na, .nav.na * { transition: none !important; }
+.hl { position: absolute; z-index: 0; top: 0; left: 10px; right: 10px; height: 36px; border-radius: 9px; background: var(--surface); box-shadow: var(--shadow); pointer-events: none; opacity: 0; }
+.hl::before { content: ""; position: absolute; left: -9px; top: 26%; bottom: 26%; width: 3px; border-radius: 3px; background: var(--accent); }
+.grp { margin-top: 2px; }
+a + .grp { margin-top: 12px; }
+.gh { position: relative; z-index: 1; display: flex; align-items: center; gap: 11px; width: 100%; height: 36px; padding: 0 10px; border-radius: 9px; color: var(--ink-2); font-size: 13.5px; text-align: left; white-space: nowrap; transition: background .18s, color .18s; }
+.gh:hover { background: var(--hover); color: var(--ink); }
+.gh.has { color: var(--ink); font-weight: 650; }
+.gh span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.gh .cv { width: 14px; height: 14px; color: var(--ink-3); transition: transform .34s var(--ease); }
+.grp.open .cv { transform: rotate(90deg); }
+.grp.open .gh em { display: none; }
+.sub { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .36s var(--ease); }
+.grp.open .sub { grid-template-rows: 1fr; }
+.sub-in { position: relative; min-height: 0; overflow: hidden; margin-left: 19px; padding-left: 8px; visibility: hidden; transition: visibility 0s .36s; }
+.grp.open .sub-in { visibility: visible; transition-delay: 0s; }
+.sub-in::before { content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 1px; background: var(--line-2); transform: scaleY(0); transform-origin: top; transition: transform .42s var(--ease); }
+.grp.open .sub-in::before { transform: scaleY(1); }
+.nav .sub a { --d: 0s; height: 34px; padding-left: 12px; opacity: 0; transform: translateY(-10px); transition: opacity .22s var(--d), transform .44s cubic-bezier(.3,1.45,.5,1) var(--d), background .18s, color .18s; }
+.grp.open .sub a { --d: calc(var(--i) * 45ms + 70ms); opacity: 1; transform: none; }
+.sub a .ic { display: none; }
+.sub a.locked .ic { display: block; order: 2; width: 14px; height: 14px; }
+.nav a { position: relative; z-index: 1; display: flex; align-items: center; gap: 11px; height: 36px; padding: 0 10px; border-radius: 9px; color: var(--ink-2); text-decoration: none; font-size: 13.5px; white-space: nowrap; cursor: pointer; transition: background .18s, color .18s; }
+.nav a:hover { background: var(--hover); color: var(--ink); }
+.nav a.on { color: var(--ink); font-weight: 650; }
+.nav a.on:hover { background: none; }
+.nav a.locked, .grp.open .sub a.locked { opacity: .45; }
+.nav a span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.nav em { font: 600 11px var(--mono); font-style: normal; min-width: 20px; height: 20px; padding: 0 6px; display: grid; place-items: center; border-radius: 10px; background: var(--accent); color: #fff; }
+.nav em:empty { display: none; }
+.sb-foot { padding: 12px; border-top: 1px solid var(--line); }
+.me { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border-radius: 10px; text-align: left; transition: background .18s; }
+.me:hover { background: var(--hover); }
+.ava { width: 32px; height: 32px; flex: none; display: grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); font-weight: 700; font-size: 13px; }
+.me div { flex: 1; min-width: 0; line-height: 1.3; }
+.me b { display: block; font-size: 13px; white-space: nowrap; }
+.me small { display: block; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app.collapsed .brand b, .app.collapsed .brand i, .app.collapsed .co span, .app.collapsed .co svg:last-child, .app.collapsed .nav a span, .app.collapsed .me div, .app.collapsed .me > svg { display: none; }
+.app.collapsed .gh { height: 1px; margin: 12px 8px; padding: 0; width: auto; background: var(--line); pointer-events: none; }
+.app.collapsed .gh > * { display: none; }
+.app.collapsed .grp { margin: 0; }
+.app.collapsed .sub { grid-template-rows: 1fr; }
+.app.collapsed .sub-in { margin: 0; padding: 0; overflow: visible; visibility: visible; }
+.app.collapsed .sub-in::before { display: none; }
+.app.collapsed .sub a { height: 36px; opacity: 1; transform: none; }
+.app.collapsed .sub a.locked { opacity: .45; }
+.app.collapsed .sub a .ic { display: block; order: 0; width: 18px; height: 18px; }
+.app.collapsed .nav a { justify-content: center; padding: 0; }
+.app.collapsed .nav a em { position: absolute; top: 3px; right: 5px; min-width: 8px; width: 8px; height: 8px; padding: 0; font-size: 0; }
+.app.collapsed .co, .app.collapsed .me { justify-content: center; padding: 8px 0; }
+.app.collapsed .sb-head { padding-inline: 12px; }
+.app.collapsed .brand { justify-content: center; }
+
+.main { display: flex; flex-direction: column; min-width: 0; height: 100%; overflow: hidden; }
+.top { display: flex; align-items: center; gap: 10px; height: 60px; flex: none; padding: 0 28px 0 18px; border-bottom: 1px solid var(--line); }
+.ib { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 9px; color: var(--ink-2); transition: background .18s, color .18s; }
+.ib:hover { background: var(--hover); color: var(--ink); }
+.crumb { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--ink-3); white-space: nowrap; }
+.crumb b { color: var(--ink); font-weight: 650; }
+.grow { flex: 1; }
+.search { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink-3); font-size: 13px; transition: border-color .2s; }
+.search:hover { border-color: var(--line-2); }
+.search span:not(.kbd) { min-width: 150px; text-align: left; }
+.view-btn { display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 12px; border-radius: 10px; font-size: 13px; color: var(--ink-2); }
+.view-btn:hover { background: var(--hover); }
+.view-btn i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.view-btn[data-v="empty"] i { background: var(--ink-3); } .view-btn[data-v="loading"] i { background: var(--now); } .view-btn[data-v="error"] i { background: var(--bad); }
+.scroll { flex: 1; overflow-y: auto; scrollbar-gutter: stable; }
+.page { max-width: 1320px; margin: 0 auto; padding: 32px 32px 64px; }
+.page.enter { animation: rise .45s var(--ease); }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes fade { from { opacity: 0; } }
+
+/* 页头 */
+.ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 26px; }
+.ph h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; }
+.ph p { margin: 6px 0 0; color: var(--ink-2); font-size: 13.5px; max-width: 56em; }
+.acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 36px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); font-size: 13px; font-weight: 600; white-space: nowrap; transition: background .18s, border-color .18s, transform .12s, opacity .18s; }
+.btn:hover { background: var(--hover); }
+.btn:active { transform: scale(.97); }
+.btn.pri { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn.pri:hover { opacity: .86; }
+.btn.danger { color: var(--bad); }
+.btn.armed { background: var(--bad); color: #fff; border-color: var(--bad); }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: 8px; }
+.btn svg { width: 15px; height: 15px; }
+.btn:disabled { cursor: not-allowed; opacity: .5; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); }
+.card-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.card-h h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.card-h small { color: var(--ink-3); font-size: 12px; }
+
+/* 状态徽章 */
+.st { --c: var(--ink-3); display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px 0 8px; border-radius: 12px; font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--c); background: color-mix(in srgb, var(--c) 11%, transparent); }
+.st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.st.now { --c: var(--now); } .st.transit { --c: var(--transit); } .st.ok { --c: var(--ok); } .st.warn { --c: var(--warn); } .st.bad { --c: var(--bad); }
+.st.now::before, .st.transit::before { animation: pulse 2s infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+
+/* 工作台 */
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+.kpi { padding: 20px; cursor: pointer; text-align: left; transition: transform .25s var(--ease), border-color .2s; }
+.kpi:hover { transform: translateY(-2px); border-color: var(--line-2); }
+.kpi-l { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-2); }
+.kpi-l span:last-child { font: 500 11px var(--mono); color: var(--ink-3); }
+.kpi-v { margin: 12px 0 6px; font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.kpi-v small { font-size: 14px; font-weight: 500; color: var(--ink-3); margin-left: 4px; }
+.kpi-m { font-size: 12px; color: var(--ink-3); }
+.kpi-m b { color: var(--ok); font-weight: 600; }
+.g2 { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
+.todo { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 20px; text-align: left; border-bottom: 1px solid var(--line); transition: background .18s; }
+.todo:last-child { border-bottom: 0; border-radius: 0 0 var(--r) var(--r); }
+.todo:hover { background: var(--surface-2); }
+.todo i { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 15%, transparent); }
+.todo div { flex: 1; min-width: 0; }
+.todo b { display: block; font-size: 13.5px; font-weight: 600; }
+.todo small { display: block; color: var(--ink-3); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo span { font-size: 12.5px; font-weight: 600; color: var(--ink-3); white-space: nowrap; transition: color .18s, transform .25s var(--ease); }
+.todo:hover span { color: var(--accent); transform: translateX(3px); }
+.chain { padding: 8px; }
+.chain button { display: flex; align-items: center; gap: 14px; width: 100%; padding: 11px 12px; border-radius: 10px; text-align: left; transition: background .18s; }
+.chain button:hover { background: var(--hover); }
+.chain .lt { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 10px; border: 1px solid var(--line-2); font: 700 15px var(--mono); transition: background .2s, color .2s, border-color .2s; }
+.chain button:hover .lt { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chain div { flex: 1; min-width: 0; }
+.chain b { display: block; font-size: 13.5px; }
+.chain small { color: var(--ink-3); font-size: 12px; }
+.chain .cnt { font: 600 13px var(--mono); color: var(--ink-2); }
+.bars { display: flex; align-items: flex-end; gap: 14px; height: 200px; padding: 28px 24px 0; }
+.bars.tall { height: 280px; }
+.bar { position: relative; flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 8px; }
+.bar i { width: 100%; max-width: 56px; height: var(--h); min-height: 4px; border-radius: 7px 7px 2px 2px; background: color-mix(in srgb, var(--ink) 14%, transparent); transform-origin: bottom; animation: grow .7s var(--ease) backwards; animation-delay: calc(var(--i) * 60ms); transition: background .2s; }
+.bar.last i { background: var(--ink); }
+.bar.neg i { background: color-mix(in srgb, var(--bad) 55%, transparent); }
+.bar:hover i { background: var(--accent); }
+@keyframes grow { from { transform: scaleY(0); } }
+.bar em { font: 500 11.5px var(--mono); font-style: normal; color: var(--ink-3); opacity: 0; transform: translateY(4px); transition: .2s; white-space: nowrap; }
+.bar:hover em, .bar.last em, .bars.tall .bar em { opacity: 1; transform: none; }
+.bar.neg em { color: var(--bad); }
+.bar span { font-size: 12px; color: var(--ink-3); padding-bottom: 14px; }
+.feed { padding: 6px 20px 10px; }
+.feed li { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+.feed li:last-child { border: 0; }
+.feed { list-style: none; margin: 0; }
+.feed time { font: 500 11.5px var(--mono); color: var(--ink-3); flex: none; padding-top: 2px; }
+.feed p { margin: 0; min-width: 0; }
+.feed p small { display: block; color: var(--ink-3); font-size: 12px; }
+
+/* 列表 */
+.tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.field { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink-3); transition: border-color .2s, box-shadow .2s; }
+.field:focus-within { border-color: var(--ink); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 8%, transparent); }
+.field input { border: 0; outline: 0; background: none; width: 200px; font-size: 13px; }
+.field svg { width: 15px; height: 15px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); font-size: 12.5px; color: var(--ink-2); white-space: nowrap; transition: .18s; }
+.chip:hover { border-color: var(--line-2); color: var(--ink); }
+.chip.on { background: var(--ink); border-color: var(--ink); color: var(--bg); font-weight: 600; }
+.chip b { font: 500 11px var(--mono); margin-left: 5px; opacity: .65; }
+.seg { display: inline-flex; padding: 3px; border-radius: 10px; background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.seg button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; transition: .18s; }
+.seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow); }
+.sel { height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); font-size: 12.5px; }
+.note { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-3); }
+.note svg { width: 14px; height: 14px; }
+.tw { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+th { height: 42px; padding: 0 16px; text-align: left; font-size: 12px; font-weight: 600; color: var(--ink-3); white-space: nowrap; border-bottom: 1px solid var(--line); background: var(--surface-2); user-select: none; }
+th:first-child { border-radius: var(--r) 0 0 0; padding-left: 20px; } th:last-child { border-radius: 0 var(--r) 0 0; padding-right: 20px; }
+th.so { cursor: pointer; } th.so:hover { color: var(--ink); }
+th.so::after { content: "↕"; margin-left: 5px; opacity: .35; } th.asc::after { content: "↑"; opacity: 1; color: var(--accent); } th.desc::after { content: "↓"; opacity: 1; color: var(--accent); }
+td { height: var(--row); padding: 0 16px; border-bottom: 1px solid var(--line); white-space: nowrap; transition: height .25s var(--ease); }
+td:first-child { padding-left: 20px; } td:last-child { padding-right: 20px; }
+tr:last-child td { border-bottom: 0; }
+tbody tr { animation: fade .35s backwards; animation-delay: calc(var(--i, 0) * 28ms); }
+tr.click { cursor: pointer; transition: background .15s; }
+tr.click:hover { background: var(--surface-2); }
+tr.click:hover td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+tr.flash { animation: flash 1.6s; }
+@keyframes flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 12%, transparent); } }
+td.r, th.r { text-align: right; }
+td.neg { color: var(--bad); } td.pos { color: var(--ok); }
+.tf { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-3); }
+.state { display: grid; place-items: center; text-align: center; padding: 72px 20px; }
+.state .ico { width: 56px; height: 56px; display: grid; place-items: center; margin: 0 auto 16px; border-radius: 16px; background: var(--hover); color: var(--ink-3); }
+.state .ico svg { width: 24px; height: 24px; }
+.state h4 { margin: 0 0 6px; font-size: 15px; }
+.state p { margin: 0 0 18px; color: var(--ink-3); font-size: 13px; }
+.sk { height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--hover) 25%, var(--line) 50%, var(--hover) 75%); background-size: 200% 100%; animation: shimmer 1.3s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.avail { display: flex; align-items: center; gap: 10px; min-width: 190px; }
+.avail .trk { flex: 1; display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--hover); }
+.avail .trk i { height: 100%; transition: width .6s var(--ease); }
+.lg { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); }
+.lg i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; }
+.cols3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.rev { padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.rev:last-child { border: 0; }
+.rev-t { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+.rev small { color: var(--ink-3); font-size: 12px; }
+.flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-bottom: 16px; }
+.node { position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; padding: 24px; text-align: left; border-right: 1px solid var(--line); transition: background .2s; }
+.node:last-child { border: 0; } .node:hover { background: var(--surface-2); }
+.node:not(:last-child)::after { content: "→"; position: absolute; right: -9px; top: 50%; translate: 0 -50%; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); font-size: 10px; color: var(--ink-3); z-index: 1; }
+.node .big { font: 700 34px/1 var(--mono); }
+.node h4 { margin: 14px 0 4px; font-size: 14px; }
+.node p { margin: 0 0 14px; font-size: 12px; color: var(--ink-3); }
+.node .sts { display: flex; gap: 6px; flex-wrap: wrap; }
+.mx td, .mx th { text-align: center; } .mx td:first-child, .mx th:first-child { text-align: left; }
+.mx .cur { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.yes { color: var(--ok); font-weight: 700; } .no { color: var(--ink-3); }
+.sets { display: grid; gap: 16px; max-width: 760px; }
+.set { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.set:last-child { border: 0; }
+.set b { display: block; font-size: 13.5px; } .set small { color: var(--ink-3); font-size: 12px; }
+.sw { display: flex; gap: 8px; }
+.sw button { width: 26px; height: 26px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px transparent; transition: .2s; }
+.sw button.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--c); }
+
+/* 浮层 */
+.mask { position: fixed; inset: 0; z-index: 40; background: rgba(15,14,10,.36); backdrop-filter: blur(2px); opacity: 0; visibility: hidden; transition: opacity .28s, visibility .28s; }
+.mask.on { opacity: 1; visibility: visible; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 50; width: min(500px, 100vw); display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); transform: translateX(104%); visibility: hidden; transition: transform .38s var(--ease), visibility .38s; }
+.drawer.on { transform: none; visibility: visible; }
+.dw-h { display: flex; justify-content: space-between; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.dw-h small { color: var(--ink-3); font-size: 12px; }
+.dw-h h2 { display: flex; align-items: center; gap: 10px; margin: 6px 0 0; font: 700 21px var(--mono); letter-spacing: -.02em; }
+.dw-b { flex: 1; overflow-y: auto; padding: 24px; }
+.dw-b h5 { margin: 28px 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--ink-3); }
+.track { display: flex; align-items: flex-start; }
+.stp { position: relative; flex: 1; font-size: 12.5px; color: var(--ink-3); padding-top: 20px; }
+.stp::before { content: ""; position: absolute; top: 5px; left: 0; right: 0; height: 2px; background: var(--line-2); }
+.stp::after { content: ""; position: absolute; top: 0; left: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--line-2); transition: .3s; }
+.stp:last-child { flex: none; } .stp:last-child::before { display: none; }
+.stp.done { color: var(--ink-2); } .stp.done::before { background: var(--ink); } .stp.done::after { background: var(--ink); border-color: var(--ink); }
+.stp.cur { color: var(--ink); font-weight: 650; } .stp.cur::after { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+.dl { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.dl div { padding: 12px 14px; background: var(--surface); min-width: 0; }
+.dl dt { font-size: 11.5px; color: var(--ink-3); margin-bottom: 2px; }
+.dl dd { margin: 0; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+/* 行明细表（抽屉内紧凑四列：品名规格 / 数量 / 单价 / 金额） */
+.ln { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.ln th, .ln td { height: 38px; padding: 0 10px; font-size: 12.5px; }
+.ln th:first-child, .ln td:first-child { padding-left: 14px; }
+.ln th:last-child, .ln td:last-child { padding-right: 14px; }
+.ln td.nm { white-space: normal; padding-top: 8px; padding-bottom: 8px; }
+.ln td.nm b { display: block; font-weight: 600; }
+.ln td.nm small { display: block; font-size: 11px; color: var(--ink-3); }
+.ln tbody tr:last-child td { border-bottom: 0; }
+.ln tfoot td { height: 40px; border-top: 1px solid var(--line); border-bottom: 0; background: var(--surface-2); font-weight: 600; }
+.tl { list-style: none; margin: 0; padding: 0; }
+.tl li { position: relative; padding: 0 0 16px 20px; font-size: 13px; animation: rise .4s var(--ease); }
+.tl li::before { content: ""; position: absolute; left: 0; top: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.tl li::after { content: ""; position: absolute; left: 3px; top: 18px; bottom: 0; width: 1px; background: var(--line); }
+.tl li:last-child::after { display: none; }
+.tl li:first-child::before { background: var(--accent); }
+.tl time { display: block; font: 500 11.5px var(--mono); color: var(--ink-3); }
+.dw-f { padding: 16px 24px 20px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.act-g { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.act { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--ink); background: var(--ink); color: var(--bg); text-align: left; transition: transform .12s, opacity .18s; }
+.act:hover { opacity: .88; } .act:active { transform: scale(.98); }
+.act b { display: block; font-size: 13.5px; } .act small { font: 500 11px var(--mono); opacity: .7; }
+.act.deny, .act.off { background: none; color: var(--ink-3); border: 1px dashed var(--line-2); cursor: not-allowed; opacity: 1; }
+.act.deny small { color: var(--bad); opacity: 1; } .act.off small { color: var(--warn); opacity: 1; }
+.act.fin { background: color-mix(in srgb, var(--ok) 10%, transparent); border-color: transparent; color: var(--ok); cursor: default; }
+.sub-acts { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.pop { position: fixed; z-index: 70; min-width: 250px; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-lg); animation: rise .2s var(--ease); }
+.pop h6 { margin: 8px 10px 6px; font-size: 11px; font-weight: 600; color: var(--ink-3); letter-spacing: .06em; }
+.pop button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border-radius: 8px; text-align: left; font-size: 13px; }
+.pop button:hover { background: var(--hover); }
+.pop button div { flex: 1; min-width: 0; } .pop button small { display: block; color: var(--ink-3); font-size: 11.5px; }
+.pop button.on::after { content: "✓"; color: var(--accent); font-weight: 700; }
+.pal { position: fixed; left: 50%; top: 14vh; z-index: 80; width: min(600px, calc(100vw - 32px)); translate: -50% 0; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-lg); overflow: hidden; opacity: 0; visibility: hidden; transform: translateY(-8px) scale(.98); transition: .22s var(--ease); }
+.pal.on { opacity: 1; visibility: visible; transform: none; }
+.pal-i { display: flex; align-items: center; gap: 12px; padding: 0 18px; height: 56px; border-bottom: 1px solid var(--line); color: var(--ink-3); }
+.pal-i input { flex: 1; border: 0; outline: 0; background: none; font-size: 15px; color: var(--ink); }
+.pal-l { max-height: 46vh; overflow-y: auto; padding: 6px; }
+.pal-l h6 { margin: 10px 12px 4px; font-size: 11px; color: var(--ink-3); font-weight: 600; letter-spacing: .06em; }
+.pal-l button { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border-radius: 9px; text-align: left; font-size: 13.5px; }
+.pal-l button.on { background: var(--hover); }
+.pal-l button span { flex: 1; } .pal-l button small { color: var(--ink-3); font-size: 12px; }
+.pal-l p { margin: 0; padding: 32px; text-align: center; color: var(--ink-3); font-size: 13px; }
+.modal { position: fixed; left: 50%; top: 50%; z-index: 60; width: min(460px, calc(100vw - 32px)); translate: -50% -50%; padding: 24px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-lg); opacity: 0; visibility: hidden; transform: scale(.96); transition: .22s var(--ease); }
+.modal.on { opacity: 1; visibility: visible; transform: none; }
+.modal h3 { margin: 0 0 4px; font-size: 17px; } .modal > p { margin: 0 0 18px; color: var(--ink-3); font-size: 12.5px; }
+.fm { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fm label { display: grid; gap: 5px; font-size: 12px; color: var(--ink-2); } .fm label.w { grid-column: 1 / -1; }
+.fm input { height: 38px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 9px; background: var(--surface); font-size: 13.5px; outline: 0; transition: .2s; }
+.fm input:focus { border-color: var(--ink); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 8%, transparent); }
+.fm input.err { border-color: var(--bad); animation: shake .3s; }
+@keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+.modal .acts { justify-content: flex-end; margin-top: 20px; }
+.toasts { position: fixed; right: 24px; bottom: 24px; z-index: 90; display: grid; gap: 8px; justify-items: end; pointer-events: none; }
+.toast { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-radius: 11px; background: var(--ink); color: var(--bg); font-size: 13px; box-shadow: var(--shadow-lg); animation: rise .3s var(--ease); transition: opacity .3s, transform .3s; max-width: min(420px, calc(100vw - 48px)); }
+.toast i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
+.toast.bad i { background: var(--bad); }
+.toast.out { opacity: 0; transform: translateY(6px); }
+.only-m { display: none; }
+
+@media (max-width: 1100px) { .kpis { grid-template-columns: 1fr 1fr; } .g2, .cols3 { grid-template-columns: 1fr; } .flow { grid-template-columns: 1fr 1fr; } .node:nth-child(2) { border-right: 0; } .node:nth-child(-n+2) { border-bottom: 1px solid var(--line); } .node:nth-child(2)::after { display: none; } }
+@media (max-width: 860px) {
+  .app, .app.collapsed { grid-template-columns: minmax(0, 1fr); --sb: 264px; }
+  .sb { position: fixed; inset: 0 auto 0 0; z-index: 45; width: 264px; transform: translateX(-102%); transition: transform .32s var(--ease); box-shadow: var(--shadow-lg); }
+  .app.nav-open .sb { transform: none; }
+  .only-m { display: grid; } .only-d { display: none; }
+  .top { padding: 0 12px 0 8px; } .page { padding: 22px 16px 56px; }
+  .search span, .search .kbd, .view-btn span { display: none; } .search { padding: 0 10px; }
+  .ph h1 { font-size: 22px; } .kpi-v { font-size: 25px; } .field input { width: 130px; }
+  .crumb span { display: none; }
+}
+@media (max-width: 520px) { .kpis { grid-template-columns: 1fr; } .flow { grid-template-columns: 1fr; } .node { border-right: 0; border-bottom: 1px solid var(--line); } .node::after { display: none !important; } .act-g, .fm { grid-template-columns: 1fr; } .bars { gap: 6px; padding-inline: 12px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; } }
+
+/* ===== 登录页（沿用新 UI 令牌，米白+朱砂，无粒子） ===== */
+.lg-wrap{min-height:100vh;display:grid;grid-template-columns:1.15fr .85fr;background:var(--bg)}
+.lg-brand{position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding:64px 72px;border-right:1px solid var(--line)}
+.lg-brand::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(color-mix(in srgb,var(--ink) 5%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--ink) 5%,transparent) 1px,transparent 1px);background-size:36px 36px;mask-image:linear-gradient(135deg,#000,transparent 72%)}
+@property --lgDot{syntax:"<length>";inherits:false;initial-value:1.4px}
+#lgFx{--lgDot:1.4px;position:absolute;inset:0;z-index:0;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .5s ease,visibility 0s;
+  background-image:radial-gradient(circle at center,var(--accent) var(--lgDot),transparent calc(var(--lgDot) + .5px));
+  background-size:26px 26px;
+  -webkit-mask-image:radial-gradient(210px circle at var(--mx,32%) var(--my,42%),#000,transparent 72%);
+  mask-image:radial-gradient(210px circle at var(--mx,32%) var(--my,42%),#000,transparent 72%);
+  animation:lgDotPulse 5.2s ease-in-out infinite}
+#lgFx.on{opacity:.5;visibility:visible;transition:opacity .28s ease-out,visibility 0s}
+#lgFx.leaving{opacity:0;visibility:visible;transition:opacity .5s ease,visibility 0s}
+@keyframes lgDotPulse{0%,100%{--lgDot:1.1px}50%{--lgDot:2.1px}}
+@media(prefers-reduced-motion:reduce){#lgFx{animation:none}}
+.lg-mark{position:relative;width:38px;height:38px;display:grid;place-items:center;border-radius:10px;background:var(--accent);color:#fff;font-weight:800;font-size:17px}
+.lg-slogan{position:relative;margin:48px 0 16px;font-size:38px;font-weight:700;line-height:1.28;letter-spacing:-.015em;max-width:16ch}
+.lg-slogan em{font-style:normal;color:var(--accent)}
+.lg-sub{position:relative;display:flex;flex-direction:column;gap:9px;color:var(--ink-2);font-size:13.5px;max-width:46ch;line-height:1.9;letter-spacing:.07em}.lg-sub span{display:block}.lg-sub span:first-child{color:var(--ink)}
+.lg-foot{position:absolute;left:72px;bottom:40px;color:var(--ink-3);font:500 11px var(--mono)}
+.lg-formpane{display:grid;place-items:center;padding:40px;background:var(--surface)}
+.lg-form{width:min(380px,100%)}
+.lg-form h2{margin:0 0 6px;font-size:24px;font-weight:700}
+.lg-form .lg-hint{margin:0 0 28px;color:var(--ink-3);font-size:13px}
+.lg-field{margin-bottom:16px}
+.lg-field label{display:block;margin-bottom:7px;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.lg-field input{width:100%;height:44px;padding:0 13px;border:1px solid var(--line-2);border-radius:10px;background:var(--bg);font:inherit;outline:0;transition:border-color .2s,box-shadow .2s}
+.lg-field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent)}
+.lg-field input.err{border-color:var(--bad)}
+.lg-code{display:flex;gap:8px}
+.lg-code button{flex:none;padding:0 14px;border:1px solid var(--line-2);border-radius:10px;background:var(--surface);font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap}
+.lg-code button:hover{border-color:var(--accent);color:var(--accent)}
+.lg-code button:disabled{opacity:.55;cursor:not-allowed}
+.lg-row{display:flex;align-items:center;justify-content:space-between;margin:4px 0 20px;font-size:12.5px;color:var(--ink-2)}
+.lg-row label{display:flex;gap:7px;align-items:center;cursor:pointer}
+.lg-submit{width:100%;height:44px;border-radius:10px;background:var(--accent);color:#fff;font-size:14px;font-weight:700;transition:opacity .18s,transform .12s}
+.lg-submit:hover{opacity:.9}.lg-submit:active{transform:scale(.99)}
+.lg-submit:disabled{opacity:.6;cursor:wait}
+.lg-ver{position:fixed;right:18px;bottom:16px;color:var(--ink-3);font:500 11px var(--mono)}
+.lg-theme{position:fixed;right:18px;top:16px;display:flex;gap:6px}
+@media(max-width:900px){.lg-wrap{grid-template-columns:1fr}.lg-brand{display:none}.lg-formpane{min-height:100vh}}
+
+/* ===== 打印客户联（A4 白底黑字，沿用现有数据，不新增业务口径） ===== */
+.print-head{display:none}
+@media print{
+  @page{size:A4;margin:14mm 12mm}
+  html,body{background:#fff!important;color:#111!important;overflow:visible!important;display:block!important}
+  .app,.mask,.drawer,.modal,.pal,.toasts,.top,.sb,.ib,.no-print,.act-g,.sub-acts,.dw-f{display:none!important}
+  .print-sheet{display:block!important;position:static!important;width:auto!important;padding:0!important;box-shadow:none!important;border:0!important;background:#fff!important;color:#111!important}
+  .print-sheet *{color:#111!important;background:#fff!important;box-shadow:none!important}
+  .print-head{display:block!important;text-align:center;margin-bottom:14px}
+  .print-head .brand{font-size:18px;font-weight:700;letter-spacing:.12em}
+  .print-head .en{font:500 10px var(--mono);letter-spacing:.3em;color:#555;margin-top:3px}
+  .print-head .line{border-top:1px solid #111;margin:10px 0 6px}
+  .print-head .meta{display:flex;justify-content:space-between;font-size:12px;color:#444}
+  .print-sheet h2{font-size:18px;margin:0 0 12px}
+  .print-sheet dl,.print-sheet table{margin:0 0 12px}
+  .print-sheet dl{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 16px}
+  .print-sheet dt{color:#666;font-size:11px}
+  .print-sheet dd{margin:2px 0 0;font-size:13px}
+  .print-sheet table{width:100%;border-collapse:collapse;font-size:12px}
+  .print-sheet th,.print-sheet td{border:1px solid #bbb;padding:7px 9px;text-align:left}
+  .print-sheet td.r,.print-sheet th.r{text-align:right}
+  .print-sheet .pfoot{margin-left:auto;width:240px;font-weight:700}
+  .print-sign{display:flex!important;justify-content:space-between;margin-top:28px;font-size:12px;color:#333}
+}
+.print-sheet,.print-sign{display:none}
+
+/* ===== 新功能样式：分页 / 权限矩阵 / 一次性密钥 / 登录态 / 库存库龄 / 入企页 ===== */
+.pager { display: flex; align-items: center; gap: 3px; }
+.pager button { min-width: 28px; height: 28px; padding: 0 7px; border-radius: 8px; border: 1px solid transparent; font: 600 12px var(--mono); color: var(--ink-2); display: inline-grid; place-items: center; transition: .15s; }
+.pager button:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
+.pager button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.pager button:disabled { opacity: .32; cursor: not-allowed; }
+.pager svg { width: 14px; height: 14px; }
+.pager .per { margin-left: 8px; height: 28px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; color: var(--ink-2); }
+.pager .dots { padding: 0 2px; color: var(--ink-3); font-size: 12px; }
+.tf .pager { margin-left: auto; }
+
+.mtx { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.mtx-wrap { max-height: min(60vh, 540px); overflow: auto; }
+.mtx table { border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+.mtx th, .mtx td { height: 38px; padding: 0 8px; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.mtx thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-2); font-size: 11.5px; color: var(--ink-3); }
+.mtx thead th.dm { z-index: 3; }
+.mtx th.dm, .mtx td.dm { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; padding-left: 14px; min-width: 176px; box-shadow: 1px 0 0 var(--line); }
+.mtx thead th.dm { background: var(--surface-2); }
+.mtx tbody tr:hover td { background: var(--surface-2); }
+.mtx .dm b { font-weight: 600; }
+.mtx .dm small { display: block; font: 500 10.5px var(--mono); color: var(--ink-3); margin-top: 1px; }
+.mtx td.cellp { padding: 0 4px; }
+.cell { width: 30px; height: 30px; border-radius: 8px; display: inline-grid; place-items: center; color: var(--ink-3); transition: .15s; }
+.cell svg { width: 15px; height: 15px; }
+.cell.yes { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.cell.no { color: var(--ink-3); }
+.cell.inh { color: var(--transit); background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--transit) 18%, transparent) 0 3px, transparent 3px 6px); }
+.cell:hover { outline: 2px solid color-mix(in srgb, var(--ink) 18%, transparent); }
+.cell:disabled { cursor: not-allowed; opacity: .55; }
+.mtx .legend { display: flex; gap: 16px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-3); flex-wrap: wrap; }
+.mtx .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
+
+.once { display: grid; gap: 12px; }
+.once-k { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 10px; border: 1px dashed var(--line-2); background: var(--surface-2); }
+.once-k code { flex: 1; font: 600 12.5px var(--mono); word-break: break-all; color: var(--ink); }
+.once-warn { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--warn); line-height: 1.6; }
+.once-warn svg { width: 15px; height: 15px; margin-top: 1px; flex: none; }
+
+.lg-alert { display: none; gap: 9px; align-items: flex-start; margin: 0 0 18px; padding: 12px 14px; border-radius: 10px; font-size: 12.5px; line-height: 1.6; }
+.lg-alert svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+.lg-form[data-state="error"] .lg-alert { display: flex; background: color-mix(in srgb, var(--bad) 10%, transparent); color: var(--bad); }
+.lg-form[data-state="error"] .lg-field input { border-color: var(--bad); }
+.lg-form[data-state="loading"] .lg-field { opacity: .7; }
+.lg-submit { display: inline-flex; align-items: center; justify-content: center; gap: 9px; }
+.lg-submit svg { width: 16px; height: 16px; }
+.spin { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.lg-alt { margin: 18px 0 0; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-3); }
+.lg-alt button { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--accent); }
+.lg-alt svg { width: 14px; height: 14px; }
+.lg-mock { margin: 10px 0 0; font-size: 11.5px; color: var(--ink-3); display: block; line-height: 2; }
+.lg-mock svg { width: 12px; height: 12px; vertical-align: -2px; margin-right: 4px; }
+.lg-mock button { font-size: 11.5px; font-weight: 600; color: var(--accent); border-bottom: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
+.lg-mock button:hover { border-bottom-style: solid; }
+.lg-mock b { color: var(--ink-2); font-family: var(--mono); font-weight: 600; }
+
+.ent-wrap { min-height: 100vh; display: grid; grid-template-columns: 1.15fr .85fr; background: var(--bg); }
+.ent-brand { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: center; padding: 64px 72px; border-right: 1px solid var(--line); }
+.ent-pane { display: grid; place-items: center; padding: 40px; background: var(--surface); }
+.ent-card { width: min(400px, 100%); }
+.ent-co { display: flex; gap: 12px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 18px; }
+.ent-co .ava { width: 38px; height: 38px; border-radius: 10px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; }
+.ent-co b { display: block; font-size: 13.5px; } .ent-co small { color: var(--ink-3); font-size: 12px; }
+.lg-ok { display: none; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 10px; margin: 0 0 18px; font-size: 12.5px; line-height: 1.6; background: color-mix(in srgb, var(--ok) 11%, transparent); color: var(--ok); }
+.lg-ok svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+.ent-form[data-state="joined"] .lg-ok { display: flex; }
+
+.age { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+.age svg { width: 13px; height: 13px; color: var(--ink-3); }
+.age.slow { color: var(--warn); font-weight: 600; } .age.slow svg { color: var(--warn); }
+.st.low { --c: var(--bad); } .st.idle { --c: var(--ink-3); }
+.rowacts { display: inline-flex; gap: 6px; }
+.ftype { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.ftype svg { width: 14px; height: 14px; }
+.ftype.in { color: var(--ok); } .ftype.out { color: var(--bad); } .ftype.lock { color: var(--transit); } .ftype.adjust { color: var(--warn); }
+.periods { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; }
+.tag { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; font-weight: 600; background: var(--hover); color: var(--ink-2); }
+.tag svg { width: 12px; height: 12px; }
+.tag.primary { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.tw.tight th, .tw.tight td { padding: 0 9px; }
+.tw.tight th:first-child, .tw.tight td:first-child { padding-left: 14px; }
+.tw.tight th:last-child, .tw.tight td:last-child { padding-right: 14px; }
+.tw.tight .avail { min-width: 132px; }
+.dw-sub { margin: 0 0 8px; font-size: 12px; color: var(--ink-3); }
+.chip svg { width: 13px; height: 13px; margin-right: 4px; vertical-align: -2px; }
+.link { color: var(--accent); font: 500 12.5px var(--mono); border-bottom: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent); }
+.link:hover { border-bottom-style: solid; }
+.ct-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.ct { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: var(--surface); }
+.ct.off { opacity: .62; }
+.ct .ava { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--hover); font-weight: 700; font-size: 12.5px; flex: none; }
+.ct-i { flex: 1; min-width: 0; }
+.ct-i b { display: block; font-size: 13px; }
+.ct-i small { display: block; font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+.mtx thead th.onact { color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); }
+.form-only { grid-column: 1 / -1; }
+
+/* ===== 四态：照 apps/web/src/styles/app-v013.css:38-53 的契约写，不做 JS 条件渲染 ===== */
+[data-state] > .st-block { display: none; }
+[data-state="filled"] > .st-filled,
+[data-state="empty"] > .st-empty,
+[data-state="loading"] > .st-loading,
+[data-state="error"] > .st-error { display: block; }
+[data-state="empty"] > .st-filled,
+[data-state="loading"] > .st-filled,
+[data-state="error"] > .st-filled { display: none; }
+tbody[data-state="empty"] > tr.r-row,
+tbody[data-state="loading"] > tr.r-row,
+tbody[data-state="error"] > tr.r-row { display: none; }
+tbody > tr.st-tr { display: none; }
+tbody[data-state="empty"] > tr.st-tr.st-empty,
+tbody[data-state="loading"] > tr.st-tr.st-loading,
+tbody[data-state="error"] > tr.st-tr.st-error { display: table-row; }
+tbody > tr.st-tr > td { padding: 0; border-bottom: none; white-space: normal; height: auto; }
+.st-wrap { padding: 34px 20px; }
+.st-wrap.st-skel { padding: 22px 20px; }
+.st-center { text-align: center; }
+.st-ico { width: 54px; height: 54px; display: grid; place-items: center; margin: 0 auto 12px; border-radius: 15px; background: var(--hover); color: var(--ink-3); }
+.st-ico svg { width: 23px; height: 23px; }
+.st-title { font-size: 15px; font-weight: 650; color: var(--ink); margin-bottom: 6px; }
+.st-desc { font-size: 13px; line-height: 1.7; color: var(--ink-3); margin: 0 0 14px; }
+.st-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.st-error .st-ico { color: var(--bad); }
+.list-card:not([data-state="filled"]) .tf .pager { display: none; }
+</style>
+</head>
+<body>
+<!-- 登录页（?view=login） -->
+<div class="lg-wrap" id="lgWrap" style="display:none">
+  <div class="lg-brand">
+    <div id="lgFx" aria-hidden="true"></div>
+    <div class="lg-mark">轻</div>
+    <h1 class="lg-slogan">每一笔内部交易<br>都<em>算得清</em>成本</h1>
+    <p class="lg-sub"><span>采购 加工 销售 调拨 结算</span><span>一套账本 口径统一 权限分明 数据透明</span></p>
+    <div class="lg-foot">QINGDAN · INTERNAL LEDGER</div>
+  </div>
+  <div class="lg-formpane"><form class="lg-form" id="lgForm" data-state="idle" novalidate>
+    <h2>登录轻单</h2><p class="lg-hint">手机号 + 验证码登录 · 演示环境可直接进入</p>
+    <div class="lg-alert"><svg class="ic"><use href="#i-warn"/></svg><span id="lgAlert">手机号或验证码不正确，请重试。</span></div>
+    <div class="lg-field"><label for="lgPhone">手机号</label><input id="lgPhone" inputmode="numeric" autocomplete="username" placeholder="11 位手机号"></div>
+    <div class="lg-field"><label for="lgCode">验证码</label><div class="lg-code"><input id="lgCode" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位验证码"><button type="button" id="lgSend">获取验证码</button></div></div>
+    <div class="lg-row"><label><input type="checkbox" id="lgRemember" checked>在这台设备上保持登录</label></div>
+    <button class="lg-submit" type="submit" id="lgSubmit">登 录</button>
+    <div class="lg-alt"><button type="button" data-act="enter-open"><svg class="ic"><use href="#i-ticket"/></svg>有企业邀请码？加入企业</button></div>
+    <div class="lg-mock"><svg class="ic"><use href="#i-warn"/></svg><button type="button" data-act="lg-fail">模拟一次登录失败</button>（演示错误态 data-state="error"）</div>
+  </form></div>
+  <div class="lg-theme"><button class="ib" data-act="theme" title="切换亮 / 暗" aria-label="切换亮 / 暗主题"><svg class="ic"><use href="#i-theme"/></svg></button></div>
+  <div class="lg-ver">Qingdan · v0.24 新 UI</div>
+</div>
+<!-- 入企页（?view=enter，或登录页「有企业邀请码」） -->
+<div class="ent-wrap" id="entWrap" style="display:none">
+  <div class="ent-brand">
+    <div class="lg-mark">轻</div>
+    <h1 class="lg-slogan">用一个邀请码<br>接入<em>公司的账本</em></h1>
+    <p class="lg-sub"><span>采购 加工 销售 调拨 结算</span><span>同一个公司码下，口径、权限与数据全部对齐</span></p>
+    <div class="lg-foot">QINGDAN · JOIN YOUR COMPANY</div>
+  </div>
+  <div class="ent-pane"><div class="ent-card">
+    <h2 style="margin:0 0 6px;font-size:24px">加入企业</h2>
+    <p class="lg-hint" style="margin:0 0 22px;color:var(--ink-3);font-size:13px">输入管理员给你的邀请码，一次只进一家公司</p>
+    <div class="ent-co"><span class="ava" id="entAva">星</span><div><b id="entCo">星辰商贸总公司</b><small>公司码 <span class="mono" id="entCodeShow">XC-8821</span> · 邀请人 王倩</small></div></div>
+    <form class="ent-form" id="entForm" data-state="idle" novalidate>
+      <div class="lg-ok"><svg class="ic"><use href="#i-check"/></svg><span id="entOk">你已经在这家公司，直接登录即可。</span></div>
+      <div class="lg-alert"><svg class="ic"><use href="#i-warn"/></svg><span id="entAlert">邀请码无效或已过期。</span></div>
+      <div class="lg-field"><label for="entCode">企业邀请码</label><input id="entCode" placeholder="如 QD2026" autocomplete="off" spellcheck="false"></div>
+      <button class="lg-submit" type="submit" id="entSubmit">加入企业</button>
+      <div class="lg-alt"><button type="button" data-act="enter-back"><svg class="ic"><use href="#i-right"/></svg>返回登录</button></div>
+      <div class="lg-mock"><svg class="ic"><use href="#i-warn"/></svg>演示：输入 <b style="margin:0 4px">QD2026</b> 加入 · 输入 <b style="margin:0 4px">INVALID</b> 看「码无效」 · 输入 <b style="margin:0 4px">JOINED</b> 看「已加入」</div>
+    </form>
+  </div></div>
+</div>
+<!-- 打印客户联容器 -->
+<div class="print-sheet" id="printSheet" aria-hidden="true"></div>
+<div class="app" id="app">
+  <aside class="sb" aria-label="主导航">
+    <div class="sb-head">
+      <div class="brand"><div class="logo">轻</div><b>轻单</b><i>v0.23</i></div>
+      <button class="co" data-pop="company" title="切换公司（数据按公司隔离 D15）"><svg class="ic"><use href="#i-building"/></svg><span id="coName"></span><svg class="ic"><use href="#i-chev"/></svg></button>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="sb-foot">
+      <button class="me" data-pop="role" title="切换演示账号"><span class="ava" id="meAva"></span><div><b id="meName"></b><small id="meDesc"></small></div><svg class="ic muted"><use href="#i-chev"/></svg></button>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <button class="ib only-d" data-act="collapse" title="折叠 / 展开导航（[）" aria-label="折叠导航"><svg class="ic"><use href="#i-side"/></svg></button>
+      <button class="ib only-m" data-act="navopen" aria-label="打开导航"><svg class="ic"><use href="#i-list"/></svg></button>
+      <div class="crumb" id="crumb"></div>
+      <div class="grow"></div>
+      <button class="search" data-act="palette"><svg class="ic"><use href="#i-search"/></svg><span>搜索页面、单号、命令…</span><span class="kbd">Ctrl K</span></button>
+      <button class="view-btn" id="viewBtn" data-pop="view" title="切换列表四态"><i></i><span id="viewLbl"></span></button>
+      <button class="ib" data-act="theme" title="切换亮 / 暗主题" aria-label="切换主题"><svg class="ic"><use href="#i-theme"/></svg></button>
+    </header>
+    <div class="scroll" id="scroll"><main class="page" id="page"></main></div>
+  </div>
+</div>
+
+<div class="mask" id="mask"></div>
+<aside class="drawer" id="drawer" aria-label="单据详情"></aside>
+<div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+<div class="pal" id="pal" role="dialog" aria-label="命令面板">
+  <div class="pal-i"><svg class="ic"><use href="#i-search"/></svg><input id="palIn" placeholder="输入页面名称、单号或命令…" autocomplete="off"><span class="kbd">ESC</span></div>
+  <div class="pal-l" id="palList"></div>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs id="icons"></defs></svg>
+
+<script>
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ic = n => `<svg class="ic"><use href="#i-${n}"/></svg>`;
+
+const IC = {
+  workbench: 'M4 5h7v7H4zM13 5h7v4h-7zM13 11h7v8h-7zM4 14h7v5H4z', flow: 'M4 8h13l-3-3M20 16H7l3 3',
+  'purchase-orders': 'M12 4v13m0 0l-5-5m5 5l5-5M5 20h14', 'processing-orders': 'M12 3v4M12 17v4M3 12h4M17 12h4M12 8a4 4 0 100 8 4 4 0 000-8z',
+  'sales-orders': 'M12 20V7m0 0l-5 5m5-5l5 5M5 4h14', 'internal-trades': 'M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7',
+  settlements: 'M7 4l5 8 5-8M12 12v8M8 13h8M8 17h8', reversals: 'M4 9h10a5 5 0 010 10H9M4 9l4-4M4 9l4 4',
+  products: 'M4 8l8-4 8 4v8l-8 4-8-4zM4 8l8 4 8-4M12 12v8', customers: 'M12 12a4 4 0 100-8 4 4 0 000 8zM5 20a7 7 0 0114 0',
+  suppliers: 'M3 7h11v9H3zM14 10h4l3 3v3h-7M7 19a2 2 0 100-4 2 2 0 000 4zM17 19a2 2 0 100-4 2 2 0 000 4z', processors: 'M3 20V10l6 3v-3l6 3V5h6v15z',
+  inventory: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z', 'inventory-flows': 'M4 6h16M4 12h16M4 18h10', stocktakes: 'M5 5h14v14H5zM9 12l2 2 4-4',
+  'profit-report': 'M5 20V10M12 20V4M19 20v-7', employees: 'M9 11a3 3 0 100-6 3 3 0 000 6zM3 19a6 6 0 0112 0M17 11a3 3 0 100-6M21 19a6 6 0 00-4-5.6',
+  permissions: 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z', companies: 'M5 20V5h9v15M14 10h5v10M3 20h18M8 9h3M8 13h3', building: 'M5 20V5h9v15M14 10h5v10M3 20h18M8 9h3M8 13h3',
+  'audit-logs': 'M12 7v5l3 2M12 21a9 9 0 100-18 9 9 0 000 18z', 'api-integration': 'M13 3L5 13h6l-1 8 8-10h-6z',
+  settings: 'M4 7h10M18 7h2M4 17h2M10 17h10M16 9a2 2 0 100-4 2 2 0 000 4zM8 19a2 2 0 100-4 2 2 0 000 4z',
+  chev: 'M8 9l4-4 4 4M8 15l4 4 4-4', right: 'M9 6l6 6-6 6', side: 'M4 5h16v14H4zM9 5v14', list: 'M4 6h16M4 12h16M4 18h16', search: 'M11 18a7 7 0 100-14 7 7 0 000 14zM20 20l-4-4',
+  theme: 'M20 14A8 8 0 0110 4a8 8 0 1010 10z', plus: 'M12 5v14M5 12h14', dl: 'M12 4v11m0 0l-4-4m4 4l4-4M5 20h14', x: 'M6 6l12 12M18 6L6 18',
+  lock: 'M7 11V8a5 5 0 0110 0v3M5 11h14v9H5z', inbox: 'M4 13l3-8h10l3 8v6H4zM4 13h5l1 2h4l1-2h5', warn: 'M12 4l9 16H3zM12 10v4M12 17v.5',
+  /* 新功能图标：分页 / 库龄 / 流水类型 / 盘点 / 密钥 / 周期 / 入企 */
+  'pg-first': 'M17 6l-6 6 6 6M8 6v12', 'pg-prev': 'M15 6l-6 6 6 6', 'pg-next': 'M9 6l6 6-6 6', 'pg-last': 'M7 6l6 6-6 6M16 6v12',
+  clock: 'M12 8v4l3 2M12 21a9 9 0 100-18 9 9 0 000 18z',
+  trend: 'M4 17l6-6 4 4 6-7M20 8h-4M20 8v4',
+  trash: 'M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6',
+  pencil: 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4',
+  key: 'M9 15a3 3 0 100-6 3 3 0 000 6zM11.1 12.9L20 4M17 7l3 3M15 9l2 2',
+  shield: 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4',
+  refresh: 'M20 11a8 8 0 10-2.3 7M20 5v6h-6',
+  calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  filter: 'M3 5h18l-7 8v6l-4 2v-8z',
+  'arrow-in': 'M12 4v13m0 0l-5-5m5 5l5-5', 'arrow-out': 'M12 20V7m0 0l-5 5m5-5l5 5',
+  adjust: 'M4 8h9m4 0h3M4 16h3m4 0h9M15 5v6M9 13v6',
+  ticket: 'M4 8h16v3a2 2 0 000 4v3H4v-3a2 2 0 000-4z',
+  check: 'M5 13l4 4L19 7', undo: 'M9 14l-4-4 4-4M5 10h9a5 5 0 010 10h-4',
+  copy: 'M9 9h11v11H9zM15 5H4v11', star: 'M12 4l2.4 5 5.6.8-4 4 .9 5.6-4.9-2.7-4.9 2.7.9-5.6-4-4 5.6-.8z',
+  pin: 'M12 3v9m0 0l4 3v-3H8v3zM9 15h6M12 15v6', split: 'M4 5v14M20 5v14M8 9l4 3-4 3M16 12H8'
+};
+$('#icons').innerHTML = Object.entries(IC).map(([k, d]) => `<symbol id="i-${k}" viewBox="0 0 24 24"><path d="${d}"/></symbol>`).join('');
+
+/* ---------- 偏好 ---------- */
+const DEF = { theme: 'system', accent: '#dc4a26', density: 'cozy', fs: 14, collapsed: false };
+let P = Object.assign({}, DEF);
+try { Object.assign(P, JSON.parse(localStorage.getItem('qd-wb') || '{}')); } catch (e) {}
+const MQ = matchMedia('(max-width: 860px)');
+const save = () => { try { localStorage.setItem('qd-wb', JSON.stringify(P)); } catch (e) {} };
+function applyPrefs() {
+  const de = document.documentElement;
+  const t = P.theme === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : P.theme;
+  de.dataset.theme = t;
+  de.dataset.density = P.density;
+  de.style.setProperty('--fs', P.fs + 'px');
+  de.style.setProperty('--accent', t === 'dark' ? `color-mix(in srgb, ${P.accent} 76%, #fff)` : P.accent);
+  $('#app').classList.toggle('collapsed', !!P.collapsed && !MQ.matches);
+}
+
+/* ---------- 数据 ---------- */
+const ROLES = {
+  manager: { name: '王倩', title: '经理', desc: '全权 + 看价', readAll: 1, viewPrice: 1, approve: 1, ship: 1, suppliers: 1 },
+  sales: { name: '张伟', title: '销售', desc: '无 read_all / 无供应商', readAll: 0, viewPrice: 1, approve: 0, ship: 1, suppliers: 0 },
+  warehouse: { name: '李明', title: '仓库岗', desc: '无看价权限', readAll: 1, viewPrice: 0, approve: 0, ship: 1, suppliers: 1 }
+};
+const COMPANIES = ['星辰商贸总公司', '华东烘焙加工子公司'];
+const NAV = [
+  ['公共', [['workbench', '工作台'], ['flow', '业务全流程图']]],
+  ['单据与结算', [['purchase-orders', '采购单 A'], ['processing-orders', '加工单 B'], ['sales-orders', '销售单 E'], ['internal-trades', '内部交易单 N'], ['settlements', '结算单 C'], ['reversals', '冲正单据 R/S/I']]],
+  ['公司档案', [['products', '商品资料'], ['customers', '客户档案'], ['suppliers', '供应商档案'], ['processors', '加工厂档案']]],
+  ['库存', [['inventory', '库存数量'], ['inventory-flows', '库存流水'], ['stocktakes', '盘点']]],
+  ['组织与报表', [['profit-report', '利润报表'], ['employees', '员工'], ['permissions', '权限设置'], ['companies', '公司管理']]],
+  ['系统', [['audit-logs', '操作日志'], ['api-integration', 'API 与集成'], ['settings', '设置中心']]]
+];
+const INFO = {};
+NAV.forEach(([g, items]) => items.forEach(([id, label]) => { INFO[id] = { label, group: g }; }));
+
+const DOC = {
+  'purchase-orders': { L: 'A', name: '采购单', partner: '供应商', item: '物料', amt: '金额', mid: '在途', ship: 'purchase.ship', done: 'purchase.update', doneLabel: '到货确认', dual: 1, exp: 1, create: 1, sub: '向供应商采购，货到入库建批次并锁定批次价（D5）。' },
+  'processing-orders': { L: 'B', name: '加工单', partner: '加工厂', item: '成品', amt: '加工费', extra: '损耗', mid: '在途', ship: 'processing.ship', done: 'processing.approve', doneLabel: '到货确认', dual: 1, create: 1, sub: '委托外部加工，料段与成品段两段在途，记损耗归属（D35）。' },
+  'sales-orders': { L: 'E', name: '销售单', partner: '客户', item: '商品', amt: '金额', extra: '毛利率', mid: '已发货', ship: 'sales.ship', done: 'sales.approve', doneLabel: '签收完成', dual: 1, exp: 1, create: 1, sub: '按批次出库。发货与签收拆成两个动作（D94），签收后才认收入。' },
+  'internal-trades': { L: 'N', name: '内部交易单', partner: '对接公司', item: '商品', amt: '金额', extra: '计价', mid: '在途', ship: 'internal.ship', done: 'internal.approve', doneLabel: '签收转司', dual: 1, create: 1, sub: '兄弟公司间调拨与往来，在途批次锁定，签收后转司（D22/D31）。' },
+  settlements: { L: 'C', name: '结算单', partner: '对接单位', item: '关联单据', amt: '总售价', extra: '毛利率', done: 'settlement.approve', sub: '一单一成本收口。E / N 完成后自动生成，无需手工新建（D29）。' }
+};
+const mk = (id, partner, item, qty, amount, extra, status, handler, date, batch) =>
+  ({ id, partner, item, qty, amount, extra, status, handler, date, batch, log: [{ t: date.slice(5) + ' 09:00', x: '创建单据 · ' + handler }] });
+const ORD = {
+  'sales-orders': [
+    mk('E-2611-081', '华东优选贸易', '特级冷萃咖啡豆', '120 箱', 18600, '24.5%', 'now', '王倩', '2026-11-22', 'P-2201'),
+    mk('E-2611-082', '南山生鲜连锁', '有机燕麦奶 1L', '85 箱', 9350, '19.2%', 'transit', '张伟', '2026-11-22'),
+    mk('E-2611-083', '星辰餐饮集团', '烘焙坚果礼盒', '200 盒', 32000, '28.0%', 'ok', '王倩', '2026-11-21'),
+    mk('E-2611-084', '绿野社区商超', '冷链果汁拼箱', '40 件', -1200, '−4.1%', 'bad', '张伟', '2026-11-20'),
+    mk('E-2611-085', '瑞幸区域仓', '冷萃浓缩液', '90 箱', 14200, '21.0%', 'now', '张伟', '2026-11-19'),
+    mk('E-2611-086', '盒马鲜生', '有机燕麦奶 1L', '150 箱', 16800, '18.5%', 'ok', '王倩', '2026-11-19'),
+    mk('E-2611-087', '便利蜂', '烘焙坚果礼盒', '60 盒', 9600, '26.0%', 'transit', '张伟', '2026-11-18'),
+    mk('E-2611-088', '喜茶供应链', '特级冷萃咖啡豆', '75 箱', 11700, '23.0%', 'ok', '王倩', '2026-11-18'),
+    mk('E-2611-089', '全家便利店', '冷链果汁拼箱', '120 件', 11520, '12.4%', 'cancel', '张伟', '2026-11-17'),
+    mk('E-2611-090', '永辉超市', '有机燕麦奶 1L', '240 箱', 26400, '17.8%', 'now', '王倩', '2026-11-17'),
+    mk('E-2611-091', '星巴克区域', '特级冷萃咖啡豆', '180 箱', 27900, '25.2%', 'ok', '王倩', '2026-11-16'),
+    mk('E-2611-092', '罗森便利', '烘焙坚果礼盒', '45 盒', 7200, '19.6%', 'transit', '张伟', '2026-11-16')
+  ],
+  'purchase-orders': [
+    mk('A-2611-014', '云南臻选庄园', '阿拉比卡生豆', '500 kg', 42000, '', 'now', '王倩', '2026-11-22'),
+    mk('A-2611-013', '北欧植基原料', '燕麦浓缩浆', '300 桶', 26400, '', 'transit', '陈浩', '2026-11-21'),
+    mk('A-2611-012', '新疆核桃合作社', '特级纸皮核桃', '800 kg', 19800, '', 'ok', '王倩', '2026-11-19'),
+    mk('A-2611-011', '普洱产区联社', '阿拉比卡生豆', '620 kg', 50840, '', 'transit', '陈浩', '2026-11-21'),
+    mk('A-2611-010', '瑞典燕麦工厂', '燕麦浓缩浆', '400 桶', 35200, '', 'ok', '陈浩', '2026-11-20'),
+    mk('A-2611-009', '云南咖啡合作社', '阿拉比卡生豆', '350 kg', 27650, '', 'ok', '王倩', '2026-11-18'),
+    mk('A-2611-008', '粤海包装', '坚果礼盒外箱', '2000 个', 8600, '', 'now', '陈浩', '2026-11-18'),
+    mk('A-2611-007', '北欧植基原料', '燕麦浓缩浆', '280 桶', 24640, '', 'now', '王倩', '2026-11-17'),
+    mk('A-2611-006', '阿克苏果园', '特级纸皮核桃', '500 kg', 12750, '', 'transit', '陈浩', '2026-11-16')
+  ],
+  'processing-orders': [
+    mk('B-2611-007', '昆山烘焙中心', '深烘拼配成品', '460 kg', 6900, '2.1%', 'now', '王倩', '2026-11-22'),
+    mk('B-2611-006', '苏州分装厂', '坚果礼盒成品', '200 盒', 3200, '0.5%', 'transit', '李明', '2026-11-20'),
+    mk('B-2611-005', '昆山烘焙中心', '深烘拼配成品', '520 kg', 7800, '1.8%', 'ok', '王倩', '2026-11-19'),
+    mk('B-2611-004', '嘉兴分装厂', '坚果礼盒成品', '300 盒', 4800, '0.8%', 'ok', '李明', '2026-11-18'),
+    mk('B-2611-003', '苏州分装厂', '冷萃成品分装', '180 箱', 2700, '1.2%', 'transit', '李明', '2026-11-17'),
+    mk('B-2611-002', '昆山烘焙中心', '中烘单品', '240 kg', 3600, '1.5%', 'ok', '王倩', '2026-11-15')
+  ],
+  'internal-trades': [
+    mk('N-2611-004', '华东烘焙加工子公司', '冷萃成品调拨', '150 箱', 16500, '内部价', 'transit', '王倩', '2026-11-22'),
+    mk('N-2611-003', '华东烘焙加工子公司', '燕麦奶半成品调拨', '120 箱', 10800, '内部价', 'ok', '王倩', '2026-11-20'),
+    mk('N-2611-002', '华东烘焙加工子公司', '咖啡豆原料调拨', '200 kg', 16000, '内部价', 'ok', '王倩', '2026-11-18'),
+    mk('N-2611-001', '华南贸易分公司', '冷萃成品调拨', '60 箱', 6600, '内部价', 'now', '张伟', '2026-11-16'),
+    mk('N-2610-009', '华东烘焙加工子公司', '坚果礼盒调拨', '40 盒', 6400, '内部价', 'transit', '周婷', '2026-11-14')
+  ],
+  settlements: [
+    Object.assign(mk('C-2611-031', '星辰餐饮集团', '关联 E-2611-083', '200 盒', 32000, '28.0%', 'ok', '财务自动生成', '2026-11-21'), { owner: '王倩' }),
+    Object.assign(mk('C-2611-032', '绿野社区商超', '关联 E-2611-084', '40 件', -1200, '−4.1%', 'bad', '财务自动生成', '2026-11-20'), { owner: '张伟' }),
+    Object.assign(mk('C-2611-033', '盒马鲜生', '关联 E-2611-086', '150 箱', 16800, '18.5%', 'ok', '财务自动生成', '2026-11-19'), { owner: '王倩' }),
+    Object.assign(mk('C-2611-034', '喜茶供应链', '关联 E-2611-088', '75 箱', 11700, '23.0%', 'ok', '财务自动生成', '2026-11-18'), { owner: '王倩' }),
+    Object.assign(mk('C-2611-035', '星巴克区域', '关联 E-2611-091', '180 箱', 27900, '25.2%', 'ok', '财务自动生成', '2026-11-16'), { owner: '王倩' }),
+    Object.assign(mk('C-2611-036', '华南贸易分公司', '关联 N-2611-001', '60 箱', 6600, '内部价', 'bad', '财务自动生成', '2026-11-16'), { owner: '张伟' }),
+    Object.assign(mk('C-2611-037', '华东烘焙加工子公司', '关联 N-2611-003', '120 箱', 10800, '内部价', 'ok', '财务自动生成', '2026-11-20'), { owner: '王倩' })
+  ]
+};
+const INV = [
+  { batch: 'P-2201', product: '特级冷萃咖啡豆', wh: '上海一号仓', keeper: '李明', inQ: 300, refQ: 120, transitQ: 20, holdQ: 10, avail: 150, price: 118, age: 8, minQ: 120 },
+  { batch: 'P-2200', product: '有机燕麦奶 1L', wh: '上海一号仓', keeper: '李明', inQ: 200, refQ: 85, transitQ: 0, holdQ: 15, avail: 100, price: 88, age: 21, minQ: 80 },
+  { batch: 'P-2199', product: '烘焙坚果礼盒', wh: '苏州冷链仓', keeper: '周婷', inQ: 450, refQ: 200, transitQ: 50, holdQ: 0, avail: 200, price: 115, age: 45, minQ: 150 },
+  { batch: 'P-2202', product: '阿拉比卡生豆', wh: '上海一号仓', keeper: '周婷', inQ: 900, refQ: 640, transitQ: 120, holdQ: 0, avail: 140, price: 76, age: 12, minQ: 200 },
+  { batch: 'P-2203', product: '燕麦浓缩浆', wh: '上海一号仓', keeper: '李明', inQ: 700, refQ: 430, transitQ: 0, holdQ: 40, avail: 230, price: 88, age: 26, minQ: 150 },
+  { batch: 'P-2204', product: '烘焙坚果礼盒', wh: '苏州冷链仓', keeper: '周婷', inQ: 420, refQ: 360, transitQ: 30, holdQ: 0, avail: 30, price: 118, age: 48, minQ: 80 },
+  { batch: 'P-2205', product: '冷链果汁拼箱', wh: '上海一号仓', keeper: '李明', inQ: 260, refQ: 210, transitQ: 0, holdQ: 12, avail: 38, price: 96, age: 63, minQ: 60 },
+  { batch: 'P-2206', product: '特级纸皮核桃', wh: '苏州冷链仓', keeper: '周婷', inQ: 520, refQ: 300, transitQ: 60, holdQ: 20, avail: 140, price: 25, age: 34, minQ: 120 }
+];
+const FTYPE = { in: ['入库', 'arrow-in'], out: ['出库', 'arrow-out'], lock: ['锁定', 'pin'], adjust: ['调整', 'adjust'] };
+const FLOWS = [
+  { t: '11-21 17:30', batch: 'P-2201', type: 'in', d: '+5 箱', amt: 590, src: 'R-0086', by: '王倩' },
+  { t: '11-21 16:05', batch: 'P-2199', type: 'out', d: '−200 盒', amt: 23000, src: 'E-2611-083', by: '王倩' },
+  { t: '11-21 09:12', batch: 'P-2204', type: 'lock', d: '−30 盒', amt: 3540, src: 'E-2611-087', by: '张伟' },
+  { t: '11-20 10:22', batch: 'P-2200', type: 'out', d: '−85 箱', amt: 7480, src: 'E-2611-082', by: '张伟' },
+  { t: '11-19 14:20', batch: 'P-2199', type: 'in', d: '+450 盒', amt: 51750, src: 'B-2611-005', by: '周婷' },
+  { t: '11-19 11:05', batch: 'P-2202', type: 'in', d: '+620 kg', amt: 47120, src: 'A-2611-011', by: '陈浩' },
+  { t: '11-19 09:40', batch: 'P-2204', type: 'adjust', d: '−4 盒', amt: 472, src: 'I-2611-02', by: '周婷' },
+  { t: '11-18 16:48', batch: 'P-2203', type: 'lock', d: '−40 桶', amt: 3520, src: 'B-2611-004', by: '李明' },
+  { t: '11-18 15:02', batch: 'P-2201', type: 'out', d: '−75 箱', amt: 8850, src: 'E-2611-088', by: '王倩' },
+  { t: '11-18 09:30', batch: 'P-2205', type: 'in', d: '+260 件', amt: 24960, src: 'A-2611-010', by: '陈浩' },
+  { t: '11-17 18:15', batch: 'P-2206', type: 'in', d: '+520 kg', amt: 13000, src: 'A-2611-012', by: '周婷' },
+  { t: '11-17 14:40', batch: 'P-2202', type: 'lock', d: '−120 kg', amt: 9120, src: 'N-2611-002', by: '王倩' },
+  { t: '11-16 11:20', batch: 'P-2200', type: 'adjust', d: '+2 箱', amt: 176, src: 'I-2611-04', by: '李明' },
+  { t: '11-15 17:08', batch: 'P-2206', type: 'out', d: '−200 kg', amt: 5000, src: 'B-2611-002', by: '周婷' },
+  { t: '11-14 10:36', batch: 'P-2203', type: 'out', d: '−180 桶', amt: 15840, src: 'N-2611-003', by: '王倩' }
+];
+const STK = [
+  { id: 'I-2611-01', wh: '上海一号仓', up: '+4 箱', down: '0', status: 'warn', note: '咖啡豆袋破损，称重补差', by: '李明' },
+  { id: 'I-2611-02', wh: '苏州冷链仓', up: '0', down: '−2 盒', status: 'ok', note: '礼盒压损，批准后追加 I 单', by: '周婷' },
+  { id: 'I-2611-03', wh: '上海一号仓', up: '0', down: '−10 kg', status: 'bad', note: '生豆受潮，驳回待复核', by: '陈浩' },
+  { id: 'I-2611-04', wh: '上海一号仓', up: '+2 箱', down: '0', status: 'warn', note: '燕麦奶溢装，等待审批', by: '李明' }
+];
+const STK_L2 = { warn: '待审批', ok: '已批准', bad: '已驳回' };
+const WHS = ['上海一号仓', '苏州冷链仓', '深圳中转仓'];
+
+const DOMAINS = [
+  ['purchase_order', '采购单'], ['processing_order', '加工单'], ['sales_order', '销售单'], ['internal_trade_order', '内部交易单'],
+  ['settlement', '结算单'], ['reversal', '冲正'], ['stocktake', '盘点'], ['inventory', '库存'],
+  ['product', '商品'], ['customer', '客户'], ['supplier', '供应商'], ['processor', '加工厂'],
+  ['contact', '对接人'], ['employee', '员工'], ['permission', '权限'], ['company', '公司'],
+  ['apikey', 'API 密钥'], ['report', '报表'], ['audit', '操作日志'], ['billing', '订阅'],
+  ['auth', '登录认证'], ['notification', '通知'], ['attachment', '附件'], ['platform', '平台']
+];
+const ACTS = ['read', 'create', 'update', 'delete', 'ship', 'approve', 'export', 'read_all'];
+const ACT_L = { read: '查看', create: '新建', update: '修改', delete: '删除', ship: '发货', approve: '审批', export: '导出', read_all: '看全部' };
+const MX_RULES = {
+  manager: (d, a) => a === 'delete' && !/^(product|customer|supplier|processor|contact|apikey)$/.test(d) ? 0 : a === 'export' ? 'inh' : 1,
+  sales: (d, a) => {
+    if (a === 'read') return 1;
+    if (a === 'read_all' || a === 'export' || a === 'ship') return 'inh';
+    if (/^(sales_order|customer|contact|product)$/.test(d)) return a === 'delete' || a === 'approve' ? 0 : 1;
+    return 0;
+  },
+  warehouse: (d, a) => {
+    if (a === 'read' || a === 'read_all') return 1;
+    if (/^(inventory|stocktake|purchase_order|processing_order|internal_trade_order)$/.test(d)) return a === 'ship' || a === 'update' ? 1 : 0;
+    if (/^(product|contact)$/.test(d)) return a === 'create' || a === 'update' ? 1 : 'inh';
+    return 'inh';
+  }
+};
+const MXO = {};              // 手动改过的格子： role|domain|action → 1 / 0 / 'inh'
+let MXACT = 'read';          // 当前高亮的动作列
+const cellVal = (role, d, a) => { const k = role + '|' + d + '|' + a; return MXO[k] !== undefined ? MXO[k] : MX_RULES[role](d, a); };
+function toggleCell(id) {
+  if (!R().approve) { toast('无 permission.update 权限，无法修改', 1); return; }
+  const [role, d, a] = id.split('|');
+  if (role !== S.role) { toast('只能编辑当前账号的权限', 1); return; }
+  const cur = cellVal(role, d, a), next = cur === 1 ? 0 : cur === 0 ? 'inh' : 1;
+  MXO[id] = next;
+  audit('permission.update', d + '.' + a);
+  toast(`${d}.${a} → ${next === 1 ? '允许' : next === 0 ? '拒绝' : '继承公司默认'}`);
+  refresh();
+}
+
+/* 对接人 / 加工厂报价在建档数据（CUSTOMERS / SUPPLIERS / PROCESSORS）之后生成，见数据区末尾 */
+
+
+const STK_L = { warn: '待审批', ok: '已批准', bad: '已驳回' };
+const REV = [
+  { id: 'R-0086', kind: 'R', way: '退货退款', batch: 'P-2201', qty: '5 箱', status: 'ok', label: '已完成' },
+  { id: 'S-0041', kind: 'S', way: '质量退回', batch: 'P-2199', qty: '12 kg', status: 'now', label: '进行中' },
+  { id: 'I-0019', kind: 'I', way: '追加流水', batch: 'P-2200', qty: '−2 箱', status: 'warn', label: '待审批' }
+];
+const AUDIT = [
+  { t: '11-22 08:14', by: 'ERP 同步', from: 'API', a: 'inventory.read', o: '库存批次', ok: 1 },
+  { t: '11-21 16:05', by: '王倩', from: 'Web', a: 'sales.approve', o: 'E-2611-083', ok: 1 },
+  { t: '11-21 11:32', by: '张伟', from: 'Web', a: 'sales.approve', o: 'E-2611-082', ok: 0 },
+  { t: '11-21 09:48', by: '李明', from: 'Web', a: 'inventory.adjust', o: 'P-2204', ok: 1 },
+  { t: '11-20 18:02', by: '陈浩', from: 'Web', a: 'purchase_order.ship', o: 'A-2611-013', ok: 1 },
+  { t: '11-20 15:36', by: '周婷', from: 'Web', a: 'stocktake.approve', o: 'I-2611-02', ok: 1 },
+  { t: '11-20 11:20', by: '电商中台', from: 'API', a: 'sales_order.create', o: 'E-2611-086', ok: 1 },
+  { t: '11-19 17:44', by: '张伟', from: 'Web', a: 'sales_order.delete', o: 'E-2611-089', ok: 0 },
+  { t: '11-19 14:12', by: '王倩', from: 'Web', a: 'reversal.create', o: 'R-0086', ok: 1 },
+  { t: '11-19 10:05', by: 'ERP 同步', from: 'API', a: 'product.read', o: '商品资料', ok: 1 },
+  { t: '11-18 16:30', by: '王倩', from: 'Web', a: 'employee.disable', o: '赵敏', ok: 1 },
+  { t: '11-18 09:15', by: '陈浩', from: 'Web', a: 'purchase_order.export', o: '采购单 A', ok: 0 },
+  { t: '11-17 20:08', by: '系统', from: 'API', a: 'apikey.revoke', o: '旧版报表导出', ok: 1 },
+  { t: '11-17 13:26', by: '李明', from: 'Web', a: 'inventory.export', o: '库存数量', ok: 1 },
+  { t: '11-16 10:40', by: '张伟', from: 'Web', a: 'customer.contact.create', o: 'CU-002', ok: 1 }
+];
+const PRODUCTS = [
+  ['SKU-001', '特级冷萃咖啡豆', '12 袋 / 箱', 155], ['SKU-002', '有机燕麦奶 1L', '12 盒 / 箱', 110], ['SKU-003', '烘焙坚果礼盒', '6 罐 / 盒', 160],
+  ['SKU-004', '冷链果汁拼箱', '24 瓶 / 件', 96], ['SKU-005', '阿拉比卡生豆', '按 kg 计', 84]
+];
+const CUSTOMERS = [['CU-001', '华东优选贸易', '顾岚', '协议价'], ['CU-002', '南山生鲜连锁', '宋一鸣', '标准价'], ['CU-003', '星辰餐饮集团', '何静', '协议价'], ['CU-004', '绿野社区商超', '邵凯', '标准价']];
+const SUPPLIERS = [['SU-001', '云南臻选庄园', '岩温'], ['SU-002', '北欧植基原料', 'Lars Holm'], ['SU-003', '新疆核桃合作社', '艾力']];
+const PROCESSORS = [['PR-001', '昆山烘焙中心', '钱卫东'], ['PR-002', '苏州分装厂', '陆敏']];
+const EMP = [
+  { id: 'E001', name: '王倩', tel: '138****2046', co: '星辰商贸总公司', job: '经理', on: 1 },
+  { id: 'E002', name: '张伟', tel: '139****7731', co: '星辰商贸总公司', job: '销售', on: 1 },
+  { id: 'E003', name: '李明', tel: '137****0958', co: '星辰商贸总公司', job: '仓库岗', on: 1 },
+  { id: 'E004', name: '陈浩', tel: '136****4412', co: '星辰商贸总公司', job: '采购', on: 1 },
+  { id: 'E005', name: '周婷', tel: '135****6620', co: '华东烘焙加工子公司', job: '仓库岗', on: 1 },
+  { id: 'E006', name: '赵敏', tel: '136****4481', co: '星辰商贸总公司', job: '财务', on: 0 },
+  { id: 'E007', name: '孙锐', tel: '138****7725', co: '星辰商贸总公司', job: '采购', on: 1 },
+  { id: 'E008', name: '林芳', tel: '139****2093', co: '华东烘焙加工子公司', job: '销售', on: 1 }
+];
+const KEYS = [
+  { id: 'k1', name: 'ERP 同步', scope: 'inventory.read', on: 1, exp: '2027-03-31', last: '11-22 08:14' },
+  { id: 'k2', name: '电商订单回传', scope: 'sales.create', on: 1, exp: '2027-01-15', last: '11-21 23:02' },
+  { id: 'k3', name: '旧版报表导出', scope: 'report.read', on: 0, exp: '2026-12-31', last: '09-30 18:40' }
+];
+/* 对接人（后端只回 phoneMasked，这里同样是脱敏值）+ 加工厂报价（记录报价走 processor.create） */
+const CONTACTS = {};
+[...CUSTOMERS, ...SUPPLIERS, ...PROCESSORS].forEach(([id, name, person], i) => {
+  CONTACTS[id] = [
+    { name: person, tel: '13' + (6 + i % 4) + '****' + String(2046 + i * 37).slice(0, 4), main: 1, on: 1, role: '主对接人 · 采购' },
+    { name: ['沈维', '陆婷', '许洋', '方蕾'][i % 4], tel: '139****' + String(3318 + i * 11).slice(0, 4), main: 0, on: 1, role: '对账 / 收货' },
+    { name: ['黄倩', '吴迪', '郑好'][i % 3], tel: '137****' + String(9007 + i * 7).slice(0, 4), main: 0, on: i % 3 === 0 ? 0 : 1, role: i % 3 === 0 ? '已离岗（软停用）' : '备选联系人' }
+  ];
+});
+const QUOTES = {
+  'PR-001': [
+    { id: 'Q-0021', item: '深烘拼配（kg）', price: 15, unit: 'kg', by: '钱卫东', t: '11-19 14:20', note: '500kg 以上' },
+    { id: 'Q-0020', item: '中烘单品（kg）', price: 14.5, unit: 'kg', by: '钱卫东', t: '11-16 09:40', note: '—' }
+  ],
+  'PR-002': [{ id: 'Q-0018', item: '坚果分装（盒）', price: 16, unit: '盒', by: '陆敏', t: '11-18 10:05', note: '含包材' }]
+};
+
+const MONTHS = [['6月', 21400], ['7月', 29800], ['8月', 26100], ['9月', 38200], ['10月', -4200], ['11月', 42600]];
+
+/* ---------- 状态与工具 ---------- */
+const S = { page: 'workbench', role: 'manager', company: COMPANIES[0], view: 'filled', q: '', status: 'all', scope: 'all', handler: 'all', sort: { k: 'date', d: -1 }, open: null, master: null, arm: null, flash: null, pi: 0, per: 10, pg: 1, f: {} };
+const VIEW_L = { filled: '数据态', empty: '空态', loading: '加载态', error: '错误态' };
+const R = () => ROLES[S.role];
+const can = cap => !!(R().approve || (/\.ship$/.test(cap) && R().ship));
+const money = v => !R().viewPrice ? '—' : (v < 0 ? '−¥' : '¥') + Math.abs(v).toLocaleString('zh-CN');
+const sens = v => R().viewPrice ? v : '—';
+const who = h => h + (h === R().name ? '（我）' : '');
+const pad = n => String(n).padStart(2, '0');
+const now = () => { const d = new Date(); return '11-22 ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+const ST_L = { now: '进行中', ok: '已完成', cancel: '已取消', warn: '待处理', bad: '待确认' };
+const stLabel = (pg, st) => pg === 'settlements' ? ({ bad: '待确认', ok: '已结算' }[st] || ST_L[st]) : st === 'transit' ? DOC[pg].mid : st === 'bad' ? '待审批' : ST_L[st];
+const badge = (pg, st) => `<span class="st ${st}">${stLabel(pg, st)}</span>`;
+const audit = (a, o, ok = 1) => AUDIT.unshift({ t: now(), by: R().name, from: 'Web', a, o, ok });
+const flow = (batch, d, src) => FLOWS.unshift({ t: now(), batch, d, src, by: R().name });
+const nextId = pg => { const a = ORD[pg], L = DOC[pg].L; return L + '-2611-' + String(Math.max(0, ...a.map(o => +o.id.slice(-3))) + 1).padStart(3, '0'); };
+const find = (pg, id) => ORD[pg].find(o => o.id === id);
+const revId = k => k + '-' + String(Math.max(0, ...REV.filter(x => x.kind === k).map(x => +x.id.slice(2))) + 1).padStart(4, '0');
+
+function toast(msg, bad) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (bad ? ' bad' : '');
+  el.innerHTML = '<i></i><span>' + esc(msg) + '</span>';
+  $('#toasts').appendChild(el);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 320); }, 2800);
+}
+
+function rows(pg, raw) {
+  const m = DOC[pg], r = R();
+  let a = ORD[pg];
+  if (m.dual && (!r.readAll || S.scope === 'mine')) a = a.filter(o => o.handler === r.name);
+  if (!m.dual && !r.readAll) a = a.filter(o => o.owner === r.name);
+  if (raw) return a;
+  if (m.dual && r.readAll && S.handler !== 'all') a = a.filter(o => o.handler === S.handler);
+  if (S.status !== 'all') a = a.filter(o => o.status === S.status);
+  const q = S.q.trim().toLowerCase();
+  if (q) a = a.filter(o => (o.id + o.partner + o.item + o.handler).toLowerCase().includes(q));
+  const { k, d } = S.sort;
+  return [...a].sort((x, y) => (x[k] > y[k] ? 1 : x[k] < y[k] ? -1 : x.id > y.id ? 1 : -1) * d);
+}
+
+function todos() {
+  const r = R(), mine = o => r.readAll || o.handler === r.name, out = [];
+  ORD['sales-orders'].filter(mine).forEach(o => {
+    if (o.status === 'now') out.push({ c: 'now', t: '待发货销售单 · ' + o.id, s: `${o.partner} · ${o.item} ${o.qty}`, a: '去发货', open: 'sales-orders|' + o.id });
+    if (o.status === 'transit') out.push({ c: 'transit', t: '待客户签收确认 · ' + o.id, s: o.partner + ' · 已发货，待 sales.approve', a: '去签收', open: 'sales-orders|' + o.id });
+    if (o.status === 'bad' && r.approve) out.push({ c: 'warn', t: '破下限待审批 · ' + o.id, s: o.partner + ' · 销售破下限需经理 / 老板审批 (D20)', a: '去审批', open: 'sales-orders|' + o.id });
+  });
+  ORD['purchase-orders'].filter(mine).forEach(o => {
+    if (o.status === 'now' || o.status === 'transit') out.push({ c: 'ok', t: '采购单在途待入库 · ' + o.id, s: o.partner + ' · 到货确认锁批次价 (D5)', a: '去确认', open: 'purchase-orders|' + o.id });
+  });
+  if (r.approve) {
+    ORD.settlements.filter(o => o.status === 'bad').forEach(o => out.push({ c: 'bad', t: '结算单 C 待财务确认' + (o.amount < 0 ? '（含负毛利预警）' : ''), s: o.id + ' · ' + o.partner, a: '去核对', open: 'settlements|' + o.id }));
+    STK.filter(x => x.status === 'warn').forEach(x => out.push({ c: 'warn', t: '盘点待审批 · ' + x.id, s: x.wh + ' · 盘盈 ' + x.up + ' / 盘亏 ' + x.down, a: '去审批', go: 'stocktakes' }));
+  }
+  return out;
+}
+
+/* ---------- 外壳渲染 ---------- */
+const GIC = ['', 'inbox', 'products', 'inventory', 'employees', 'settings'];
+const grpOf = id => NAV.findIndex(([, items]) => items.some(x => x[0] === id));
+function buildNav() {
+  const link = ([id, label], i) => `<a data-go="${id}" title="${label}" tabindex="0" role="link" style="--i:${i}">${ic(id)}<span>${label}</span><em></em></a>`;
+  $('#nav').innerHTML = '<div class="hl" id="hl"></div>' + NAV[0][1].map(link).join('') + NAV.slice(1).map(([g, items], k) =>
+    `<div class="grp" data-g="${k + 1}"><button class="gh" data-grp="${k + 1}" aria-expanded="false">${ic(GIC[k + 1])}<span>${g}</span><em></em><svg class="ic cv"><use href="#i-right"/></svg></button><div class="sub"><div class="sub-in">${items.map(link).join('')}</div></div></div>`).join('');
+}
+let navGrp = null, navReady = 0, hlPos = null, hlAnim = null;
+function syncNav(anim) {
+  const nav = $('#nav'), gs = $$('.grp', nav);
+  const setOpen = g => gs.forEach(el => { const o = +el.dataset.g === g; el.classList.toggle('open', o); $('.gh', el).setAttribute('aria-expanded', o); });
+  anim = anim && navReady;
+  nav.classList.add('na');
+  setOpen(S.grp);
+  const on = $('a.on', nav), g = on && on.closest('.grp');
+  const tgt = g && !g.classList.contains('open') && !$('#app').classList.contains('collapsed') ? $('.gh', g) : on;
+  let to = null;
+  if (tgt) {
+    const nr = nav.getBoundingClientRect(), r = tgt.getBoundingClientRect();
+    to = { top: r.top - nr.top + nav.scrollTop, left: r.left - nr.left, right: nr.left + nav.clientWidth - r.right, height: r.height };
+  }
+  if (anim && navGrp !== S.grp) setOpen(navGrp);
+  void nav.offsetHeight;
+  nav.classList.remove('na');
+  setOpen(S.grp);
+  navGrp = S.grp; navReady = 1;
+  moveHL(to, anim);
+}
+function moveHL(to, anim) {
+  const hl = $('#hl');
+  if (!to) { hl.style.opacity = 0; hlPos = null; return; }
+  const px = o => ({ top: o.top + 'px', left: o.left + 'px', right: o.right + 'px', height: o.height + 'px' });
+  const pill = o => ({ top: o.top + o.height / 2 - 8 + 'px', left: o.left + 8 + 'px', right: o.right + 8 + 'px', height: '16px' });
+  let from = hlPos;
+  if (hlAnim) {
+    const cs = getComputedStyle(hl);
+    from = { top: parseFloat(cs.top), left: parseFloat(cs.left), right: parseFloat(cs.right), height: parseFloat(cs.height) };
+    hlAnim.cancel(); hlAnim = null;
+  }
+  Object.assign(hl.style, px(to), { opacity: 1 });
+  hlPos = to;
+  if (!anim || !from || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (Math.abs(from.top - to.top) < 1 && Math.abs(from.left - to.left) < 1 && Math.abs(from.right - to.right) < 1) return;
+  const a = hlAnim = hl.animate([
+    Object.assign(px(from), { easing: 'cubic-bezier(.4,0,.7,1)' }),
+    Object.assign(pill(from), { offset: .2, easing: 'cubic-bezier(.5,0,.2,1)' }),
+    Object.assign(pill(to), { offset: .66, easing: 'cubic-bezier(.3,1.9,.5,1)' }),
+    px(to)
+  ], { duration: 540 });
+  a.onfinish = () => { if (hlAnim === a) hlAnim = null; };
+}
+function renderNav() {
+  const r = R(), nt = todos().length;
+  const ne = rows('sales-orders', 1).filter(o => o.status === 'now' || o.status === 'transit').length;
+  $$('#nav a').forEach(a => {
+    const id = a.dataset.go, locked = id === 'suppliers' && !r.suppliers;
+    a.classList.toggle('on', S.page === id);
+    a.classList.toggle('locked', locked);
+    $('use', a).setAttribute('href', '#i-' + (locked ? 'lock' : id));
+    $('em', a).textContent = (id === 'workbench' ? nt : id === 'sales-orders' ? ne : 0) || '';
+  });
+  const ag = grpOf(S.page);
+  $$('#nav .grp').forEach(g => { const h = $('.gh', g); h.classList.toggle('has', +g.dataset.g === ag); $('em', h).textContent = +g.dataset.g === 1 && ne ? ne : ''; });
+  syncNav(true);
+  $('#coName').textContent = S.company;
+  $('#meAva').textContent = r.name[0];
+  $('#meName').textContent = r.name + ' · ' + r.title;
+  $('#meDesc').textContent = r.desc;
+  const i = INFO[S.page];
+  $('#crumb').innerHTML = `<span>${i.group}</span><span>/</span><b>${i.label}</b>`;
+  $('#viewBtn').dataset.v = S.view;
+  $('#viewLbl').textContent = VIEW_L[S.view];
+  document.title = i.label + ' · 轻单';
+}
+
+/* ---------- 每页专属空态（#431：19 个列表页各有自己的空态文案） ---------- */
+const EMPTY = {
+  'purchase-orders': ['还没有采购单', '向供应商下单后，采购单会出现在这里，到货确认时自动建批次并锁价。'],
+  'processing-orders': ['还没有加工单', '把原料送去外协加工后，加工单会显示在这里，料段与成品段各记一次在途。'],
+  'sales-orders': ['还没有销售单', '新建第一张销售单后，发货与签收两个动作都会记在这里。'],
+  'internal-trades': ['还没有内部交易单', '兄弟公司之间调货时，内部交易单会显示在这里，签收后才转司。'],
+  settlements: ['还没有结算单', '销售单或内部交易单完成后，结算单会自动生成，无需手工新建。'],
+  reversals: ['还没有冲正单据', '客户退货、供应商退货与盘点盈亏都记在这里，只追加冲正，不改原单。'],
+  products: ['还没有商品', '先建商品资料与规格，开单时才有东西可选。'],
+  customers: ['还没有客户', '把客户档建起来并挂上对接人，才能开销售单。'],
+  suppliers: ['还没有供应商', '录入供应商后，采购单才有下单对象（销售岗默认不可见）。'],
+  processors: ['还没有加工厂', '登记外协加工厂后，加工单与它的报价记录都会挂在这里。'],
+  inventory: ['还没有库存批次', '采购到货确认后会自动生成批次并锁定批次价（D5）。'],
+  'inventory-flows': ['还没有库存流水', '入库、出库、锁定与调整都会在这里留一条不可修改的记录（D2）。'],
+  stocktakes: ['还没有盘点单', '新建盘点单后，盘盈盘亏要经审批才会追加 I 单流水。'],
+  employees: ['还没有员工', '员工建档后按岗位分配权限，停用即断权。'],
+  'audit-logs': ['还没有操作日志', '谁在什么时候从哪来、对谁做了什么、成没成，都会记在这里。'],
+  'api-integration': ['还没有密钥', '新建一枚密钥用于外部系统对接；密钥只在创建时显示一次。'],
+  'profit-report': ['这个期间没有已结算单据', '换一个统计周期，或先把待财务确认的结算单确认掉。'],
+  companies: ['还没有子公司', '登记子公司与公司码后，数据按公司隔离（D15）。'],
+  permissions: ['还没有权限配置', '权限按岗位 × 域 × 动作分配，由服务端判定（D27）。']
+};
+const emptyFor = pg => EMPTY[pg] || ['这里还没有数据', '新建第一条记录后会显示在这里。'];
+
+/* ---------- 分页（#431 必做点 1：筛选条 / 表格 / 分页 / 空态） ---------- */
+const PER_OPTS = [10, 20, 50];
+function pageSlice(arr) {
+  const per = S.per || 10, pages = Math.max(1, Math.ceil(arr.length / per));
+  const pg = Math.min(Math.max(1, S.pg || 1), pages);
+  if (pg !== S.pg) S.pg = pg;
+  return { rows: arr.slice((pg - 1) * per, pg * per), pg, pages, per, total: arr.length };
+}
+function pagerBar(total, pages, pg) {
+  if (!total) return '';
+  const nav = (n, icon, dis, label) => `<button data-page="${n}" ${dis ? 'disabled' : ''} aria-label="${label}">${ic(icon)}</button>`;
+  const nums = [], push = n => nums.push(`<button class="${n === pg ? 'on' : ''}" data-page="${n}" ${n === pg ? 'aria-current="page"' : ''}>${n}</button>`);
+  if (pages <= 7) { for (let i = 1; i <= pages; i++) push(i); }
+  else {
+    push(1);
+    if (pg > 3) nums.push('<span class="dots">…</span>');
+    for (let i = Math.max(2, pg - 1); i <= Math.min(pages - 1, pg + 1); i++) push(i);
+    if (pg < pages - 2) nums.push('<span class="dots">…</span>');
+    push(pages);
+  }
+  return `<div class="pager">${nav(1, 'pg-first', pg === 1, '第一页')}${nav(Math.max(1, pg - 1), 'pg-prev', pg === 1, '上一页')}${nums.join('')}${nav(Math.min(pages, pg + 1), 'pg-next', pg === pages, '下一页')}${nav(pages, 'pg-last', pg === pages, '最后一页')}<select class="per" id="perSel" aria-label="每页条数">${PER_OPTS.map(p => `<option value="${p}"${p === (S.per || 10) ? ' selected' : ''}>${p} 条/页</option>`).join('')}</select></div>`;
+}
+
+/* ---------- 页面内筛选状态（不动全局 S.status/scope，避免串页） ---------- */
+const FV = (k, d = 'all') => (S.f[k] === undefined ? d : S.f[k]);
+const setFV = (k, v) => { S.f[k] = v; S.pg = 1; };
+
+/* ===== 四态：同一块 DOM，四个分支常驻，只由 data-state 决定谁可见 =====
+   照仓库契约写（apps/web/src/styles/README.md §四态 / app-v013.css:38-53）：
+   · 列表页 → data-state 挂 <tbody>，数据行 .r-row，三行状态 .st-tr.st-*
+   · 面板页 → data-state 挂容器，四个分支 .st-block.st-filled/.st-empty/.st-loading/.st-error
+   前端只改属性，不重建 DOM：applyState() 里没有一处 innerHTML。 */
+const stateOf = () => S.view;                                    // 真实实现里来自 useQuery 的 isPending/isError/isEmpty
+const cardState = el => S.view !== 'filled' ? S.view : (el.dataset.rows === '0' ? 'empty' : 'filled');
+const emptyCard = (h, p, extra = '') => `<div class="card state"><div><div class="ico">${ic('inbox')}</div><h4>${h}</h4><p>${p}</p>${extra}</div></div>`;
+const emptyAction = () => {
+  const m = DOC[S.page];
+  return m && m.create ? `<button class="btn pri" data-act="new">${ic('plus')}新建${m.name}</button>` : '';
+};
+/* 表格里的三行状态（同一 tbody 里，被 CSS 显隐） */
+function stateRows(colspan, opts = {}) {
+  const [h, p] = opts.empty || emptyFor(S.page);
+  return `<tr class="st-tr st-empty"><td colspan="${colspan}"><div class="st-center st-wrap">
+      <div class="st-ico">${ic(opts.ico || 'inbox')}</div><div class="st-title">${h}</div><p class="st-desc">${p}</p>
+      <div class="st-actions">${opts.action || emptyAction()}</div></div></td></tr>
+    <tr class="st-tr st-loading"><td colspan="${colspan}"><div class="st-wrap st-skel">${Array.from({ length: 5 }, (_, i) => `<div class="sk" style="height:12px;margin:11px 0;width:${[92, 78, 86, 64, 80][i]}%"></div>`).join('')}</div></td></tr>
+    <tr class="st-tr st-error"><td colspan="${colspan}"><div class="st-center st-wrap st-error">
+      <div class="st-ico">${ic('warn')}</div><div class="st-title">数据加载失败</div><p class="st-desc">网络波动或服务暂不可用，已保留你的筛选条件。</p>
+      <div class="st-actions"><button class="btn pri" data-act="retry">${ic('refresh')}重试</button></div></div></td></tr>`;
+}
+/* 面板页的四个块（含 st-filled，真实内容由调用方填） */
+function blockStates() {
+  const [h, p] = emptyFor(S.page);
+  return `<div class="st-block st-empty"><div class="st-center st-wrap"><div class="st-ico">${ic('inbox')}</div><div class="st-title">${h}</div><p class="st-desc">${p}</p><div class="st-actions">${emptyAction()}</div></div></div>
+  <div class="st-block st-loading"><div class="st-wrap st-skel">${Array.from({ length: 4 }, (_, i) => `<div class="sk" style="height:14px;margin:13px 0;width:${[70, 92, 84, 55][i]}%"></div>`).join('')}</div></div>
+  <div class="st-block st-error"><div class="st-center st-wrap st-error"><div class="st-ico">${ic('warn')}</div><div class="st-title">数据加载失败</div><p class="st-desc">网络波动或服务暂不可用，已保留你的筛选条件。</p><div class="st-actions"><button class="btn pri" data-act="retry">${ic('refresh')}重试</button></div></div></div>`;
+}
+/* 只改属性：四态切换不重建 DOM */
+function applyState() {
+  const d = $('#dyn');
+  if (!d) return;
+  d.dataset.state = stateOf();
+  $$('#dyn [data-rows]').forEach(el => { el.dataset.state = cardState(el); });
+  const vb = $('#viewBtn');
+  if (vb) { vb.dataset.v = S.view; const l = $('#viewLbl'); if (l) l.textContent = VIEW_L[S.view]; }
+}
+const tblHTML = () => { const p = PG[S.page]; return p.list ? p.table() : ''; };
+const dynHTML = () => {
+  const p = PG[S.page];
+  if (p.list) return (p.tools ? p.tools() : '') + `<div id="tbl">${p.table()}</div>`;
+  return `<div class="st-block st-filled">${p.dyn ? p.dyn() : ''}</div>` + blockStates();
+};
+
+/* 四态取值：filled / empty / loading / error（与 apps/web/src/lib/list-state.ts 同名；
+   #431 正文里写的 `ok` 是笔误，仓库三处代码都写 `filled`） */
+function render(enter) {
+  renderNav();
+  const el = $('#page');
+  el.innerHTML = PG[S.page].head() + `<div id="dyn" data-state="${stateOf()}">${dynHTML()}</div>`;
+  applyState();
+  if (enter) {
+    el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter');
+    $('#scroll').scrollTop = 0;
+    countUp();
+  }
+}
+function refresh() {
+  const d = $('#dyn');
+  d.innerHTML = dynHTML();
+  applyState();
+  renderNav();
+  if (S.open) renderDrawer(); else if (S.master) renderMaster();
+  S.flash = null;
+}
+function go(id, keep) {
+  if (!PG[id]) id = 'workbench';
+  if (id === 'suppliers' && !R().suppliers) { toast('无权访问供应商档案：销售岗不可见（D4.1）', 1); return; }
+  if (!keep) Object.assign(S, { q: '', status: 'all', scope: 'all', handler: 'all', sort: { k: 'date', d: -1 }, pg: 1, f: {} });
+  S.page = id;
+  if (grpOf(id) > 0) S.grp = grpOf(id);
+  try { history.replaceState(null, '', '#' + id); } catch (e) {}
+  $('#app').classList.remove('nav-open');
+  layer();
+  render(true);
+}
+function countUp() {
+  $$('[data-n]').forEach(el => {
+    const n = +el.dataset.n, pre = el.dataset.pre || '', t0 = performance.now();
+    const f = t => {
+      const k = Math.min(1, (t - t0) / 700), e = 1 - Math.pow(1 - k, 3);
+      el.firstChild.nodeValue = pre + Math.round(n * e).toLocaleString('zh-CN');
+      if (k < 1) requestAnimationFrame(f);
+    };
+    requestAnimationFrame(f);
+  });
+}
+function tableCard(cols, data, foot, attr, tight) {
+  const { rows: list, pg, pages, total, per } = pageSlice(data);
+  const filtered = total === 0;
+  const emptyOpts = filtered
+    ? { empty: ['没有符合条件的记录', '换个关键词试试，或清除筛选条件。'], action: '<button class="btn" data-act="clear">清除筛选</button>', ico: 'filter' }
+    : {};
+  const st = S.view !== 'filled' ? S.view : (total ? 'filled' : 'empty');
+  return `<div class="card list-card" data-state="${st}" data-rows="${total}"><div class="tw${tight ? ' tight' : ''}"><table><thead><tr>${cols.map(c => `<th class="${c.r ? 'r' : ''}">${c.l}</th>`).join('')}</tr></thead>` +
+    `<tbody data-state="${st}" data-rows="${total}">` +
+    list.map((d, i) => `<tr class="r-row" style="--i:${i}" ${attr ? attr(d) : ''}>${cols.map(c => `<td class="${c.r ? 'r num ' : ''}${c.c || ''}">${c.f(d)}</td>`).join('')}</tr>`).join('') +
+    stateRows(cols.length, emptyOpts) +
+    `</tbody></table></div><div class="tf"><span>共 ${total} 条${foot ? ' · ' + foot : ''}</span>${pagerBar(total, pages, pg)}</div></div>`;
+}
+const searchField = ph => `<label class="field">${ic('search')}<input id="q" placeholder="${ph}" value="${esc(S.q)}" autocomplete="off"></label>`;
+const hit = (...v) => { const q = S.q.trim().toLowerCase(); return !q || v.join(' ').toLowerCase().includes(q); };
+const head = (h, p, acts = '') => `<div class="ph"><div><h1>${h}</h1><p>${p}</p></div><div class="acts">${acts}</div></div>`;
+
+/* ---------- 页面 ---------- */
+const PG = {};
+const bars = (tall, data = MONTHS) => {
+  const max = Math.max(...data.map(m => Math.abs(m[1])));
+  return `<div class="bars${tall ? ' tall' : ''}">${data.map(([m, v], i) => `<div class="bar${v < 0 ? ' neg' : ''}${i === data.length - 1 ? ' last' : ''}" style="--i:${i};--h:${Math.abs(v) / max * 72}%"><em>${money(v)}</em><i></i><span>${m}</span></div>`).join('')}</div>`;
+};
+const PERIODS = [['3', '近 3 个月'], ['6', '近 6 个月'], ['all', '本年全部']];
+const periodData = () => { const p = FV('prd', '6'), n = p === 'all' ? MONTHS.length : +p; return MONTHS.slice(-n); };
+PG.workbench = {
+  head: () => {
+    const h = new Date().getHours(), g = h < 11 ? '早安' : h < 14 ? '中午好' : h < 18 ? '下午好' : '晚上好';
+    return head(`${g}，${R().name}`, `每一笔内部交易，都算得清成本 · 当前公司：${S.company}`, `<button class="btn" data-go="inventory">查看库存批次</button><button class="btn pri" data-go="sales-orders">进入销售单 E</button>`);
+  },
+  dyn: () => {
+    const r = R(), E = rows('sales-orders', 1), td = todos();
+    const sum = E.reduce((s, o) => s + (o.status === 'cancel' ? 0 : o.amount), 0), tr = E.filter(o => o.status === 'transit').length, av = INV.reduce((s, b) => s + b.avail, 0);
+    const cnt = pg => rows(pg, 1).filter(o => o.status !== 'cancel').length;
+    const chain = [['A', 'purchase-orders', '采购单', '原料入库 · 锁批次价'], ['B', 'processing-orders', '加工单', '委外加工 · 记损耗'], ['E', 'sales-orders', '销售单', '批次出库 · 两步签收'], ['C', 'settlements', '结算单', '一单一成本 · 自动生成']];
+    return `<div class="kpis">
+      <button class="card kpi" data-go="sales-orders"><div class="kpi-l"><span>本月销售总额</span><span>E 单</span></div><div class="kpi-v"${r.viewPrice ? ` data-n="${sum}" data-pre="¥"` : ''}>${money(sum)}</div><div class="kpi-m">${r.viewPrice ? (r.readAll ? '<b>+14.2%</b> 较上月' : '仅统计本人单据') : '无 view_price 权限，已脱敏'}</div></button>
+      <button class="card kpi" data-go="sales-orders"><div class="kpi-l"><span>在途 / 待签收</span><span>D94</span></div><div class="kpi-v" data-n="${tr}">${tr}<small>笔</small></div><div class="kpi-m">需 sales.approve 签收认收入</div></button>
+      <button class="card kpi" data-go="inventory"><div class="kpi-l"><span>可用库存</span><span>D38</span></div><div class="kpi-v" data-n="${av}">${av}<small>件</small></div><div class="kpi-m">可用量 = 入库 − 引用 − 在途 − 占用</div></button>
+      <button class="card kpi" data-go="profit-report"><div class="kpi-l"><span>综合毛利率</span><span>C 单</span></div><div class="kpi-v">${sens('24.8%')}</div><div class="kpi-m">结算单确认后按快照算提成</div></button>
+    </div>
+    <div class="g2">
+      <div class="card"><div class="card-h"><h3>待办事项 <span class="muted num">${td.length}</span></h3><small>按权限逐条过滤 · 看不到不等于没有</small></div>
+        ${td.length ? td.map(t => `<button class="todo" style="--c:var(--${t.c})" ${t.open ? `data-open="${t.open}"` : `data-go="${t.go}"`}><i></i><div><b>${t.t}</b><small>${t.s}</small></div><span>${t.a} →</span></button>`).join('') : `<div class="state" style="padding:44px 20px"><div><div class="ico" style="color:var(--ok)">${ic('stocktakes')}</div><h4>全部处理完了</h4><p style="margin:0">当前账号权限范围内没有待办。</p></div></div>`}
+      </div>
+      <div class="card"><div class="card-h"><h3>主业务链路</h3><small>点击直达</small></div><div class="chain">
+        ${chain.map(c => `<button data-go="${c[1]}"><span class="lt">${c[0]}</span><div><b>${c[2]}</b><small>${c[3]}</small></div><span class="cnt">${cnt(c[1])} 笔</span></button>`).join('')}
+      </div></div>
+    </div>
+    <div class="g2">
+      <div class="card"><div class="card-h"><h3>近 6 个月毛利趋势</h3><button class="btn sm" data-go="profit-report">利润报表</button></div>${bars()}</div>
+      <div class="card"><div class="card-h"><h3>最近动态</h3><button class="btn sm" data-go="audit-logs">操作日志</button></div><ul class="feed">
+        ${AUDIT.slice(0, 5).map(a => `<li><time>${a.t.slice(6)}</time><p>${a.by} · <span class="mono">${a.a}</span><small>${a.o} · ${a.ok ? '成功' : '被拒绝'}</small></p></li>`).join('')}
+      </ul></div>
+    </div>`;
+  }
+};
+PG.flow = {
+  head: () => head('业务全流程图', '五类单据如何串成一条链：采购 → 加工 → 销售 → 结算，内部调拨与冲正作为辅助闭环。数字随单据实时变化。'),
+  dyn: () => {
+    const node = (pg, t, d) => { const a = rows(pg, 1), sts = ['bad', 'now', 'transit', 'ok', 'cancel'].filter(s => a.some(o => o.status === s)); return `<button class="node" data-go="${pg}"><div class="big">${DOC[pg].L}</div><h4>${t}</h4><p>${d}</p><div class="sts">${sts.map(s => `<span class="st ${s}">${stLabel(pg, s)} ${a.filter(o => o.status === s).length}</span>`).join('') || '<span class="muted">暂无单据</span>'}</div></button>`; };
+    return `<div class="card flow">${node('purchase-orders', '采购入库', '锁批次价（D5），支持 S 退货')}${node('processing-orders', '委外加工', '两段在途，记损耗归属（D35）')}${node('sales-orders', '销售出库', '破下限走审批（D20），两步签收（D94）')}${node('settlements', '结算收口', '自动生成草稿（D29），按快照算提成（D36）')}</div>
+    <div class="g2" style="grid-template-columns:1fr 1fr"><div class="card chain"><button data-go="internal-trades"><span class="lt">N</span><div><b>内部交易单</b><small>兄弟公司调货，在途锁批次，签收转司</small></div><span class="cnt">${rows('internal-trades', 1).length} 笔</span></button></div>
+    <div class="card chain"><button data-go="reversals"><span class="lt">R</span><div><b>冲正单据 R / S / I</b><small>退货与盘点只追加冲正，绝不直接改原单</small></div><span class="cnt">${REV.length} 笔</span></button></div></div>`;
+  }
+};
+
+function orderTools(pg) {
+  const m = DOC[pg], r = R(), base = rows(pg, 1);
+  const sts = ['bad', 'now', 'transit', 'ok', 'cancel'].filter(s => base.some(o => o.status === s));
+  const hs = [...new Set(ORD[pg].map(o => o.handler))];
+  return `<div class="tools">${searchField('搜索单号、' + m.partner + '、' + m.item + '…')}
+    <div class="chips"><button class="chip${S.status === 'all' ? ' on' : ''}" data-status="all">全部<b>${base.length}</b></button>${sts.map(s => `<button class="chip${S.status === s ? ' on' : ''}" data-status="${s}">${stLabel(pg, s)}<b>${base.filter(o => o.status === s).length}</b></button>`).join('')}</div>
+    <div class="grow"></div>
+    ${!m.dual ? '' : r.readAll ? `<div class="seg" title="scope：看谁的"><button class="${S.scope === 'all' ? 'on' : ''}" data-scope="all">全部单据</button><button class="${S.scope === 'mine' ? 'on' : ''}" data-scope="mine">只看我的</button></div>
+    <select class="sel" id="handlerSel" title="handlerId：经手人" ${S.scope === 'mine' ? 'disabled' : ''}><option value="all">全部经手人</option>${hs.map(h => `<option${S.handler === h ? ' selected' : ''}>${h}</option>`).join('')}</select>` : `<span class="note">${ic('lock')}仅显示本人单据（无 read_all）</span>`}
+  </div>`;
+}
+function orderTable(pg) {
+  const m = DOC[pg], list = rows(pg), vp = R().viewPrice;
+  const th = (k, l, r) => `<th class="so${S.sort.k === k ? (S.sort.d > 0 ? ' asc' : ' desc') : ''}${r ? ' r' : ''}" data-sort="${k}">${l}</th>`;
+  const total = list.reduce((s, o) => s + o.amount, 0);
+  const cols = 8 + (m.extra ? 1 : 0);
+  const { rows: pageRows, pg: cur, pages } = pageSlice(list);
+  const st = S.view !== 'filled' ? S.view : (list.length ? 'filled' : 'empty');
+  const emptyOpts = list.length ? {} : { empty: ['没有符合条件的单据', '换个关键词，或清除筛选条件。'], action: '<button class="btn" data-act="clear">清除筛选</button>', ico: 'filter' };
+  return `<div class="card list-card" data-state="${st}" data-rows="${list.length}"><div class="tw"><table><thead><tr>${th('id', '单号')}<th>${m.partner}</th><th>${m.item}</th><th class="r">数量</th>${th('amount', m.amt, 1)}${m.extra ? `<th class="r">${m.extra}</th>` : ''}<th>状态</th><th>负责人</th>${th('date', '日期')}</tr></thead>` +
+    `<tbody data-state="${st}" data-rows="${list.length}">` +
+    pageRows.map((o, i) => `<tr class="r-row click${S.flash === o.id ? ' flash' : ''}" style="--i:${i}" data-open="${pg}|${o.id}" tabindex="0"><td class="mono"><b>${o.id}</b></td><td>${esc(o.partner)}</td><td>${esc(o.item)}</td><td class="r num">${esc(o.qty)}</td><td class="r num${vp && o.amount < 0 ? ' neg' : ''}">${money(o.amount)}</td>${m.extra ? `<td class="r num${vp && /^−/.test(o.extra) ? ' neg' : ''}">${sens(o.extra || '—')}</td>` : ''}<td>${badge(pg, o.status)}</td><td>${who(o.handler)}</td><td class="mono muted">${o.date}</td></tr>`).join('') +
+    stateRows(cols, emptyOpts) +
+    `</tbody></table></div><div class="tf"><span>共 ${list.length} 条 · 合计 <b class="num">${money(total)}</b></span>${pagerBar(list.length, pages, cur)}</div></div>`;
+}
+Object.keys(DOC).forEach(pg => {
+  const m = DOC[pg];
+  PG[pg] = {
+    list: 1,
+    head: () => head(`${m.name} ${m.L}`, m.sub, (m.exp ? `<button class="btn" data-act="export">${ic('dl')}导出 CSV</button>` : '') + (m.create ? `<button class="btn pri" data-act="new">${ic('plus')}新建${m.name}</button>` : '')),
+    tools: () => orderTools(pg), table: () => orderTable(pg)
+  };
+});
+
+PG.reversals = {
+  head: () => head('冲正单据', 'R 客户退货 / S 供应商退货 / I 盘点盈亏同页三栏呈现，不拆独立页；只追加冲正，不直接改原单。'),
+  dyn: () => `<div class="cols3">${[['R', '客户退货', '冲销售'], ['S', '供应商退货', '冲采购'], ['I', '盘点盈亏', '冲盘点']].map(([k, t, d]) => {
+    const a = REV.filter(x => x.kind === k);
+    return `<div class="card"><div class="card-h"><h3><span class="mono">${k}</span> · ${t}</h3><small>${d} · ${a.length} 笔</small></div>${a.map(x => `<div class="rev"><div class="rev-t"><b class="mono">${x.id}</b><span class="st ${x.status}">${x.label}</span></div><small>${x.way} · 引用批次 <span class="mono">${x.batch}</span> · ${x.qty}${x.src ? ' · 原单 <span class="mono">' + x.src + '</span>' : ''}</small></div>`).join('') || '<div class="rev"><small>暂无记录</small></div>'}</div>`;
+  }).join('')}</div>`
+};
+
+const simple = (title, sub, ph, cols, data, o = {}) => ({
+  list: 1, head: () => head(title, sub, o.acts || ''),
+  tools: () => `<div class="tools">${searchField(ph)}${o.legend || ''}</div>`,
+  table: () => tableCard(cols, data().filter(d => hit(...Object.values(d))), o.foot, o.attr)
+});
+const histCnt = (pg, name) => ORD[pg].filter(o => o.partner === name).length + ' 笔';
+const masterAttr = pg => d => `class="click" data-master="${pg}|${d[0]}" tabindex="0"`;
+PG.products = simple('商品资料', '主数据 · 商品建档与定价。无状态列，删除为物理删除。', '搜索编号、名称…',
+  [{ l: '编号', c: 'mono', f: d => d[0] }, { l: '名称', f: d => `<b>${d[1]}</b>` }, { l: '规格', f: d => d[2] }, { l: '参考价', r: 1, f: d => money(d[3]) }], () => PRODUCTS,
+  { attr: masterAttr('products'), foot: '点击行查看详情与关联批次' });
+PG.customers = simple('客户档案', '主数据 · 客户资料与对接人，支持查重合并（D98/D103）。', '搜索编号、名称、对接人…',
+  [{ l: '编号', c: 'mono', f: d => d[0] }, { l: '名称', f: d => `<b>${d[1]}</b>` }, { l: '对接人', f: d => `<span class="tag primary">${ic('star')}${d[2]}</span>` }, { l: '价目', f: d => d[3] }, { l: '历史销售', r: 1, f: d => histCnt('sales-orders', d[1]) }], () => CUSTOMERS,
+  { attr: masterAttr('customers'), foot: '点击行查看对接人与消费流水' });
+PG.suppliers = simple('供应商档案', '主数据 · 供应商资料。销售岗不可见（D4.1）。', '搜索编号、名称、对接人…',
+  [{ l: '编号', c: 'mono', f: d => d[0] }, { l: '名称', f: d => `<b>${d[1]}</b>` }, { l: '对接人', f: d => `<span class="tag primary">${ic('star')}${d[2]}</span>` }, { l: '历史采购', r: 1, f: d => histCnt('purchase-orders', d[1]) }], () => SUPPLIERS,
+  { attr: masterAttr('suppliers'), foot: '点击行查看对接人' });
+PG.processors = simple('加工厂档案', '主数据 · 外部加工厂与报价记录。记录报价走 processor.create（不是 update）。', '搜索编号、名称、对接人…',
+  [{ l: '编号', c: 'mono', f: d => d[0] }, { l: '名称', f: d => `<b>${d[1]}</b>` }, { l: '对接人', f: d => `<span class="tag primary">${ic('star')}${d[2]}</span>` }, { l: '加工单', r: 1, f: d => histCnt('processing-orders', d[1]) }, { l: '报价', r: 1, f: d => (QUOTES[d[0]] || []).length + ' 条' }], () => PROCESSORS,
+  { attr: masterAttr('processors'), foot: '点击行查看报价与对接人' });
+const LEG = [['var(--ink-3)', '已引用', 'refQ'], ['var(--transit)', '在途', 'transitQ'], ['var(--warn)', '占用', 'holdQ'], ['var(--ok)', '可用', 'avail']];
+const lowStock = b => b.avail <= (b.minQ || 0);
+const lowStockChip = b => lowStock(b) ? `<span class="st low">低于安全库存</span>` : `<span class="st ok">充足</span>`;
+const ageCell = b => `<span class="age${b.age >= 45 ? ' slow' : ''}">${ic('clock')}${b.age} 天</span>`;
+PG.inventory = {
+  list: 1,
+  head: () => head('库存数量', '按批次看可用量、库龄与安全库存。可用量 = 入库 − 已引用 − 在途 − 占用，是唯一可引用数字（D38）。'),
+  tools: () => {
+    const f = FV('inv'), match = b => f === 'all' ? 1 : f === 'low' ? lowStock(b) : f === 'transit' ? b.transitQ > 0 : b.holdQ > 0;
+    return `<div class="tools">${searchField('搜索批次、商品、仓库…')}
+      <div class="chips">
+        <button class="chip${f === 'all' ? ' on' : ''}" data-fkey="inv|all">全部<b>${INV.length}</b></button>
+        <button class="chip${f === 'low' ? ' on' : ''}" data-fkey="inv|low">${ic('warn')}低库存<b>${INV.filter(lowStock).length}</b></button>
+        <button class="chip${f === 'transit' ? ' on' : ''}" data-fkey="inv|transit">有在途<b>${INV.filter(b => b.transitQ > 0).length}</b></button>
+        <button class="chip${f === 'hold' ? ' on' : ''}" data-fkey="inv|hold">有占用<b>${INV.filter(b => b.holdQ > 0).length}</b></button>
+      </div>
+      <div class="grow"></div><div class="lg">${LEG.map(([c, l]) => `<span><i style="background:${c}"></i>${l}</span>`).join('')}</div></div>`;
+  },
+  table: () => {
+    const f = FV('inv'), match = b => f === 'all' ? 1 : f === 'low' ? lowStock(b) : f === 'transit' ? b.transitQ > 0 : b.holdQ > 0;
+    const list = INV.filter(b => match(b) && hit(b.batch, b.product, b.wh, b.keeper));
+    return tableCard([{ l: '批次号', c: 'mono', f: d => `<b>${d.batch}</b>` }, { l: '商品', f: d => esc(d.product) },
+      { l: '仓库 / 保管人', f: d => `${d.wh}<small style="display:block;color:var(--ink-3);font-size:11px">保管 ${who(d.keeper)}</small>` },
+      { l: '入库', r: 1, f: d => d.inQ },
+      { l: '构成', f: d => `<div class="avail"><div class="trk">${LEG.map(([c, , k]) => `<i style="width:${d[k] / d.inQ * 100}%;background:${c}"></i>`).join('')}</div></div>` },
+      { l: '已引用', r: 1, f: d => d.refQ }, { l: '在途', r: 1, f: d => d.transitQ }, { l: '占用', r: 1, f: d => d.holdQ },
+      { l: '可用', r: 1, c: 'pos', f: d => `<b>${d.avail}</b>` },
+      { l: '库龄', r: 1, f: d => ageCell(d) },
+      { l: '安全库存', f: d => lowStockChip(d) },
+      { l: '锁定单价', r: 1, f: d => money(d.price) }],
+      list, `安全库存 ${INV.reduce((s, b) => s + (b.minQ || 0), 0)} · 点击行查看该批次流水`,
+      d => `class="click${S.flash === d.batch ? ' flash' : ''}" data-act="batch" data-id="${d.batch}" tabindex="0"`, true);
+  }
+};
+PG['inventory-flows'] = {
+  list: 1,
+  head: () => head('库存流水', '解释「可用量为什么变」。只追加、不修改（D2）：类型 / 变动量 / 金额 / 来源单据 / 经手人。',
+    `<button class="btn" data-act="flow-export" title="导出库存流水 · 需要 inventory.export 权限">${ic('dl')}导出</button>`),
+  tools: () => {
+    const f = FV('flw');
+    return `<div class="tools">${searchField('搜索批次、来源单据、经手人…')}
+      <div class="chips">
+        <button class="chip${f === 'all' ? ' on' : ''}" data-fkey="flw|all">全部<b>${FLOWS.length}</b></button>
+        ${Object.entries(FTYPE).map(([k, [l, i]]) => `<button class="chip${f === k ? ' on' : ''}" data-fkey="flw|${k}">${ic(i)}${l}<b>${FLOWS.filter(x => x.type === k).length}</b></button>`).join('')}
+      </div><div class="grow"></div>
+      <span class="note">${ic('shield')}只追加，不允许改历史流水</span></div>`;
+  },
+  table: () => {
+    const f = FV('flw');
+    const list = FLOWS.filter(d => (f === 'all' || d.type === f) && hit(d.batch, d.src, d.by, d.d));
+    return tableCard([{ l: '发生时间', c: 'mono muted', f: d => d.t }, { l: '批次', c: 'mono', f: d => `<b>${d.batch}</b>` },
+      { l: '类型', f: d => `<span class="ftype ${d.type}">${ic(FTYPE[d.type][1])}${FTYPE[d.type][0]}</span>` },
+      { l: '变动量', r: 1, f: d => `<b style="color:var(--${/^\+/.test(d.d) ? 'ok' : 'bad'})">${d.d}</b>` },
+      { l: '金额', r: 1, f: d => money(d.amt) },
+      { l: '来源单据', c: 'mono', f: d => `<button class="link" data-act="jump" data-id="${d.src}">${d.src}</button>` },
+      { l: '经手人', f: d => who(d.by) }], list, '数量与金额按发生时的批次价记账');
+  }
+};
+PG.stocktakes = {
+  list: 1,
+  head: () => head('盘点', '独立三态：待审批 / 已批准 / 已驳回。先盘盈盘亏，批准后追加 I 单流水，不直接改库存数。',
+    `<button class="btn pri" data-act="stk-new" ${R().approve ? '' : 'disabled title="需要 stocktake.create 权限"'}>${ic('plus')}新建盘点单</button>`),
+  tools: () => {
+    const f = FV('stk'), cnt = s => STK.filter(x => s === 'all' || x.status === s).length;
+    return `<div class="tools">${searchField('搜索盘点单、仓库…')}
+      <div class="chips">${[['all', '全部'], ['warn', '待审批'], ['ok', '已批准'], ['bad', '已驳回']].map(([v, l]) => `<button class="chip${f === v ? ' on' : ''}" data-fkey="stk|${v}">${l}<b>${cnt(v)}</b></button>`).join('')}</div></div>`;
+  },
+  table: () => {
+    const f = FV('stk'), list = STK.filter(d => (f === 'all' || d.status === f) && hit(d.id, d.wh, d.note, d.by || ''));
+    const edit = d => {
+      const open = d.status === 'warn';
+      return `<span class="rowacts"><button class="btn sm" data-act="stk-edit" data-id="${d.id}" ${open ? '' : 'disabled'} title="${open ? '编辑盘点行' : '只有待审批的盘点单可以改'}">${ic('pencil')}编辑</button>` +
+        `<button class="btn sm danger" data-act="stk-del" data-id="${d.id}" ${open ? '' : 'disabled'} title="${open ? '删除盘点单（需 stocktake.delete 权限）' : '只有待审批的盘点单可以删'}">${ic('trash')}</button></span>`;
+    };
+    const ap = d => d.status !== 'warn' ? '<span class="muted">—</span>'
+      : R().approve ? `<span class="rowacts"><button class="btn sm" data-act="stk-no" data-id="${d.id}" title="驳回 · 需 stocktake.approve 权限">${ic('undo')}驳回</button><button class="btn sm pri" data-act="stk-ok" data-id="${d.id}" title="批准 · 需 stocktake.approve 权限">${ic('check')}批准</button></span>`
+        : `<button class="btn sm" disabled title="需要 stocktake.approve 权限">${ic('check')}批准</button>`;
+    return tableCard([{ l: '盘点单', c: 'mono', f: d => `<b>${d.id}</b>` }, { l: '仓库', f: d => d.wh },
+      { l: '盘盈', r: 1, f: d => d.up === '0' ? '<span class="muted">—</span>' : `<b style="color:var(--ok)">${d.up}</b>` },
+      { l: '盘亏', r: 1, f: d => d.down === '0' ? '<span class="muted">—</span>' : `<b style="color:var(--bad)">${d.down}</b>` },
+      { l: '状态', f: d => `<span class="st ${d.status}">${STK_L2[d.status]}</span>` },
+      { l: '说明', f: d => `<span class="muted" style="white-space:normal">${esc(d.note || '—')}</span>` },
+      { l: '操作', r: 1, f: d => `<span class="rowacts">${edit(d)}${ap(d)}</span>` }], list, '批准后自动追加 I 单冲正，原库存数不变');
+  }
+};
+PG['profit-report'] = {
+  head: () => head('利润报表', '由已结算 C 单按期间聚合，正青负红。无看价权限时全部金额显示「—」。',
+    `<div class="periods"><span class="note">${ic('calendar')}统计周期</span><div class="seg">${PERIODS.map(([v, l]) => `<button class="${FV('prd', '6') === v ? 'on' : ''}" data-period="${v}">${l}</button>`).join('')}</div></div>`),
+  dyn: () => {
+    if (!R().viewPrice) return `<div class="card state"><div><div class="ico">${ic('lock')}</div><h4>金额已脱敏</h4><p style="margin:0">当前账号没有 view_price 权限（D79）。</p></div></div>`;
+    const data = periodData(), sum = data.reduce((s, m) => s + m[1], 0), neg = data.filter(m => m[1] < 0).length;
+    const sorted = data.slice().sort((a, b) => b[1] - a[1]), best = sorted[0] || ['—', 0], worst = sorted[sorted.length - 1] || ['—', 0];
+    return `<div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+      <div class="card kpi"><div class="kpi-l"><span>期间毛利合计</span><span>${data.length} 个月</span></div><div class="kpi-v">${money(sum)}</div><div class="kpi-m">按已结算 C 单聚合</div></div>
+      <div class="card kpi"><div class="kpi-l"><span>负毛利月份</span><span>需复核</span></div><div class="kpi-v">${neg}<small>/ ${data.length} 个月</small></div><div class="kpi-m">${neg ? `最差 ${worst[0]} · ${money(worst[1])}` : '本期没有负毛利'}</div></div>
+      <div class="card kpi"><div class="kpi-l"><span>最好月份</span><span>峰值</span></div><div class="kpi-v">${money(best[1])}</div><div class="kpi-m">${best[0]} · 占期间 ${(best[1] / Math.max(1, sum) * 100).toFixed(0)}%</div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px"><div class="card-h"><h3>${PERIODS.find(p => p[0] === FV('prd', '6'))[1]}毛利趋势</h3><small>悬停柱体高亮</small></div>${bars(1, data)}</div>` +
+      tableCard([{ l: '期间', f: d => `<b>2026 年 ${d[0]}</b>` }, { l: '毛利', r: 1, f: d => `<span style="color:var(--${d[1] < 0 ? 'bad' : 'ok'})">${money(d[1])}</span>` }, { l: '状态', f: d => d[1] < 0 ? '<span class="st bad">负毛利</span>' : '<span class="st ok">已结算</span>' }],
+        [...data].reverse(), '合计 ' + money(sum));
+  }
+};
+PG.employees = {
+  list: 1, head: () => head('员工', '工号 / 手机号（脱敏）/ 公司 · 岗位。停用即断权。'),
+  table: () => tableCard([{ l: '工号', c: 'mono', f: d => d.id }, { l: '姓名', f: d => `<b>${who(d.name)}</b>` }, { l: '手机号', c: 'mono', f: d => d.tel }, { l: '公司 · 岗位', f: d => d.co + ' · ' + d.job }, { l: '状态', f: d => `<span class="st ${d.on ? 'ok' : 'cancel'}">${d.on ? '在职' : '停用'}</span>` },
+    { l: '操作', r: 1, f: d => !R().approve ? `<button class="btn sm" disabled title="需要 employee.update 权限">${ic('lock')}停用</button>` : d.name === R().name ? '<span class="muted">当前账号</span>' : `<button class="btn sm${d.on ? ' danger' : ''}" data-act="emp" data-id="${d.id}" title="${d.on ? '停用后立即断权（employee.update）' : '恢复该员工权限'}">${ic(d.on ? 'trash' : 'refresh')}${d.on ? '停用' : '恢复'}</button>` }], EMP)
+};
+PG.permissions = {
+  head: () => head('权限设置', '24 域 × 8 动作。每格三态：允许 / 拒绝 / 继承公司默认。权限由服务端判定（D27），这里只是配置视图，改完立即写审计。',
+    `<div class="seg" title="选择要查看的岗位">${Object.entries(ROLES).map(([k, r]) => `<button class="${k === S.role ? 'on' : ''}" data-pick="role|${k}">${r.title}</button>`).join('')}</div>`),
+  dyn: () => {
+    const role = S.role, me = role === S.role, canEdit = !!R().approve;
+    const cell = (d, a) => {
+      const v = cellVal(role, d, a), on = v === 1;
+      return `<td class="cellp"><button class="cell ${on ? 'yes' : v === 0 ? 'no' : 'inh'}" data-cell="${role}|${d}|${a}"
+        title="${d}.${a} · ${on ? '允许' : v === 0 ? '拒绝' : '继承公司默认'}${canEdit && me ? '（点一下切换）' : ''}"
+        ${canEdit && me ? '' : 'disabled'}>${ic(on ? 'check' : v === 0 ? 'x' : 'refresh')}</button></td>`;
+    };
+    return `<div class="mtx"><div class="mtx-wrap"><table>
+      <thead><tr><th class="dm">域 / 动作</th>${ACTS.map(a => `<th class="${a === MXACT ? 'onact' : ''}" data-mxact="${a}" title="动作 ${a}">${ACT_L[a]}<br><span class="mono" style="font:500 10px var(--mono);opacity:.7">${a}</span></th>`).join('')}</tr></thead>
+      <tbody>${DOMAINS.map(([d, l]) => `<tr><td class="dm"><b>${l}</b><small>${d}</small></td>${ACTS.map(a => cell(d, a)).join('')}</tr>`).join('')}</tbody></table></div>
+      <div class="legend"><span><i style="background:var(--ok)"></i>允许</span><span><i style="background:var(--ink-3)"></i>拒绝</span><span><i style="background:repeating-linear-gradient(135deg,var(--transit) 0 3px,transparent 3px 6px)"></i>继承公司默认</span><span class="grow"></span><span>当前查看：<b>${ROLES[role].title} · ${ROLES[role].name}</b> · ${DOMAINS.length} 域 × ${ACTS.length} 动作</span></div></div>`;
+  }
+};
+PG.companies = { head: () => head('公司管理', '登记子公司与公司码。数据按公司隔离，跨公司引用等同不存在（D15）。'),
+  dyn: () => tableCard([{ l: '公司码', c: 'mono', f: d => `<b>${d[0]}</b>` }, { l: '名称', f: d => d[1] + (d[1] === S.company ? ' <span class="st ok">当前</span>' : '') }, { l: '更新时间', c: 'mono muted', f: d => d[2] }], [['XC', COMPANIES[0], '2026-11-18'], ['HD', COMPANIES[1], '2026-11-05']]) };
+PG['audit-logs'] = {
+  list: 1,
+  head: () => head('操作日志', '谁 / 从哪 / 对谁 / 做了什么 / 成没成。只追加，金额脱敏（D51）。本页会实时记录你在工作台里的操作。',
+    `<button class="btn" data-act="log-export" title="导出日志 · 需要 audit.export 权限">${ic('dl')}导出</button>`),
+  tools: () => {
+    const f = FV('log', 'all'), src = FV('logsrc', 'all');
+    const cnt = v => AUDIT.filter(a => v === 'all' || (v === 'ok' ? a.ok : !a.ok)).length;
+    return `<div class="tools">${searchField('搜索操作人、动作、对象…')}
+      <div class="chips">
+        <button class="chip${f === 'all' ? ' on' : ''}" data-fkey="log|all">全部<b>${AUDIT.length}</b></button>
+        <button class="chip${f === 'ok' ? ' on' : ''}" data-fkey="log|ok">${ic('check')}成功<b>${cnt('ok')}</b></button>
+        <button class="chip${f === 'bad' ? ' on' : ''}" data-fkey="log|bad">${ic('x')}被拒绝<b>${cnt('bad')}</b></button>
+      </div>
+      <div class="seg" title="来源">${[['all', '全部来源'], ['Web', 'Web'], ['API', 'API']].map(([v, l]) => `<button class="${src === v ? 'on' : ''}" data-fkey="logsrc|${v}">${l}</button>`).join('')}</div>
+      <div class="grow"></div><span class="note">${ic('shield')}日志只追加，不可编辑或删除</span></div>`;
+  },
+  table: () => {
+    const f = FV('log', 'all'), src = FV('logsrc', 'all');
+    const list = AUDIT.filter(a => (f === 'all' || (f === 'ok' ? a.ok : !a.ok)) && (src === 'all' || a.from === src) && hit(a.by, a.a, a.o, a.from));
+    return tableCard([{ l: '时间', c: 'mono muted', f: d => d.t }, { l: '操作人', f: d => `<b>${d.by}</b>` },
+      { l: '来源', f: d => `<span class="tag">${d.from === 'API' ? ic('api-integration') : ic('workbench')}${d.from}</span>` },
+      { l: '动作', c: 'mono', f: d => d.a }, { l: '对象', c: 'mono', f: d => d.o },
+      { l: '结果', f: d => `<span class="st ${d.ok ? 'ok' : 'bad'}">${d.ok ? '成功' : '被拒绝'}</span>` }], list, '只追加不修改');
+  }
+};
+PG['api-integration'] = {
+  list: 1,
+  head: () => head('API 与集成', '外部系统接入与密钥管理。密钥只在创建时完整显示一次；吊销立即生效，不可恢复。',
+    `<button class="btn pri" data-act="key-new" ${R().approve ? '' : 'disabled title="需要 apikey.create 权限"'}>${ic('plus')}新建密钥</button>`),
+  tools: () => `<div class="tools">${searchField('搜索密钥名称、授权范围…')}
+    <div class="chips">${[['all', '全部'], ['on', '生效中'], ['rev', '已吊销']].map(([v, l]) => `<button class="chip${FV('key') === v ? ' on' : ''}" data-fkey="key|${v}">${l}<b>${KEYS.filter(k => v === 'all' || (v === 'rev' ? k.rev : !k.rev && k.on)).length}</b></button>`).join('')}</div>
+    <div class="grow"></div><span class="note">${ic('shield')}密钥仅创建时显示一次，之后只能吊销重发</span></div>`,
+  table: () => {
+    const f = FV('key'), list = KEYS.filter(d => (f === 'all' || (f === 'rev' ? d.rev : !d.rev && d.on)) && hit(d.name, d.scope));
+    const stat = d => d.rev ? '<span class="st bad">已吊销</span>' : d.on ? '<span class="st ok">生效中</span>' : '<span class="st cancel">已停用</span>';
+    const acts = d => d.rev
+      ? `<button class="btn sm" data-act="key-enable" data-id="${d.id}" ${R().approve ? '' : 'disabled'} title="${R().approve ? '重新签发一枚新密钥' : '需要 apikey.create 权限'}">${ic('refresh')}重发</button>`
+      : `<button class="btn sm danger" data-act="key-revoke" data-id="${d.id}" ${R().approve ? '' : 'disabled'} title="${R().approve ? '吊销后立即失效，不可恢复' : '需要 apikey.update 权限'}">${ic('trash')}吊销</button>`;
+    return tableCard([{ l: '名称', f: d => `<b>${d.name}</b>` }, { l: '授权范围', c: 'mono', f: d => d.scope },
+      { l: '状态', f: stat }, { l: '过期时间', c: 'mono muted', f: d => d.exp }, { l: '最后使用', c: 'mono muted', f: d => d.last },
+      { l: '操作', r: 1, f: d => `<span class="rowacts">${acts(d)}</span>` }], list, `共 ${KEYS.length} 枚 · 吊销后不可恢复`);
+  }
+};
+PG.settings = {
+  head: () => head('设置中心', '管理「这份界面本身」。改动即时生效并保存在本机浏览器。'),
+  dyn: () => {
+    const seg = (k, opts) => `<div class="seg">${opts.map(([v, l]) => `<button class="${String(P[k]) === String(v) ? 'on' : ''}" data-set="${k}|${v}">${l}</button>`).join('')}</div>`;
+    const row = (t, d, c) => `<div class="set"><div><b>${t}</b><small>${d}</small></div>${c}</div>`;
+    return `<div class="sets"><div class="card"><div class="card-h"><h3>外观</h3></div>
+      ${row('主题', '跟随系统，或固定亮 / 暗', seg('theme', [['system', '跟随系统'], ['light', '亮色'], ['dark', '暗色']]))}
+      ${row('强调色', '用于选中态、徽标与焦点', `<div class="sw">${[['#dc4a26', '朱砂'], ['#2f5bd8', '靛青'], ['#12805c', '松绿'], ['#6d4fd1', '藤紫']].map(([c, n]) => `<button class="${P.accent === c ? 'on' : ''}" style="--c:${c}" data-set="accent|${c}" title="${n}" aria-label="${n}"></button>`).join('')}</div>`)}
+      </div><div class="card"><div class="card-h"><h3>列表与导航</h3></div>
+      ${row('表格密度', '行高 50px / 40px', seg('density', [['cozy', '舒适'], ['compact', '紧凑']]))}
+      ${row('字号', '全站基准字号', seg('fs', [[13, '小'], [14, '标准'], [15, '大']]))}
+      ${row('侧边导航', '折叠后只保留图标，快捷键 [', seg('collapsed', [[false, '展开'], [true, '折叠']]))}
+      </div><div class="card"><div class="card-h"><h3>数据</h3></div>
+      ${row('恢复默认设置', '清除本机保存的外观偏好', `<button class="btn${S.arm === 'reset' ? ' armed' : ' danger'}" data-act="reset">${S.arm === 'reset' ? '再点一次确认' : '恢复默认'}</button>`)}
+      ${row('重置演示数据', '撤销本次会话里对单据、库存的全部操作', '<button class="btn" data-act="reload">重新载入</button>')}
+       ${row('退出登录（演示）', '回到手机号 + 验证码登录页', '<button class="btn" data-act="logout">退出登录</button>')}
+      </div></div>`;
+  }
+};
+
+/* ---------- 浮层 ---------- */
+function layer() {
+  const nav = $('#app').classList.contains('nav-open');
+  $('#mask').classList.toggle('on', !!(S.open || S.master || S.modal || S.pal || nav));
+  $('#drawer').classList.toggle('on', !!(S.open || S.master));
+  $('#modal').classList.toggle('on', !!S.modal);
+  $('#pal').classList.toggle('on', !!S.pal);
+}
+function closeAll() {
+  S.open = null; S.master = null; S.modal = 0; S.pal = 0; S.arm = null;
+  $('#app').classList.remove('nav-open');
+  closePop(); layer();
+}
+function openDoc(pg, id) {
+  if (!find(pg, id)) return;
+  S.open = [pg, id]; S.master = null; S.arm = null; S.pal = 0;
+  renderDrawer(); layer();
+}
+
+/* ---------- 主数据详情（基本信息 / 对接人 / 加工厂报价） ---------- */
+const MASTER_SRC = { products: () => PRODUCTS, customers: () => CUSTOMERS, suppliers: () => SUPPLIERS, processors: () => PROCESSORS };
+const MASTER_L = { products: '商品', customers: '客户', suppliers: '供应商', processors: '加工厂' };
+const masterRec = (pg, id) => (MASTER_SRC[pg] ? MASTER_SRC[pg]() : []).find(r => r[0] === id);
+function openMaster(pg, id) {
+  if (!masterRec(pg, id)) return;
+  S.master = [pg, id]; S.open = null; S.arm = null; S.pal = 0;
+  renderMaster(); layer();
+}
+function contactRow(c) {
+  return `<li class="ct${c.on ? '' : ' off'}">
+    <span class="ava">${esc(c.name[0])}</span>
+    <div class="ct-i"><b>${esc(c.name)}${c.main ? ` <span class="tag primary">${ic('star')}主对接人</span>` : ''}</b>
+      <small>${esc(c.role)} · <span class="mono">${esc(c.tel)}</span>${c.on ? '' : ' · <span class="st cancel">已停用</span>'}</small></div>
+    <button class="btn sm" disabled title="${c.on ? '编辑对接人 · 等 PR #410（#425 的 contacts 端点接线）' : '已停用，不能编辑'}">${ic('pencil')}</button></li>`;
+}
+function renderMaster() {
+  if (!S.master) return;
+  const [pg, id] = S.master, r = masterRec(pg, id);
+  if (!r) { S.master = null; layer(); return; }
+  const kind = MASTER_L[pg], cs = CONTACTS[id] || [], qs = QUOTES[id] || [];
+  const dd = (t, v) => `<div><dt>${t}</dt><dd>${v}</dd></div>`;
+  let info = '';
+  if (pg === 'products') info = dd('商品编号', `<span class="mono">${r[0]}</span>`) + dd('商品名称', `<b>${esc(r[1])}</b>`) + dd('规格', esc(r[2])) + dd('参考价', `<span class="num">${money(r[3])}</span>`);
+  else if (pg === 'customers') info = dd('客户编号', `<span class="mono">${r[0]}</span>`) + dd('客户名称', `<b>${esc(r[1])}</b>`) + dd('价目', r[3]) + dd('历史销售', histCnt('sales-orders', r[1]));
+  else if (pg === 'suppliers') info = dd('供应商编号', `<span class="mono">${r[0]}</span>`) + dd('供应商名称', `<b>${esc(r[1])}</b>`) + dd('主对接人', r[2]) + dd('历史采购', histCnt('purchase-orders', r[1]));
+  else info = dd('加工厂编号', `<span class="mono">${r[0]}</span>`) + dd('加工厂名称', `<b>${esc(r[1])}</b>`) + dd('主对接人', r[2]) + dd('加工单', histCnt('processing-orders', r[1]));
+  info += dd('所属公司', S.company) + dd('状态', '<span class="st ok">启用</span>');
+
+  const batches = pg === 'products' ? INV.filter(b => b.product === r[1]) : [];
+  const histPg = pg === 'customers' ? 'sales-orders' : pg === 'suppliers' ? 'purchase-orders' : pg === 'processors' ? 'processing-orders' : null;
+  const hist = histPg ? ORD[histPg].filter(o => o.partner === r[1]).slice(0, 5) : [];
+  const histSec = histPg ? `<h5>历史单据 <span class="muted" style="font-weight:400">· 最近 ${hist.length} 条</span></h5>${hist.length ? `<ul class="tl">${hist.map(o => `<li><time>${o.state || o.date} · ${o.id}</time>${esc(o.item)} · ${o.qty} · <span class="num">${money(o.amount)}</span> ${badge(histPg, o.status)}</li>`).join('')}</ul>` : `<p class="muted" style="font-size:12.5px">这家还没有历史单据。</p>`}` : '';
+  const qTable = qs.length ? `<div class="ln"><table><thead><tr><th>报价单</th><th>项目</th><th class="r">单价</th><th>记录人</th><th>时间</th></tr></thead><tbody>` +
+    qs.map(q => `<tr><td class="mono">${q.id}</td><td>${esc(q.item)}${q.note && q.note !== '—' ? `<small style="display:block;color:var(--ink-3);font-size:11px">${esc(q.note)}</small>` : ''}</td>
+      <td class="r num">${money(q.price)}<span class="muted">/${q.unit}</span></td><td>${esc(q.by)}</td><td class="mono muted">${q.t}</td></tr>`).join('') +
+    `</tbody></table></div>` : emptyCard('还没有报价记录', '记录一次报价后，加工单就能引用这个价格。');
+
+  $('#drawer').innerHTML = `<div class="dw-h"><div><small>主数据 / ${kind}档案 / 详情</small><h2>${esc(r[1])}</h2></div><button class="ib" data-act="close" aria-label="关闭">${ic('x')}</button></div>
+  <div class="dw-b">
+    <h5>基本信息</h5>
+    <dl class="dl" style="margin:0">${info}</dl>
+    ${pg === 'products' ? `<h5>关联库存批次</h5>${batches.length ? `<ul class="tl">${batches.map(b => `<li><time>${b.batch} · ${b.wh}</time>可用 ${b.avail} / 入库 ${b.inQ} · 库龄 ${b.age} 天</li>`).join('')}</ul>` : `<p class="muted" style="font-size:12.5px">这个商品还没有库存批次。</p>`}` : ''}
+    ${histSec}
+    ${pg === 'products' ? '' : `<h5>对接人 <span class="muted" style="font-weight:400">· 手机号均为后端脱敏值</span></h5>
+      <ul class="ct-list">${cs.map(contactRow).join('')}</ul>
+      <p class="note" style="margin:10px 0 0">${ic('lock')}新增 / 编辑对接人等 PR #410（#425 的 contacts 端点）合入后再接</p>`}
+    ${pg === 'processors' ? `<h5>报价记录</h5>${qTable}
+      <div class="sub-acts"><button class="btn sm pri" data-act="quote-new" data-id="${id}" ${R().approve ? '' : 'disabled'} title="${R().approve ? '记录报价 · 需要 processor.create 权限' : '需要 processor.create 权限'}">${ic('plus')}记录报价</button></div>` : ''}
+  </div>`;
+}
+/* ---------- 弹窗：盘点新建 / 编辑、密钥新建 / 重发、记录报价 ---------- */
+const modalActs = (ok, cancel = '取消', okText = '确定') => `<div class="acts"><button class="btn" data-act="close">${cancel}</button><button class="btn pri" data-act="${ok.act}"${ok.id ? ` data-id="${ok.id}"` : ''}>${okText}</button></div>`;
+function openStk(id) {
+  const e = id ? STK.find(s => s.id === id) : null;
+  const num = v => String(v || '').replace(/^[+−-]/, '').replace(/\s*\S+$/, '').trim();
+  $('#modal').innerHTML = `<h3>${e ? '编辑盘点单' : '新建盘点单'}</h3>
+    <p>${e ? `单号 ${e.id} · 待审批状态下可以修改，批准后锁死` : '单号自动生成，提交后进入「待审批」，批准才追加 I 单流水。'}</p>
+    <div class="fm">
+      <label class="w">仓库<select name="wh" class="sel" style="height:38px;width:100%">${WHS.map(w => `<option${e && e.wh === w ? ' selected' : ''}>${w}</option>`).join('')}</select></label>
+      <label>盘盈（可留空）<input name="up" placeholder="如 4 箱" value="${e ? num(e.up) : ''}" autocomplete="off"></label>
+      <label>盘亏（可留空）<input name="down" placeholder="如 2 盒" value="${e ? num(e.down) : ''}" autocomplete="off"></label>
+      <label class="w">原因说明<input name="note" placeholder="为什么盘盈 / 盘亏" value="${e ? esc(e.note || '') : ''}" autocomplete="off"></label>
+    </div>
+    ${modalActs({ act: 'stk-save', id: id || '' }, '取消', e ? '保存' : '创建')}`;
+  S.modal = 1; layer();
+  setTimeout(() => { const i = $('#modal input'); if (i) i.focus(); }, 60);
+}
+function saveStk(id) {
+  const g = n => { const el = $(`#modal [name="${n}"]`); return el ? el.value.trim() : ''; };
+  const qty = v => /^\d+(\.\d+)?/.test(v) ? (v.match(/^\d+(?:\.\d+)?\s*\S*/) || [v])[0].replace(/^(\d+(?:\.\d+)?)\s*/, '$1 ') : '';
+  const up = qty(g('up')), down = qty(g('down')), wh = g('wh'), note = g('note');
+  if (!up && !down) { toast('盘盈与盘亏至少填一项', 1); return; }
+  const bad = [['up', up, g('up')], ['down', down, g('down')]].find(([, v, raw]) => raw && !v);
+  if (bad) { toast('数量需以数字开头并带单位，如「4 箱」', 1); return; }
+  if (id) {
+    const e = STK.find(s => s.id === id);
+    if (!e) return;
+    Object.assign(e, { wh, up: up ? '+' + up : '0', down: down ? '−' + down : '0', note: note || '—', status: 'warn' });
+    e.log = (e.log || []).concat({});
+    audit('stocktake.update', e.id); toast(`${e.id} 已更新`);
+  } else {
+    const nid = 'I-2611-' + String(Math.max(...STK.map(s => +s.id.slice(-2))) + 1).padStart(2, '0');
+    STK.unshift({ id: nid, wh, up: up ? '+' + up : '0', down: down ? '−' + down : '0', note: note || '—', status: 'warn', by: R().name });
+    audit('stocktake.create', nid); toast(`已创建盘点单 ${nid}，等待审批`);
+  }
+  S.modal = 0; layer(); S.pg = 1; refresh();
+}
+function delStk(id) {
+  const e = STK.find(s => s.id === id); if (!e) return;
+  if (S.arm !== 'stkdel:' + id) {
+    S.arm = 'stkdel:' + id; toast('再点一次删除（只有待审批的盘点点单可以删）');
+    setTimeout(() => { if (S.arm === 'stkdel:' + id) { S.arm = null; if (S.page === 'stocktakes') refresh(); } }, 3000);
+    refresh(); return;
+  }
+  S.arm = null;
+  STK.splice(STK.indexOf(e), 1);
+  audit('stocktake.delete', id); toast(`${id} 已删除`); refresh();
+}
+
+const tokGen = () => 'qd_live_' + Array.from({ length: 28 }, (_, i) => 'abcdefghijklmnopqrstuvwxyz0123456789'[(i * 7 + 11) % 36]).join('');
+function openKey() {
+  if (!R().approve) { toast('需要 apikey.create 权限', 1); return; }
+  const scopes = ['inventory.read', 'sales.create', 'report.read', 'purchase_order.export'];
+  $('#modal').innerHTML = `<h3>新建 API 密钥</h3><p>密钥只在创建后显示一次；请立即复制保存，关闭后不可再查看。</p>
+    <div class="fm">
+      <label class="w">名称<input name="name" placeholder="如 电商订单回传" autocomplete="off"></label>
+      <label>授权范围<select name="scope" class="sel" style="height:38px;width:100%">${scopes.map(s => `<option>${s}</option>`).join('')}</select></label>
+      <label>有效期<select name="exp" class="sel" style="height:38px;width:100%"><option>90 天</option><option>180 天</option><option>1 年</option></select></label>
+    </div>
+    ${modalActs({ act: 'key-create' }, '取消', '创建并显示密钥')}`;
+  S.modal = 1; layer();
+  setTimeout(() => { const i = $('#modal input'); if (i) i.focus(); }, 60);
+}
+function createKey() {
+  const name = ($('#modal [name="name"]') || {}).value || '未命名密钥';
+  if (!name.trim()) { toast('请填写密钥名称', 1); return; }
+  const tok = tokGen(), scope = $('#modal [name="scope"]').value, exp = $('#modal [name="exp"]').value;
+  const d = new Date(Date.now() + (exp === '90 天' ? 90 : exp === '180 天' ? 180 : 365) * 864e5);
+  const k = { id: 'k' + (KEYS.length + 1), name: name.trim(), scope, on: 1, exp: d.toISOString().slice(0, 10), last: '—' };
+  KEYS.unshift(k);
+  audit('apikey.create', k.name);
+  showOnce(k, tok);
+}
+function showOnce(k, tok) {
+  $('#modal').innerHTML = `<h3>密钥已创建</h3><p>「${esc(k.name)}」的密钥如下，<b>只显示这一次</b>。</p>
+    <div class="once">
+      <div class="once-k"><code id="onceTok">${tok}</code><button class="btn sm pri" data-copy="${tok}" title="复制到剪贴板">${ic('copy')}复制</button></div>
+      <div class="once-warn">${ic('warn')}关闭本窗口后无法再次查看；如果丢失，只能吊销后重新签发。</div>
+      <div class="acts" style="justify-content:flex-end"><button class="btn" data-act="close">我已保存</button></div>
+    </div>`;
+  S.modal = 1; layer();
+}
+function revokeKey(id) {
+  const k = KEYS.find(x => x.id === id); if (!k) return;
+  if (S.arm !== 'revoke:' + id) {
+    S.arm = 'revoke:' + id; refresh(); toast('再点一次吊销（立即失效，不可恢复）');
+    setTimeout(() => { if (S.arm === 'revoke:' + id) { S.arm = null; if (S.page === 'api-integration') refresh(); } }, 3000);
+    return;
+  }
+  S.arm = null; k.rev = 1; k.on = 0;
+  audit('apikey.revoke', k.name); toast(`「${k.name}」已吊销`); refresh();
+}
+function reissueKey(id) {
+  const k = KEYS.find(x => x.id === id); if (!k) return;
+  k.rev = 0; k.on = 1; k.exp = new Date(Date.now() + 90 * 864e5).toISOString().slice(0, 10);
+  audit('apikey.create', k.name + '（重发）');
+  showOnce(k, tokGen());
+}
+function openQuote(id) {
+  const p = masterRec('processors', id); if (!p) return;
+  $('#modal').innerHTML = `<h3>记录报价</h3><p>${esc(p[1])} · 记录报价走 processor.create（后端用的是 create，不是 update）。</p>
+    <div class="fm">
+      <label class="w">加工项目<input name="item" placeholder="如 深烘拼配（kg）" autocomplete="off"></label>
+      <label>单价（元）<input name="price" placeholder="如 15" inputmode="decimal" autocomplete="off"></label>
+      <label>计价单位<select name="unit" class="sel" style="height:38px;width:100%"><option>kg</option><option>盒</option><option>箱</option><option>件</option></select></label>
+      <label class="w">备注<input name="note" placeholder="如 500kg 以上" autocomplete="off"></label>
+    </div>
+    ${modalActs({ act: 'quote-save', id }, '取消', '记录报价')}`;
+  S.modal = 1; layer();
+  setTimeout(() => { const i = $('#modal input'); if (i) i.focus(); }, 60);
+}
+function saveQuote(id) {
+  const g = n => { const el = $(`#modal [name="${n}"]`); return el ? el.value.trim() : ''; };
+  const item = g('item'), price = parseFloat(g('price'));
+  if (!item) { toast('请填写加工项目', 1); return; }
+  if (!isFinite(price) || price < 0) { toast('单价需为非负数字', 1); return; }
+  const q = { id: 'Q-' + String(22 + (QUOTES[id] || []).length).padStart(4, '0'), item, price, unit: g('unit'), by: R().name, t: now(), note: g('note') || '—' };
+  (QUOTES[id] = QUOTES[id] || []).unshift(q);
+  audit('processor.create', id + ' ' + item);
+  S.modal = 0; layer(); renderMaster(); toast(`已记录报价 ${q.id}`);
+}
+function copyText(t) {
+  const done = () => toast('已复制到剪贴板');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, () => toast('复制失败，请手动选中', 1));
+  else { const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) { toast('复制失败', 1); } ta.remove(); }
+}
+/* ---------- 行明细：由单据头推导的演示明细，数量与金额两个方向都各自合计到单据头 ---------- */
+function docLines(o) {
+  const q = String(o.qty || ''), mq = q.match(/^([\d.]+)\s*(.*)$/);
+  const n = mq ? parseFloat(mq[1]) || 1 : 1, unit = mq ? (mq[2] || '') : '';
+  const seed = [...String(o.id)].reduce((s, c) => s + c.charCodeAt(0), 0);
+  const dec = /^(kg|t|吨|千克|公斤)$/i.test(unit);                    // 重量单位允许小数，箱/盒/件取整
+  const pool = /关联/.test(String(o.item)) ? [] : PRODUCTS.filter(p => p[1] !== String(o.item) && (!unit || p[2].includes(unit)));
+  const cnt = o.amount < 0 || !pool.length ? 1 : Math.min(1 + (seed % 3), pool.length + 1);
+  const wA = cnt === 1 ? [1] : cnt === 2 ? [0.62, 0.38] : [0.5, 0.3, 0.2];
+  const wQ = cnt === 1 ? [1] : cnt === 2 ? [0.55, 0.45] : [0.46, 0.33, 0.21];
+  let accA = 0, accQ = 0;
+  return wA.map((k, i) => {
+    const last = i === wA.length - 1;
+    const amount = last ? o.amount - accA : Math.round(o.amount * k);
+    const raw = last ? n - accQ : n * wQ[i];
+    const qty = Math.max(dec ? Math.round(raw * 1000) / 1000 : Math.round(raw), 1);
+    accA += amount; accQ += qty;
+    const name = i === 0 ? String(o.item) : pool[(seed + i) % pool.length][1];
+    const sku = PRODUCTS.find(p => p[1] === name);
+    return {
+      name, spec: sku ? sku[2] : /关联/.test(name) ? '关联单据明细' : '按单计量',
+      qty: qty + (unit ? ' ' + unit : ''), qtyNum: qty, price: amount / qty, amount
+    };
+  });
+}
+const money2 = v => !R().viewPrice ? '—' : (v < 0 ? '−¥' : '¥') + Math.abs(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function lineTable(o) {
+  const ls = docLines(o), vp = R().viewPrice, unit = (String(o.qty).match(/^\S+\s*(.*)$/) || [])[1] || '';
+  const totQ = Math.round(ls.reduce((s, l) => s + l.qtyNum, 0) * 1000) / 1000;
+  return `<div class="ln"><table><thead><tr><th>品名 / 规格</th><th class="r">数量</th><th class="r">单价</th><th class="r">金额</th></tr></thead><tbody>` +
+    ls.map(l => `<tr><td class="nm"><b>${esc(l.name)}</b><small class="mono">${esc(l.spec)}</small></td><td class="r num">${esc(l.qty)}</td><td class="r num">${money2(l.price)}</td><td class="r num${vp && l.amount < 0 ? ' neg' : ''}">${money(l.amount)}</td></tr>`).join('') +
+    `</tbody><tfoot><tr><td>合计 · 共 ${ls.length} 行</td><td class="r num">${totQ}${unit ? ' ' + esc(unit) : ''}</td><td class="r"></td><td class="r num">${money(o.amount)}</td></tr></tfoot></table></div>`;
+}
+
+function renderDrawer() {
+  const [pg, id] = S.open, m = DOC[pg], o = find(pg, id), st = o.status, isC = pg === 'settlements';
+  const steps = isC ? [['bad', '待确认'], ['ok', '已结算']] : [['now', '进行中'], ['transit', m.mid], ['ok', '已完成']];
+  const idx = steps.findIndex(s => s[0] === st);
+  const A = (act, label, cap, ok) => !ok ? `<button class="act off" disabled title="当前状态不允许该动作"><b>${label}</b><small>状态不允许</small></button>`
+    : !can(cap) ? `<button class="act deny" disabled title="需要 ${cap} 权限"><b>${label}</b><small>无权限 · 缺少 ${cap}</small></button>`
+    : `<button class="act" data-act="${act}" title="执行「${label}」· 需要 ${cap} 权限"><b>${label}</b><small>${cap}</small></button>`;
+  const fin = (t, s) => `<div class="act fin" style="grid-column:1/-1${s ? ';background:var(--hover);color:var(--ink-3)' : ''}"><b>${t}</b></div>`;
+  let acts, sub = '';
+  if (st === 'cancel') acts = fin('单据已取消', 1);
+  else if (st === 'ok') acts = fin(isC ? '已结算 · 提成按快照比例计算（D36）' : '已完成 · 流程结束');
+  else if (isC) acts = A('settle', '确认结算', m.done, true) + `<button class="act off" disabled title="成本变更须走冲正单，不能直接改原单"><b>修改成本</b><small>须走冲正，不改原单</small></button>`;
+  else if (st === 'bad') acts = A('pass', '审批通过', m.done, true) + A('ship', '发货', m.ship, false);
+  else acts = A('ship', pg === 'sales-orders' ? '发货' : '发出', m.ship, st === 'now') + A('done', m.doneLabel, m.done, st === 'transit');
+  if (!isC) {
+    if (st === 'transit' && can(m.ship)) sub += `<button class="btn sm" data-act="unship" title="撤销${pg === 'sales-orders' ? '发货' : '发出'}：需 ${m.ship} 权限，批次可用量会回滚">撤销${pg === 'sales-orders' ? '发货' : '发出'}</button>`;
+  sub += `<button class="btn sm" data-act="print" title="打印客户联（A4 白底黑字，走浏览器打印）">打印客户联</button>`;
+    if (st === 'now' || st === 'bad') sub += `<button class="btn sm ${S.arm === 'cancel' ? 'armed' : 'danger'}" data-act="cancel" title="取消单据：需 ${m.ship.split('.')[0]}.cancel 权限，二次确认后才生效">${S.arm === 'cancel' ? '再点一次确认取消' : '取消单据'}</button>`;
+    if (st === 'ok' && (m.L === 'E' || m.L === 'A')) sub += `<button class="btn sm" data-act="reverse" ${o.rev ? 'disabled' : ''} title="${o.rev ? '已发起冲正 ' + o.rev + '，原单不变' : '发起冲正 ' + (m.L === 'E' ? 'R' : 'S') + '：只追加冲正单，不改原单'}">${o.rev ? '已发起冲正 ' + o.rev : '发起冲正 ' + (m.L === 'E' ? 'R' : 'S')}</button>`;
+  }
+  const dd = (t, v) => `<div><dt>${t}</dt><dd>${v}</dd></div>`;
+  $('#drawer').innerHTML = `<div class="dw-h"><div><small>${INFO[pg].group} / ${INFO[pg].label} / 详情</small><h2>${o.id}${badge(pg, st)}</h2></div><button class="ib" data-act="close" aria-label="关闭">${ic('x')}</button></div>
+  <div class="dw-b">
+    <div class="track">${steps.map((s, i) => `<div class="stp ${idx < 0 ? '' : i < idx ? 'done' : i === idx ? 'cur' : ''}">${s[1]}</div>`).join('')}</div>
+    <h5>单据信息</h5>
+    <dl class="dl" style="margin:0">${dd(m.partner, esc(o.partner))}${dd(m.item, esc(o.item))}${dd('数量', esc(o.qty))}${dd(m.amt, `<span class="num"${R().viewPrice && o.amount < 0 ? ' style="color:var(--bad)"' : ''}>${money(o.amount)}</span>`)}${m.extra ? dd(m.extra, sens(o.extra || '—')) : ''}${dd('负责人', who(o.handler))}${dd('日期', `<span class="mono">${o.date}</span>`)}${o.batch ? dd('引用批次', `<span class="mono">${o.batch}</span>`) : ''}</dl>
+    ${!R().viewPrice ? `<p class="note" style="margin:10px 0 0">${ic('lock')}无 view_price 权限，金额已脱敏（D79）</p>` : ''}
+    <h5>行明细</h5>
+    ${lineTable(o)}
+    <h5>流转记录</h5>
+    <ul class="tl">${[...o.log].reverse().map(l => `<li><time>${l.t}</time>${esc(l.x)}</li>`).join('')}</ul>
+  </div>
+  <div class="dw-f"><div class="act-g">${acts}</div>${sub ? `<div class="sub-acts">${sub}</div>` : ''}</div>`;
+}
+
+function doAct(a) {
+  const [pg, id] = S.open, m = DOC[pg], o = find(pg, id), me = R().name;
+  const log = x => o.log.push({ t: now(), x: x + ' · ' + me });
+  const n = parseFloat(o.qty) || 0, b = INV.find(x => x.batch === o.batch);
+  if (a === 'ship') {
+    if (b && b.avail < n) { toast(`批次 ${b.batch} 可用量不足（可用 ${b.avail}），无法发货`, 1); audit(m.ship, o.id, 0); refresh(); return; }
+    o.status = 'transit'; log('发货 → ' + m.mid);
+    if (b) { b.avail -= n; b.transitQ += n; flow(b.batch, '−' + o.qty, o.id); }
+    audit(m.ship, o.id); toast(`${o.id} ${m.mid}${b ? '，批次可用量已扣减' : ''}`);
+  } else if (a === 'unship') {
+    o.status = 'now'; log('撤销发货 → 进行中');
+    if (b) { b.avail += n; b.transitQ -= n; flow(b.batch, '+' + o.qty, o.id); }
+    audit(m.ship + '.revoke', o.id); toast(`${o.id} 已撤销，回到进行中`);
+  } else if (a === 'done') {
+    o.status = 'ok'; log(m.doneLabel + ' → 已完成');
+    if (b) { b.transitQ -= n; b.refQ += n; }
+    audit(m.done, o.id);
+    if (m.L === 'E' || m.L === 'N') {
+      const c = Object.assign(mk(nextId('settlements'), o.partner, '关联 ' + o.id, o.qty, o.amount, o.extra, 'bad', '财务自动生成', '2026-11-22'), { owner: o.handler });
+      c.log[0] = { t: now(), x: `由 ${o.id} 完成后自动生成（D29）` };
+      ORD.settlements.unshift(c);
+      log('自动生成结算单 ' + c.id);
+      toast(`${o.id} 已完成，已自动生成结算单 ${c.id}`);
+    } else if (m.L === 'A') {
+      const bid = 'P-' + (Math.max(...INV.map(x => +x.batch.slice(2))) + 1);
+      INV.unshift({ batch: bid, product: o.item, wh: '上海一号仓', keeper: '李明', inQ: n, refQ: 0, transitQ: 0, holdQ: 0, avail: n, price: Math.round(o.amount / n) });
+      o.batch = bid; flow(bid, '+' + o.qty, o.id); log('新建批次 ' + bid + '，锁定批次价');
+      toast(`${o.id} 已入库，新建批次 ${bid} 并锁定批次价`);
+    } else toast(`${o.id} 已完成，成品入库并记损耗归属`);
+  } else if (a === 'pass') {
+    o.status = 'now'; log('破下限审批通过'); audit(m.done, o.id); toast(`${o.id} 审批通过，可以发货`);
+  } else if (a === 'settle') {
+    o.status = 'ok'; log('财务确认结算'); audit(m.done, o.id); toast(`${o.id} 已结算`);
+  } else if (a === 'cancel') {
+    if (S.arm !== 'cancel') { S.arm = 'cancel'; renderDrawer(); setTimeout(() => { if (S.arm === 'cancel') { S.arm = null; if (S.open) renderDrawer(); } }, 3000); return; }
+    S.arm = null; o.status = 'cancel'; log('取消单据'); audit(m.ship.split('.')[0] + '.cancel', o.id); toast(`${o.id} 已取消`);
+  } else if (a === 'reverse') {
+    const k = m.L === 'E' ? 'R' : 'S', rid = revId(k);
+    REV.unshift({ id: rid, kind: k, way: k === 'R' ? '退货退款' : '质量退回', batch: o.batch || '—', qty: o.qty, status: 'now', label: '进行中', src: o.id });
+    o.rev = rid; log('发起冲正 ' + rid + '（原单不变）'); audit('reversal.create', rid); toast(`已发起冲正 ${rid}，原单保持不变`);
+  }
+  S.flash = o.id;
+  refresh();
+}
+
+function openNew() {
+  const pg = S.page, m = DOC[pg];
+  if (!m || !m.create) return;
+  $('#modal').innerHTML = `<h3>新建${m.name} ${m.L}</h3><p>单号自动生成为 <span class="mono">${nextId(pg)}</span>，负责人为当前账号「${R().name}」。</p>
+    <div class="fm"><label class="w">${m.partner}<input name="partner" placeholder="填写${m.partner}名称" autocomplete="off"></label><label class="w">${m.item}<input name="item" placeholder="填写${m.item}名称" autocomplete="off"></label>
+    <label>数量（含单位）<input name="qty" placeholder="如 100 箱" autocomplete="off"></label><label>${m.amt}（元）<input name="amount" placeholder="如 12000" inputmode="decimal" autocomplete="off"></label></div>
+    <div class="acts"><button class="btn" data-act="close">取消</button><button class="btn pri" data-act="create">创建</button></div>`;
+  S.modal = 1; layer();
+  setTimeout(() => $('#modal input').focus(), 60);
+}
+function createDoc() {
+  const pg = S.page, m = DOC[pg], v = {};
+  let bad = null;
+  $$('#modal input').forEach(i => {
+    v[i.name] = i.value.trim();
+    const ok = i.name === 'qty' ? /^\d+(\.\d+)?\s*\S+/.test(v.qty) : i.name === 'amount' ? /^-?\d+(\.\d+)?$/.test(v.amount) : !!v[i.name];
+    i.classList.remove('err');
+    if (!ok) { void i.offsetWidth; i.classList.add('err'); bad = bad || i; }
+  });
+  if (bad) { bad.focus(); toast(bad.name === 'qty' ? '数量需以数字开头并带单位，如「100 箱」' : bad.name === 'amount' ? '金额需为数字' : '请填写完整', 1); return; }
+  const o = mk(nextId(pg), v.partner, v.item, v.qty.replace(/^(\d+(?:\.\d+)?)\s*/, '$1 '), +v.amount, '', 'now', R().name, '2026-11-22');
+  o.log[0].t = now();
+  ORD[pg].unshift(o);
+  audit(m.ship.split('.')[0] + '.create', o.id);
+  Object.assign(S, { modal: 0, q: '', status: 'all', handler: 'all', flash: o.id });
+  layer(); render(); S.flash = null;
+  toast(`已创建 ${o.id}`);
+}
+function exportCsv() {
+  const pg = S.page, m = DOC[pg], list = rows(pg);
+  if (!list.length) { toast('当前没有可导出的数据', 1); return; }
+  const data = [['单号', m.partner, m.item, '数量', m.amt, '状态', '负责人', '日期'], ...list.map(o => [o.id, o.partner, o.item, o.qty, R().viewPrice ? o.amount : '—', stLabel(pg, o.status), o.handler, o.date])];
+  const csv = data.map(r => r.map(x => '"' + String(x).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `${m.name}${m.L}-2026-11-22.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  audit(m.ship.split('.')[0] + '.export', list.length + ' 条');
+  toast(`已导出 ${list.length} 条（CSV）`);
+}
+
+/* 弹出菜单 */
+let popEl = null;
+function closePop() { if (popEl) { popEl.remove(); popEl = null; } }
+function openPop(kind, anchor) {
+  const same = popEl && popEl.dataset.k === kind;
+  closePop();
+  if (same) return;
+  const item = (v, on, t, s, pre = '') => `<button data-pick="${kind}|${v}" class="${on ? 'on' : ''}">${pre}<div>${t}${s ? `<small>${s}</small>` : ''}</div></button>`;
+  if (kind === 'role') { /* 保持原角色切换；退出登录放在设置页 */ }
+  const html = kind === 'role' ? '<h6>切换演示账号 · 权限实时联动</h6>' + Object.entries(ROLES).map(([k, r]) => item(k, k === S.role, r.name + ' · ' + r.title, r.desc, `<span class="ava">${r.name[0]}</span>`)).join('')
+    : kind === 'company' ? '<h6>当前公司 · 数据按公司隔离</h6>' + COMPANIES.map(c => item(c, c === S.company, c)).join('')
+    : '<h6>列表四态预览</h6>' + [['filled', '正常展示数据'], ['empty', '没有任何记录时'], ['loading', '骨架屏占位'], ['error', '加载失败，可重试']].map(([k, d]) => item(k, k === S.view, VIEW_L[k], d)).join('');
+  popEl = document.createElement('div');
+  popEl.className = 'pop'; popEl.dataset.k = kind; popEl.innerHTML = html;
+  document.body.appendChild(popEl);
+  const r = anchor.getBoundingClientRect(), w = popEl.offsetWidth, h = popEl.offsetHeight;
+  let top = r.bottom + 6;
+  if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 6);
+  popEl.style.left = Math.max(8, Math.min(kind === 'view' ? r.right - w : r.left, innerWidth - w - 8)) + 'px';
+  popEl.style.top = top + 'px';
+}
+function pick(kind, v) {
+  closePop();
+  if (kind === 'role') {
+    S.role = v;
+    Object.assign(S, { scope: 'all', handler: 'all' });
+    if (S.page === 'suppliers' && !R().suppliers) S.page = 'workbench';
+    if (S.open && !rows(S.open[0], 1).some(o => o.id === S.open[1])) { S.open = null; layer(); }
+    render(true); if (S.open) renderDrawer();
+    toast(`已切换为 ${R().name} · ${R().title}（${R().desc}）`);
+  } else if (kind === 'company') {
+    S.company = v; render(true); toast('当前公司：' + v);
+  } else { S.view = v; applyState(); }
+}
+
+/* 命令面板 */
+let palData = [];
+function renderPal() {
+  const q = $('#palIn').value.trim().toLowerCase(), all = [];
+  NAV.forEach(([g, items]) => items.forEach(([id, label]) => all.push({ g: '页面', t: label, s: g, i: id, run: () => go(id) })));
+  Object.keys(DOC).forEach(pg => rows(pg, 1).forEach(o => all.push({ g: '单据', t: o.id, s: o.partner + ' · ' + o.item, i: pg, run: () => openDoc(pg, o.id) })));
+  all.push({ g: '命令', t: '切换亮 / 暗主题', s: '', i: 'theme', run: () => ACT.theme() }, { g: '命令', t: '折叠 / 展开导航', s: '[', i: 'side', run: () => ACT.collapse() },
+    { g: '命令', t: '新建销售单 E', s: '', i: 'plus', run: () => { go('sales-orders'); openNew(); } });
+  Object.entries(ROLES).forEach(([k, r]) => all.push({ g: '命令', t: `切换账号：${r.name} · ${r.title}`, s: r.desc, i: 'customers', run: () => pick('role', k) }));
+  palData = q ? all.filter(x => (x.t + x.s + x.g).toLowerCase().includes(q)) : all.filter(x => x.g !== '单据');
+  S.pi = Math.min(S.pi, Math.max(0, palData.length - 1));
+  let g = '';
+  $('#palList').innerHTML = palData.length ? palData.map((x, i) => (x.g !== g ? `<h6>${g = x.g}</h6>` : '') + `<button class="${i === S.pi ? 'on' : ''}" data-pi="${i}">${ic(x.i)}<span>${x.t}</span><small>${x.s}</small></button>`).join('') : '<p>没有匹配的页面、单据或命令</p>';
+  const on = $('#palList .on'); if (on) on.scrollIntoView({ block: 'nearest' });
+}
+function openPal() { closePop(); S.pal = 1; S.pi = 0; $('#palIn').value = ''; renderPal(); layer(); setTimeout(() => $('#palIn').focus(), 60); }
+function runPal(i) { const x = palData[i]; if (!x) return; S.pal = 0; layer(); x.run(); }
+
+/* ---------- 动作与事件 ---------- */
+const ACT = {
+  collapse() { P.collapsed = !P.collapsed; save(); applyPrefs(); syncNav(true); if (S.page === 'settings') refresh(); },
+  navopen() { $('#app').classList.add('nav-open'); layer(); },
+  palette: openPal,
+  theme() { P.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; save(); const f = () => { applyPrefs(); if (S.page === 'settings') refresh(); }; document.startViewTransition ? document.startViewTransition(f) : f(); },
+  retry() { S.view = 'loading'; applyState(); setTimeout(() => { S.view = 'filled'; applyState(); toast('已重新加载'); }, 900); },
+  clear() { Object.assign(S, { q: '', status: 'all', handler: 'all', scope: 'all' }); render(); },
+  export: exportCsv, new: openNew, create: createDoc, close: closeAll,
+  batch(id) { go('inventory-flows'); setFV('flw', 'all'); S.q = id; S.pg = 1; render(); },
+  emp(id) { const e = EMP.find(x => x.id === id); e.on = e.on ? 0 : 1; audit('employee.' + (e.on ? 'enable' : 'disable'), e.name); refresh(); toast(e.on ? `${e.name} 已恢复` : `${e.name} 已停用，权限同步断开`); },
+  /* 盘点：新建 / 编辑 / 删除 / 批准 / 驳回 */
+  'stk-new'() { if (!R().approve) { toast('需要 stocktake.create 权限', 1); return; } openStk(null); },
+  'stk-edit'(id) { const s = STK.find(x => x.id === id); if (!s) return; if (s.status !== 'warn') { toast('只有待审批的盘点单可以编辑', 1); return; } openStk(id); },
+  'stk-save'(id) { saveStk(id || null); },
+  'stk-del'(id) { const s = STK.find(x => x.id === id); if (!s) return; if (s.status !== 'warn') { toast('只有待审批的盘点单可以删除', 1); return; } delStk(id); },
+  'stk-ok'(id) {
+    const x = STK.find(s => s.id === id); if (!x) return;
+    if (!R().approve) { toast('需要 stocktake.approve 权限', 1); return; }
+    x.status = 'ok';
+    const rid = revId('I');
+    REV.unshift({ id: rid, kind: 'I', way: '追加流水', batch: '—', qty: x.up !== '0' ? x.up : x.down, status: 'ok', label: '已完成', src: x.id });
+    audit('stocktake.approve', x.id); refresh(); toast(`${x.id} 已批准，已追加冲正 ${rid}`);
+  },
+  'stk-no'(id) { const x = STK.find(s => s.id === id); if (!x) return; if (!R().approve) { toast('需要 stocktake.approve 权限', 1); return; } x.status = 'bad'; audit('stocktake.reject', x.id); refresh(); toast(`${x.id} 已驳回`); },
+  /* 密钥 */
+  'key-new': openKey, 'key-create': createKey,
+  'key-revoke'(id) { if (!R().approve) { toast('需要 apikey.update 权限', 1); return; } revokeKey(id); },
+  'key-enable'(id) { if (!R().approve) { toast('需要 apikey.create 权限', 1); return; } reissueKey(id); },
+  /* 加工厂报价 */
+  'quote-new'(id) { if (!R().approve) { toast('需要 processor.create 权限', 1); return; } openQuote(id); },
+  'quote-save'(id) { saveQuote(id); },
+  /* 主数据 / 单据跳转 */
+  master(id) { const i = id.indexOf('|'); openMaster(id.slice(0, i), id.slice(i + 1)); },
+  jump(id) {
+    const pg = Object.keys(ORD).find(p => ORD[p].some(o => o.id === id));
+    if (pg) { go(pg); openDoc(pg, id); } else toast('来源单据为冲正 / 盘点，请在对应页面查看');
+  },
+  'flow-export'() { audit('inventory.export', '库存流水'); toast(`已导出 ${FLOWS.length} 条流水（CSV，演示）`); },
+  'log-export'() { audit('audit.export', '操作日志'); toast(`已导出 ${AUDIT.length} 条日志（CSV，演示）`); },
+  reset() {
+    if (S.arm !== 'reset') { S.arm = 'reset'; refresh(); setTimeout(() => { if (S.arm === 'reset') { S.arm = null; if (S.page === 'settings') refresh(); } }, 3000); return; }
+    S.arm = null; P = Object.assign({}, DEF); save(); applyPrefs(); refresh(); toast('已恢复默认设置');
+  },
+  reload() { location.reload(); },
+  print() { printSheet(); },
+  'enter-open': () => showEnter(true),
+  'enter-back': () => { showEnter(false); showLogin(true); },
+  'lg-fail': () => { lgSet('error', '服务暂时不可用（HTTP 503），已保留你输入的内容。'); lgToast('登录失败：服务暂不可用', 1); },
+  logout() { try { history.replaceState(null,'','#'); } catch(e){} location.hash=''; showLogin(true); }
+};
+
+/* ===== 登录页 / 入企页逻辑（演示口径，不接真实后端） ===== */
+let LG_STATE = 'idle';
+function lgSet(state, msg) {
+  LG_STATE = state;
+  const f = $('#lgForm'); if (!f) return;
+  f.dataset.state = state;
+  if (msg && $('#lgAlert')) $('#lgAlert').textContent = msg;
+  const b = $('#lgSubmit');
+  if (b) {
+    b.disabled = state === 'loading';
+    b.innerHTML = state === 'loading' ? `<svg class="ic spin"><use href="#i-refresh"/></svg>登录中…` : '登 录';
+  }
+}
+function showLogin(on) {
+  const lg = $('#lgWrap'), app = $('#app'), ent = $('#entWrap');
+  lg.style.display = on ? 'grid' : 'none';
+  if (ent) ent.style.display = 'none';
+  app.style.display = on ? 'none' : 'grid';
+  if (on) setTimeout(() => { const f = $('#lgPhone'); if (f) f.focus(); }, 60);
+  else render(true);
+}
+function showEnter(on) {
+  const lg = $('#lgWrap'), app = $('#app'), ent = $('#entWrap');
+  if (ent) ent.style.display = on ? 'grid' : 'none';
+  lg.style.display = 'none';
+  app.style.display = on ? 'none' : 'grid';
+  if (on) setTimeout(() => { const f = $('#entCode'); if (f) f.focus(); }, 60);
+  else render(true);
+}
+function lgToast(msg) { toast(msg); }
+$('#lgForm').addEventListener('submit', e => {
+  e.preventDefault();
+  if (LG_STATE === 'loading') return;
+  const phone = $('#lgPhone').value.trim(), code = $('#lgCode').value.trim();
+  if (!/^\d{11}$/.test(phone)) { $('#lgPhone').classList.add('err'); lgSet('error', '手机号应为 11 位数字。'); return; }
+  if (!/^\d{6}$/.test(code)) { $('#lgCode').classList.add('err'); lgSet('error', '验证码应为 6 位数字。'); return; }
+  $('#lgPhone').classList.remove('err'); $('#lgCode').classList.remove('err');
+  lgSet('loading');
+  setTimeout(() => { lgSet('idle'); showLogin(false); lgToast('已进入（演示环境）'); }, 850);
+});
+$('#lgPhone').addEventListener('input', () => { $('#lgPhone').classList.remove('err'); if (LG_STATE === 'error') lgSet('idle'); });
+$('#lgCode').addEventListener('input', () => { $('#lgCode').classList.remove('err'); if (LG_STATE === 'error') lgSet('idle'); });
+$('#lgSend').addEventListener('click', e => {
+  const b = e.currentTarget; let n = 60;
+  b.disabled = true; b.textContent = n + ' 秒后重发';
+  lgToast('验证码已发送（演示：任意 6 位数字）');
+  const iv = setInterval(() => { n--; if (n <= 0) { clearInterval(iv); b.disabled = false; b.textContent = '获取验证码'; } else b.textContent = n + ' 秒后重发'; }, 1000);
+});
+/* 入企：邀请码流程（失效 / 已加入 / 成功三态） */
+function entSet(state, msg) {
+  const f = $('#entForm'); if (!f) return;
+  f.dataset.state = state;
+  if (msg && $('#entAlert')) $('#entAlert').textContent = msg;
+  const b = $('#entSubmit');
+  if (b) {
+    b.disabled = state === 'loading';
+    b.innerHTML = state === 'loading' ? `<svg class="ic spin"><use href="#i-refresh"/></svg>校验邀请码…` : '加入企业';
+  }
+}
+$('#entForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const code = ($('#entCode').value || '').trim().toUpperCase();
+  const b = $('#entSubmit');
+  if (!code) { entSet('invalid', '请先输入邀请码。'); $('#entCode').classList.add('err'); return; }
+  $('#entCode').classList.remove('err');
+  entSet('loading');
+  setTimeout(() => {
+    if (code === 'JOINED') { entSet('joined', '你已经在这家公司了，直接登录即可。'); return; }
+    if (code === 'INVALID' || code.length < 5) { entSet('invalid', `邀请码「${code}」无效或已过期，请联系公司管理员重发。`); return; }
+    entSet('idle');
+    showLogin(true);
+    lgSet('idle', '邀请码已通过，用手机号登录即可进入公司。');
+    lgToast(`已加入 ${$('#entCo') ? $('#entCo').textContent : '企业'}`);
+  }, 700);
+});
+$('#entCode').addEventListener('input', () => { $('#entCode').classList.remove('err'); const f = $('#entForm'); if (f && f.dataset.state !== 'joined') entSet('idle'); });
+
+/* ===== 登录页：磁吸星点跟随鼠标（方案 B） ===== */
+(function(){
+  var brand=document.querySelector('#lgWrap .lg-brand'); if(!brand) return;
+  var fx=document.getElementById('lgFx');
+  var lastX=32,lastY=42,prevX=32,prevY=42,leaveTimer=null,raf=null;
+  function setPos(x,y){brand.style.setProperty('--mx',x+'%');brand.style.setProperty('--my',y+'%');}
+  brand.addEventListener('mousemove',function(e){
+    var r=brand.getBoundingClientRect();
+    prevX=lastX;prevY=lastY;
+    lastX=(e.clientX-r.left)/r.width*100; lastY=(e.clientY-r.top)/r.height*100;
+    setPos(lastX,lastY);
+    if(leaveTimer){clearTimeout(leaveTimer);leaveTimer=null;}
+    if(raf){cancelAnimationFrame(raf);raf=null;}
+    if(fx){fx.classList.remove('leaving');fx.classList.add('on');}
+  });
+  brand.addEventListener('mouseleave',function(){
+    if(!fx||!fx.classList.contains('on')) return;
+    fx.classList.add('leaving');                /* 保持可见，开始渐隐 */
+    var dx=lastX-prevX, dy=lastY-prevY;
+    if(Math.abs(dx)<0.2&&Math.abs(dy)<0.2){ dx=lastX-50; dy=lastY-50; }
+    var len=Math.sqrt(dx*dx+dy*dy)||1;
+    dx=dx/len*9; dy=dy/len*9;                  /* 朝离开方向滑出约 9% */
+    var sx=lastX, sy=lastY, t0=performance.now(), DUR=500;
+    (function step(now){
+      var k=Math.min(1,(now-t0)/DUR), e=1-Math.pow(1-k,3);
+      setPos(sx+dx*e, sy+dy*e);                 /* 焦点跟着滑走，不是定格 */
+      if(k<1) raf=requestAnimationFrame(step);
+      else { fx.classList.remove('on','leaving'); setPos(32,42); raf=null; }
+    })(t0);
+  });
+})();
+
+/* ===== 打印客户联：用当前单据数据生成 A4 客户联 ===== */
+function printSheet(){
+  if(!S.open) return;
+  const [pg,id]=S.open, m=DOC[pg], o=find(pg,id); if(!o) return;
+  const moneyTxt = R().viewPrice ? money(o.amount) : '—';
+  const ls = docLines(o);
+  const rowsHtml = [
+    ['单据信息', o.id], [m.partner, esc(o.partner)], [m.item, esc(o.item)],
+    ['数量', esc(o.qty)], [m.amt, moneyTxt], ['状态', stLabel(pg, o.status)], ['负责人', who(o.handler)], ['日期', o.date]
+  ].map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('');
+  $('#printSheet').innerHTML =
+    '<div class="print-head"><div class="brand">轻 单</div><div class="en">QINGDAN · CUSTOMER COPY</div><div class="line"></div>'+
+    '<div class="meta"><span>客户联 · '+m.name+'</span><span>单号 '+o.id+'</span><span>打印日期 '+new Date().toISOString().slice(0,10)+'</span></div></div>'+
+    '<h2>'+m.name+' '+o.id+'</h2><dl>'+rowsHtml+'</dl>'+
+    '<table><thead><tr><th>商品 / 事项</th><th>规格</th><th>数量</th><th class="r">金额</th></tr></thead><tbody>'+
+    ls.map(l=>'<tr><td>'+esc(l.name)+'</td><td>'+esc(l.spec)+'</td><td>'+esc(l.qty)+'</td><td class="r">'+money(l.amount)+'</td></tr>').join('')+
+    '</tbody></table>'+
+    '<div class="pfoot">合计：'+moneyTxt+'（共 '+ls.length+' 行）</div>'+
+    '<div class="print-sign"><span>仓管签字：______________</span><span>客户签字：______________</span><span>日期：____年__月__日</span></div>';
+  window.print();
+}
+['ship', 'unship', 'done', 'pass', 'settle', 'cancel', 'reverse'].forEach(a => { ACT[a] = () => doAct(a); });
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-pick],[data-pop],[data-pi],[data-grp],[data-go],[data-open],[data-sort],[data-status],[data-scope],[data-set],[data-act],[data-page],[data-fkey],[data-period],[data-cell],[data-copy],[data-master],[data-mxact]');
+  if (!t) { if (popEl && !e.target.closest('.pop')) closePop(); if (e.target.id === 'mask') closeAll(); return; }
+  const d = t.dataset;
+  if (d.pick) { const i = d.pick.indexOf('|'); return pick(d.pick.slice(0, i), d.pick.slice(i + 1)); }
+  if (d.pop) return openPop(d.pop, t);
+  closePop();
+  if (d.pi) return runPal(+d.pi);
+  if (d.page) { S.pg = Math.max(1, +d.page || 1); return refresh(); }
+  if (d.fkey) { const i = d.fkey.indexOf('|'); setFV(d.fkey.slice(0, i), d.fkey.slice(i + 1)); return refresh(); }
+  if (d.period) { S.f.prd = d.period; S.pg = 1; return refresh(); }
+  if (d.mxact) { MXACT = d.mxact; return refresh(); }
+  if (d.cell) { toggleCell(d.cell); return; }
+  if (d.copy) { copyText(d.copy); return; }
+  if (d.master) return ACT.master(d.master);
+  if (d.grp) { S.grp = S.grp === +d.grp ? null : +d.grp; return syncNav(true); }
+  if (d.go) return go(d.go);
+  if (d.open) { const [pg, id] = d.open.split('|'); return openDoc(pg, id); }
+  if (d.sort) { S.sort = { k: d.sort, d: S.sort.k === d.sort ? -S.sort.d : 1 }; return refresh(); }
+  if (d.status) { S.status = d.status; return refresh(); }
+  if (d.scope) { S.scope = d.scope; S.handler = 'all'; return refresh(); }
+  if (d.set) { const [k, v] = d.set.split('|'); P[k] = k === 'fs' ? +v : k === 'collapsed' ? v === 'true' : v; save(); applyPrefs(); return refresh(); }
+  if (d.act && ACT[d.act]) ACT[d.act](d.id);
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'q') { S.q = e.target.value; S.pg = 1; $('#tbl').innerHTML = tblHTML(); }
+  if (e.target.id === 'palIn') { S.pi = 0; renderPal(); }
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'handlerSel') { S.handler = e.target.value; S.pg = 1; refresh(); }
+  if (e.target.id === 'perSel') { S.per = +e.target.value || 10; S.pg = 1; refresh(); }
+  if (e.target.id === 'stkWh' || e.target.id === 'keyScope') { /* 表单内部，无需刷新 */ }
+});
+$('#palList').addEventListener('mousemove', e => { const b = e.target.closest('[data-pi]'); if (b && +b.dataset.pi !== S.pi) { $$('#palList .on').forEach(x => x.classList.remove('on')); S.pi = +b.dataset.pi; b.classList.add('on'); } });
+document.addEventListener('keydown', e => {
+  const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return S.pal ? closeAll() : openPal(); }
+  if (e.key === 'Escape') { if (popEl) return closePop(); if (typing && e.target.id === 'q' && S.q) { S.q = ''; e.target.value = ''; $('#tbl').innerHTML = tblHTML(); return; } return closeAll(); }
+  if (S.pal) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const n = palData.length; if (n) { S.pi = (S.pi + (e.key === 'ArrowDown' ? 1 : n - 1)) % n; renderPal(); } }
+    if (e.key === 'Enter') { e.preventDefault(); runPal(S.pi); }
+    return;
+  }
+  if (S.modal) { if (e.key === 'Enter' && typing) { e.preventDefault(); createDoc(); } return; }
+  if (e.key === 'Enter' && e.target.matches && e.target.matches('tr[tabindex], a[data-go]')) { e.preventDefault(); return e.target.click(); }
+  if (typing) return;
+  if (e.key === '/') { e.preventDefault(); const q = $('#q'); q ? q.focus() : openPal(); }
+  if (e.key === '[') ACT.collapse();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (P.theme === 'system') applyPrefs(); });
+window.addEventListener('hashchange', () => { const id = location.hash.slice(1); if (id && id !== S.page && PG[id]) go(id); });
+
+MQ.addEventListener('change', () => { applyPrefs(); syncNav(false); });
+window.addEventListener('resize', () => syncNav(false));
+
+buildNav();
+applyPrefs();
+try {
+  const v = new URLSearchParams(location.search).get('view');
+  if (v === 'login') showLogin(true);
+  else if (v === 'enter') showEnter(true);
+  else if (v === 'login-error') { showLogin(true); lgSet('error', '服务暂时不可用（HTTP 503），已保留你输入的内容。'); }
+} catch(e) {}
+S.page = PG[location.hash.slice(1)] ? location.hash.slice(1) : 'workbench';
+S.grp = grpOf(S.page) > 0 ? grpOf(S.page) : null;
+render(true);
+</script>
+</body>
+</html>
