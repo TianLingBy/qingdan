@@ -1,6 +1,6 @@
-# apps/web/src/styles —— 两套设计令牌并存说明
+# apps/web/src/styles —— 三套样式并存的过渡期说明
 
-这份目录在 2026-11-17 之后同时装着两套样式：老的 v0.8 与新的 v0.13。**这是过渡期的临时状态，不是长期设计。**
+这份目录在 2026-11-24 之后同时装着三套样式：老的 v0.8、过渡的 v0.13、以及 v3.0 底座。**这是过渡期的临时状态，不是长期设计。**
 
 ## 文件清单
 
@@ -9,6 +9,7 @@
 | `tokens.css`（6.9KB） | v0.8 设计稿，2026-11-08 落地 | 现有全部页面。变量名 `--qd-*` / `--color-*` / `--radius-*` / `--text-*` / `--ease-*` |
 | `tokens-v013.css`（5.7KB） | `design/v0.13/tokens.css` | 重做中的 23 页。变量名 `--bg-*` / `--text-*` / `--r-*` / `--fs-*` / `--ease-*` |
 | `app-v013.css`（42KB，584 行） | `design/v0.13/app.css` | 同上。221 个组件类，如 `.panel` `.table` `.btn` `.badge` `.pager` |
+| `app-v30.css`（约 20KB） | `design/v3.0/index.html` 的 `<style>` 段（#443） | 五批 v3.0 页面改造共用的底座。只含下面 §v3.0 底座 列的那几组 |
 
 两套令牌的**变量名零交集**（已用脚本核过：v0.8 有 72 个、v0.13 有 71 个，互相不覆盖），所以可以同时 `@import` 进 `index.css`，老页面继续吃 v0.8，新页面吃 v0.13。
 
@@ -19,7 +20,70 @@
 @import "./styles/tokens.css";        /* v0.8，老页面 */
 @import "./styles/tokens-v013.css";   /* v0.13，新页面 */
 @import "./styles/app-v013.css";      /* v0.13，新页面 */
+@import "./styles/app-v30.css";       /* v3.0 底座，必须排最后 */
 ```
+
+## v3.0 底座（2026-11-24，`#443` 第 0 步）
+
+五批页面改造（#431–#435）的共同前置。**这一节写给下一批人看，不用读 CSS 也能上手。**
+
+### 新增了什么
+
+| 类 / 变量 | 用途 | 谁会用 |
+|---|---|---|
+| `.list-card` | 列表卡容器。非 `data-state="filled"` 时自动收起页脚分页 | 五批的列表页（单据 5 页、库存 3 页、主数据 4 页、操作日志、公司管理） |
+| `.tf` | 列表卡页脚条：左「共 N 条 · 合计」，右分页 | 同上 |
+| `.tf .pager` | 页脚内分页右对齐 | 同上 |
+| `.pager button.on` / `.per` / `.dots` / `svg` | v3.0 分页的选中页、每页条数、省略号、箭头尺寸 | 同上 |
+| `.tw` / `.tw.tight` | 表格横向滚动容器 / 紧凑列内边距 | 列多的单据表 |
+| `.lg-*` | 登录页整套：`lg-wrap` `lg-brand` `lg-mark` `lg-slogan` `lg-sub` `lg-foot` `lg-formpane` `lg-form` `lg-hint` `lg-field` `lg-code` `lg-row` `lg-submit` `lg-alert` `lg-alt` `lg-mock` `lg-ver` `lg-theme` | #435 登录页 |
+| `.ent-*` / `.lg-ok` | 入企页：`ent-wrap` `ent-brand` `ent-pane` `ent-card` `ent-co` + 成功条 | #435 入企页 |
+| `--v30-*` | 变量桥接，见下 | 上述类内部用 |
+
+### 变量怎么用
+
+`app-v30.css` 不定义新的配色，只做「v3.0 名字 → v0.13 令牌」的映射，暗色/亮色自动跟随：
+
+```css
+--v30-bg: var(--bg-0);
+--v30-surface: var(--bg-2);        /* 卡片底 */
+--v30-surface-2: var(--surf-2);
+--v30-line: var(--line-1);  --v30-line-2: var(--line-2);
+--v30-ink: var(--text-1);   --v30-ink-2: var(--text-2);   --v30-ink-3: var(--text-3);
+--v30-accent: var(--accent-light);        /* 描边 / 文字强调 */
+--v30-accent-solid: var(--accent-deep);   /* 实心按钮底，配 --v30-on-accent */
+--v30-bad: var(--danger-on-surface);
+--v30-ok: var(--ok);
+--v30-warn: #e0a233 / #7a5a0e;            /* tokens-v013 没有 warn，新增；亮暗各一值 */
+```
+
+**写新页面时用 `var(--v30-*)` 或 `var(--text-1)` 都行，别写死颜色。**
+
+### 图标怎么用
+
+```tsx
+import { Icon } from '@/components/icons/Icon';
+
+<Icon name="pencil" />                        // 18px，跟随 currentColor
+<Icon name="refresh" size={14} className="spin" />
+<button aria-label="删除"><Icon name="trash" /></button>
+```
+
+- 名字全集是 `IconName` 联合类型，编辑器会补全；`ICON_NAMES` 可做数量断言。
+- **当前 23 枚**：`pg-first` `pg-prev` `pg-next` `pg-last` `clock` `trend` `trash` `pencil` `key` `shield` `refresh` `calendar` `filter` `arrow-in` `arrow-out` `adjust` `ticket` `check` `undo` `copy` `star` `pin` `split`。
+- issue 标题写「24 枚」，但对照稿 §五 表格只有 23 行带 path；第 24 枚（候选 `search`）在 **#445** 待拍板。补一枚只需往 `ICONS` 加一行，调用方不用改。
+- 不引图标库、不内联手写 `<path>`——这一条是 #443 的硬边界。
+
+### 没有搬什么（以及为什么）
+
+| 没搬 | 原因 |
+|---|---|
+| 外壳布局 `.app` `.sb` `.nav` `.top` `.page` `.ph` `.acts` | repo 已有 `shell` / `sidebar` / `main` / `topbar` / `wrap` / `p-head`，五批页面沿用后者，两套并存会打架 |
+| `.card` `.btn` `.chip` `.kpi` `.pager` 本体 | `app-v013.css` 已定义，只在缺子元素时补 |
+| 四态 `.st-block/.st-tr/.st-ico/.st-title/.st-desc/.st-actions` | `app-v013.css:38–70` 是权威版本。**稿子的 `.st-ico` 是 54px、repo 是 96px**，同名同权重，两套并存会被后加载的覆盖 |
+| `.state` / `.ico`（稿子面板空态） | 同上，用 repo 的 `.st-box` + `.st-ico` |
+| 全局 reset 与米白色板 `#f5f4f0` / 朱砂 `#dc4a26` | 会砸现有页面；按 #443「颜色以 tokens-v013 为准」，只用映射后的变量 |
+| `@media print` 打印客户联 | 属第一批单据页（#431），单独提 |
 
 ## 与设计稿原文件的两处差异（别改回去）
 
