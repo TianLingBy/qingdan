@@ -73,6 +73,11 @@
 4. **绝不按职位判权**（不写 `role === 'finance'`、`isManager`、`isAdmin`）。只有 scope。
 5. **cap 名字一律以 `packages/contracts/src/domains.ts` 为准**（24 域 × **11** 动作：`read` `read_all` `create` `update` `approve` `ship` `delete` `merge` `view_price` `view_handler` `export`）。设计稿里沿用的早期写法（`purchase_order.ship`、`apikey.create`、`reversal.create`、`inventory.adjust`…）**一律改成契约真名**（`purchase.ship`、`api_integration.create`、`customer_return.create`、`inventory_qty.update`…）。逐条对照表见 `design/v3.0/后端对齐清单.md` §二。
 6. **没看价权限时后端根本不返回 `totalAmount` 键**，界面显示占位「—」，不许用 `0` 顶替。
+7. **工作台版式：完全照 v3.0 稿子做，不保留入口卡片区**（2026-11-24 负责人拍板，替代 2026-11-20 的「入口卡片矩阵」写法）：
+   - 版式照 `design/v3.0/index.html` 的 `PG.workbench` 五块：顶部 KPI 区（4 张卡）→ 待办事项 → 主业务链路（A→B→E→C 直达）→ 近 6 个月毛利趋势 → 最近动态（审计日志前 5 条）。
+   - **KPI 与链路卡片一律按权限「整块不渲染」，不留「—」「已脱敏」这类占位**：无 `sales.read` 不显示「本月销售总额」「在途/待签收」；**无 `view_price` 时销售额卡整块不显示**（不是显示脱敏文案）；无 `inventory_qty.read` 不显示「可用库存」；无 `profit_report.read` 不显示「综合毛利率」与趋势图；无 `audit_log.read` 不显示「最近动态」。四张 KPI 全无权限时，该行整个 `<div class="kpis">` 不渲染。
+   - 待办走真接口 `GET /api/v1/todos`（`workbench.todos.read`），空态照稿子「全部处理完了」走 `data-state="empty"`。
+   - 老 `apps/web/src/pages/workbench/WorkbenchPage.tsx` 的入口卡片区（`servedEntries()` 渲染那块）在本页删除；`apps/web/src/lib/access.ts` 的 `servedEntries()` 保留（其他地方仍可用），但工作台不再调用。
 
 ## 五、能调什么接口
 
