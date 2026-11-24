@@ -18,7 +18,7 @@
    | `.tf`                       | L250/458   | 列表卡页脚条（左「共 N 条 · 合计」，右分页） |
    | `.pager` 子元素补充          | L450–457   | `button.on` / `.per` / `.dots` / svg 尺寸（父级 `.pager` 复用 v0.13，不重写） |
    | `.tw` / `.tw.tight`         | L233/529   | 表格横向滚动容器（v0.13 靠 Tailwind 的 overflow-x-auto，v3.0 用它） |
-   | `.lg-*`                     | L381–421   | 登录页整套（5:5 左品牌右表单、`data-state` 三态、`.lg-alert`） |
+   | `.lg-*`（产品部分）          | L381–421   | 登录页：左品牌右表单、`.lg-field` / `.lg-code` / `.lg-submit` / `data-state` 三态 / `.lg-alert` |
    | `.ent-*` / `.lg-ok`         | L506–515   | 入企页（joined / invalid） |
    | `@keyframes lgDotPulse/spin` | L394/496  | 上面两组用到的动效 |
 
@@ -35,6 +35,10 @@
    - **`.state` / `.ico`**（稿子 L251–255 的面板空态）→ 同上，用 repo 的 `.st-box` + `.st-ico`。
    - **全局 reset 与 `:root` 原始米白色板**（稿子 L17–45）→ 会把现有页面砸掉，见 README §2。
    - **`@media print` 打印客户联**（稿子 L423–447）→ 属第一批单据页，单独提。
+   - **原型演示外壳**（与 `.phone` / `.stage` 同类，本版稿子里已无 `.phone`/`.stage`，
+     但登录页仍留了三样）：`.lg-ver`（右下角「Qingdan · 新 UI v3.0」版本水印）、
+     `.lg-theme`（右上角主题切换浮钮）、`.lg-mock`（「模拟一次登录失败」+ 演示口令
+     提示那两行）。这三样只服务设计稿自身的演示，**不是产品样式**，产品页面里不会出现。
 
    ------------------------------------------------------------------
    三、与 tokens-v013 的差异（#443 要求列清）
@@ -47,7 +51,7 @@
    | `--ink / --ink-2 / --ink-3` | `--text-1 / --text-2 / --text-3` | 桥接 |
    | `--line / --line-2` | `--line-1 / --line-2` | 桥接 |
    | `--bad / --ok` | `--danger-on-surface` / `--ok` | 桥接 |
-   | `--warn #b87407` | **无对应** | 新增 `--v30-warn`（暗 `#E0A233` / 亮 `#7A5A0E`，取稿子 dark/light 两值） |
+   | `--warn #b87407` | **无对应** | 暂不引入：本文件搬过来的类没有一处用到 warn，`tokens-v013` 也没有对应令牌，留到真需要时再走 `--v30-` 前缀新增 |
    | `--r 12px` | `--r-card 12px` | 一致，直接用 `--r-card` |
    | `color-mix(... , var(--accent) 14%, transparent)` | `--a-10 ~ --a-32` 一组 | 换成 `--a-*`（Edge 111 对 color-mix 恰在边界，用变量更稳） |
 
@@ -75,15 +79,10 @@
   --v30-on-accent: var(--on-accent);
   --v30-bad: var(--danger-on-surface);
   --v30-ok: var(--ok);
-  /* tokens-v013 没有 warn，按 #443「新变量走 --v30- 前缀」新增，取稿子两套主题各自的值 */
-  --v30-warn: #e0a233;
   --v30-r: var(--r-card);
   --v30-shadow: var(--sh-1);
   --v30-shadow-lg: var(--sh-2);
   --v30-ease: var(--ease-out);
-}
-html[data-mode="light"] {
-  --v30-warn: #7a5a0e;
 }
 
 /* ============================================================
@@ -139,11 +138,14 @@ html[data-mode="light"] {
   border-color: var(--v30-accent-solid);
   color: var(--v30-on-accent);
 }
-/* 补 v0.13 的一个缺口：`app-v013.css:400` 的 `.pager button` 没写 background，
-   而 index.css 有意删掉了全局 `button{background:none}`（README §2），
-   于是暗色模式下页码按钮落到浏览器默认的浅色底 → 白底白字看不见。
-   这里只补透明的底与禁用态，尺寸 / 圆角 / 字号仍由 v0.13 决定。 */
-.pager button {
+/* 页脚分页的按钮底。
+   注意这里写的是 `.tf .pager button`（v3.0 新引入的页脚上下文，app-v013 里没有
+   这个复合选择器），**不是**覆盖 `app-v013.css:400` 的 `.pager button` —— 按 #443
+   「已有的类不重复定义」，v0.13 的分页按钮本体一个字节都不动。
+   为什么要这一条：`app-v013.css:400` 没写 background，而 index.css 有意删掉了全局
+   `button{background:none}`（README §2），暗色下按钮会落到浏览器默认浅底 → 白底白字。
+   老的 `.pager` 那处缺口不属本单，已在 #443 评论里报给负责人单独修。 */
+.tf .pager button {
   background: transparent;
   cursor: pointer;
 }
@@ -414,20 +416,8 @@ html[data-mode="light"] {
   width: 16px;
   height: 16px;
 }
-.lg-ver {
-  position: fixed;
-  right: 18px;
-  bottom: 16px;
-  color: var(--v30-ink-3);
-  font: 500 11px var(--mono);
-}
-.lg-theme {
-  position: fixed;
-  right: 18px;
-  top: 16px;
-  display: flex;
-  gap: 6px;
-}
+/* 稿子 L417–420 的 `.lg-ver`（版本水印）与 `.lg-theme`（主题切换浮钮）是演示外壳，
+   按 #443 不搬，见文件头「二、没有搬什么」最后一条。 */
 
 /* 错误告警条：常驻 DOM，`.lg-form[data-state="error"]` 才显形（稿子 L488–492） */
 .lg-alert {
@@ -476,33 +466,6 @@ html[data-mode="light"] {
 .lg-alt svg {
   width: 14px;
   height: 14px;
-}
-.lg-mock {
-  margin: 10px 0 0;
-  font-size: 11.5px;
-  color: var(--v30-ink-3);
-  display: block;
-  line-height: 2;
-}
-.lg-mock svg {
-  width: 12px;
-  height: 12px;
-  vertical-align: -2px;
-  margin-right: 4px;
-}
-.lg-mock button {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--v30-accent);
-  border-bottom: 1px dashed var(--a-35);
-}
-.lg-mock button:hover {
-  border-bottom-style: solid;
-}
-.lg-mock b {
-  color: var(--v30-ink-2);
-  font-family: var(--mono);
-  font-weight: 600;
 }
 /* 成功条（入企页「已加入」用） */
 .lg-ok {

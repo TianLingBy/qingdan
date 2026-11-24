@@ -36,7 +36,7 @@
 | `.tf .pager` | 页脚内分页右对齐 | 同上 |
 | `.pager button.on` / `.per` / `.dots` / `svg` | v3.0 分页的选中页、每页条数、省略号、箭头尺寸 | 同上 |
 | `.tw` / `.tw.tight` | 表格横向滚动容器 / 紧凑列内边距 | 列多的单据表 |
-| `.lg-*` | 登录页整套：`lg-wrap` `lg-brand` `lg-mark` `lg-slogan` `lg-sub` `lg-foot` `lg-formpane` `lg-form` `lg-hint` `lg-field` `lg-code` `lg-row` `lg-submit` `lg-alert` `lg-alt` `lg-mock` `lg-ver` `lg-theme` | #435 登录页 |
+| `.lg-*` | 登录页整套：`lg-wrap` `lg-brand` `lg-mark` `lg-slogan` `lg-sub` `lg-foot` `lg-formpane` `lg-form` `lg-hint` `lg-field` `lg-code` `lg-row` `lg-submit` `lg-alert` `lg-alt` | #435 登录页 |
 | `.ent-*` / `.lg-ok` | 入企页：`ent-wrap` `ent-brand` `ent-pane` `ent-card` `ent-co` + 成功条 | #435 入企页 |
 | `--v30-*` | 变量桥接，见下 | 上述类内部用 |
 
@@ -54,7 +54,6 @@
 --v30-accent-solid: var(--accent-deep);   /* 实心按钮底，配 --v30-on-accent */
 --v30-bad: var(--danger-on-surface);
 --v30-ok: var(--ok);
---v30-warn: #e0a233 / #7a5a0e;            /* tokens-v013 没有 warn，新增；亮暗各一值 */
 ```
 
 **写新页面时用 `var(--v30-*)` 或 `var(--text-1)` 都行，别写死颜色。**
@@ -84,6 +83,19 @@ import { Icon } from '@/components/icons/Icon';
 | `.state` / `.ico`（稿子面板空态） | 同上，用 repo 的 `.st-box` + `.st-ico` |
 | 全局 reset 与米白色板 `#f5f4f0` / 朱砂 `#dc4a26` | 会砸现有页面；按 #443「颜色以 tokens-v013 为准」，只用映射后的变量 |
 | `@media print` 打印客户联 | 属第一批单据页（#431），单独提 |
+| 原型演示外壳 `lg-ver` `lg-theme` `lg-mock` | 与 `.phone` / `.stage` 同类：版本水印、「切换亮暗」浮钮、「模拟登录失败 / 演示口令」提示。只服务设计稿自身演示，产品页面不会出现 |
+
+### 五批页面怎么接这个底座
+
+| 批次 | 接哪几样 | 别做 |
+|---|---|---|
+| 第一批 #431（单据 5 + 冲正） | `.list-card` + `.tw` + `.tf` 页脚分页、`.tf .pager` 子元素、`Icon` | 别自己写分页控件；别把 `.st-*` 在这层重定义 |
+| 第二批 #432（主数据 4 + 员工） | 同上（列表形态完全一致） | 同上 |
+| 第三批 #433（库存 3） | `.list-card` + `.tf`；KPI 继续用 v0.13 的 `.kpis` / `.kpi` | 别用稿子的 `.state` / `.ico` |
+| 第四批 #434（设置组 6） | `.panel` + `.st-block`（面板型四态，v0.13 已有）+ `Icon` | 别改 `.panel` 本体 |
+| 第五批 #435（登录 / 入企 / 工作台） | `.lg-*`（登录）、`.ent-*` + `.lg-ok`（入企）、`.panel`（工作台） | `.lg-ver` / `.lg-theme` / `.lg-mock` 是演示外壳，不接 |
+
+接的时候先读下面「四态怎么用」两段（块级 / 表格），**四态的 DOM 结构是硬约定**，改结构就会掉进 `list-state.ts:6-11` 点名的坑。
 
 ## 与设计稿原文件的两处差异（别改回去）
 

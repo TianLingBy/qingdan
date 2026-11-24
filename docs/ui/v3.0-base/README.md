@@ -1,31 +1,54 @@
-# v3.0 底座自验现场（#443）
+# v3.0 底座验收证据（#443）
 
-这里只有三样东西：一份不依赖 React 的 demo 页 + 两张截图。**不是产品页面，不进构建。**
+这里只有两张截图，**没有页面、没有代码，不进构建**。
 
-| 文件 | 用途 |
+| 文件 | 内容 |
 |---|---|
-| `demo.html` | 把 `apps/web/src/styles/app-v30.css` 的类拼一遍：`.card` vs `.card.list-card + .tf`、23 枚图标、`.panel` 四态。双击即可在浏览器打开（CSS 用相对路径引 `apps/web/src/styles/`） |
-| `base-light.png` / `base-dark.png` | 上面那份 demo 在亮色 / 暗色下的渲染结果，PR 里引用的是这两张 |
+| `base-light.png` | 同一段「销售单列表」内容：左边现有 v0.13 写法（`.card` 直接铺），右边塞进 v3.0 的 `.panel` + `.card.list-card` + `.tf` 页脚；底部是第二条交付物 23 枚图标 |
+| `base-dark.png` | 同上，`data-mode="dark"` |
 
-## 为什么要有这个目录
+## 为什么是这两张
 
-`#443` 的验收要求附一张「把现有页面塞进 `.panel` 的肉眼对比截图」，并注明**不要真改任何页面**。
-于是做了这份只读的 demo：左半是 v0.13 现有卡片，右半换成 `.list-card + .tf` 页脚，下面接四态面板与图标总览——
-一眼能看出新底座没有把老样式砸掉（左半与 v0.13 完全一致）。
+#443 的验收要求是「附一张把某个现有页面塞进 `.panel` 的肉眼对比截图（证明底座能用；不要真改那个页面）」。所以：
 
-## 复现
+- 两侧的表格行、列、徽章**完全相同**，只多了 `.panel` 外壳与 `.tf` 页脚 —— 一眼能看出接上底座后原页面没走形；
+- 用的是 `styles/README.md` §「四态怎么用 · 表格」里的示范片段，**没有改动任何真实页面**（本 PR 的 `git diff` 里 `apps/web/src/pages/**` 为 0 字节）。
 
-直接用浏览器打开 `demo.html` 即可，不需要起 dev server。
+## 怎么自己复现
 
-亮/暗切换：把 `demo.html` 第 2 行的 `data-mode="light"` 改成 `dark`。
+不需要起 dev server，也不用往仓库提交 demo 文件：
 
-截图命令（Edge headless，本机验证用）：
-
+```html
+<!doctype html>
+<html lang="zh-CN" data-mode="light"><head><meta charset="utf-8">
+<link rel="stylesheet" href="apps/web/src/styles/tokens-v013.css">
+<link rel="stylesheet" href="apps/web/src/styles/app-v013.css">
+<link rel="stylesheet" href="apps/web/src/styles/app-v30.css">
+</head><body>
+  <!-- 左边：现有写法 -->
+  <div class="card"><table>…</table></div>
+  <!-- 右边：同一段内容塞进 .panel -->
+  <section class="panel" data-state="filled">
+    <div class="panel-h">销售单</div>
+    <div class="card list-card" data-state="filled">
+      <div class="tw"><table>…</table></div>
+      <div class="tf"><span>共 N 条 · 合计 …</span><div class="pager">…</div></div>
+    </div>
+  </section>
+</body></html>
 ```
-msedge --headless --disable-gpu --window-size=1400,1150 --virtual-time-budget=5000 --run-all-compositor-stages-before-draw --screenshot=base-light.png docs/ui/v3.0-base/demo.html
+
+把这段存成仓库根目录下的临时 `.html`（`href` 路径要对得上 `apps/web/src/styles/`），浏览器直接打开就是截图里的样子。改 `data-mode="dark"` 看暗色。
+
+截图命令（本机 Edge headless）：
+
+```powershell
+msedge --headless --disable-gpu --window-size=1480,620 `
+  --virtual-time-budget=6000 --run-all-compositor-stages-before-draw `
+  --screenshot=base-light.png <临时 html 的 file:// 路径>
 ```
 
 ## 注意
 
-- 目录里的 `demo.html` 不是五批页面的模板，别复制它写业务页——真正的写法看 `apps/web/src/styles/README.md` 的「v3.0 底座」一节。
-- 底座合并后这个目录可以留着当回归样张，也可以在五批全部落地时一并删掉，不影响任何代码。
+- 这两张图是**证据**，不是页面模板。写业务页请对着 `apps/web/src/styles/README.md` 的「v3.0 底座」与「四态怎么用」两节抄。
+- 五批全部落地后，这个目录可以整块删掉，不影响任何代码。

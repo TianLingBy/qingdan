@@ -12,7 +12,6 @@
  * （梁海俊已在 #443 注明先别按 24 写测试）。若最终取 24，把那一枚的 path 补进 `ICONS`
  * 与 `ICON_NAMES` 即可，`IconName` 会自动扩，调用方无需改。
  */
-import type { CSSProperties } from 'react';
 
 /** 图标名 → path 的 `d`。新增一枚只改这里 + `ICON_NAMES`。 */
 const ICONS = {
@@ -82,10 +81,6 @@ export interface IconProps {
   /** 边长，默认 18（稿子 `.ic` 的默认尺寸）。 */
   readonly size?: number;
   readonly className?: string;
-  readonly style?: CSSProperties;
-  /** 默认 true：图标本身不承载语义，旁边一定有文字或 aria-label。
-   *  纯图标按钮请传 `aria-label` 给按钮，并把这里保持 true。 */
-  readonly decorative?: boolean;
 }
 
 /**
@@ -95,12 +90,12 @@ export interface IconProps {
  * <Icon name="refresh" size={14} className="spin" />
  * <button aria-label="删除"><Icon name="trash" /></button>
  * ```
+ * 图标本身不承载语义（旁边一定有文字或按钮的 aria-label），所以固定 `aria-hidden`。
  */
-export function Icon({ name, size = 18, className, style, decorative = true }: IconProps) {
+export function Icon({ name, size = 18, className }: IconProps) {
   return (
     <svg
       className={className}
-      style={style}
       width={size}
       height={size}
       viewBox="0 0 24 24"
@@ -109,7 +104,7 @@ export function Icon({ name, size = 18, className, style, decorative = true }: I
       strokeWidth={1.6}
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-hidden={decorative ? true : undefined}
+      aria-hidden="true"
       focusable="false"
     >
       <path d={ICONS[name]} />
