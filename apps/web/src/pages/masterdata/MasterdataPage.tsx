@@ -12,6 +12,7 @@ import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useCompanyLabel } from '../../lib/company-directory';
 import { resolveListState } from '../../lib/list-state';
+import { ContactDrawer } from './ContactDrawer';
 import {
   extractIssues,
   formatPrice,
@@ -285,7 +286,9 @@ function EntityForm({
 
         {(kind === 'suppliers' || kind === 'processors' || kind === 'customers') && (
           <label className="text-sm">
-            <span className="text-slate-600">联系人</span>
+            <span className="text-slate-600">
+              {kind === 'customers' ? '联系人' : '主联系人'}
+            </span>
             <input
               value={form.contactName}
               onChange={(event) => onChange('contactName', event.target.value)}
@@ -326,10 +329,12 @@ function EntityForm({
               />
             </label>
             <label className="text-sm sm:col-span-2">
-              <span className="text-slate-600">供货物料（逗号分隔）</span>
+              {/* 上限来自契约 `SuppliedMaterialsSchema`：最多 20 项、每项 ≤64 字 */}
+              <span className="text-slate-600">供货物料（逗号分隔，最多 20 项）</span>
               <input
                 value={form.suppliedMaterials}
                 onChange={(event) => onChange('suppliedMaterials', event.target.value)}
+                placeholder="如 纸箱、胶带"
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
@@ -397,6 +402,10 @@ export function ProcessorQuotes({
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="font-semibold">{processor.name} · 历史加工报价</h2>
+      {/* 口径（改稿清单 §2.4）：价目只增不改，调价按生效日期新增一条，历史行不动 */}
+      <p className="mt-1 text-xs text-slate-500">
+        价目只增不改：调价请按新的生效日期新增一条，历史价目原样保留。
+      </p>
       <form
         className="mt-4 grid gap-3 sm:grid-cols-4"
         onSubmit={(event) => {
@@ -457,7 +466,7 @@ export function ProcessorQuotes({
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-200 text-xs text-slate-500">
               <tr>
-                <th className="py-2">日期</th>
+                <th className="py-2">生效日期</th>
                 <th className="py-2">工序</th>
                 <th className="py-2">单价</th>
                 <th className="py-2">备注</th>
@@ -501,6 +510,8 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   const [editing, setEditing] = useState<MasterdataItem | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [selectedProcessor, setSelectedProcessor] = useState<Processor | null>(null);
+  /** 对接人抽屉：客户 / 供应商 / 加工厂三页共用，商品页没有（契约无 product contacts）。 */
+  const [contactTarget, setContactTarget] = useState<MasterdataItem | null>(null);
 
   const me = useQuery({ queryKey: masterdataQueryKeys.me, queryFn: masterdataApi.me });
   const companyIds = me.data?.companyIds ?? [];
@@ -649,6 +660,7 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
     setForm(formFromItem(item, kind));
     setFormOpen(true);
     setSelectedProcessor(null);
+    setContactTarget(null);
   };
   const askDisable = (item: MasterdataItem) => {
     if (globalThis.confirm?.(`确认删除“${item.name}”吗？删除后不能恢复。`) === false) {
@@ -669,6 +681,17 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
     hasError: list.error !== null,
     isEmpty: rows.length === 0,
   });
+  const isProducts = kind === 'products';
+  const isSuppliers = kind === 'suppliers';
+  /**
+   * 列结构按页不同（改稿清单 §2.1 / §2.3）：
+   * - 商品：补充信息 → 别名 / 规格 / 单位 三列，另加默认售价列
+   * - 供应商：补充信息 → 供货物料 / 主联系人（含电话）两列
+   * - 加工厂 / 客户：仍是单列补充信息
+   * 编号 + 名称 + 中间列 + 操作
+   */
+  const midColCount = isProducts ? 3 : isSuppliers ? 2 : 1;
+  const colCount = 2 + midColCount + (isProducts ? 1 : 0) + 1;
 
   return (
     <section className="mx-auto max-w-7xl space-y-5">
@@ -756,20 +779,37 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
               <tr>
                 <th>编号</th>
                 <th>名称</th>
-                <th>补充信息</th>
-                {kind === 'products' && <th className="num">默认售价</th>}
+                {isProducts ? (
+                  <>
+                    <th>别名</th>
+                    <th>规格</th>
+                    <th>单位</th>
+                  </>
+                ) : isSuppliers ? (
+                  <>
+                    <th>供货物料</th>
+                    <th>主联系人</th>
+                  </>
+                ) : kind === 'processors' ? (
+                  /* 加工厂只有 contactName，无联系电话，故本列不带电话（改稿清单 §2.4） */
+                  <th>主联系人</th>
+                ) : (
+                  /* 客户：主联系人独立成列（姓名 + 电话副标），账期只在表单里维护（改稿清单 §2.2） */
+                  <th>主联系人</th>
+                )}
+                {isProducts && <th className="num">默认售价</th>}
                 <th className="text-right">操作</th>
               </tr>
             </thead>
             <tbody data-state={listState}>
               {/* 三个状态行常驻 DOM，CSS 按 data-state 只显示其中一个 */}
               <tr className="st-tr st-loading">
-                <td colSpan={kind === 'products' ? 5 : 4}>
+                <td colSpan={colCount}>
                   <ListLoading label={`正在加载${copy.title}…`} rows={4} />
                 </td>
               </tr>
               <tr className="st-tr st-error">
-                <td colSpan={kind === 'products' ? 5 : 4}>
+                <td colSpan={colCount}>
                   <ListError
                     title={`${copy.title}加载失败`}
                     error={list.error ?? null}
@@ -778,7 +818,7 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                 </td>
               </tr>
               <tr className="st-tr st-empty">
-                <td colSpan={kind === 'products' ? 5 : 4}>
+                <td colSpan={colCount}>
                   <ListEmpty title="暂无数据。可调整筛选条件或新增一条记录。" />
                 </td>
               </tr>
@@ -786,21 +826,55 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                 <tr key={item.id} className="r-row">
                   <td className="px-4 py-3 text-slate-500">{readNumber(item, kind) ?? '—'}</td>
                   <td className="px-4 py-3 font-medium">{item.name}</td>
-                  <td className="px-4 py-3 text-slate-600">{readExtra(item, kind) || '—'}</td>
-                  {kind === 'products' && (
+                  {isProducts && 'aliases' in item ? (
+                    <>
+                      <td className="px-4 py-3 text-slate-600">{item.aliases.join('、') || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.specification ?? '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.unit}</td>
+                    </>
+                  ) : isSuppliers && 'suppliedMaterials' in item ? (
+                    <>
+                      <td className="px-4 py-3 text-slate-600">
+                        {item.suppliedMaterials.join('、') || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {item.contactName ? (
+                          <>
+                            {item.contactName}
+                            {item.contactPhone && (
+                              <span className="ml-1 font-mono text-xs text-slate-400">
+                                {item.contactPhone}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                    </>
+                  ) : kind === 'customers' && 'contactPhone' in item ? (
+                    <td className="px-4 py-3 text-slate-600">
+                      {item.contactName ? (
+                        <>
+                          {item.contactName}
+                          {item.contactPhone && (
+                            <span className="ml-1 font-mono text-xs text-slate-400">
+                              {item.contactPhone}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  ) : (
+                    <td className="px-4 py-3 text-slate-600">{readExtra(item, kind) || '—'}</td>
+                  )}
+                  {isProducts && (
                     <td className="px-4 py-3">{formatPrice(readPrice(item, kind))}</td>
                   )}
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
-                      {kind === 'processors' && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedProcessor(item as Processor)}
-                          className="rounded border border-slate-300 px-2 py-1 text-xs"
-                        >
-                          报价
-                        </button>
-                      )}
                       <button
                         type="button"
                         onClick={() => beginEdit(item)}
@@ -810,6 +884,26 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                       >
                         编辑
                       </button>
+                      {kind === 'processors' && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProcessor(item as Processor)}
+                          className="rounded border border-slate-300 px-2 py-1 text-xs"
+                        >
+                          价目
+                        </button>
+                      )}
+                      {/* 对接人：客户 / 供应商 / 加工厂三页有（商品页契约里没有对接人）。
+                          读权限即可打开；写操作不在本抽屉，见 ContactDrawer 头注释。 */}
+                      {kind !== 'products' && (
+                        <button
+                          type="button"
+                          onClick={() => setContactTarget(item)}
+                          className="rounded border border-slate-300 px-2 py-1 text-xs"
+                        >
+                          对接人
+                        </button>
+                      )}
                       <button
                         type="button"
                         disabled={!canDelete || disable.isPending}
@@ -861,6 +955,15 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
         <ProcessorQuotes
           processor={selectedProcessor}
           canQuote={allows(me.data?.scope, 'processor', 'create')}
+        />
+      )}
+      {contactTarget && kind !== 'products' && (
+        <ContactDrawer
+          kind={kind}
+          entityId={contactTarget.id}
+          entityName={contactTarget.name}
+          entityLabel={copy.singular}
+          onClose={() => setContactTarget(null)}
         />
       )}
     </section>
