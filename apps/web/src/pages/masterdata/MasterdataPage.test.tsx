@@ -58,6 +58,11 @@ describe('商品资料页', () => {
     expect(html).toContain('10kg/箱');
     expect(html).toContain('无看价权限或未设置');
     expect(html).toContain('新增商品');
+    // 拆列（#338 §2.1）：别名 / 规格 / 单位 各独立一列，不再合并成「补充信息」
+    expect(html).toContain('别名');
+    expect(html).toContain('规格');
+    expect(html).toContain('单位');
+    expect(html).not.toContain('补充信息');
     // 主数据已去掉状态：不再有状态列，操作列提供「删除」而不是「停用」。
     expect(html).not.toContain('状态');
     expect(html).not.toContain('停用');
@@ -212,6 +217,13 @@ describe('商品资料页', () => {
     expect(supplierHtml).toContain('供应商档案');
     expect(supplierHtml).toContain('测试供应商');
     expect(supplierHtml).toContain('纸箱');
+    // 供应商表头拆列（改稿清单 §2.3）：供货物料、主联系人各独立成列，不再有合并的「补充信息」。
+    expect(supplierHtml).toContain('供货物料');
+    expect(supplierHtml).toContain('主联系人');
+    expect(supplierHtml).not.toContain('补充信息');
+    // 主联系人列同时带出联系电话
+    expect(supplierHtml).toContain('李经理');
+    expect(supplierHtml).toContain('10000000000');
 
     const processorClient = createQueryClient();
     processorClient.setQueryData(masterdataQueryKeys.me, me);
@@ -229,10 +241,13 @@ describe('商品资料页', () => {
     );
     expect(processorHtml).toContain('加工厂档案');
     expect(processorHtml).toContain('测试加工厂');
-    expect(processorHtml).toContain('报价');
+    // 行操作按钮文案按改稿清单 §2.4 由「报价」改为「价目」；主联系人独立成列且不显示电话。
+    expect(processorHtml).toContain('价目');
+    expect(processorHtml).toContain('主联系人');
+    expect(processorHtml).toContain('王师傅');
   });
 
-  it('客户档案页渲染联系人、电话与账期，且不出现任何金额列', () => {
+  it('客户档案页主联系人独立成列（姓名+电话），且不出现任何金额列', () => {
     const customer: Customer = {
       id: 'c1',
       tenantId: 't1',
@@ -271,8 +286,11 @@ describe('商品资料页', () => {
 
     expect(html).toContain('客户档案');
     expect(html).toContain('测试客户');
+    // 表头按改稿清单 §2.2：主联系人独立成列，姓名后带电话；不再有合并的「补充信息」列。
+    expect(html).toContain('主联系人');
     expect(html).toContain('赵老板');
-    expect(html).toContain('账期 30 天');
+    expect(html).toContain('13900000000');
+    expect(html).not.toContain('补充信息');
     expect(html).toContain('新增客户');
     // 客户没有金额口径（D49 注释），页面不得出现售价列
     expect(html).not.toContain('默认售价');
