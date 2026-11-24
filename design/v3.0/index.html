@@ -614,6 +614,7 @@ tbody > tr.st-tr > td { padding: 0; border-bottom: none; white-space: normal; he
       <div class="lg-field"><label for="entCode">企业邀请码</label><input id="entCode" placeholder="如 QD2026" autocomplete="off" spellcheck="false"></div>
       <button class="lg-submit" type="submit" id="entSubmit">加入企业</button>
       <div class="lg-alt"><button type="button" data-act="enter-back"><svg class="ic"><use href="#i-right"/></svg>返回登录</button></div>
+      <p class="note" style="margin:12px 0 0;font-size:11.5px;line-height:1.7"><svg class="ic"><use href="#i-warn"/></svg><span>后端现状：<span class="mono">/auth</span> 只有 code / login / logout / me，<b>没有「邀请码加入企业」端点</b>；本页是流程示意，落地前需后端补，或改为「管理员建号 + 员工用手机号登录」。</span></p>
       <div class="lg-mock"><svg class="ic"><use href="#i-warn"/></svg>演示：输入 <b style="margin:0 4px">QD2026</b> 加入 · 输入 <b style="margin:0 4px">INVALID</b> 看「码无效」 · 输入 <b style="margin:0 4px">JOINED</b> 看「已加入」</div>
     </form>
   </div></div>
@@ -733,10 +734,10 @@ const INFO = {};
 NAV.forEach(([g, items]) => items.forEach(([id, label]) => { INFO[id] = { label, group: g }; }));
 
 const DOC = {
-  'purchase-orders': { L: 'A', name: '采购单', partner: '供应商', item: '物料', amt: '金额', mid: '在途', ship: 'purchase.ship', done: 'purchase.update', doneLabel: '到货确认', dual: 1, exp: 1, create: 1, sub: '向供应商采购，货到入库建批次并锁定批次价（D5）。' },
+  'purchase-orders': { L: 'A', name: '采购单', partner: '供应商', item: '物料', amt: '金额', mid: '在途', ship: 'purchase.ship', done: 'purchase.approve', doneLabel: '到货确认', dual: 1, exp: 1, create: 1, sub: '向供应商采购，货到入库建批次并锁定批次价（D5）。' },
   'processing-orders': { L: 'B', name: '加工单', partner: '加工厂', item: '成品', amt: '加工费', extra: '损耗', mid: '在途', ship: 'processing.ship', done: 'processing.approve', doneLabel: '到货确认', dual: 1, create: 1, sub: '委托外部加工，料段与成品段两段在途，记损耗归属（D35）。' },
   'sales-orders': { L: 'E', name: '销售单', partner: '客户', item: '商品', amt: '金额', extra: '毛利率', mid: '已发货', ship: 'sales.ship', done: 'sales.approve', doneLabel: '签收完成', dual: 1, exp: 1, create: 1, sub: '按批次出库。发货与签收拆成两个动作（D94），签收后才认收入。' },
-  'internal-trades': { L: 'N', name: '内部交易单', partner: '对接公司', item: '商品', amt: '金额', extra: '计价', mid: '在途', ship: 'internal.ship', done: 'internal.approve', doneLabel: '签收转司', dual: 1, create: 1, sub: '兄弟公司间调拨与往来，在途批次锁定，签收后转司（D22/D31）。' },
+  'internal-trades': { L: 'N', name: '内部交易单', partner: '对接公司', item: '商品', amt: '金额', extra: '计价', mid: '在途', ship: 'internal_trade.ship', done: 'internal_trade.approve', doneLabel: '签收转司', dual: 1, create: 1, sub: '兄弟公司间调拨与往来，在途批次锁定，签收后转司（D22/D31）。' },
   settlements: { L: 'C', name: '结算单', partner: '对接单位', item: '关联单据', amt: '总售价', extra: '毛利率', done: 'settlement.approve', sub: '一单一成本收口。E / N 完成后自动生成，无需手工新建（D29）。' }
 };
 const mk = (id, partner, item, qty, amount, extra, status, handler, date, batch) =>
@@ -821,39 +822,45 @@ const FLOWS = [
   { t: '11-14 10:36', batch: 'P-2203', type: 'out', d: '−180 桶', amt: 15840, src: 'N-2611-003', by: '王倩' }
 ];
 const STK = [
-  { id: 'I-2611-01', wh: '上海一号仓', up: '+4 箱', down: '0', status: 'warn', note: '咖啡豆袋破损，称重补差', by: '李明' },
-  { id: 'I-2611-02', wh: '苏州冷链仓', up: '0', down: '−2 盒', status: 'ok', note: '礼盒压损，批准后追加 I 单', by: '周婷' },
-  { id: 'I-2611-03', wh: '上海一号仓', up: '0', down: '−10 kg', status: 'bad', note: '生豆受潮，驳回待复核', by: '陈浩' },
-  { id: 'I-2611-04', wh: '上海一号仓', up: '+2 箱', down: '0', status: 'warn', note: '燕麦奶溢装，等待审批', by: '李明' }
+  { id: 'I-2611-01', wh: '上海一号仓', product: '特级冷萃咖啡豆', up: '+4 箱', down: '0', status: 'warn', note: '咖啡豆袋破损，称重补差', by: '李明' },
+  { id: 'I-2611-02', wh: '苏州冷链仓', product: '烘焙坚果礼盒', up: '0', down: '−2 盒', status: 'ok', note: '礼盒压损，批准后追加 I 单', by: '周婷' },
+  { id: 'I-2611-03', wh: '上海一号仓', product: '阿拉比卡生豆', up: '0', down: '−10 kg', status: 'bad', note: '生豆受潮，驳回待复核', by: '陈浩' },
+  { id: 'I-2611-04', wh: '上海一号仓', product: '有机燕麦奶 1L', up: '+2 箱', down: '0', status: 'warn', note: '燕麦奶溢装，等待审批', by: '李明' }
 ];
 const STK_L2 = { warn: '待审批', ok: '已批准', bad: '已驳回' };
 const WHS = ['上海一号仓', '苏州冷链仓', '深圳中转仓'];
 
 const DOMAINS = [
-  ['purchase_order', '采购单'], ['processing_order', '加工单'], ['sales_order', '销售单'], ['internal_trade_order', '内部交易单'],
-  ['settlement', '结算单'], ['reversal', '冲正'], ['stocktake', '盘点'], ['inventory', '库存'],
-  ['product', '商品'], ['customer', '客户'], ['supplier', '供应商'], ['processor', '加工厂'],
-  ['contact', '对接人'], ['employee', '员工'], ['permission', '权限'], ['company', '公司'],
-  ['apikey', 'API 密钥'], ['report', '报表'], ['audit', '操作日志'], ['billing', '订阅'],
-  ['auth', '登录认证'], ['notification', '通知'], ['attachment', '附件'], ['platform', '平台']
+  ['purchase', 'A 采购单'], ['processing', 'B 加工单'], ['sales', 'E 销售单'], ['internal_trade', 'N 内部交易'],
+  ['settlement', 'C 结算单'], ['commission', '提成'], ['customer_return', 'R 客户退货'], ['supplier_return', 'S 供应商退货'],
+  ['stocktake', '盘点调整 I'], ['product', '商品'], ['customer', '客户'], ['supplier', '供应商'],
+  ['processor', '加工厂'], ['inventory_qty', '库存数量'], ['inventory_flow', '库存流水'], ['employee', '员工'],
+  ['permission', '权限设置'], ['company', '公司管理'], ['profit_report', '利润报表'], ['audit', '操作日志'],
+  ['api_integration', 'API 与集成'], ['payment', '在线支付'], ['billing', '订阅与计费'], ['workbench', '工作台']
 ];
-const ACTS = ['read', 'create', 'update', 'delete', 'ship', 'approve', 'export', 'read_all'];
-const ACT_L = { read: '查看', create: '新建', update: '修改', delete: '删除', ship: '发货', approve: '审批', export: '导出', read_all: '看全部' };
-const MX_RULES = {
-  manager: (d, a) => a === 'delete' && !/^(product|customer|supplier|processor|contact|apikey)$/.test(d) ? 0 : a === 'export' ? 'inh' : 1,
+const ACTS = ['read', 'read_all', 'create', 'update', 'approve', 'ship', 'delete', 'merge', 'view_price', 'view_handler', 'export'];
+const ACT_L = { read: '查', read_all: '看全部', create: '建', update: '编', approve: '审', ship: '出', delete: '删', merge: '合并主数据', view_price: '看价', view_handler: '看经手人', export: '导' };const MX_RULES = {
+  manager: (d, a) => {
+    if (a === 'merge') return /^(product|customer|supplier|processor)$/.test(d) ? 1 : 0;
+    if (a === 'delete') return /^(product|customer|supplier|processor|employee|api_integration)$/.test(d) ? 1 : 0;
+    if (a === 'export') return 'inh';
+    return 1;
+  },
   sales: (d, a) => {
     if (a === 'read') return 1;
+    if (a === 'view_price' || a === 'view_handler') return 1;
     if (a === 'read_all' || a === 'export' || a === 'ship') return 'inh';
-    if (/^(sales_order|customer|contact|product)$/.test(d)) return a === 'delete' || a === 'approve' ? 0 : 1;
+    if (/^(sales|customer)$/.test(d)) return a === 'delete' || a === 'merge' ? 0 : 1;
     return 0;
   },
   warehouse: (d, a) => {
-    if (a === 'read' || a === 'read_all') return 1;
-    if (/^(inventory|stocktake|purchase_order|processing_order|internal_trade_order)$/.test(d)) return a === 'ship' || a === 'update' ? 1 : 0;
-    if (/^(product|contact)$/.test(d)) return a === 'create' || a === 'update' ? 1 : 'inh';
+    if (a === 'read' || a === 'read_all' || a === 'view_handler') return 1;
+    if (/^(purchase|processing|internal_trade|sales)$/.test(d)) return a === 'ship' ? 1 : 0;
+    if (/^(inventory_qty|stocktake)$/.test(d)) return a === 'create' || a === 'update' ? 1 : (a === 'approve' ? 'inh' : 0);
     return 'inh';
   }
 };
+
 const MXO = {};              // 手动改过的格子： role|domain|action → 1 / 0 / 'inh'
 let MXACT = 'read';          // 当前高亮的动作列
 const cellVal = (role, d, a) => { const k = role + '|' + d + '|' + a; return MXO[k] !== undefined ? MXO[k] : MX_RULES[role](d, a); };
@@ -878,20 +885,20 @@ const REV = [
   { id: 'I-0019', kind: 'I', way: '追加流水', batch: 'P-2200', qty: '−2 箱', status: 'warn', label: '待审批' }
 ];
 const AUDIT = [
-  { t: '11-22 08:14', by: 'ERP 同步', from: 'API', a: 'inventory.read', o: '库存批次', ok: 1 },
+  { t: '11-22 08:14', by: 'ERP 同步', from: 'API', a: 'inventory_qty.read', o: '库存批次', ok: 1 },
   { t: '11-21 16:05', by: '王倩', from: 'Web', a: 'sales.approve', o: 'E-2611-083', ok: 1 },
   { t: '11-21 11:32', by: '张伟', from: 'Web', a: 'sales.approve', o: 'E-2611-082', ok: 0 },
-  { t: '11-21 09:48', by: '李明', from: 'Web', a: 'inventory.adjust', o: 'P-2204', ok: 1 },
-  { t: '11-20 18:02', by: '陈浩', from: 'Web', a: 'purchase_order.ship', o: 'A-2611-013', ok: 1 },
+  { t: '11-21 09:48', by: '李明', from: 'Web', a: 'inventory_qty.update', o: 'P-2204', ok: 1 },
+  { t: '11-20 18:02', by: '陈浩', from: 'Web', a: 'purchase.ship', o: 'A-2611-013', ok: 1 },
   { t: '11-20 15:36', by: '周婷', from: 'Web', a: 'stocktake.approve', o: 'I-2611-02', ok: 1 },
-  { t: '11-20 11:20', by: '电商中台', from: 'API', a: 'sales_order.create', o: 'E-2611-086', ok: 1 },
-  { t: '11-19 17:44', by: '张伟', from: 'Web', a: 'sales_order.delete', o: 'E-2611-089', ok: 0 },
-  { t: '11-19 14:12', by: '王倩', from: 'Web', a: 'reversal.create', o: 'R-0086', ok: 1 },
+  { t: '11-20 11:20', by: '电商中台', from: 'API', a: 'sales.create', o: 'E-2611-086', ok: 1 },
+  { t: '11-19 17:44', by: '张伟', from: 'Web', a: 'sales.delete', o: 'E-2611-089', ok: 0 },
+  { t: '11-19 14:12', by: '王倩', from: 'Web', a: 'customer_return.create', o: 'R-0086', ok: 1 },
   { t: '11-19 10:05', by: 'ERP 同步', from: 'API', a: 'product.read', o: '商品资料', ok: 1 },
-  { t: '11-18 16:30', by: '王倩', from: 'Web', a: 'employee.disable', o: '赵敏', ok: 1 },
-  { t: '11-18 09:15', by: '陈浩', from: 'Web', a: 'purchase_order.export', o: '采购单 A', ok: 0 },
-  { t: '11-17 20:08', by: '系统', from: 'API', a: 'apikey.revoke', o: '旧版报表导出', ok: 1 },
-  { t: '11-17 13:26', by: '李明', from: 'Web', a: 'inventory.export', o: '库存数量', ok: 1 },
+  { t: '11-18 16:30', by: '王倩', from: 'Web', a: 'employee.delete', o: '赵敏', ok: 1 },
+  { t: '11-18 09:15', by: '陈浩', from: 'Web', a: 'purchase.export', o: '采购单 A', ok: 0 },
+  { t: '11-17 20:08', by: '系统', from: 'API', a: 'api_integration.delete', o: '旧版报表导出', ok: 1 },
+  { t: '11-17 13:26', by: '李明', from: 'Web', a: 'inventory_qty.export', o: '库存数量', ok: 1 },
   { t: '11-16 10:40', by: '张伟', from: 'Web', a: 'customer.contact.create', o: 'CU-002', ok: 1 }
 ];
 const PRODUCTS = [
@@ -912,9 +919,9 @@ const EMP = [
   { id: 'E008', name: '林芳', tel: '139****2093', co: '华东烘焙加工子公司', job: '销售', on: 1 }
 ];
 const KEYS = [
-  { id: 'k1', name: 'ERP 同步', scope: 'inventory.read', on: 1, exp: '2027-03-31', last: '11-22 08:14' },
+  { id: 'k1', name: 'ERP 同步', scope: 'inventory_qty.read', on: 1, exp: '2027-03-31', last: '11-22 08:14' },
   { id: 'k2', name: '电商订单回传', scope: 'sales.create', on: 1, exp: '2027-01-15', last: '11-21 23:02' },
-  { id: 'k3', name: '旧版报表导出', scope: 'report.read', on: 0, exp: '2026-12-31', last: '09-30 18:40' }
+  { id: 'k3', name: '旧版报表导出', scope: 'profit_report.read', on: 0, exp: '2026-12-31', last: '09-30 18:40' }
 ];
 /* 对接人（后端只回 phoneMasked，这里同样是脱敏值）+ 加工厂报价（记录报价走 processor.create） */
 const CONTACTS = {};
@@ -1338,18 +1345,19 @@ PG.processors = simple('加工厂档案', '主数据 · 外部加工厂与报价
   [{ l: '编号', c: 'mono', f: d => d[0] }, { l: '名称', f: d => `<b>${d[1]}</b>` }, { l: '对接人', f: d => `<span class="tag primary">${ic('star')}${d[2]}</span>` }, { l: '加工单', r: 1, f: d => histCnt('processing-orders', d[1]) }, { l: '报价', r: 1, f: d => (QUOTES[d[0]] || []).length + ' 条' }], () => PROCESSORS,
   { attr: masterAttr('processors'), foot: '点击行查看报价与对接人' });
 const LEG = [['var(--ink-3)', '已引用', 'refQ'], ['var(--transit)', '在途', 'transitQ'], ['var(--warn)', '占用', 'holdQ'], ['var(--ok)', '可用', 'avail']];
+/* 低库存预警口径：GET /inventory/alerts（可用量 < 近 30 天日均出库 × 7 × (1+提前量)，D104）；本稿用演示阈值 minQ 等价表达 */
 const lowStock = b => b.avail <= (b.minQ || 0);
 const lowStockChip = b => lowStock(b) ? `<span class="st low">低于安全库存</span>` : `<span class="st ok">充足</span>`;
 const ageCell = b => `<span class="age${b.age >= 45 ? ' slow' : ''}">${ic('clock')}${b.age} 天</span>`;
 PG.inventory = {
   list: 1,
-  head: () => head('库存数量', '按批次看可用量、库龄与安全库存。可用量 = 入库 − 已引用 − 在途 − 占用，是唯一可引用数字（D38）。'),
+  head: () => head('库存数量', '按批次看可用量、库龄与低库存预警。可用量 = 入库 − 已引用 − 在途 − 占用，是唯一可引用数字（D38）；预警口径见 `/inventory/alerts`（D104）。'),
   tools: () => {
     const f = FV('inv'), match = b => f === 'all' ? 1 : f === 'low' ? lowStock(b) : f === 'transit' ? b.transitQ > 0 : b.holdQ > 0;
     return `<div class="tools">${searchField('搜索批次、商品、仓库…')}
       <div class="chips">
         <button class="chip${f === 'all' ? ' on' : ''}" data-fkey="inv|all">全部<b>${INV.length}</b></button>
-        <button class="chip${f === 'low' ? ' on' : ''}" data-fkey="inv|low">${ic('warn')}低库存<b>${INV.filter(lowStock).length}</b></button>
+        <button class="chip${f === 'low' ? ' on' : ''}" data-fkey="inv|low">${ic('warn')}低库存预警<b>${INV.filter(lowStock).length}</b></button>
         <button class="chip${f === 'transit' ? ' on' : ''}" data-fkey="inv|transit">有在途<b>${INV.filter(b => b.transitQ > 0).length}</b></button>
         <button class="chip${f === 'hold' ? ' on' : ''}" data-fkey="inv|hold">有占用<b>${INV.filter(b => b.holdQ > 0).length}</b></button>
       </div>
@@ -1365,16 +1373,16 @@ PG.inventory = {
       { l: '已引用', r: 1, f: d => d.refQ }, { l: '在途', r: 1, f: d => d.transitQ }, { l: '占用', r: 1, f: d => d.holdQ },
       { l: '可用', r: 1, c: 'pos', f: d => `<b>${d.avail}</b>` },
       { l: '库龄', r: 1, f: d => ageCell(d) },
-      { l: '安全库存', f: d => lowStockChip(d) },
+      { l: '低库存预警', f: d => lowStockChip(d) },
       { l: '锁定单价', r: 1, f: d => money(d.price) }],
-      list, `安全库存 ${INV.reduce((s, b) => s + (b.minQ || 0), 0)} · 点击行查看该批次流水`,
+      list, `预警阈值按 /inventory/alerts 口径（D104，演示值）· 点击行查看该批次流水`,
       d => `class="click${S.flash === d.batch ? ' flash' : ''}" data-act="batch" data-id="${d.batch}" tabindex="0"`, true);
   }
 };
 PG['inventory-flows'] = {
   list: 1,
   head: () => head('库存流水', '解释「可用量为什么变」。只追加、不修改（D2）：类型 / 变动量 / 金额 / 来源单据 / 经手人。',
-    `<button class="btn" data-act="flow-export" title="导出库存流水 · 需要 inventory.export 权限">${ic('dl')}导出</button>`),
+    `<button class="btn" data-act="flow-export" title="导出库存流水 · 需要 inventory_qty.export 权限">${ic('dl')}导出</button>`),
   tools: () => {
     const f = FV('flw');
     return `<div class="tools">${searchField('搜索批次、来源单据、经手人…')}
@@ -1397,29 +1405,27 @@ PG['inventory-flows'] = {
 };
 PG.stocktakes = {
   list: 1,
-  head: () => head('盘点', '独立三态：待审批 / 已批准 / 已驳回。先盘盈盘亏，批准后追加 I 单流水，不直接改库存数。',
-    `<button class="btn pri" data-act="stk-new" ${R().approve ? '' : 'disabled title="需要 stocktake.create 权限"'}>${ic('plus')}新建盘点单</button>`),
+  head: () => head('盘点', '盘盈 / 盘亏分别建单（`/stocktakes/increases` · `/stocktakes/decreases`），审批通过后追加 I 单流水，不直接改批次数量（D47 / D67）；驳回必须写原因。',
+    `<button class="btn pri" data-act="stk-inc" ${R().approve ? '' : 'disabled'} title="${R().approve ? '发起盘盈单 · 需要 stocktake.create 权限' : '需要 stocktake.create 权限'}">${ic('plus')}盘盈单</button>
+     <button class="btn" data-act="stk-dec" ${R().approve ? '' : 'disabled'} title="${R().approve ? '发起盘亏单 · 需要 stocktake.delete 权限' : '需要 stocktake.delete 权限'}">${ic('trash')}盘亏单</button>`),
   tools: () => {
-    const f = FV('stk'), cnt = s => STK.filter(x => s === 'all' || x.status === s).length;
-    return `<div class="tools">${searchField('搜索盘点单、仓库…')}
+    const f = FV('stk'), cnt = v => STK.filter(x => v === 'all' || x.status === v).length;
+    return `<div class="tools">${searchField('搜索盘点单、仓库、商品…')}
       <div class="chips">${[['all', '全部'], ['warn', '待审批'], ['ok', '已批准'], ['bad', '已驳回']].map(([v, l]) => `<button class="chip${f === v ? ' on' : ''}" data-fkey="stk|${v}">${l}<b>${cnt(v)}</b></button>`).join('')}</div></div>`;
   },
   table: () => {
-    const f = FV('stk'), list = STK.filter(d => (f === 'all' || d.status === f) && hit(d.id, d.wh, d.note, d.by || ''));
-    const edit = d => {
-      const open = d.status === 'warn';
-      return `<span class="rowacts"><button class="btn sm" data-act="stk-edit" data-id="${d.id}" ${open ? '' : 'disabled'} title="${open ? '编辑盘点行' : '只有待审批的盘点单可以改'}">${ic('pencil')}编辑</button>` +
-        `<button class="btn sm danger" data-act="stk-del" data-id="${d.id}" ${open ? '' : 'disabled'} title="${open ? '删除盘点单（需 stocktake.delete 权限）' : '只有待审批的盘点单可以删'}">${ic('trash')}</button></span>`;
-    };
+    const f = FV('stk'), list = STK.filter(d => (f === 'all' || d.status === f) && hit(d.id, d.wh, d.product || '', d.note, d.by || ''));
     const ap = d => d.status !== 'warn' ? '<span class="muted">—</span>'
-      : R().approve ? `<span class="rowacts"><button class="btn sm" data-act="stk-no" data-id="${d.id}" title="驳回 · 需 stocktake.approve 权限">${ic('undo')}驳回</button><button class="btn sm pri" data-act="stk-ok" data-id="${d.id}" title="批准 · 需 stocktake.approve 权限">${ic('check')}批准</button></span>`
+      : R().approve
+        ? `<span class="rowacts"><button class="btn sm" data-act="stk-reject" data-id="${d.id}" title="驳回（必须写原因）· 需要 stocktake.approve 权限">${ic('undo')}驳回</button><button class="btn sm pri" data-act="stk-ok" data-id="${d.id}" title="批准 · 需要 stocktake.approve 权限">${ic('check')}批准</button></span>`
         : `<button class="btn sm" disabled title="需要 stocktake.approve 权限">${ic('check')}批准</button>`;
-    return tableCard([{ l: '盘点单', c: 'mono', f: d => `<b>${d.id}</b>` }, { l: '仓库', f: d => d.wh },
-      { l: '盘盈', r: 1, f: d => d.up === '0' ? '<span class="muted">—</span>' : `<b style="color:var(--ok)">${d.up}</b>` },
-      { l: '盘亏', r: 1, f: d => d.down === '0' ? '<span class="muted">—</span>' : `<b style="color:var(--bad)">${d.down}</b>` },
+    const kind = d => d.up !== '0' ? '<span class="st ok">盘盈</span>' : '<span class="st bad">盘亏</span>';
+    const diff = d => d.up !== '0' ? `<b style="color:var(--ok)">${d.up}</b>` : `<b style="color:var(--bad)">${d.down}</b>`;
+    return tableCard([{ l: '盘点单', c: 'mono', f: d => `<b>${d.id}</b>` }, { l: '类型', f: kind }, { l: '仓库', f: d => d.wh },
+      { l: '商品', f: d => esc(d.product || '—') }, { l: '差异', r: 1, f: diff },
       { l: '状态', f: d => `<span class="st ${d.status}">${STK_L2[d.status]}</span>` },
       { l: '说明', f: d => `<span class="muted" style="white-space:normal">${esc(d.note || '—')}</span>` },
-      { l: '操作', r: 1, f: d => `<span class="rowacts">${edit(d)}${ap(d)}</span>` }], list, '批准后自动追加 I 单冲正，原库存数不变');
+      { l: '操作', r: 1, f: ap }], list, '批准后才追加 I 单流水；驳回必须写原因');
   }
 };
 PG['profit-report'] = {
@@ -1442,10 +1448,10 @@ PG['profit-report'] = {
 PG.employees = {
   list: 1, head: () => head('员工', '工号 / 手机号（脱敏）/ 公司 · 岗位。停用即断权。'),
   table: () => tableCard([{ l: '工号', c: 'mono', f: d => d.id }, { l: '姓名', f: d => `<b>${who(d.name)}</b>` }, { l: '手机号', c: 'mono', f: d => d.tel }, { l: '公司 · 岗位', f: d => d.co + ' · ' + d.job }, { l: '状态', f: d => `<span class="st ${d.on ? 'ok' : 'cancel'}">${d.on ? '在职' : '停用'}</span>` },
-    { l: '操作', r: 1, f: d => !R().approve ? `<button class="btn sm" disabled title="需要 employee.update 权限">${ic('lock')}停用</button>` : d.name === R().name ? '<span class="muted">当前账号</span>' : `<button class="btn sm${d.on ? ' danger' : ''}" data-act="emp" data-id="${d.id}" title="${d.on ? '停用后立即断权（employee.update）' : '恢复该员工权限'}">${ic(d.on ? 'trash' : 'refresh')}${d.on ? '停用' : '恢复'}</button>` }], EMP)
+    { l: '操作', r: 1, f: d => !R().approve ? `<button class="btn sm" disabled title="需要 employee.delete 权限">${ic('lock')}停用</button>` : d.name === R().name ? '<span class="muted">当前账号</span>' : `<button class="btn sm${d.on ? ' danger' : ''}" data-act="emp" data-id="${d.id}" title="${d.on ? '停用后立即断权（employee.update）' : '恢复该员工权限'}">${ic(d.on ? 'trash' : 'refresh')}${d.on ? '停用' : '恢复'}</button>` }], EMP)
 };
 PG.permissions = {
-  head: () => head('权限设置', '24 域 × 8 动作。每格三态：允许 / 拒绝 / 继承公司默认。权限由服务端判定（D27），这里只是配置视图，改完立即写审计。',
+  head: () => head('权限设置', '24 域 × 11 动作（`packages/contracts/src/domains.ts`）。每格三态：允许 / 拒绝 / 继承公司默认。权限由服务端判定（D27），这里只是配置视图，改完立即写审计。',
     `<div class="seg" title="选择要查看的岗位">${Object.entries(ROLES).map(([k, r]) => `<button class="${k === S.role ? 'on' : ''}" data-pick="role|${k}">${r.title}</button>`).join('')}</div>`),
   dyn: () => {
     const role = S.role, me = role === S.role, canEdit = !!R().approve;
@@ -1466,7 +1472,7 @@ PG.companies = { head: () => head('公司管理', '登记子公司与公司码�
 PG['audit-logs'] = {
   list: 1,
   head: () => head('操作日志', '谁 / 从哪 / 对谁 / 做了什么 / 成没成。只追加，金额脱敏（D51）。本页会实时记录你在工作台里的操作。',
-    `<button class="btn" data-act="log-export" title="导出日志 · 需要 audit.export 权限">${ic('dl')}导出</button>`),
+    ''),
   tools: () => {
     const f = FV('log', 'all'), src = FV('logsrc', 'all');
     const cnt = v => AUDIT.filter(a => v === 'all' || (v === 'ok' ? a.ok : !a.ok)).length;
@@ -1491,7 +1497,7 @@ PG['audit-logs'] = {
 PG['api-integration'] = {
   list: 1,
   head: () => head('API 与集成', '外部系统接入与密钥管理。密钥只在创建时完整显示一次；吊销立即生效，不可恢复。',
-    `<button class="btn pri" data-act="key-new" ${R().approve ? '' : 'disabled title="需要 apikey.create 权限"'}>${ic('plus')}新建密钥</button>`),
+    `<button class="btn pri" data-act="key-new" ${R().approve ? '' : 'disabled title="需要 api_integration.create 权限"'}>${ic('plus')}新建密钥</button>`),
   tools: () => `<div class="tools">${searchField('搜索密钥名称、授权范围…')}
     <div class="chips">${[['all', '全部'], ['on', '生效中'], ['rev', '已吊销']].map(([v, l]) => `<button class="chip${FV('key') === v ? ' on' : ''}" data-fkey="key|${v}">${l}<b>${KEYS.filter(k => v === 'all' || (v === 'rev' ? k.rev : !k.rev && k.on)).length}</b></button>`).join('')}</div>
     <div class="grow"></div><span class="note">${ic('shield')}密钥仅创建时显示一次，之后只能吊销重发</span></div>`,
@@ -1499,8 +1505,8 @@ PG['api-integration'] = {
     const f = FV('key'), list = KEYS.filter(d => (f === 'all' || (f === 'rev' ? d.rev : !d.rev && d.on)) && hit(d.name, d.scope));
     const stat = d => d.rev ? '<span class="st bad">已吊销</span>' : d.on ? '<span class="st ok">生效中</span>' : '<span class="st cancel">已停用</span>';
     const acts = d => d.rev
-      ? `<button class="btn sm" data-act="key-enable" data-id="${d.id}" ${R().approve ? '' : 'disabled'} title="${R().approve ? '重新签发一枚新密钥' : '需要 apikey.create 权限'}">${ic('refresh')}重发</button>`
-      : `<button class="btn sm danger" data-act="key-revoke" data-id="${d.id}" ${R().approve ? '' : 'disabled'} title="${R().approve ? '吊销后立即失效，不可恢复' : '需要 apikey.update 权限'}">${ic('trash')}吊销</button>`;
+      ? `<button class="btn sm" data-act="key-new" ${R().approve ? '' : 'disabled'} title="${R().approve ? '已撤销的不能复用，只能新建一枚（POST /api-tokens）' : '需要 api_integration.create 权限'}">${ic('plus')}新建</button>`
+      : `<button class="btn sm danger" data-act="key-revoke" data-id="${d.id}" ${R().approve ? '' : 'disabled'} title="${R().approve ? '吊销后立即失效，不可恢复' : '需要 api_integration.delete 权限'}">${ic('trash')}吊销</button>`;
     return tableCard([{ l: '名称', f: d => `<b>${d.name}</b>` }, { l: '授权范围', c: 'mono', f: d => d.scope },
       { l: '状态', f: stat }, { l: '过期时间', c: 'mono muted', f: d => d.exp }, { l: '最后使用', c: 'mono muted', f: d => d.last },
       { l: '操作', r: 1, f: d => `<span class="rowacts">${acts(d)}</span>` }], list, `共 ${KEYS.length} 枚 · 吊销后不可恢复`);
@@ -1598,82 +1604,79 @@ function renderMaster() {
 }
 /* ---------- 弹窗：盘点新建 / 编辑、密钥新建 / 重发、记录报价 ---------- */
 const modalActs = (ok, cancel = '取消', okText = '确定') => `<div class="acts"><button class="btn" data-act="close">${cancel}</button><button class="btn pri" data-act="${ok.act}"${ok.id ? ` data-id="${ok.id}"` : ''}>${okText}</button></div>`;
-function openStk(id) {
-  const e = id ? STK.find(s => s.id === id) : null;
-  const num = v => String(v || '').replace(/^[+−-]/, '').replace(/\s*\S+$/, '').trim();
-  $('#modal').innerHTML = `<h3>${e ? '编辑盘点单' : '新建盘点单'}</h3>
-    <p>${e ? `单号 ${e.id} · 待审批状态下可以修改，批准后锁死` : '单号自动生成，提交后进入「待审批」，批准才追加 I 单流水。'}</p>
+function openStk(kind) {
+  const inc = kind !== 'dec';
+  $('#modal').innerHTML = `<h3>发起${inc ? '盘盈' : '盘亏'}单</h3>
+    <p>${inc ? '实盘量 > 账面量：走 <span class="mono">/stocktakes/increases</span>（stocktake.create）' : '实盘量 < 账面量：走 <span class="mono">/stocktakes/decreases</span>（stocktake.delete，只追加冲正、不物理删除）'}，差异量由服务端算。</p>
     <div class="fm">
-      <label class="w">仓库<select name="wh" class="sel" style="height:38px;width:100%">${WHS.map(w => `<option${e && e.wh === w ? ' selected' : ''}>${w}</option>`).join('')}</select></label>
-      <label>盘盈（可留空）<input name="up" placeholder="如 4 箱" value="${e ? num(e.up) : ''}" autocomplete="off"></label>
-      <label>盘亏（可留空）<input name="down" placeholder="如 2 盒" value="${e ? num(e.down) : ''}" autocomplete="off"></label>
-      <label class="w">原因说明<input name="note" placeholder="为什么盘盈 / 盘亏" value="${e ? esc(e.note || '') : ''}" autocomplete="off"></label>
+      <label class="w">仓库<select name="wh" class="sel" style="height:38px;width:100%">${WHS.map(w => `<option>${w}</option>`).join('')}</select></label>
+      <label class="w">商品<input name="product" placeholder="如 特级冷萃咖啡豆" autocomplete="off"></label>
+      <label class="w">差异数量<input name="qty" placeholder="如 4 箱" autocomplete="off"></label>
+      <label class="w">说明<input name="note" placeholder="${inc ? '为什么会盘盈' : '为什么会盘亏'}" autocomplete="off"></label>
     </div>
-    ${modalActs({ act: 'stk-save', id: id || '' }, '取消', e ? '保存' : '创建')}`;
+    ${modalActs({ act: inc ? 'stk-save-inc' : 'stk-save-dec' }, '取消', '提交待审批')}`;
   S.modal = 1; layer();
   setTimeout(() => { const i = $('#modal input'); if (i) i.focus(); }, 60);
 }
-function saveStk(id) {
+function saveStk(kind) {
   const g = n => { const el = $(`#modal [name="${n}"]`); return el ? el.value.trim() : ''; };
-  const qty = v => /^\d+(\.\d+)?/.test(v) ? (v.match(/^\d+(?:\.\d+)?\s*\S*/) || [v])[0].replace(/^(\d+(?:\.\d+)?)\s*/, '$1 ') : '';
-  const up = qty(g('up')), down = qty(g('down')), wh = g('wh'), note = g('note');
-  if (!up && !down) { toast('盘盈与盘亏至少填一项', 1); return; }
-  const bad = [['up', up, g('up')], ['down', down, g('down')]].find(([, v, raw]) => raw && !v);
-  if (bad) { toast('数量需以数字开头并带单位，如「4 箱」', 1); return; }
-  if (id) {
-    const e = STK.find(s => s.id === id);
-    if (!e) return;
-    Object.assign(e, { wh, up: up ? '+' + up : '0', down: down ? '−' + down : '0', note: note || '—', status: 'warn' });
-    e.log = (e.log || []).concat({});
-    audit('stocktake.update', e.id); toast(`${e.id} 已更新`);
-  } else {
-    const nid = 'I-2611-' + String(Math.max(...STK.map(s => +s.id.slice(-2))) + 1).padStart(2, '0');
-    STK.unshift({ id: nid, wh, up: up ? '+' + up : '0', down: down ? '−' + down : '0', note: note || '—', status: 'warn', by: R().name });
-    audit('stocktake.create', nid); toast(`已创建盘点单 ${nid}，等待审批`);
-  }
+  const inc = kind !== 'dec', raw = g('qty'), product = g('product'), wh = g('wh'), note = g('note');
+  if (!product) { toast('请填写商品', 1); return; }
+  if (!/^\d+(\.\d+)?/.test(raw)) { toast('差异数量需以数字开头并带单位，如「4 箱」', 1); return; }
+  const q = (raw.match(/^\d+(?:\.\d+)?\s*\S*/) || [raw])[0].replace(/^(\d+(?:\.\d+)?)\s*/, '$1 ');
+  const nid = 'I-2611-' + String(Math.max(...STK.map(x => +x.id.slice(-2))) + 1).padStart(2, '0');
+  STK.unshift({ id: nid, wh, product, up: inc ? '+' + q : '0', down: inc ? '0' : '−' + q, note: note || '—', status: 'warn', by: R().name });
+  audit(inc ? 'stocktake.create' : 'stocktake.delete', nid);
   S.modal = 0; layer(); S.pg = 1; refresh();
+  toast(`已提交${inc ? '盘盈' : '盘亏'}单 ${nid}，等待审批`);
 }
-function delStk(id) {
-  const e = STK.find(s => s.id === id); if (!e) return;
-  if (S.arm !== 'stkdel:' + id) {
-    S.arm = 'stkdel:' + id; toast('再点一次删除（只有待审批的盘点点单可以删）');
-    setTimeout(() => { if (S.arm === 'stkdel:' + id) { S.arm = null; if (S.page === 'stocktakes') refresh(); } }, 3000);
-    refresh(); return;
-  }
-  S.arm = null;
-  STK.splice(STK.indexOf(e), 1);
-  audit('stocktake.delete', id); toast(`${id} 已删除`); refresh();
+function openReject(id) {
+  const d = STK.find(x => x.id === id); if (!d) return;
+  $('#modal').innerHTML = `<h3>驳回 ${d.id}</h3>
+    <p>驳回不动库存、不写流水；<b>原因必填</b>（后端 <span class="mono">/stocktakes/{id}/reject</span> 要求带原因，权限 <span class="mono">stocktake.approve</span>）。</p>
+    <div class="fm"><label class="w">驳回原因<input name="reason" placeholder="如 实盘数量与照片不符，需复核" autocomplete="off"></label></div>
+    ${modalActs({ act: 'stk-reject-do', id }, '取消', '确认驳回')}`;
+  S.modal = 1; layer();
+  setTimeout(() => { const i = $('#modal input'); if (i) i.focus(); }, 60);
 }
-
+function doReject(id) {
+  const el = $('#modal [name="reason"]'); const reason = el ? el.value.trim() : '';
+  if (!reason) { if (el) { el.classList.add('err'); el.focus(); } toast('驳回必须写原因', 1); return; }
+  const d = STK.find(x => x.id === id); if (!d) return;
+  d.status = 'bad'; d.note = reason;
+  audit('stocktake.approve', d.id + '（驳回：' + reason + '）');
+  S.modal = 0; layer(); refresh(); toast(`${d.id} 已驳回`);
+}
+/* ---------- 弹窗：API 密钥（创建 / 一次性显示 / 吊销）与加工厂报价 ---------- */
 const tokGen = () => 'qd_live_' + Array.from({ length: 28 }, (_, i) => 'abcdefghijklmnopqrstuvwxyz0123456789'[(i * 7 + 11) % 36]).join('');
 function openKey() {
-  if (!R().approve) { toast('需要 apikey.create 权限', 1); return; }
-  const scopes = ['inventory.read', 'sales.create', 'report.read', 'purchase_order.export'];
-  $('#modal').innerHTML = `<h3>新建 API 密钥</h3><p>密钥只在创建后显示一次；请立即复制保存，关闭后不可再查看。</p>
+  if (!R().approve) { toast('需要 api_integration.create 权限', 1); return; }
+  const scopes = ['inventory_qty.read', 'sales.create', 'profit_report.read', 'purchase.export'];
+  $('#modal').innerHTML = `<h3>新建 API Token</h3><p>POST /api-tokens 创建；token 只在创建后显示一次，请立即复制保存。</p>
     <div class="fm">
       <label class="w">名称<input name="name" placeholder="如 电商订单回传" autocomplete="off"></label>
-      <label>授权范围<select name="scope" class="sel" style="height:38px;width:100%">${scopes.map(s => `<option>${s}</option>`).join('')}</select></label>
+      <label>授权范围<select name="scope" class="sel" style="height:38px;width:100%">${scopes.map(x => `<option>${x}</option>`).join('')}</select></label>
       <label>有效期<select name="exp" class="sel" style="height:38px;width:100%"><option>90 天</option><option>180 天</option><option>1 年</option></select></label>
     </div>
-    ${modalActs({ act: 'key-create' }, '取消', '创建并显示密钥')}`;
+    ${modalActs({ act: 'key-create' }, '取消', '创建并显示 token')}`;
   S.modal = 1; layer();
   setTimeout(() => { const i = $('#modal input'); if (i) i.focus(); }, 60);
 }
 function createKey() {
-  const name = ($('#modal [name="name"]') || {}).value || '未命名密钥';
-  if (!name.trim()) { toast('请填写密钥名称', 1); return; }
+  const name = ($('#modal [name="name"]') || {}).value || '';
+  if (!name.trim()) { toast('请填写名称', 1); return; }
   const tok = tokGen(), scope = $('#modal [name="scope"]').value, exp = $('#modal [name="exp"]').value;
   const d = new Date(Date.now() + (exp === '90 天' ? 90 : exp === '180 天' ? 180 : 365) * 864e5);
   const k = { id: 'k' + (KEYS.length + 1), name: name.trim(), scope, on: 1, exp: d.toISOString().slice(0, 10), last: '—' };
   KEYS.unshift(k);
-  audit('apikey.create', k.name);
+  audit('api_integration.create', k.name);
   showOnce(k, tok);
 }
 function showOnce(k, tok) {
-  $('#modal').innerHTML = `<h3>密钥已创建</h3><p>「${esc(k.name)}」的密钥如下，<b>只显示这一次</b>。</p>
+  $('#modal').innerHTML = `<h3>Token 已创建</h3><p>「${esc(k.name)}」的 token 如下，<b>只显示这一次</b>（后端创建接口只返回一次）。</p>
     <div class="once">
       <div class="once-k"><code id="onceTok">${tok}</code><button class="btn sm pri" data-copy="${tok}" title="复制到剪贴板">${ic('copy')}复制</button></div>
-      <div class="once-warn">${ic('warn')}关闭本窗口后无法再次查看；如果丢失，只能吊销后重新签发。</div>
+      <div class="once-warn">${ic('warn')}关闭后不可再次查看；丢了只能 DELETE /api-tokens/{id} 撤销后新建一枚。</div>
       <div class="acts" style="justify-content:flex-end"><button class="btn" data-act="close">我已保存</button></div>
     </div>`;
   S.modal = 1; layer();
@@ -1681,22 +1684,17 @@ function showOnce(k, tok) {
 function revokeKey(id) {
   const k = KEYS.find(x => x.id === id); if (!k) return;
   if (S.arm !== 'revoke:' + id) {
-    S.arm = 'revoke:' + id; refresh(); toast('再点一次吊销（立即失效，不可恢复）');
+    S.arm = 'revoke:' + id; refresh(); toast('再点一次吊销（DELETE /api-tokens/{id}，立即生效、不可恢复）');
     setTimeout(() => { if (S.arm === 'revoke:' + id) { S.arm = null; if (S.page === 'api-integration') refresh(); } }, 3000);
     return;
   }
   S.arm = null; k.rev = 1; k.on = 0;
-  audit('apikey.revoke', k.name); toast(`「${k.name}」已吊销`); refresh();
+  audit('api_integration.delete', k.name); toast(`「${k.name}」已吊销`); refresh();
 }
-function reissueKey(id) {
-  const k = KEYS.find(x => x.id === id); if (!k) return;
-  k.rev = 0; k.on = 1; k.exp = new Date(Date.now() + 90 * 864e5).toISOString().slice(0, 10);
-  audit('apikey.create', k.name + '（重发）');
-  showOnce(k, tokGen());
-}
+/* 加工厂报价：记录报价走 processor.create */
 function openQuote(id) {
   const p = masterRec('processors', id); if (!p) return;
-  $('#modal').innerHTML = `<h3>记录报价</h3><p>${esc(p[1])} · 记录报价走 processor.create（后端用的是 create，不是 update）。</p>
+  $('#modal').innerHTML = `<h3>记录报价</h3><p>${esc(p[1])} · POST 走 processor.create（后端用的是 create，不是 update）。</p>
     <div class="fm">
       <label class="w">加工项目<input name="item" placeholder="如 深烘拼配（kg）" autocomplete="off"></label>
       <label>单价（元）<input name="price" placeholder="如 15" inputmode="decimal" autocomplete="off"></label>
@@ -1830,7 +1828,7 @@ function doAct(a) {
   } else if (a === 'reverse') {
     const k = m.L === 'E' ? 'R' : 'S', rid = revId(k);
     REV.unshift({ id: rid, kind: k, way: k === 'R' ? '退货退款' : '质量退回', batch: o.batch || '—', qty: o.qty, status: 'now', label: '进行中', src: o.id });
-    o.rev = rid; log('发起冲正 ' + rid + '（原单不变）'); audit('reversal.create', rid); toast(`已发起冲正 ${rid}，原单保持不变`);
+    o.rev = rid; log('发起冲正 ' + rid + '（原单不变）'); audit((k === 'R' ? 'customer_return' : 'supplier_return') + '.create', rid); toast(`已发起冲正 ${rid}，原单保持不变`);
   }
   S.flash = o.id;
   refresh();
@@ -1941,12 +1939,14 @@ const ACT = {
   clear() { Object.assign(S, { q: '', status: 'all', handler: 'all', scope: 'all' }); render(); },
   export: exportCsv, new: openNew, create: createDoc, close: closeAll,
   batch(id) { go('inventory-flows'); setFV('flw', 'all'); S.q = id; S.pg = 1; render(); },
-  emp(id) { const e = EMP.find(x => x.id === id); e.on = e.on ? 0 : 1; audit('employee.' + (e.on ? 'enable' : 'disable'), e.name); refresh(); toast(e.on ? `${e.name} 已恢复` : `${e.name} 已停用，权限同步断开`); },
-  /* 盘点：新建 / 编辑 / 删除 / 批准 / 驳回 */
-  'stk-new'() { if (!R().approve) { toast('需要 stocktake.create 权限', 1); return; } openStk(null); },
-  'stk-edit'(id) { const s = STK.find(x => x.id === id); if (!s) return; if (s.status !== 'warn') { toast('只有待审批的盘点单可以编辑', 1); return; } openStk(id); },
-  'stk-save'(id) { saveStk(id || null); },
-  'stk-del'(id) { const s = STK.find(x => x.id === id); if (!s) return; if (s.status !== 'warn') { toast('只有待审批的盘点单可以删除', 1); return; } delStk(id); },
+  emp(id) { const e = EMP.find(x => x.id === id); e.on = e.on ? 0 : 1; audit('employee.' + (e.on ? 'update' : 'delete'), e.name); refresh(); toast(e.on ? `${e.name} 已恢复` : `${e.name} 已停用，权限同步断开`); },
+  /* 盘点：盘盈 / 盘亏 建单、批准、驳回（无编辑、无删除盘点单端点） */
+  'stk-inc'() { if (!R().approve) { toast('需要 stocktake.create 权限', 1); return; } openStk('inc'); },
+  'stk-dec'() { if (!R().approve) { toast('需要 stocktake.delete 权限', 1); return; } openStk('dec'); },
+  'stk-save-inc'() { saveStk('inc'); },
+  'stk-save-dec'() { saveStk('dec'); },
+  'stk-reject'(id) { if (!R().approve) { toast('需要 stocktake.approve 权限', 1); return; } openReject(id); },
+  'stk-reject-do'(id) { doReject(id); },
   'stk-ok'(id) {
     const x = STK.find(s => s.id === id); if (!x) return;
     if (!R().approve) { toast('需要 stocktake.approve 权限', 1); return; }
@@ -1955,11 +1955,10 @@ const ACT = {
     REV.unshift({ id: rid, kind: 'I', way: '追加流水', batch: '—', qty: x.up !== '0' ? x.up : x.down, status: 'ok', label: '已完成', src: x.id });
     audit('stocktake.approve', x.id); refresh(); toast(`${x.id} 已批准，已追加冲正 ${rid}`);
   },
-  'stk-no'(id) { const x = STK.find(s => s.id === id); if (!x) return; if (!R().approve) { toast('需要 stocktake.approve 权限', 1); return; } x.status = 'bad'; audit('stocktake.reject', x.id); refresh(); toast(`${x.id} 已驳回`); },
   /* 密钥 */
   'key-new': openKey, 'key-create': createKey,
-  'key-revoke'(id) { if (!R().approve) { toast('需要 apikey.update 权限', 1); return; } revokeKey(id); },
-  'key-enable'(id) { if (!R().approve) { toast('需要 apikey.create 权限', 1); return; } reissueKey(id); },
+  'key-revoke'(id) { if (!R().approve) { toast('需要 api_integration.delete 权限', 1); return; } revokeKey(id); },
+  'key-enable'(id) { if (!R().approve) { toast('需要 api_integration.create 权限', 1); return; } reissueKey(id); },
   /* 加工厂报价 */
   'quote-new'(id) { if (!R().approve) { toast('需要 processor.create 权限', 1); return; } openQuote(id); },
   'quote-save'(id) { saveQuote(id); },
@@ -1969,8 +1968,8 @@ const ACT = {
     const pg = Object.keys(ORD).find(p => ORD[p].some(o => o.id === id));
     if (pg) { go(pg); openDoc(pg, id); } else toast('来源单据为冲正 / 盘点，请在对应页面查看');
   },
-  'flow-export'() { audit('inventory.export', '库存流水'); toast(`已导出 ${FLOWS.length} 条流水（CSV，演示）`); },
-  'log-export'() { audit('audit.export', '操作日志'); toast(`已导出 ${AUDIT.length} 条日志（CSV，演示）`); },
+  'flow-export'() { audit('inventory_qty.export', '库存流水'); toast(`已导出 ${FLOWS.length} 条流水（CSV，演示）`); },
+  'log-export'() { audit('audit.read', '操作日志'); toast(`已导出 ${AUDIT.length} 条日志（CSV，演示）`); },
   reset() {
     if (S.arm !== 'reset') { S.arm = 'reset'; refresh(); setTimeout(() => { if (S.arm === 'reset') { S.arm = null; if (S.page === 'settings') refresh(); } }, 3000); return; }
     S.arm = null; P = Object.assign({}, DEF); save(); applyPrefs(); refresh(); toast('已恢复默认设置');
