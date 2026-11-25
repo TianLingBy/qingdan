@@ -13,11 +13,14 @@ import type { ReactNode } from 'react';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import type { ListState } from '../../lib/list-state';
 
-export { ListEmpty as EmptyState, ListLoading as TableSkeleton } from '../../components/ListStates';
+export {
+  ListEmpty as EmptyState,
+  ListLoading as TableSkeleton,
+} from '../../components/ListStates';
 
 /** 输入控件统一样式（只在这里改，三个分栏一起变）。 */
 export const FIELD_CLASS =
-  'mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100';
+  'mt-1 w-full rounded-lg border border-[var(--line-2)] bg-[var(--surf-1)] px-3 py-2 text-sm text-[var(--text-1)] disabled:bg-[var(--surf-2)]';
 
 export interface FieldProps {
   readonly label: string;
@@ -29,9 +32,13 @@ export interface FieldProps {
 export function Field({ label, hint, children, className }: FieldProps) {
   return (
     <label className={`block text-sm ${className ?? ''}`}>
-      <span className="text-slate-600">{label}</span>
+      <span className="text-[var(--text-2)]">{label}</span>
       {children}
-      {hint ? <span className="mt-1 block text-[11px] leading-relaxed text-slate-400">{hint}</span> : null}
+      {hint ? (
+        <span className="mt-1 block text-[11px] leading-relaxed text-[var(--text-3)]">
+          {hint}
+        </span>
+      ) : null}
     </label>
   );
 }
@@ -44,7 +51,9 @@ export function StatusPill({
   readonly className: string;
 }) {
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${className}`}>
+    <span
+      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${className}`}
+    >
       {status}
     </span>
   );
@@ -90,7 +99,12 @@ export function ReversalPager({
         >
           上一批
         </button>
-        <button type="button" className="btn btn-s" disabled={!hasNext} onClick={onNext}>
+        <button
+          type="button"
+          className="btn btn-s"
+          disabled={!hasNext}
+          onClick={onNext}
+        >
           下一批
         </button>
       </div>
@@ -143,7 +157,10 @@ export function ReversalListCard({
   return (
     <section className="card min-w-0" data-state={state}>
       <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-3">
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>
+        <h3
+          className="text-sm font-semibold"
+          style={{ color: 'var(--text-1)' }}
+        >
           {title}
         </h3>
         {meta ? (
@@ -153,7 +170,10 @@ export function ReversalListCard({
         ) : null}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-left" style={minWidth ? { minWidth } : undefined}>
+        <table
+          className="w-full text-left"
+          style={minWidth ? { minWidth } : undefined}
+        >
           <thead>{head}</thead>
           <tbody data-state={state}>
             {children}
@@ -183,7 +203,7 @@ export function ReversalListCard({
 /** 分栏内的口径说明条：一句话讲清这张单「是什么 / 不是什么」。 */
 export function BasisNote({ children }: { readonly children: ReactNode }) {
   return (
-    <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-500">
+    <p className="rounded-lg bg-[var(--surf-2)] px-3 py-2 text-xs leading-relaxed text-[var(--text-3)]">
       {children}
     </p>
   );
@@ -225,7 +245,13 @@ export function ErrorList({ errors }: { readonly errors: readonly string[] }) {
 }
 
 /** 详情里的一行「键 → 值」。 */
-export function Kv({ label, children }: { readonly label: string; readonly children: ReactNode }) {
+export function Kv({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: ReactNode;
+}) {
   return (
     <div className="min-w-0">
       <dt className="text-[11px] text-slate-400">{label}</dt>

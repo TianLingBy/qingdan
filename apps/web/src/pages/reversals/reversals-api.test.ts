@@ -12,6 +12,7 @@ import {
   stocktakeDirection,
   stocktakeDirectionText,
   validateCustomerReturnDraft,
+  validateStocktakeRejectReason,
   validateStocktakeDraft,
   validateSupplierReturnDraft,
   type ReturnLineDraft,
@@ -46,7 +47,11 @@ describe('R 客户退货校验', () => {
   });
 
   it('缺公司 / 缺原 E 单要报出来', () => {
-    const errors = validateCustomerReturnDraft({ ...base, companyId: '', originalSalesOrderId: '' });
+    const errors = validateCustomerReturnDraft({
+      ...base,
+      companyId: '',
+      originalSalesOrderId: '',
+    });
     expect(errors).toContain('请选择公司');
     expect(errors).toContain('请选择原销售单（R 单必须挂原 E 单）');
   });
@@ -160,18 +165,38 @@ describe('I 盘点差异方向', () => {
     expect(errors).toContain('账面量必须是非负数字');
     expect(errors).toContain('实盘量必须是非负数字');
   });
+
+  it('驳回原因必须 1~200 字，前后空白不算内容', () => {
+    expect(validateStocktakeRejectReason('   ')).toEqual([
+      '必须填写驳回原因。',
+    ]);
+    expect(validateStocktakeRejectReason('x'.repeat(201))).toEqual([
+      '驳回原因不能超过 200 字。',
+    ]);
+    expect(validateStocktakeRejectReason('  盘点依据不足  ')).toEqual([]);
+  });
 });
 
 describe('金额与展示口径', () => {
   it('行金额走定点乘法，不漂', () => {
-    expect(returnLineAmount({ ...VALID_LINE, qty: '2', unitPrice: '15.5' })).toBe('31');
-    expect(returnLineAmount({ ...VALID_LINE, qty: '0.1', unitPrice: '3' })).toBe('0.3');
+    expect(
+      returnLineAmount({ ...VALID_LINE, qty: '2', unitPrice: '15.5' }),
+    ).toBe('31');
+    expect(
+      returnLineAmount({ ...VALID_LINE, qty: '0.1', unitPrice: '3' }),
+    ).toBe('0.3');
     // 非法输入返回 0，不抛错（避免输入过程中的中间态把页面打崩）
-    expect(returnLineAmount({ ...VALID_LINE, qty: '', unitPrice: '3' })).toBe('0');
+    expect(returnLineAmount({ ...VALID_LINE, qty: '', unitPrice: '3' })).toBe(
+      '0',
+    );
   });
 
   it('明细合计：0.1 × 3 行 = 0.3，不是 0.30000000000000004', () => {
-    const lines = Array.from({ length: 3 }, () => ({ ...VALID_LINE, qty: '0.1', unitPrice: '1' }));
+    const lines = Array.from({ length: 3 }, () => ({
+      ...VALID_LINE,
+      qty: '0.1',
+      unitPrice: '1',
+    }));
     expect(returnLinesTotal(lines)).toBe('0.3');
   });
 
@@ -226,7 +251,40 @@ describe('金额与展示口径', () => {
     };
     expect(batchLabelOf([batch], batch.id)).toBe('B-20261101-0001');
     // 不同公司的批次拉不到 → 退回 id 前 8 位，而不是显示 undefined。
-    expect(batchLabelOf([batch], '01900000-0000-7000-8000-0000000009z9')).toBe('01900000');
+    expect(batchLabelOf([batch], '01900000-0000-7000-8000-0000000009z9')).toBe(
+      '01900000',
+    );
+  });
+});
+
+describe('盘点驳回端点', () => {
+  it('发送显式确认、驳回原因与强 If-Match', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const client = new ApiClient({
+      baseUrl: '/api/v1',
+      newRequestId: () => 'req-stocktake-reject',
+      fetchImpl: (async (input: string | URL | Request, init?: RequestInit) => {
+        calls.push({ url: String(input), init: init ?? {} });
+        return new Response(JSON.stringify({ id: 'st1', status: '已驳回' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }) as typeof fetch,
+    });
+    const api = createReversalsApi(client);
+
+    await api.rejectStocktake('st1', 4, {
+      confirm: true,
+      reason: '盘点依据不足',
+    });
+
+    expect(calls[0]?.url).toBe('/api/v1/stocktakes/st1/reject');
+    expect(calls[0]?.init.method).toBe('POST');
+    expect(new Headers(calls[0]?.init.headers).get('If-Match')).toBe('"4"');
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      confirm: true,
+      reason: '盘点依据不足',
+    });
   });
 });
 
