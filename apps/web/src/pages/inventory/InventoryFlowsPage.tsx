@@ -1,18 +1,50 @@
 import type { InventoryFlow } from '@qingdan/contracts';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import { describeListError } from '../../components/ListStates';
+import { Icon } from '../../components/icons/Icon';
+import { compareDecimal } from '../../lib/decimal';
+import { resolveListState } from '../../lib/list-state';
 import { authApi, authKeys } from '../auth/auth-api';
 import { inventoryApi, inventoryQueryKeys } from './inventory-api';
-import {
-  errorText,
-  formatDateTime,
-  PageShell,
-  Pagination,
-  shortId,
-} from './inventory-ui';
+import { errorText, formatDateTime, shortId } from './inventory-ui';
 
 const SOURCE_TYPES = ['A', 'B', 'E', 'N', 'I', 'R', 'S'] as const;
+
+function directionOf(delta: string): {
+  readonly text: string;
+  readonly className: string;
+  readonly value: string;
+} {
+  const compared = compareDecimal(delta, '0');
+  if (compared < 0) {
+    return { text: '负变动', className: 'st warn', value: delta };
+  }
+  if (compared > 0) {
+    return {
+      text: '正变动',
+      className: 'st ok',
+      value: delta.startsWith('+') ? delta : `+${delta}`,
+    };
+  }
+  return { text: '零变动', className: 'st draft', value: delta };
+}
+
+function filterText(input: {
+  readonly companyId: string;
+  readonly resolvedBatchNo: string | null;
+  readonly sourceDocType: string;
+  readonly sourceDocId: string;
+}): string {
+  return [
+    input.companyId ? `公司 ${shortId(input.companyId)}` : '全部可见公司',
+    input.resolvedBatchNo ? `批次 ${input.resolvedBatchNo}` : '全部批次',
+    input.sourceDocType ? `来源类型 ${input.sourceDocType}` : '全部来源类型',
+    input.sourceDocId.trim()
+      ? `来源单号 ${input.sourceDocId.trim()}`
+      : '全部来源单号',
+  ].join(' · ');
+}
 
 export function InventoryFlowsPage() {
   const [companyId, setCompanyId] = useState('');
@@ -41,7 +73,8 @@ export function InventoryFlowsPage() {
     queryFn: () => inventoryApi.listFlows(filters),
   });
   const resolveBatch = useMutation({
-    mutationFn: () => inventoryApi.resolveBatchByNumber(batchNoInput, companyId || undefined),
+    mutationFn: () =>
+      inventoryApi.resolveBatchByNumber(batchNoInput, companyId || undefined),
     onSuccess: (batch) => {
       if (!batch) {
         setBatchId(undefined);
@@ -63,15 +96,33 @@ export function InventoryFlowsPage() {
   }, [companyId, batchId, sourceDocType, sourceDocId]);
 
   const rows = flows.data?.items ?? [];
+  const state = resolveListState({
+    isPending: flows.isPending,
+    hasError: flows.isError,
+    isEmpty: rows.length === 0,
+  });
 
   return (
-    <PageShell
-      title="库存流水"
-      description="流水只追加；可按公司、批次和来源单据追溯每一次入库、出库与冲正。"
-    >
-      <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-2 xl:grid-cols-4">
-        <label className="text-sm">
-          <span className="text-slate-600">可见公司</span>
+    <section className="space-y-4">
+      <header className="p-head">
+        <div>
+          <div className="eyebrow">库存 · 流水</div>
+          <h1>库存流水</h1>
+          <p className="sub">
+            流水只追加、不修改。本页只展示冻结契约真实提供的时间、批次、变动量、来源单据与经手人。
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="chip inline-flex items-center gap-1">
+            <Icon name="shield" size={14} /> 只追加
+          </span>
+          <span className="st ok">D2 口径</span>
+        </div>
+      </header>
+
+      <div className="toolbar">
+        <label>
+          <span className="sr-only">可见公司</span>
           <select
             value={companyId}
             onChange={(event) => {
@@ -79,8 +130,9 @@ export function InventoryFlowsPage() {
               setBatchId(undefined);
               setResolvedBatchNo(null);
               setBatchNoInput('');
+              setTraceError(null);
             }}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+            className="search"
           >
             <option value="">全部可见公司</option>
             {(me.data?.companyIds ?? []).map((id) => (
@@ -90,9 +142,33 @@ export function InventoryFlowsPage() {
             ))}
           </select>
         </label>
-        <label className="text-sm">
-          <span className="text-slate-600">批次号追溯</span>
-          <span className="mt-1 flex gap-2">
+        <label>
+          <span className="sr-only">来源单据类型</span>
+          <select
+            value={sourceDocType}
+            onChange={(event) => setSourceDocType(event.target.value)}
+            className="search"
+          >
+            <option value="">全部来源类型</option>
+            {SOURCE_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">来源单据号</span>
+          <input
+            value={sourceDocId}
+            onChange={(event) => setSourceDocId(event.target.value)}
+            placeholder="来源单据 ID"
+            className="search"
+          />
+        </label>
+        <label>
+          <span className="sr-only">批次号追溯</span>
+          <span className="flex items-center gap-2">
             <input
               value={batchNoInput}
               onChange={(event) => {
@@ -101,50 +177,44 @@ export function InventoryFlowsPage() {
                   setBatchId(undefined);
                   setResolvedBatchNo(null);
                 }
+                setTraceError(null);
               }}
-              placeholder="如 PB-0001-20261110-0001"
-              className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2"
+              placeholder="批次号追溯"
+              className="search"
             />
             <button
               type="button"
               disabled={!batchNoInput.trim() || resolveBatch.isPending}
               onClick={() => resolveBatch.mutate()}
-              className="rounded-lg bg-slate-800 px-3 py-2 text-sm text-white disabled:opacity-40"
+              className="btn btn-primary"
             >
               {resolveBatch.isPending ? '查找中…' : '追溯'}
             </button>
           </span>
         </label>
-        <label className="text-sm">
-          <span className="text-slate-600">来源单据类型</span>
-          <select
-            value={sourceDocType}
-            onChange={(event) => setSourceDocType(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-          >
-            <option value="">全部来源</option>
-            {SOURCE_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          <span className="text-slate-600">来源单据号</span>
-          <input
-            value={sourceDocId}
-            onChange={(event) => setSourceDocId(event.target.value)}
-            placeholder="输入来源单据 ID"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-          />
-        </label>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            setCompanyId('');
+            setBatchNoInput('');
+            setBatchId(undefined);
+            setResolvedBatchNo(null);
+            setSourceDocType('');
+            setSourceDocId('');
+            setTraceError(null);
+          }}
+        >
+          <Icon name="refresh" size={14} />
+          重置
+        </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         {resolvedBatchNo ? (
           <>
-            <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-700">
+            <span className="chip inline-flex items-center gap-1">
+              <Icon name="pin" size={14} />
               当前批次：{resolvedBatchNo}
             </span>
             <button
@@ -154,82 +224,170 @@ export function InventoryFlowsPage() {
                 setResolvedBatchNo(null);
                 setBatchNoInput('');
               }}
-              className="rounded border border-slate-300 px-2 py-1 hover:bg-white"
+              className="btn"
             >
               清除批次筛选
             </button>
           </>
-        ) : (
-          <span>未指定批次时显示全部可见流水。</span>
-        )}
-        {traceError && <span className="text-rose-600">{traceError}</span>}
+        ) : null}
+        {traceError ? (
+          <span className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700">
+            {traceError}
+          </span>
+        ) : null}
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-        {flows.isPending ? (
-          <ListLoading label="库存流水加载中…" />
-        ) : flows.isError ? (
-          <ListError
-            title="流水加载失败"
-            error={flows.error}
-            onRetry={() => void flows.refetch()}
-          />
-        ) : rows.length === 0 ? (
-          <ListEmpty title="暂无库存流水。单据完成入库、出库或盘点审批后会在这里留痕。" />
-        ) : (
-          <table className="w-full min-w-[920px] text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+      <div
+        className="card list-card"
+        data-state={state}
+        aria-busy={state === 'loading'}
+      >
+        <div className="tw">
+          <table className="w-full min-w-[980px] text-left">
+            <thead>
               <tr>
-                <th className="px-4 py-3">发生时间</th>
-                <th className="px-4 py-3">批次</th>
-                <th className="px-4 py-3 text-right">变动量</th>
-                <th className="px-4 py-3">来源单据</th>
-                <th className="px-4 py-3">经手人</th>
+                <th>发生时间</th>
+                <th>批次 ID</th>
+                <th>方向</th>
+                <th className="text-right">变动量</th>
+                <th>来源类型</th>
+                <th>来源单据 ID</th>
+                <th>经手人</th>
               </tr>
             </thead>
-            <tbody>
-              {rows.map((flow: InventoryFlow) => (
-                <tr key={flow.id} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-3 text-slate-600">{formatDateTime(flow.occurredAt)}</td>
-                  <td className="px-4 py-3 font-mono text-xs" title={flow.batchId}>
-                    {flow.batchId === batchId && resolvedBatchNo
-                      ? resolvedBatchNo
-                      : shortId(flow.batchId)}
-                  </td>
-                  <td
-                    className={`px-4 py-3 text-right font-medium ${
-                      flow.delta.startsWith('-') ? 'text-rose-600' : 'text-emerald-700'
-                    }`}
-                  >
-                    {flow.delta.startsWith('-') ? flow.delta : `+${flow.delta}`}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">
-                      {flow.sourceDocType}
-                    </span>
-                    <span className="ml-2 font-mono text-xs text-slate-600">
+            <tbody data-state={state}>
+              {rows.map((flow: InventoryFlow) => {
+                const direction = directionOf(flow.delta);
+                return (
+                  <tr key={flow.id} className="r-row">
+                    <td className="mono">{formatDateTime(flow.occurredAt)}</td>
+                    <td className="mono" title={flow.batchId}>
+                      {flow.batchId === batchId && resolvedBatchNo
+                        ? resolvedBatchNo
+                        : shortId(flow.batchId)}
+                    </td>
+                    <td>
+                      <span className={direction.className}>
+                        {direction.text}
+                      </span>
+                    </td>
+                    <td className="num text-right">
+                      <b>{direction.value}</b>
+                    </td>
+                    <td>
+                      <span className="mono" title={flow.sourceDocType}>
+                        {flow.sourceDocType}
+                      </span>
+                    </td>
+                    <td className="mono" title={flow.sourceDocId}>
                       {flow.sourceDocId}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
-                    {shortId(flow.handledBy)}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="mono" title={flow.handledBy}>
+                      {shortId(flow.handledBy)}
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr className="st-tr st-empty">
+                <td colSpan={7}>
+                  <div className="st-box">
+                    <div className="st-ico">
+                      <Icon name="filter" />
+                    </div>
+                    <div className="st-title">没有符合条件的库存流水</div>
+                    <p className="st-desc">
+                      可清空筛选；单据入库、出库或冲正审批后会在这里留下不可修改的记录。
+                    </p>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        setCompanyId('');
+                        setBatchNoInput('');
+                        setBatchId(undefined);
+                        setResolvedBatchNo(null);
+                        setSourceDocType('');
+                        setSourceDocId('');
+                      }}
+                    >
+                      清空筛选
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr className="st-tr st-loading">
+                <td colSpan={7}>
+                  <div className="st-box" aria-label="库存流水加载中">
+                    <div className="sk sk-line w80" />
+                    <div className="sk sk-line w60" />
+                    <div className="sk sk-line w40" />
+                    <p className="st-desc mt-3">库存流水加载中…</p>
+                  </div>
+                </td>
+              </tr>
+              <tr className="st-tr st-error">
+                <td colSpan={7}>
+                  <div className="st-box st-error">
+                    <div className="st-ico">
+                      <Icon name="refresh" />
+                    </div>
+                    <div className="st-title">库存流水加载失败</div>
+                    <p className="st-desc">
+                      {describeListError('库存流水加载失败', flows.error)}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => void flows.refetch()}
+                    >
+                      重试
+                    </button>
+                  </div>
+                </td>
+              </tr>
             </tbody>
           </table>
-        )}
+        </div>
+        <footer className="tf">
+          <span>
+            当前筛选：
+            {filterText({
+              companyId,
+              resolvedBatchNo,
+              sourceDocType,
+              sourceDocId,
+            })}
+          </span>
+          <div className="pager" aria-label="库存流水分批">
+            <span className="count">当前返回 {rows.length} 条</span>
+            <div className="nav">
+              <button
+                type="button"
+                disabled={pageIndex === 0}
+                onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
+              >
+                上一批
+              </button>
+              <span className="of">第 {pageIndex + 1} 批</span>
+              <button
+                type="button"
+                disabled={!flows.data?.nextCursor}
+                onClick={() => {
+                  const nextCursor = flows.data?.nextCursor;
+                  if (!nextCursor) return;
+                  setCursors((items) => [
+                    ...items.slice(0, pageIndex + 1),
+                    nextCursor,
+                  ]);
+                  setPageIndex((index) => index + 1);
+                }}
+              >
+                下一批
+              </button>
+            </div>
+          </div>
+        </footer>
       </div>
-
-      <Pagination
-        pageIndex={pageIndex}
-        nextCursor={flows.data?.nextCursor ?? null}
-        onPrevious={() => setPageIndex((index) => Math.max(0, index - 1))}
-        onNext={(cursor) => {
-          setCursors((items) => [...items.slice(0, pageIndex + 1), cursor]);
-          setPageIndex((index) => index + 1);
-        }}
-      />
-    </PageShell>
+    </section>
   );
 }

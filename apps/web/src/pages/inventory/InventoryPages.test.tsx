@@ -53,6 +53,16 @@ const FLOW: InventoryFlow = {
   occurredAt: '2026-11-10T09:30:00.000Z',
 };
 
+const INBOUND_FLOW: InventoryFlow = {
+  ...FLOW,
+  id: '00000000-0000-4000-8000-000000000006',
+  delta: '5',
+  sourceDocType: 'A',
+  sourceDocId: 'PURCHASE-0003',
+  handledBy: 'employee-3',
+  occurredAt: '2026-11-10T10:00:00.000Z',
+};
+
 const STOCKTAKE: Stocktake = {
   id: STOCKTAKE_ID,
   tenantId: 't1',
@@ -238,7 +248,7 @@ describe('库存数量页（#143）', () => {
 });
 
 describe('库存流水页（#143）', () => {
-  it('展示正负变动与来源单据追溯信息', () => {
+  it('只展示冻结契约字段，并按 delta 正负与来源类型如实标向', () => {
     const html = render(<InventoryFlowsPage />, (client) => {
       client.setQueryData(authKeys.me, ME);
       client.setQueryData(
@@ -249,15 +259,44 @@ describe('库存流水页（#143）', () => {
           sourceDocId: undefined,
           cursor: null,
         }),
-        { items: [FLOW], nextCursor: null },
+        { items: [FLOW, INBOUND_FLOW], nextCursor: null },
       );
     });
 
     expect(html).toContain('库存流水');
     expect(html).toContain('-3');
+    expect(html).toContain('+5');
+    expect(html).toContain('负变动');
+    expect(html).toContain('正变动');
     expect(html).toContain('E');
     expect(html).toContain('SALE-0007');
-    expect(html).toContain('批次号追溯');
+    expect(html).toContain('PURCHASE-0003');
+    expect(html).toContain('当前返回 2 条');
+    expect(html).not.toContain('金额');
+    expect(html).not.toContain('锁定 / 调整');
+  });
+
+  it('四态行常驻 DOM，空流水保留表头', () => {
+    const html = render(<InventoryFlowsPage />, (client) => {
+      client.setQueryData(authKeys.me, ME);
+      client.setQueryData(
+        inventoryQueryKeys.flows({
+          companyId: undefined,
+          batchId: undefined,
+          sourceDocType: undefined,
+          sourceDocId: undefined,
+          cursor: null,
+        }),
+        { items: [], nextCursor: null },
+      );
+    });
+
+    expect(html).toContain('data-state="empty"');
+    expect(html).toContain('st-empty');
+    expect(html).toContain('st-loading');
+    expect(html).toContain('st-error');
+    expect(html).toContain('批次 ID');
+    expect(html).toContain('没有符合条件的库存流水');
   });
 });
 
