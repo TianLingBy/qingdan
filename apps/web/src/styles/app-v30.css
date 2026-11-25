@@ -795,13 +795,22 @@
    外层套一层带 border 的盒子，圆角才不会把首行表头切出白角。 */
 .ln{overflow:hidden;border:1px solid var(--v30-line);border-radius:var(--v30-r)}
 .ln table{width:100%;border-collapse:collapse;text-align:left}
+/* 表头不吸顶：`app-v013.css:183` 给整页列表写了 `thead th{position:sticky;top:var(--topbar-h)}`，
+   `.ln` 自己是 `overflow:hidden` 的滚动容器，吸顶的表头会停在 56px 处**压住第一行数据**
+   —— 发货弹层里表现为「明细一行都看不见」，详情里表现为表头盖住首行。稿子的 `.ln` 也不吸顶。 */
+.ln thead th{position:static;z-index:auto}
+/* 对齐按稿子（`index.html:235` th 左对齐 / `:248` 数字列右对齐）：
+   v0.13 的 `tbody td{text-align:center}`（`app-v013.css:184`）是列表口径，
+   详情明细直接继承会变成「商品名居中、金额居中」，金额位数对不齐。 */
 .ln th,.ln td{
   height:38px;
   padding:0 16px;
   font-size:var(--fs-13,13px);
+  text-align:left;
   border-bottom:1px solid var(--line-1);
   white-space:nowrap;
 }
+.ln th.num,.ln td.num{text-align:right}
 .ln th{
   font-size:var(--fs-12,12px);
   font-weight:550;
@@ -1059,6 +1068,25 @@
   text-underline-offset:2px;
 }
 .doc-link:hover{text-decoration:underline}
+/* 可排序表头：整格就是一个按钮。
+   原来写作 `inline-flex items-center gap-1 font-medium hover:text-slate-900`，
+   箭头另挂 `text-xs text-slate-400` —— 两处写死的灰在暗色下都糊在深底里。
+   `index.css` 有意删了全局 `button{background:none}`，所以这里必须自己归零，
+   否则表头会冒出一块浏览器默认灰底。 */
+.th-sort{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  border:0;
+  background:none;
+  padding:0;
+  font:inherit;
+  font-weight:550;
+  color:inherit;
+  cursor:pointer;
+}
+.th-sort:hover{color:var(--v30-ink)}
+.th-sort i{font-style:normal;font-size:var(--fs-11,12px);color:var(--v30-ink-3)}
 /* 行内动作槽：右对齐的一排小按钮 */
 .row-acts{display:flex;justify-content:flex-end;gap:8px}
 /* 表格行内按钮：比 `.btn-s` 再小一号。
