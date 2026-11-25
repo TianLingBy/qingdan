@@ -3,6 +3,11 @@ import { Icon } from './icons/Icon';
 /**
  * 列表分页（v3.0 `.tf` 页脚右侧的 `.pager`）。
  *
+ * 两个组件，按后端契约选：
+ * - `ListPager`：有 `total` 的页码模式（采购 A / 销售 E 等 D95 已铺到的模块），画首上下末；
+ * - `BatchPager`：只有游标、没有 `total` 的批次模式（加工 B / 内贸 N / 结算 C / 冲正），
+ *   只画「上一批 / 下一批 + 第几批」，不拿假页码糊弄。
+ *
  * 为什么抽成组件：单据六页（采购 A / 加工 B / 销售 E / 内贸 N / 结算 C / 冲正）
  * 的页码条完全一样——首 / 上 / 页码 / 下 / 末 + 每页条数。
  * 以前各页各写一份 `上一页 / 输入框 / 下一页`（v0.13 版式），
@@ -37,6 +42,61 @@ export function pageWindow(page: number, totalPages: number): readonly PageItem[
   if (end < totalPages - 1) items.push('dots');
   items.push(totalPages);
   return items;
+}
+
+export interface BatchPagerProps {
+  /** 当前是第几批（1 起）。游标分页没有总页数，只能显示批次号。 */
+  readonly batch: number;
+  readonly hasPrev: boolean;
+  readonly hasNext: boolean;
+  readonly onPrev: () => void;
+  readonly onNext: () => void;
+  readonly label?: string;
+  readonly disabled?: boolean;
+}
+
+/**
+ * 游标分页的「批次」翻页器（加工 B / 内贸 N / 结算 C / 冲正 用）。
+ *
+ * 为什么不做成 `ListPager` 的一个分支：游标契约（`PageQuerySchema`，无 `total`）
+ * 拿不到总条数与总页数，画页码只能靠猜——按「本批行数」算永远是 1 页，
+ * 画出来就是死按钮。所以这几页只有「上一批 / 下一批」，且明确告诉用户这是第几批。
+ * 等后端把 D95 的 `page/pageSize` 铺到这四个模块，再换成 `ListPager`。
+ */
+export function BatchPager({
+  batch,
+  hasPrev,
+  hasNext,
+  onPrev,
+  onNext,
+  label = '分批翻页',
+  disabled = false,
+}: BatchPagerProps) {
+  return (
+    <div className="pager" role="group" aria-label={label}>
+      <div className="nav">
+        <button
+          type="button"
+          aria-label="上一批"
+          title="上一批"
+          disabled={disabled || !hasPrev}
+          onClick={onPrev}
+        >
+          <Icon name="pg-prev" />
+        </button>
+        <span className="dots">第 {batch} 批</span>
+        <button
+          type="button"
+          aria-label="下一批"
+          title="下一批"
+          disabled={disabled || !hasNext}
+          onClick={onNext}
+        >
+          <Icon name="pg-next" />
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export interface ListPagerProps {

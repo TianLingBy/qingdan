@@ -217,6 +217,15 @@ describe('结算单 C 页面', () => {
     expect(html).not.toContain('data-sort');
   });
 
+  it('列表卡是 v3.0 的 card list-card + .tw/.tf，页脚写「共 N 条」', () => {
+    const html = renderPage(seedClient({ me: FULL, orders: [ORDER] }));
+
+    expect(html).toContain('class="card list-card"');
+    expect(html).toContain('class="tw"');
+    expect(html).toContain('class="tf"');
+    expect(html).toContain('共 1 条');
+  });
+
   /**
    * 撤销结算（D88）的按钮在详情面板里，而详情面板只在 `detailId` 非空时渲染——
    * `renderToStaticMarkup` 的首屏里没有它，**这里测不到**。

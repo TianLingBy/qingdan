@@ -21,6 +21,7 @@ import type {
 } from '@qingdan/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import { BatchPager } from '../../components/ListPager';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import { DetailHead, DetailMetaDot, DocMeta, DocPill } from '../../components/OrderDetailUI';
 import { allows, type ScopeAction } from '../../lib/access';
@@ -632,8 +633,8 @@ export function SettlementsPage() {
         视觉稿的「点表头排序」不做——`SettlementOrderListQuerySchema` 只有 cursor / limit，
         没有 sort 参数，点下去只会静默无效（契约层面就不支持）。
       */}
-      <div className="card" data-state={listState}>
-        <div className="overflow-x-auto">
+      <div className="card list-card" data-state={listState}>
+        <div className="tw">
           <table className="w-full min-w-[1060px] text-left">
             <thead>
               <tr>
@@ -738,32 +739,28 @@ export function SettlementsPage() {
             </tbody>
           </table>
         </div>
-        {/* 游标分页：没有总页数，只给「上一批 / 下一批」（同 N 单） */}
-        {pageIndex > 0 || nextCursor !== null ? (
-          <div className="pager">
-            <button
-              type="button"
-              disabled={pageIndex === 0}
-              onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-            >
-              上一批
-            </button>
-            <span className="of">
-              第 {pageIndex + 1} 批{nextCursor === null ? ' · 已是最后一批' : ''}
-            </span>
-            <button
-              type="button"
-              disabled={!nextCursor}
-              onClick={() => {
+        {/*
+          游标分页。游标契约（`PageQuerySchema`）只有 cursor/limit、没有 `total`，
+          所以只能「上一批 / 下一批」，**不画页码**——画了就是假的总页数（D95 还没铺到本模块）。
+          `.tf` 页脚在非 filled 态自动收起翻页，只留条数汇总。
+        */}
+        <div className="tf">
+          <span>共 {rows.length} 条</span>
+          {(pageIndex > 0 || nextCursor !== null) && (
+            <BatchPager
+              batch={pageIndex + 1}
+              hasPrev={pageIndex > 0}
+              hasNext={nextCursor !== null}
+              onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
+              onNext={() => {
                 if (!nextCursor) return;
                 setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
                 setPageIndex((index) => index + 1);
               }}
-            >
-              下一批
-            </button>
-          </div>
-        ) : null}
+              label="{label}"
+            />
+          )}
+        </div>
       </div>
 
       <p className="note">

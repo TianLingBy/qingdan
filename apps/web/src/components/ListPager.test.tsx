@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ListPager, pageWindow } from './ListPager';
+import { BatchPager } from './ListPager';
 
 /**
  * v3.0 列表分页（`.tf` 页脚右侧）。
@@ -78,5 +79,31 @@ describe('ListPager 渲染', () => {
 
     expect(html).toContain('aria-label="每页条数"');
     expect(html).toMatch(/aria-label="下一页"[^>]*disabled/);
+  });
+});
+
+describe('BatchPager 游标批次翻页', () => {
+  const base = { batch: 1, hasPrev: false, hasNext: true, onPrev: () => {}, onNext: () => {} };
+
+  it('只写「第 N 批」+ 上/下两键，不画页码也不画首末页', () => {
+    const html = renderToStaticMarkup(<BatchPager {...base} />);
+
+    expect(html).toContain('第 1 批');
+    expect(html).toContain('aria-label="上一批"');
+    expect(html).toContain('aria-label="下一批"');
+    // 游标契约没有 total：画首页/末页/页码就是死按钮
+    expect(html).not.toContain('aria-label="第一页"');
+    expect(html).not.toContain('aria-label="最后一页"');
+    expect(html).not.toContain('aria-label="第 2 页"');
+  });
+
+  it('第一批时「上一批」禁用；没有 nextCursor 时「下一批」禁用', () => {
+    const first = renderToStaticMarkup(<BatchPager {...base} />);
+    expect(first).toMatch(/aria-label="上一批"[^>]*disabled/);
+    expect(first).not.toMatch(/aria-label="下一批"[^>]*disabled/);
+
+    const last = renderToStaticMarkup(<BatchPager {...base} hasPrev hasNext={false} batch={3} />);
+    expect(last).not.toMatch(/aria-label="上一批"[^>]*disabled/);
+    expect(last).toMatch(/aria-label="下一批"[^>]*disabled/);
   });
 });
