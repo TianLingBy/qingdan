@@ -372,11 +372,12 @@ describe('采购单开单前校验', () => {
   });
 });
 
-describe('v0.13 版式（#337）', () => {
-  it('列表落在 card 上，三行状态行常驻、数据行只带 r-row', () => {
+describe('v3.0 版式（#431）', () => {
+  it('列表落在 card list-card 上，三行状态行常驻、数据行只带 r-row', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
-    expect(html).toContain('class="card"');
+    // list-card 是 v3.0 的列表卡：非 filled 态由它收起页脚分页
+    expect(html).toContain('class="card list-card"');
     expect(html).toContain('data-state="filled"');
     expect(html).toContain('class="r-row"');
     // 数据行带 st-tr 就会命中 `tbody > tr.st-tr{display:none}`，filled 态没有复原规则
@@ -384,22 +385,63 @@ describe('v0.13 版式（#337）', () => {
     for (const stateClass of ['st-tr st-loading', 'st-tr st-error', 'st-tr st-empty']) {
       expect(html).toContain(stateClass);
     }
+    // 表格横向滚动容器用 v3.0 的 .tw（v0.13 靠 Tailwind 的 overflow-x-auto）
+    expect(html).toContain('class="tw"');
   });
 
-  it('页码条画「共 N 张 / 共 K 页」，不再是游标的「第 M 批」', () => {
+  it('页脚画「共 N 张」+ 首 / 上 / 页码 / 下 / 末 + 每页条数', () => {
     // 45 张、每页 20 → 3 页（最后一页 5 张）。总数必须是服务端 total，
     // 不是本页行数：按行数算永远只有 1 页，翻页按钮会一直是灰的。
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER], total: 45 }));
 
+    expect(html).toContain('class="tf"');
     expect(html).toContain('共 45 张');
-    expect(html).toContain('/ 3 页');
-    expect(html).toContain('上一页');
-    expect(html).toContain('下一页');
-    expect(html).toContain('aria-label="页码"');
+    for (const label of ['第一页', '上一页', '下一页', '最后一页']) {
+      expect(html).toContain(`aria-label="${label}"`);
+    }
+    // 3 页全画成数字按钮，当前页有 aria-current，末页按钮存在
+    expect(html).toContain('aria-label="第 2 页"');
+    expect(html).toContain('aria-label="第 3 页"');
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain('aria-label="每页条数"');
+    expect(html).toContain('20 条/页');
     // 游标模式的措辞必须消失，否则用户会以为这是「分批加载」而不是分页
     expect(html).not.toContain('上一批');
     expect(html).not.toContain('下一批');
     expect(html).not.toContain('第 1 批');
+  });
+
+  it('合计只在「一页装得下全部」时给，翻页态不拿本页和冒充全量', () => {
+    // 1 张、total 也是 1 → 全部都在这一页，合计可信
+    const single = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER], total: 1 }));
+    expect(single).toContain('合计');
+    expect(single).toContain('¥4,300.00');
+
+    // 45 张但只拿到 1 行 → 后端没有「全量货款汇总」，宁可不写
+    const paged = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER], total: 45 }));
+    expect(paged).not.toContain('· 合计');
+  });
+
+  it('无看价权限时页脚不给合计（金额是 null，不是 0）', () => {
+    const masked: PurchaseOrder = {
+      ...ORDER,
+      lines: ORDER.lines.map((line) => ({ ...line, unitPrice: null, amount: null })),
+      fees: ORDER.fees.map((fee) => ({ ...fee, unitPrice: null, amount: null })),
+      goodsAmount: null,
+      feeAmount: null,
+      totalAmount: null,
+    };
+    const html = renderPage(
+      seedClient({
+        me: { ...ME_WITH_PRICE, scope: [{ domain: 'purchase', actions: ['read'] }] },
+        orders: [masked],
+        total: 1,
+      }),
+    );
+
+    // 遮罩态不能出现金额：合计要是算成 0 就等于把「没权限」画成「采购了 0 元」
+    expect(html).not.toContain('· 合计');
+    expect(html).not.toContain('¥');
   });
 
   it('只有排序白名单里的三列可点（单号 / 货款 / 开单时间），其余表头是纯文本', () => {

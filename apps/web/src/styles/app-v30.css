@@ -123,6 +123,9 @@
 }
 .tf .pager {
   margin-left: auto;
+  /* `.pager` 本体是 v0.13 的「卡片里的一条」，自带 `padding:10px 14px`；
+     挪进 `.tf` 后外边距由 `.tf` 给，再留一层内边距会把页码条挤成两级缩进。 */
+  padding: 0;
 }
 /* 四态收起：只有 filled 才显示分页（稿子 L573）。
    加载/空/错误态由 app-v013 的 data-state 规则控制行显示，这条只管页脚。 */
@@ -144,8 +147,11 @@
    「已有的类不重复定义」，v0.13 的分页按钮本体一个字节都不动。
    为什么要这一条：`app-v013.css:400` 没写 background，而 index.css 有意删掉了全局
    `button{background:none}`（README §2），暗色下按钮会落到浏览器默认浅底 → 白底白字。
-   老的 `.pager` 那处缺口不属本单，已在 #443 评论里报给负责人单独修。 */
-.tf .pager button {
+   老的 `.pager` 那处缺口不属本单，已在 #443 评论里报给负责人单独修。
+
+   `:not(.on)` 不能省：本选择器与上面 `.pager button.on` 同权重（0,2,1）且写在后面，
+   加上 `.on` 会把当前页的实心底洗成透明 —— 白字配白底，页码直接看不见（#431 实测踩到）。 */
+.tf .pager button:not(.on) {
   background: transparent;
   cursor: pointer;
 }
