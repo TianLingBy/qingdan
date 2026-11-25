@@ -621,3 +621,53 @@
   position: relative;
   z-index: 1;
 }
+
+/* ============================================================
+   §7 工作台五块（#435 追加）
+   ------------------------------------------------------------
+   app-v013 只有 `.kpi` / `.card` / `.cellcard` 本体，没有 v3.0 稿子里
+   KPI 的三行结构（label / 数值 / 说明）、卡片头、待办行、链路节点、动态行、趋势行。
+   这里按稿子的视觉补最小一组，全部用 tokens-v013 的变量，不引入新颜色。
+   ======================================= */
+/* KPI：四张卡按数量自适应（2~4 张都不会歪） */
+.kpis{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
+.kpi .kpi-v{font-size:26px;font-weight:660;letter-spacing:-.02em;margin-top:8px;display:flex;align-items:baseline;gap:6px}
+.kpi .kpi-v i{font-style:normal;font-size:13px;font-weight:500;color:var(--text-3)}
+.kpi .kpi-m{margin-top:8px;font-size:13px;line-height:1.6;color:var(--text-3)}
+
+/* 卡片头 */
+.card-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:16px 18px 10px;margin:0}
+.card-h h3{font-size:16px;font-weight:620;letter-spacing:-.01em}
+.card-h small{font-size:13px;color:var(--text-3)}
+
+/* 待办行 / 动态行 / 趋势行：一条一条，点得动 */
+.wb-list{display:grid;padding:0 14px 12px}
+.wb-row{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;padding:11px 4px;border:0;border-bottom:1px solid var(--line-1);background:none;text-align:left;color:inherit;font:inherit;cursor:pointer;border-radius:0}
+.wb-row:last-child{border-bottom:0}
+.wb-row:hover{background:var(--surf-2)}
+.wb-row b{display:block;font-size:15px;font-weight:600}
+.wb-row small{display:block;margin-top:2px;font-size:13px;color:var(--text-3)}
+.wb-row .wb-num{font-family:var(--mono);color:var(--text-2);white-space:nowrap}
+
+/* 主业务链路 */
+.wb-chain{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;padding:0 16px 16px}
+.wb-chain button{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line-1);border-radius:12px;background:var(--surf-1);text-align:left;color:inherit;font:inherit;cursor:pointer;transition:border-color .14s,background .14s}
+.wb-chain button:hover{border-color:var(--line-3);background:var(--surf-2)}
+.wb-chain .lt{display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;border-radius:10px;background:var(--a-10);color:var(--accent-light);font-family:var(--mono);font-weight:700;font-size:14px}
+.wb-chain b{display:block;font-size:15px;font-weight:600}
+.wb-chain small{display:block;margin-top:2px;font-size:13px;color:var(--text-3)}
+
+/* 块内说明文字 */
+.wb-note{padding:0 16px 12px;font-size:13px;color:var(--text-3)}
+.wb-feed{display:grid;padding:0 16px 12px}
+.wb-feed-row{display:flex;gap:14px;padding:10px 4px;border-bottom:1px solid var(--line-1)}
+.wb-feed-row:last-child{border-bottom:0}
+.wb-feed-row time{flex:0 0 auto;font-family:var(--mono);font-size:14px;color:var(--text-2)}
+.wb-feed-row b{font-family:var(--mono);font-size:14px;font-weight:600}
+.wb-feed-row small{display:block;margin-top:2px;font-size:13px;color:var(--text-3)}
+
+/* 近 6 个月趋势 */
+.wb-trend{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 4px;border-bottom:1px solid var(--line-1)}
+.wb-trend:last-child{border-bottom:0}
+.wb-trend span{font-size:14px;color:var(--text-2)}
+.wb-trend b{font-family:var(--mono)}
