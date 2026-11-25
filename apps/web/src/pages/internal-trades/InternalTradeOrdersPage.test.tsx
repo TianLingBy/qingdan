@@ -382,6 +382,17 @@ describe('内部交易单 N 页面', () => {
     expect(html).not.toContain('页</span>');
   });
 
+  it('列表卡是 v3.0 的 card list-card + .tw/.tf（页脚在非 filled 态自动收起翻页）', () => {
+    const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
+
+    expect(html).toContain('class="card list-card"');
+    expect(html).toContain('class="tw"');
+    expect(html).toContain('class="tf"');
+    // 单批：只写条数，翻页器整块不出现（BatchPager 只在有上/下一批时渲染）
+    expect(html).toContain('共 1 条');
+    expect(html).not.toContain('aria-label="下一批"');
+  });
+
   it('详情面板用单据信息网格 + 明细表 tfoot 合计（v0.13 单据详情版式）', () => {
     const html = renderDetail(DETAIL);
 

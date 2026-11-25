@@ -543,10 +543,13 @@ describe('加工单发货口径（ship-flow）', () => {
 
 /* ---------------------- v0.13 版式（#337 单据组） ---------------------- */
 
-describe('v0.13 列表版式（#337）', () => {
-  it('列表落在 card 上，三个状态行常驻 tbody、靠 data-state 显隐', () => {
+describe('v3.0 列表版式（#431）', () => {
+  it('列表落在 card list-card 上，三个状态行常驻 tbody、靠 data-state 显隐', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
+    expect(html).toContain('class="card list-card"');
+    expect(html).toContain('class="tw"');
+    expect(html).toContain('class="tf"');
     expect(html).toContain('data-state="filled"');
     expect(html).toContain('class="r-row"');
     for (const stateClass of ['st-tr st-loading', 'st-tr st-error', 'st-tr st-empty']) {
@@ -565,10 +568,14 @@ describe('v0.13 列表版式（#337）', () => {
   it('游标分页只写「上一批 / 下一批」，不画页码', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
-    expect(html).toContain('上一批');
-    expect(html).toContain('下一批');
+    // 页脚在 .tf 里，翻页器是 BatchPager（图标 + aria-label）
+    expect(html).toContain('aria-label="上一批"');
+    expect(html).toContain('aria-label="下一批"');
+    expect(html).toContain('第 1 批');
+    // 加工单列表契约没有 total，画页码就是画假按钮
     expect(html).not.toContain('下一页');
     expect(html).not.toContain('第 1 页');
+    expect(html).not.toContain('aria-label="最后一页"');
   });
 });
 
