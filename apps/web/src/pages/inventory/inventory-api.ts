@@ -2,6 +2,7 @@ import type {
   InventoryBatch,
   InventoryBatchDetail,
   InventoryFlow,
+  InventoryAlertListResponse,
   Stocktake,
   StocktakeCreateInput,
   StocktakeDetail,
@@ -14,12 +15,25 @@ export interface CursorPage<T> {
   readonly nextCursor: string | null;
 }
 
+export interface PagedInventoryBatches extends CursorPage<InventoryBatch> {
+  readonly total: number | null;
+  readonly page: number | null;
+  readonly pageSize: number | null;
+}
+
+export type InventoryBatchSort = 'batchNo' | 'availableQty' | 'createdAt';
+
 export interface InventoryBatchFilters {
   readonly companyId?: string;
   readonly productId?: string;
   readonly keyword?: string;
   readonly cursor?: string | null;
   readonly limit?: number;
+  /** 页码模式（D95）；与 cursor/limit 不要同时使用。 */
+  readonly page?: number;
+  readonly pageSize?: number;
+  readonly sort?: InventoryBatchSort;
+  readonly order?: 'asc' | 'desc';
 }
 
 export interface InventoryFlowFilters {
@@ -43,15 +57,21 @@ export type StocktakeDirection = 'increase' | 'decrease';
 
 const DEFAULT_LIMIT = 50;
 
-function queryOf(filters: Record<string, QueryValue>): Record<string, QueryValue> {
+function queryOf(
+  filters: Record<string, QueryValue>,
+): Record<string, QueryValue> {
   return filters;
 }
 
 export const inventoryQueryKeys = {
-  batches: (filters: InventoryBatchFilters) => ['inventory', 'batches', filters] as const,
+  batches: (filters: InventoryBatchFilters) =>
+    ['inventory', 'batches', filters] as const,
+  alerts: (companyId: string) => ['inventory', 'alerts', companyId] as const,
   batch: (id: string | null) => ['inventory', 'batch', id] as const,
-  flows: (filters: InventoryFlowFilters) => ['inventory', 'flows', filters] as const,
-  stocktakes: (filters: StocktakeFilters) => ['inventory', 'stocktakes', filters] as const,
+  flows: (filters: InventoryFlowFilters) =>
+    ['inventory', 'flows', filters] as const,
+  stocktakes: (filters: StocktakeFilters) =>
+    ['inventory', 'stocktakes', filters] as const,
   stocktake: (id: string | null) => ['inventory', 'stocktake', id] as const,
 };
 
@@ -59,19 +79,42 @@ export const inventoryApi = {
   async listBatches(
     filters: InventoryBatchFilters,
     client: ApiClient = apiClient,
-  ): Promise<CursorPage<InventoryBatch>> {
-    return client.get<CursorPage<InventoryBatch>>('/inventory/batches', {
+  ): Promise<PagedInventoryBatches> {
+    const pageMode =
+      filters.page !== undefined || filters.pageSize !== undefined;
+    return client.get<PagedInventoryBatches>('/inventory/batches', {
       query: queryOf({
         companyId: filters.companyId,
         productId: filters.productId,
         keyword: filters.keyword,
-        cursor: filters.cursor ?? undefined,
-        limit: filters.limit ?? DEFAULT_LIMIT,
+        ...(pageMode
+          ? {
+              page: filters.page ?? 1,
+              pageSize: filters.pageSize ?? 20,
+              sort: filters.sort,
+              order: filters.order,
+            }
+          : {
+              cursor: filters.cursor ?? undefined,
+              limit: filters.limit ?? DEFAULT_LIMIT,
+            }),
       }),
     });
   },
 
-  async getBatch(id: string, client: ApiClient = apiClient): Promise<InventoryBatchDetail> {
+  async listAlerts(
+    companyId: string,
+    client: ApiClient = apiClient,
+  ): Promise<InventoryAlertListResponse> {
+    return client.get<InventoryAlertListResponse>('/inventory/alerts', {
+      query: { companyId },
+    });
+  },
+
+  async getBatch(
+    id: string,
+    client: ApiClient = apiClient,
+  ): Promise<InventoryBatchDetail> {
     return client.get<InventoryBatchDetail>(`/inventory/batches/${id}`);
   },
 
@@ -104,7 +147,9 @@ export const inventoryApi = {
     );
     const normalized = trimmed.toLocaleUpperCase();
     return (
-      page.items.find((batch) => batch.batchNo.toLocaleUpperCase() === normalized) ??
+      page.items.find(
+        (batch) => batch.batchNo.toLocaleUpperCase() === normalized,
+      ) ??
       page.items[0] ??
       null
     );
@@ -125,7 +170,10 @@ export const inventoryApi = {
     });
   },
 
-  async getStocktake(id: string, client: ApiClient = apiClient): Promise<StocktakeDetail> {
+  async getStocktake(
+    id: string,
+    client: ApiClient = apiClient,
+  ): Promise<StocktakeDetail> {
     return client.get<StocktakeDetail>(`/stocktakes/${id}`);
   },
 
@@ -134,7 +182,10 @@ export const inventoryApi = {
     input: StocktakeCreateInput,
     client: ApiClient = apiClient,
   ): Promise<Stocktake> {
-    const path = direction === 'increase' ? '/stocktakes/increases' : '/stocktakes/decreases';
+    const path =
+      direction === 'increase'
+        ? '/stocktakes/increases'
+        : '/stocktakes/decreases';
     return client.post<Stocktake>(path, input);
   },
 
@@ -143,8 +194,12 @@ export const inventoryApi = {
     version: number,
     client: ApiClient = apiClient,
   ): Promise<StocktakeDetail> {
-    return client.post<StocktakeDetail>(`/stocktakes/${id}/approve`, undefined, {
-      headers: { 'If-Match': `"${version}"` },
-    });
+    return client.post<StocktakeDetail>(
+      `/stocktakes/${id}/approve`,
+      undefined,
+      {
+        headers: { 'If-Match': `"${version}"` },
+      },
+    );
   },
 };
