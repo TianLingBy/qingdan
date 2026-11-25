@@ -1,4 +1,8 @@
-import type { CustomerReturn, ScopeMatrix, SupplierReturn } from '@qingdan/contracts';
+import type {
+  CustomerReturn,
+  ScopeMatrix,
+  SupplierReturn,
+} from '@qingdan/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -28,14 +32,19 @@ const SUPPLIER_ONLY: ScopeMatrix = [
   { domain: 'supplier_return', actions: ['read', 'create', 'view_price'] },
 ];
 
-const STOCKTAKE_READ_ONLY: ScopeMatrix = [{ domain: 'stocktake', actions: ['read'] }];
+const STOCKTAKE_READ_ONLY: ScopeMatrix = [
+  { domain: 'stocktake', actions: ['read'] },
+];
 
 /** 有 R 单读写但没有看价（D79）——列表金额应显示破折号提示。 */
 const CUSTOMER_NO_PRICE: ScopeMatrix = [
   { domain: 'customer_return', actions: ['read', 'create'] },
 ];
 
-function view(scope: ScopeMatrix, companyIds: readonly string[] = [COMPANY]): string {
+function view(
+  scope: ScopeMatrix,
+  companyIds: readonly string[] = [COMPANY],
+): string {
   const client = new QueryClient({
     defaultOptions: { queries: { enabled: false, retry: false } },
   });
@@ -101,11 +110,13 @@ describe('看价权限（D79）', () => {
 describe('盘点权限拆得比别的页细（D71）', () => {
   it('只有 read 时，开单按钮禁用并说明缺盘盈 / 盘亏权限', () => {
     const html = view(STOCKTAKE_READ_ONLY);
-    expect(html).toContain('当前身份没有盘盈 / 盘亏权限（D71）');
+    expect(html).toContain('需要 stocktake.create 或 stocktake.delete 权限');
   });
 
   it('盘盈盘亏权限齐了就不再提示缺权限', () => {
-    const html = view([{ domain: 'stocktake', actions: ['read', 'create', 'delete'] }]);
+    const html = view([
+      { domain: 'stocktake', actions: ['read', 'create', 'delete'] },
+    ]);
     expect(html).not.toContain('当前身份没有盘盈 / 盘亏权限');
   });
 });
@@ -115,7 +126,11 @@ describe('v0.13 列表版式（#337）', () => {
     const html = view(OWNER);
     expect(html).toContain('class="card min-w-0"');
     expect(html).toContain('data-state="loading"');
-    for (const stateClass of ['st-tr st-loading', 'st-tr st-error', 'st-tr st-empty']) {
+    for (const stateClass of [
+      'st-tr st-loading',
+      'st-tr st-error',
+      'st-tr st-empty',
+    ]) {
       expect(html).toContain(stateClass);
     }
   });
@@ -140,7 +155,9 @@ describe('三态齐全', () => {
   });
 
   it('身份读取失败时给提示，但仍显示分栏结构', () => {
-    const client = new QueryClient({ defaultOptions: { queries: { enabled: false } } });
+    const client = new QueryClient({
+      defaultOptions: { queries: { enabled: false } },
+    });
     const html = renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <ReversalsView
@@ -180,7 +197,15 @@ describe('完成入口（R / S）', () => {
       refundMode: '原路退款',
       status,
       refundAmount: '100',
-      lines: [{ productId: PRODUCT_ID, batchIds: [BATCH_ID], qty: '2', unitPrice: '50', amount: '100' }],
+      lines: [
+        {
+          productId: PRODUCT_ID,
+          batchIds: [BATCH_ID],
+          qty: '2',
+          unitPrice: '50',
+          amount: '100',
+        },
+      ],
       remark: null,
       version: 1,
       createdAt: '2026-11-15T00:00:00.000Z',
@@ -197,7 +222,15 @@ describe('完成入口（R / S）', () => {
       originalPurchaseOrderId: '01900000-0000-7000-8000-0000000000a1',
       status,
       refundAmount: '1200',
-      lines: [{ productId: PRODUCT_ID, batchIds: [BATCH_ID], qty: '2', unitPrice: '600', amount: '1200' }],
+      lines: [
+        {
+          productId: PRODUCT_ID,
+          batchIds: [BATCH_ID],
+          qty: '2',
+          unitPrice: '600',
+          amount: '1200',
+        },
+      ],
       remark: null,
       version: 1,
       createdAt: '2026-11-15T00:00:00.000Z',
@@ -205,7 +238,10 @@ describe('完成入口（R / S）', () => {
     };
   }
 
-  function renderCustomerDetail(status: CustomerReturn['status'], canApprove = true): string {
+  function renderCustomerDetail(
+    status: CustomerReturn['status'],
+    canApprove = true,
+  ): string {
     const detail = customerReturn(status);
     const client = createQueryClient();
     client.setQueryData(reversalsQueryKeys.customerReturn(detail.id), detail);
@@ -218,7 +254,10 @@ describe('完成入口（R / S）', () => {
       }),
       { items: [detail], nextCursor: null },
     );
-    client.setQueryData(reversalsQueryKeys.batches(COMPANY), { items: [], nextCursor: null });
+    client.setQueryData(reversalsQueryKeys.batches(COMPANY), {
+      items: [],
+      nextCursor: null,
+    });
     return renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <CustomerReturnsPanel
@@ -251,7 +290,10 @@ describe('完成入口（R / S）', () => {
       }),
       { items: [detail], nextCursor: null },
     );
-    client.setQueryData(reversalsQueryKeys.batches(COMPANY), { items: [], nextCursor: null });
+    client.setQueryData(reversalsQueryKeys.batches(COMPANY), {
+      items: [],
+      nextCursor: null,
+    });
     return renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <SupplierReturnsPanel
@@ -283,7 +325,9 @@ describe('完成入口（R / S）', () => {
 
   it('S 单是三类冲正里唯一能取消的：有 supplier_return.delete 才画「取消单据」', () => {
     expect(renderSupplierDetail('进行中')).toContain('取消单据');
-    expect(renderSupplierDetail('进行中', true, false)).not.toContain('取消单据');
+    expect(renderSupplierDetail('进行中', true, false)).not.toContain(
+      '取消单据',
+    );
   });
 
   it('已完成的 S 单不给取消（cancel 端点只放行进行中）', () => {

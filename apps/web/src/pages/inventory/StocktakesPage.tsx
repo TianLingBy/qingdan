@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Icon } from '../../components/icons/Icon';
 import { allows } from '../../lib/access';
 import { authApi, authKeys } from '../auth/auth-api';
 import { StocktakesPanel } from '../reversals/StocktakesPanel';
-import { PageShell } from './inventory-ui';
 
 /**
  * 库存盘点页（#143）。
@@ -23,10 +23,22 @@ export function StocktakesPage() {
   const companyId = selectedCompanyId || companyIds[0] || '';
 
   return (
-    <PageShell
-      title="盘点"
-      description="盘盈与盘亏分开授权；提交后进入审批，审批通过再追加冲正流水。"
-    >
+    <section className="space-y-4">
+      <header className="p-head">
+        <div>
+          <div className="eyebrow">库存 · 盘点</div>
+          <h1>盘点</h1>
+          <p className="sub">
+            盘盈与盘亏分开授权；提交后进入审批。批准会更新库存与流水，驳回只终止审批流。
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="chip inline-flex items-center gap-1">
+            <Icon name="shield" size={14} /> 强版本校验
+          </span>
+          <span className="st ok">D71 权限拆分</span>
+        </div>
+      </header>
       <StocktakesPanel
         canIncrease={allows(me.data?.scope, 'stocktake', 'create')}
         canDecrease={allows(me.data?.scope, 'stocktake', 'delete')}
@@ -35,6 +47,6 @@ export function StocktakesPage() {
         companyId={companyId}
         onCompanyChange={setSelectedCompanyId}
       />
-    </PageShell>
+    </section>
   );
 }
