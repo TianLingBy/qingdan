@@ -713,6 +713,21 @@
    同一个详情区在六页上有两种内边距，本身就该收。 */
 .detail{display:flex;flex-direction:column;gap:12px;padding:20px}
 
+/* 开单表单的外壳。
+   **不能**写成 `form.card`：`app-v013.css:104` 有一条 `form.card .btn{width:100%;height:46px}`，
+   那是 v0.13 给登录页那一张竖排表单定的，一命中就把「+ 加一行商品 / 开单 / 取消」
+   全拉成整宽黑条（#431 内贸页实测踩到）。所以表单走自己的类，视觉与 `.card` 一致。 */
+.form-card{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding:20px;
+  background:var(--bg-2);
+  border:1px solid var(--line-2);
+  border-radius:var(--v30-r);
+  box-shadow:var(--sh-1),var(--sh-inset);
+}
+
 .detail-head{display:flex;flex-direction:column;gap:8px}
 .detail-head-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
 .detail-title{
@@ -737,6 +752,8 @@
 .detail-dot{color:var(--line-3)}
 /* 详情底部的动作区：按钮一排，禁用原因跟在后面换行 */
 .detail-acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:16px}
+/* 动作区里推到最右的那个（「取消单据」这类破坏性动作要和常规动作分开） */
+.act-end{margin-left:auto}
 /* 禁用原因 / 口径说明：12px + 弱色。**不复用** v0.13 的 `.hint`（那个是 16px 的段落色） */
 .detail-why{font-size:var(--fs-12,12px);color:var(--v30-ink-3);line-height:1.6}
 /* 两条说明挨在一起时留一点缝（原来是 `mt-1` / `mt-2` 手写的） */
@@ -907,7 +924,18 @@
    底色用 --v30-* 的 8~10% alpha 叠在页面上，暗色下自动变暗红/暗黄，不会出现白底。 */
 .alert{padding:12px 16px;border-radius:var(--v30-r);font-size:var(--fs-14,14px);line-height:1.6}
 .alert h4{margin:0 0 4px;font-size:var(--fs-14,14px);font-weight:600}
+.alert p{margin:0 0 8px;line-height:1.6}
+.alert p:last-child{margin-bottom:0}
 .alert ul{margin:0;padding-left:18px}
+/* 提示块里的单字段输入（撤销原因）：占满一行、够长，别让用户在小框里打 200 字 */
+.reason-field{
+  display:grid;
+  gap:4px;
+  flex:1 1 260px;
+  min-width:0;
+  font-size:var(--fs-12,12px);
+  color:var(--v30-ink-2);
+}
 .alert-bad{background:var(--v30-bad-10);border:1px solid var(--v30-bad-30);color:var(--v30-bad)}
 .alert-warn{background:var(--v30-warn-10);border:1px solid var(--v30-warn-30);color:var(--v30-warn)}
 .alert-info{background:var(--surf-2);border:1px solid var(--v30-line-2);color:var(--v30-ink-3)}
@@ -962,6 +990,21 @@
 .modal .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
 
 /* ---- §8.9 页面根容器与单元格文字档 ---- */
+/* `.btn` 单独使用时的默认长相（描边按钮）。
+   v0.13 的 `.btn` 只有尺寸与布局，背景 / 边框挂在 `.btn-ghost` / `.btn-primary` 上；
+   而 v3.0 页面里 `btn` 经常单独出现（详情动作区、表单里的次要动作）。
+   `index.css` 有意删掉了全局 `button{background:none}`，不兜底就会落到浏览器默认的
+   灰底凸起按钮 —— 暗色下是一块白底，比样式不对更难看。
+   不覆盖 `.btn-ghost` / `.btn-primary` / `.danger`：它们各有自己的底色与语义。 */
+.btn:not(.btn-ghost):not(.btn-g):not(.btn-primary):not(.btn-p):not(.danger){
+  background:var(--surf-1);
+  color:var(--v30-ink);
+  border:1px solid var(--v30-line-2);
+}
+.btn:not(.btn-ghost):not(.btn-g):not(.btn-primary):not(.btn-p):not(.danger):hover{
+  background:var(--surf-2);
+  border-color:var(--line-3);
+}
 /* 五个页面根容器原来各写 `mx-auto max-w-7xl space-y-5`：三件事（居中 / 限宽 / 间距）
    散在 5 个文件里，改一个忘四个。1280 = Tailwind 的 max-w-7xl，20px = space-y-5。 */
 .page-body{
@@ -976,6 +1019,18 @@
    不用 `text-slate-600` 这类写死灰 —— 亮色下还行，暗色下会糊在深底里。 */
 .cell-muted{color:var(--v30-ink-3)}
 .cell-strong{color:var(--v30-ink)}
+/* 空值占位（「—」）与单元格里的后缀小字（「等 3 种」） */
+.cell-none{color:var(--v30-ink-3)}
+.cell-sub{margin-left:4px;font-size:var(--fs-12,12px);color:var(--v30-ink-3)}
+/* 名称列限宽截断：商品名长起来能把整行撑宽，悬停给 title 看全名 */
+.cell-clip{
+  display:inline-block;
+  max-width:140px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  vertical-align:bottom;
+}
 
 /* ---- §8.10 工具条与表格里的小件 ---- */
 /* 工具条里的下拉：`.search` 是圆角胶囊的输入框，下拉没有对应类，原来各页各写一遍
@@ -1010,3 +1065,74 @@
    为什么不直接用 `.btn-s` —— v0.13 的 `.btn-s` 是 16px（`app-v013.css:530`），
    放进结算单这种 10 列表格会把「操作」列撑出去，表格底部多一条横向滚动条。 */
 .btn-row{height:26px;padding:0 9px;font-size:var(--fs-12,12px)}
+
+/* ---- §8.11 开单表单里的行卡与批次 chip ---- */
+/* 表单标题行：左标题、右一句口径说明 */
+.form-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px}
+.form-head h2{margin:0;font-size:var(--fs-16,16px);font-weight:600;color:var(--v30-ink)}
+/* 表单里的二级小标题（「商品明细（至少 1 行）」） */
+.form-title{margin:0;font-size:var(--fs-13,13px);font-weight:600;color:var(--v30-ink-2)}
+/* 表单里成组往下排的块（明细行一张张排） */
+.form-stack{display:flex;flex-direction:column;gap:12px}
+/* 只读字段（编辑态不让改的公司名）：与 `.fm input` 同高同圆角，底色换成弱一级，
+   让人一眼看出「这里改不了」，而不是以为输入框坏了 */
+.fm-readonly{
+  margin:0;
+  height:36px;
+  display:flex;
+  align-items:center;
+  padding:0 12px;
+  border:1px solid var(--v30-line-2);
+  border-radius:var(--r-control);
+  background:var(--surf-2);
+  font-size:var(--fs-14,14px);
+  color:var(--v30-ink-2);
+}
+/* 明细行卡：一行商品一个框（商品 / 数量 / 单价 / 金额 / 删除 + 批次 chip） */
+.line-card{border:1px solid var(--v30-line-2);border-radius:var(--v30-r);padding:12px}
+/* 行内的五列网格：写成 `.fm.lines` 是为了让 `.fm label` / `.fm input` 直接生效
+   （label 里的 span + 控件要竖排两行；单独一个 `.line-grid` 继承不到那套规则） */
+.fm.lines{
+  display:grid;
+  gap:8px;
+  grid-template-columns:1.4fr 1fr 1fr auto auto;
+  align-items:start;
+}
+@media (max-width:860px){
+  .fm.lines{grid-template-columns:1fr}
+}
+/* 行内金额：与输入框底边对齐（原来是 `self-end pb-2`） */
+.line-amount{
+  align-self:end;
+  padding-bottom:10px;
+  white-space:nowrap;
+  font-size:var(--fs-12,12px);
+  color:var(--v30-ink-3);
+}
+/* 明细行里的「删除」：这一列没有 label，默认会顶到框口；压到与输入框齐平 */
+.line-card .btn-row{align-self:end}
+/* 批次 chip（稿子 L222–226 的 `.chip`，高度收一档：一单能引好几个批次，32px 太占） */
+.line-batches{margin-top:8px}
+.form-add{align-self:flex-start}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  height:26px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid var(--v30-line-2);
+  background:var(--v30-surface);
+  color:var(--v30-ink-2);
+  font-family:inherit;
+  font-size:var(--fs-11,12px);
+  white-space:nowrap;
+  cursor:pointer;
+  transition:background .14s,border-color .14s,color .14s;
+}
+.chip:hover{border-color:var(--line-3);color:var(--v30-ink)}
+.chip.on{
+  background:var(--v30-accent-solid);
+  border-color:var(--v30-accent-solid);
+  color:var(--v30-on-accent);
+  font-weight:550;
+}
+.chip-none{font-size:var(--fs-11,12px);color:var(--v30-ink-3)}

@@ -128,19 +128,15 @@ function ProductCell({
   readonly lines: readonly { readonly productId: string }[];
 }) {
   const first = lines[0];
-  if (!first) return <span className="text-slate-400">—</span>;
+  if (!first) return <span className="cell-none">—</span>;
   const name = productNameOf(products, first.productId);
   const kinds = new Set(lines.map((line) => line.productId)).size;
   return (
     <>
-      <span className="inline-block max-w-[140px] truncate align-bottom" title={name}>
+      <span className="cell-clip" title={name}>
         {name}
       </span>
-      {kinds > 1 ? (
-        <span className="ml-1 text-xs" style={{ color: 'var(--text-3)' }}>
-          等 {kinds} 种
-        </span>
-      ) : null}
+      {kinds > 1 ? <span className="cell-sub">等 {kinds} 种</span> : null}
     </>
   );
 }
@@ -222,31 +218,23 @@ function OrderForm({
   const toOptions = companies.filter((company) => company.id !== fromCompanyId);
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-900">
-          {editing ? `修改内部交易单 ${editing.orderNo}` : '新建内部交易单'}
-        </h2>
-        <span className="text-xs text-slate-500">
+    <form onSubmit={onSubmit} className="form-card">
+      <div className="form-head">
+        <h2>{editing ? `修改内部交易单 ${editing.orderNo}` : '新建内部交易单'}</h2>
+        <span className="detail-why">
           经手人 {handlerName}（当前登录人）· 单号由服务端按 D16 生成
         </span>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        <label className="text-sm">
-          <span className="text-slate-600">发出公司</span>
+      <div className="fm c3">
+        <label>
+          <span>发出公司</span>
           {editing ? (
-            <p className="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-              {editing.fromCompanyName}
-            </p>
+            <p className="fm-readonly">{editing.fromCompanyName}</p>
           ) : (
             <select
               value={fromCompanyId}
               onChange={(event) => onFromCompanyChange(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
             >
               <option value="">请选择发出公司</option>
               {companies.map((company) => (
@@ -256,22 +244,17 @@ function OrderForm({
               ))}
             </select>
           )}
-          <span className="mt-1 block text-[11px] text-slate-400">
-            明细里的批次必须是这家公司的（D22）
-          </span>
+          <small>明细里的批次必须是这家公司的（D22）</small>
         </label>
 
-        <label className="text-sm">
-          <span className="text-slate-600">接收公司</span>
+        <label>
+          <span>接收公司</span>
           {editing ? (
-            <p className="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-              {editing.toCompanyName}
-            </p>
+            <p className="fm-readonly">{editing.toCompanyName}</p>
           ) : (
             <select
               value={toCompanyId}
               onChange={(event) => onToCompanyChange(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
             >
               <option value="">请选择接收公司</option>
               {toOptions.map((company) => (
@@ -281,43 +264,38 @@ function OrderForm({
               ))}
             </select>
           )}
-          <span className="mt-1 block text-[11px] text-slate-400">
-            到货确认后批次归属才转到这家（D31）
-          </span>
+          <small>到货确认后批次归属才转到这家（D31）</small>
         </label>
 
-        <label className="text-sm">
-          <span className="text-slate-600">内部价</span>
+        <label>
+          <span>内部价</span>
           <input
             value={internalPrice}
             onChange={(event) => onInternalPriceChange(event.target.value)}
             inputMode="decimal"
             placeholder="手工填，如 1200.00"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
-          <span className="mt-1 block text-[11px] text-slate-400">
-            系统不按成本价 / 加成自动算（D68①）；一期只记录，不做利润抵消（D45）
-          </span>
+          <small>系统不按成本价 / 加成自动算（D68①）；一期只记录，不做利润抵消（D45）</small>
         </label>
       </div>
 
       {editing ? (
-        <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+        <p className="alert alert-info alert-sm">
           发出 / 接收公司不在本批修改范围（契约：是否允许在「进行中」换接收公司尚未拍板），
           所以这里只读展示。
         </p>
       ) : null}
 
       {batchesError ? (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <p className="alert alert-warn alert-sm">
           批次列表加载失败：{batchesError}——没有批次就没法开单（D22），请先重试。
         </p>
       ) : null}
 
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-xs font-semibold text-slate-700">商品明细（至少 1 行）</h3>
-          <span className="text-[11px] text-slate-400">
+      <div className="form-stack">
+        <div className="form-head">
+          <h3 className="form-title">商品明细（至少 1 行）</h3>
+          <span className="chip-none">
             明细合计 {formatMoney(total)} · 共{' '}
             {formatQty(sumDecimal(lines.map((line) => line.qty)))} 件
           </span>
@@ -328,16 +306,15 @@ function OrderForm({
             (batch) => !line.productId || batch.productId === line.productId,
           );
           return (
-            <div key={index} className="rounded-lg border border-slate-200 p-3">
-              <div className="grid gap-2 sm:grid-cols-[1.4fr_1fr_1fr_auto_auto]">
-                <label className="text-sm">
-                  <span className="text-slate-600">第 {index + 1} 行商品</span>
+            <div key={index} className="line-card">
+              <div className="fm lines">
+                <label>
+                  <span>第 {index + 1} 行商品</span>
                   <select
                     value={line.productId}
                     onChange={(event) =>
                       onLineChange(index, { productId: event.target.value, batchIds: [] })
                     }
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
                   >
                     <option value="">请选择商品</option>
                     {products.map((product) => (
@@ -347,46 +324,44 @@ function OrderForm({
                     ))}
                   </select>
                 </label>
-                <label className="text-sm">
-                  <span className="text-slate-600">数量</span>
+                <label>
+                  <span>数量</span>
                   <input
                     value={line.qty}
                     onChange={(event) => onLineChange(index, { qty: event.target.value })}
                     inputMode="decimal"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   />
                 </label>
-                <label className="text-sm">
-                  <span className="text-slate-600">单价</span>
+                <label>
+                  <span>单价</span>
                   <input
                     value={line.unitPrice}
                     onChange={(event) => onLineChange(index, { unitPrice: event.target.value })}
                     inputMode="decimal"
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   />
                 </label>
-                <div className="self-end pb-2 text-xs text-slate-500">
+                <div className="line-amount">
                   金额 {formatMoney(lineAmountOf(line))}
                 </div>
                 <button
                   type="button"
                   onClick={() => onRemoveLine(index)}
                   disabled={lines.length <= 1}
-                  className="mt-5 h-9 self-start whitespace-nowrap rounded-lg border border-slate-300 px-2 text-xs text-slate-600 disabled:opacity-40"
+                  className="btn btn-row"
                 >
                   删除
                 </button>
               </div>
 
-              <div className="mt-2">
-                <span className="text-[11px] text-slate-500">
+              <div className="line-batches">
+                <span className="chip-none">
                   引用批次（至少 1 个，只能是发出公司批次 D22）
                 </span>
-                <div className="mt-1 flex flex-wrap gap-1.5">
+                <div className="chip-row">
                   {!line.productId ? (
-                    <span className="text-[11px] text-slate-400">先选商品，再选批次</span>
+                    <span className="chip-none">先选商品，再选批次</span>
                   ) : rowBatches.length === 0 ? (
-                    <span className="text-[11px] text-slate-400">
+                    <span className="chip-none">
                       发出公司该商品暂无批次（跨公司的批次不会出现）
                     </span>
                   ) : (
@@ -403,11 +378,7 @@ function OrderForm({
                                 : [...line.batchIds, batch.id],
                             })
                           }
-                          className={`rounded-full border px-2 py-0.5 text-[11px] ${
-                            checked
-                              ? 'border-slate-900 bg-slate-900 text-white'
-                              : 'border-slate-300 bg-white text-slate-600'
-                          }`}
+                          className={`chip${checked ? ' on' : ''}`}
                         >
                           {batchOptionLabel(batch)}
                         </button>
@@ -420,51 +391,37 @@ function OrderForm({
           );
         })}
 
-        <button
-          type="button"
-          onClick={onAddLine}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600"
-        >
+        <button type="button" onClick={onAddLine} className="btn form-add">
           + 加一行商品
         </button>
       </div>
 
-      {gap ? (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{gap}</p>
-      ) : null}
+      {gap ? <p className="alert alert-warn alert-sm">{gap}</p> : null}
 
       {errors.length > 0 ? (
-        <ul className="space-y-1 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+        <ul className="alert alert-bad alert-sm">
           {errors.map((item) => (
             <li key={item}>· {item}</li>
           ))}
         </ul>
       ) : null}
       {serverIssues.length > 0 ? (
-        <ul className="space-y-1 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+        <ul className="alert alert-bad alert-sm">
           {serverIssues.map((issue) => (
             <li key={`${issue.path}-${issue.message}`}>
               ·{' '}
-              {issue.path ? <code className="font-mono text-[11px]">{issue.path}</code> : null}{' '}
+              {issue.path ? <code className="mono">{issue.path}</code> : null}{' '}
               {issue.message}
             </li>
           ))}
         </ul>
       ) : null}
 
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
-        >
+      <div className="detail-acts">
+        <button type="submit" disabled={busy} className="btn btn-primary">
           {busy ? '提交中…' : editing ? '保存修改' : '开单'}
         </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600"
-        >
+        <button type="button" onClick={onCancel} className="btn">
           取消
         </button>
       </div>
@@ -536,7 +493,7 @@ export function DetailPanel({
   const cancelReason = cancelDisabledReason(order.cancelable.reason);
 
   return (
-    <section className="card space-y-4 p-5">
+    <section className="card detail">
       <DetailHead
         docLabel="内部交易单"
         orderNo={order.orderNo}
@@ -563,27 +520,27 @@ export function DetailPanel({
         ]}
       />
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="border-b border-slate-200 text-xs text-slate-500">
+      <div className="ln">
+        <table>
+          <thead>
             <tr>
-              <th className="px-3 py-2">商品</th>
-              <th className="px-3 py-2">批次（D22）</th>
-              <th className="px-3 py-2 num">数量</th>
-              <th className="px-3 py-2 num">单价</th>
-              <th className="px-3 py-2 num">金额</th>
+              <th>商品</th>
+              <th>批次（D22）</th>
+              <th className="num">数量</th>
+              <th className="num">单价</th>
+              <th className="num">金额</th>
             </tr>
           </thead>
           <tbody>
             {order.lines.map((line, index) => (
-              <tr key={`${line.productId}-${index}`} className="border-b border-slate-100 last:border-0">
-                <td className="px-3 py-2">{productNameOf(products, line.productId)}</td>
-                <td className="px-3 py-2 text-slate-600">
+              <tr key={`${line.productId}-${index}`}>
+                <td>{productNameOf(products, line.productId)}</td>
+                <td className="cell-muted">
                   {line.batchIds.map((id) => batchLabelOf(batches, id)).join(' / ')}
                 </td>
-                <td className="px-3 py-2 font-mono text-xs">{formatQty(line.qty)}</td>
-                <td className="px-3 py-2 font-mono text-xs">{formatMoney(line.unitPrice)}</td>
-                <td className="px-3 py-2 font-mono text-xs">{formatMoney(line.amount)}</td>
+                <td className="num">{formatQty(line.qty)}</td>
+                <td className="num">{formatMoney(line.unitPrice)}</td>
+                <td className="num">{formatMoney(line.amount)}</td>
               </tr>
             ))}
           </tbody>
@@ -595,7 +552,7 @@ export function DetailPanel({
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="detail-acts">
         <button
           type="button"
           disabled={!canUpdate || !canEdit(order.status)}
@@ -636,41 +593,39 @@ export function DetailPanel({
             到货确认
           </button>
         ) : order.status === '进行中' ? (
-          <span className="text-xs text-slate-500">{receiveDisabledReason(order.status)}</span>
+          <span className="detail-why">{receiveDisabledReason(order.status)}</span>
         ) : (
-          <span className="text-xs text-slate-500">{dispatchDisabledReason(order.status)}</span>
+          <span className="detail-why">{dispatchDisabledReason(order.status)}</span>
         )}
         {order.status === '在途' && !canReceive ? (
-          <span className="text-xs text-slate-500">当前身份没有 internal_trade.approve 权限</span>
+          <span className="detail-why">当前身份没有 internal_trade.approve 权限</span>
         ) : null}
         <button
           type="button"
           disabled={!canCancel || !order.cancelable.allowed || busy}
           onClick={onCancel}
-          className="btn danger ml-auto"
+          className="btn danger act-end"
         >
           取消单据
         </button>
         {!order.cancelable.allowed && cancelReason ? (
-          <span className="text-xs text-slate-500">{cancelReason}</span>
+          <span className="detail-why">{cancelReason}</span>
         ) : null}
       </div>
 
       {revoking ? (
-        <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
-          <p className="text-sm font-medium text-amber-900">撤销发货</p>
-          <p className="text-xs text-amber-800">
-            撤销会把单据退回「进行中」并释放这笔在途占用（不转司）。
-          </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="min-w-64 flex-1 text-sm">
-              <span className="text-slate-600">撤销原因（必填）</span>
+        <div className="alert alert-warn">
+          <h4>撤销发货</h4>
+          <p>撤销会把单据退回「进行中」并释放这笔在途占用（不转司）。</p>
+          <div className="detail-acts">
+            <label className="reason-field">
+              <span>撤销原因（必填）</span>
               <input
                 value={revokeReason}
                 onChange={(event) => onRevokeReasonChange(event.target.value)}
                 maxLength={200}
                 placeholder="例如：批次锁错，需要重新发货"
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                className="ipt"
               />
             </label>
             <button
@@ -685,11 +640,11 @@ export function DetailPanel({
               取消
             </button>
           </div>
-          {revokeError ? <p className="text-xs text-amber-900">{revokeError}</p> : null}
+          {revokeError ? <p className="detail-why">{revokeError}</p> : null}
         </div>
       ) : null}
 
-      <p className="text-[11px] leading-relaxed text-slate-400">
+      <p className="detail-why">
         「发货」（权限点 internal_trade.ship）把「进行中」推进「在途」，并锁住发出公司批次的可用量；
         「撤销发货」（同为 internal_trade.ship）退回「进行中」并释放这笔在途占用，必须填原因。
         「到货确认」已接入（D31 / D68③）：仅「在途」可点，确认后批次在同一事务里转入接收公司、
@@ -1150,7 +1105,7 @@ export function InternalTradeOrdersPage() {
   const meData = me.data;
 
   return (
-    <section className="mx-auto max-w-7xl space-y-5">
+    <section className="page-body">
       <div className="p-head">
         <div>
           <div className="eyebrow">内部交易单 N · 公司间调拨</div>
@@ -1170,12 +1125,12 @@ export function InternalTradeOrdersPage() {
       </div>
 
       {meData && !can('create') ? (
-        <p className="text-xs text-slate-500">
+        <p className="detail-why">
           「新建」需要 internal_trade.create；当前身份只能查看（判定在服务端，前端只是不画按钮）。
         </p>
       ) : null}
       {meData && !can('ship') ? (
-        <p className="text-xs text-slate-500">
+        <p className="detail-why">
           「发货 / 撤销发货」需要 internal_trade.ship；当前身份不能发货（判定在服务端，前端只是不画按钮）。
         </p>
       ) : null}
@@ -1222,6 +1177,7 @@ export function InternalTradeOrdersPage() {
               setPageIndex(0);
             }}
             aria-label="看谁的单据"
+            className="sel"
           >
             <option value="">默认（按我的权限）</option>
             <option value="mine">只看我经手的</option>
@@ -1232,7 +1188,7 @@ export function InternalTradeOrdersPage() {
           value={fromFilter}
           onChange={(event) => setFromFilter(event.target.value)}
           aria-label="按发出公司筛选"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="sel"
         >
           <option value="">全部发出公司</option>
           {companyOptions.map((company) => (
@@ -1245,7 +1201,7 @@ export function InternalTradeOrdersPage() {
           value={toFilter}
           onChange={(event) => setToFilter(event.target.value)}
           aria-label="按接收公司筛选"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="sel"
         >
           <option value="">全部接收公司</option>
           {companyOptions.map((company) => (
@@ -1261,7 +1217,7 @@ export function InternalTradeOrdersPage() {
           aria-label="搜索单号"
           className="search"
         />
-        <span className="ml-auto text-sm" style={{ color: 'var(--text-3)' }}>
+        <span className="toolbar-end">
           「在途」= 货已锁走、对方还没确认到货（D68②）
         </span>
       </div>
@@ -1318,17 +1274,11 @@ export function InternalTradeOrdersPage() {
         />
       ) : null}
 
-      {staleNotice ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          {staleNotice}
-        </p>
-      ) : null}
+      {staleNotice ? <p className="alert alert-warn">{staleNotice}</p> : null}
       {save.error && serverIssues.length === 0 && !isStaleVersionError(save.error) ? (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorText(save.error)}</p>
+        <p className="alert alert-bad">{errorText(save.error)}</p>
       ) : null}
-      {actionError ? (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>
-      ) : null}
+      {actionError ? <p className="alert alert-bad">{actionError}</p> : null}
 
       {/*
         列表（v3.0 `list-card`）。四态交给容器与 tbody 的 `data-state` 驱动，**不写 JSX 三元分支**：
@@ -1378,13 +1328,13 @@ export function InternalTradeOrdersPage() {
                     <button
                       type="button"
                       onClick={() => setDetailId(order.id)}
-                      className="font-mono text-xs text-slate-900 underline-offset-2 hover:underline"
+                      className="doc-link"
                     >
                       {order.orderNo}
                     </button>
                   </td>
                   <td>{tradeRouteText(order)}</td>
-                  <td className="max-w-[190px] text-slate-600">
+                  <td className="max-w-[190px] cell-muted">
                     <ProductCell products={products.data?.items ?? []} lines={order.lines} />
                   </td>
                   <td className="num">{formatQty(totalLineQty(order.lines))}</td>
@@ -1392,12 +1342,12 @@ export function InternalTradeOrdersPage() {
                   <td>
                     <StatusBadge status={order.status} />
                   </td>
-                  <td className="text-slate-600">
+                  <td className="cell-muted">
                     {order.handlerId ? employeeLabel(order.handlerId) : '—'}
                   </td>
-                  <td className="text-slate-600">{formatShortDateTime(order.createdAt)}</td>
+                  <td className="cell-muted">{formatShortDateTime(order.createdAt)}</td>
                   <td>
-                    <div className="flex justify-end gap-2">
+                    <div className="row-acts">
                       {/*
                         单号本身就是「进详情」的入口，行内不再单独放「详情」按钮：
                         多一个按钮就把「操作」列挤出卡片（同 E / C 页）。
@@ -1406,7 +1356,7 @@ export function InternalTradeOrdersPage() {
                         type="button"
                         disabled={!can('update') || !canEdit(order.status)}
                         onClick={() => void withFreshDetail(order.id, beginEdit)}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs disabled:opacity-40"
+                        className="btn btn-row"
                         title={canEdit(order.status) ? undefined : '只有「进行中」能改单（D68②）'}
                       >
                         编辑
@@ -1415,7 +1365,7 @@ export function InternalTradeOrdersPage() {
                         type="button"
                         disabled={!can('delete') || !canEdit(order.status) || cancelOrder.isPending}
                         onClick={() => void withFreshDetail(order.id, askCancel)}
-                        className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 disabled:opacity-40"
+                        className="btn btn-row danger"
                       >
                         取消
                       </button>
@@ -1444,7 +1394,7 @@ export function InternalTradeOrdersPage() {
                 setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
                 setPageIndex((index) => index + 1);
               }}
-              label="{label}"
+              label="内部交易单分批翻页"
             />
           )}
         </div>
@@ -1458,16 +1408,8 @@ export function InternalTradeOrdersPage() {
 
       {detailId !== null ? (
         <>
-          {detail.isPending ? (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
-              正在加载内部交易单详情…
-            </p>
-          ) : null}
-          {detail.error ? (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-red-700">
-              {errorText(detail.error)}
-            </p>
-          ) : null}
+          {detail.isPending ? <p className="alert alert-info">正在加载内部交易单详情…</p> : null}
+          {detail.error ? <p className="alert alert-bad">{errorText(detail.error)}</p> : null}
           {detailOrder ? (
             <DetailPanel
               order={detailOrder}
