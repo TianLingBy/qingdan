@@ -224,13 +224,13 @@ export function WorkbenchView({
       {kpis.length > 0 && (
         <div className="kpis" aria-label="关键指标">
           {kpis.map((kpi) => (
-            <div key={kpi.key} className="card kpi">
+            <div key={kpi.key} className="kpi">
               <span className="kpi-label">{kpi.label}</span>
-              <span className="kpi-value">
-                <span className="num">{kpi.value}</span>
+              <div className="kpi-v num">
+                {kpi.value}
                 {kpi.unit && <i>{kpi.unit}</i>}
-              </span>
-              {kpi.hint && <p className="hint">{kpi.hint}</p>}
+              </div>
+              {kpi.hint && <p className="kpi-m">{kpi.hint}</p>}
             </div>
           ))}
         </div>
@@ -241,19 +241,19 @@ export function WorkbenchView({
         <div className="card" data-state={todosState} aria-label="待办事项">
           <CardHead title="待办事项" hint={`共 ${todos.length} 类 · 按权限点逐条判，没看到不等于没有`} />
           <div className="st-block st-filled">
-            <ul className="feed">
+            <ul className="wb-list">
               {todos.map((todo) => (
                 <li key={todo.kind}>
                   <button
                     type="button"
-                    className="todo"
+                    className="wb-row"
                     onClick={() => onOpen(`/${todo.routeId}`)}
                   >
                     <span>
                       <b>{todo.title}</b>
                       <small>{todo.hint}</small>
                     </span>
-                    <em className="num">{todo.count} 笔</em>
+                    <span className="wb-num">{todo.count} 笔</span>
                   </button>
                 </li>
               ))}
@@ -276,7 +276,7 @@ export function WorkbenchView({
       {chain.length > 0 && (
         <div className="card">
           <CardHead title="主业务链路" hint="点击直达" />
-          <ul className="chain">
+          <ul className="wb-chain">
             {chain.map((node) => (
               <li key={node.id}>
                 <button type="button" onClick={() => onOpen(node.path)}>
@@ -296,9 +296,9 @@ export function WorkbenchView({
       {canProfit && trends.length > 0 && (
         <div className="card">
           <CardHead title="近 6 个月毛利" hint="按自然月首尾日汇总已结算 C 单" />
-          <ul className="feed">
+          <ul className="wb-list">
             {trends.map((month) => (
-              <li key={month.label} className="trend-row">
+              <li key={month.label} className="wb-trend">
                 <span>{month.label}</span>
                 <b className="num">{moneyText(month.grossProfit)}</b>
               </li>
@@ -312,11 +312,11 @@ export function WorkbenchView({
         <div className="card">
           <CardHead title="最近动态" hint="审计日志前 5 条" />
           {feedRows.length === 0 ? (
-            <p className="hint">最近没有可展示的操作记录。</p>
+            <p className="wb-note">最近没有可展示的操作记录。</p>
           ) : (
-            <ul className="feed">
+            <ul className="wb-feed">
               {feedRows.map((log) => (
-                <li key={log.id}>
+                <li key={log.id} className="wb-feed-row">
                   <time className="num">{log.time.slice(11, 16)}</time>
                   <span>
                     <b className="mono">{log.action}</b>
