@@ -26,6 +26,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
+import { ListPager } from '../../components/ListPager';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import {
   DetailHead,
@@ -1377,7 +1378,11 @@ export function SalesOrdersPage() {
    * 现在后端给 `total`，页码条能画 `1 / 12 页`，也能直接跳。
    */
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(20);
+  /**
+   * 每页条数由用户在页脚选（v3.0 `.pager` 的 10/20/50）。改条数回第 1 页：
+   * 原来停在第 5 页是因为 20 条/页，换 50 条后总页数可能只剩 2 页，直接超界。
+   */
+  const [pageSize, setPageSize] = useState(20);
   const [sort, setSort] = useState<SalesOrderSort>('createdAt');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -1813,6 +1818,18 @@ export function SalesOrdersPage() {
    */
   const total = list.data?.total ?? null;
   const totalPages = total === null ? null : Math.max(1, Math.ceil(total / pageSize));
+  /**
+   * 页脚合计：后端只回条数，不回「全部筛选结果的金额汇总」，所以只在
+   * 「一页装得下全部」（`rows.length >= total`）时给；翻页态只写条数。
+   * 无 `sales.view_price` 时后端根本不回 `totalAmount`（D79），这里再按 `canViewPrice`
+   * 兜一道：金额遮罩的页面里出现一个「合计 ¥…」比不显示更糟。
+   */
+  const amounts = rows.map((row) => row.totalAmount);
+  const allAmountsVisible = amounts.every((value) => value !== null);
+  const salesSum =
+    canViewPrice && total !== null && rows.length >= total && allAmountsVisible
+      ? sumDecimal(amounts.filter((value): value is string => value !== null))
+      : null;
   /** 列表四态：由服务端状态决定，交给 CSS 的 `data-state` 驱动，不在 JSX 里三元分支。 */
   const listState: ListState = resolveListState({
     isPending: list.isPending,
@@ -2065,8 +2082,8 @@ export function SalesOrdersPage() {
         的规则，`st-tr` 又带 `td{padding:0;border-bottom:none}`。数据行一旦也标 `st-tr`，
         `filled` 状态下没有任何规则把它改回 `display:table-row`，整张表只剩表头（已修，见 #337）。
       */}
-      <div className="card" data-state={listState}>
-        <div className="overflow-x-auto">
+      <div className="card list-card" data-state={listState}>
+        <div className="tw">
           <table className="w-full min-w-[1120px] text-left">
             <thead>
               <tr>
@@ -2201,33 +2218,33 @@ export function SalesOrdersPage() {
           </table>
         </div>
         {/*
-          页码条（v0.13 `.pager`）。`total` 为 null 说明后端还走游标模式（老端点），
-          这时不画页码条更好——画了也点不动，用户会以为坏了。
+          页脚条（v3.0 `.tf`）：左「共 N 张（· 合计）」，右首 / 上 / 页码 / 下 / 末 + 条数。
+          `total` 为 null 说明后端还走游标模式（老端点），这时不画分页——画了也点不动。
         */}
-        {totalPages !== null && (
-          <div className="pager">
-            <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-              上一页
-            </button>
-            <input
-              value={page}
-              aria-label="页码"
-              inputMode="numeric"
-              onChange={(event) => {
-                const next = Number.parseInt(event.target.value, 10);
-                if (Number.isFinite(next)) setPage(Math.min(totalPages, Math.max(1, next)));
+        <div className="tf">
+          <span>
+            共 {total ?? rows.length} 张
+            {salesSum !== null ? (
+              <>
+                {' '}
+                · 合计 <b className="num">{formatMoney(salesSum)}</b>
+              </>
+            ) : null}
+          </span>
+          {totalPages !== null && (
+            <ListPager
+              page={page}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              onPage={setPage}
+              onPageSize={(size) => {
+                setPageSize(size);
+                setPage(1);
               }}
+              label="销售单分页"
             />
-            <span className="of">/ {totalPages} 页 · 共 {total} 张</span>
-            <button
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            >
-              下一页
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {detailId !== null && (

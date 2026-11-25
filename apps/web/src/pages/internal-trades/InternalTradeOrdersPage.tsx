@@ -22,6 +22,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
+import { BatchPager } from '../../components/ListPager';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import {
   DetailHead,
@@ -1330,12 +1331,12 @@ export function InternalTradeOrdersPage() {
       ) : null}
 
       {/*
-        列表（v0.13）。四态交给容器与 tbody 的 `data-state` 驱动，**不写 JSX 三元分支**：
+        列表（v3.0 `list-card`）。四态交给容器与 tbody 的 `data-state` 驱动，**不写 JSX 三元分支**：
         `app-v013.css` 按 `tbody[data-state=…] > tr.st-tr.st-*` 显隐，状态切换时表头宽度不变。
         数据行只带 `r-row`（**不带 `st-tr`**：`st-tr` 是状态行专用，默认 `display:none` 且 `td{padding:0}`）。
       */}
-      <div className="card" data-state={listState}>
-        <div className="overflow-x-auto">
+      <div className="card list-card" data-state={listState}>
+        <div className="tw">
           <table className="w-full min-w-[1120px] text-left">
             <thead>
               <tr>
@@ -1426,35 +1427,27 @@ export function InternalTradeOrdersPage() {
           </table>
         </div>
         {/*
-          游标分页（`PageQuerySchema` 只有 cursor/limit，没有 total）：
-          所以是「上一批 / 下一批」，**不画页码**——画了就是假的总页数。
-          只有一批时不渲染这条，免得用户以为还有下一页。
+          游标分页。游标契约（`PageQuerySchema`）只有 cursor/limit、没有 `total`，
+          所以只能「上一批 / 下一批」，**不画页码**——画了就是假的总页数（D95 还没铺到本模块）。
+          `.tf` 页脚在非 filled 态自动收起翻页，只留条数汇总。
         */}
-        {pageIndex > 0 || nextCursor !== null ? (
-          <div className="pager">
-            <button
-              type="button"
-              disabled={pageIndex === 0}
-              onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-            >
-              上一批
-            </button>
-            <span className="of">
-              第 {pageIndex + 1} 批{nextCursor === null ? ' · 已是最后一批' : ''}
-            </span>
-            <button
-              type="button"
-              disabled={!nextCursor}
-              onClick={() => {
+        <div className="tf">
+          <span>共 {rows.length} 条</span>
+          {(pageIndex > 0 || nextCursor !== null) && (
+            <BatchPager
+              batch={pageIndex + 1}
+              hasPrev={pageIndex > 0}
+              hasNext={nextCursor !== null}
+              onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
+              onNext={() => {
                 if (!nextCursor) return;
                 setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
                 setPageIndex((index) => index + 1);
               }}
-            >
-              下一批
-            </button>
-          </div>
-        ) : null}
+              label="{label}"
+            />
+          )}
+        </div>
       </div>
 
       <p className="note">

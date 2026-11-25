@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Icon } from '../../components/icons/Icon';
 import { DEFAULT_ROUTE_PATH } from '../../router/routes';
 import {
   authApi,
@@ -15,65 +16,100 @@ import {
 } from './auth-api';
 
 /**
- * 登录页（IA 第 1 页 / #4）。
+ * 登录页（IA 第 1 页 / #4），按 **v3.0** 实现（#435）。
  *
- * 口径：
- *   - 视觉基线 `design/轻单登录页.html`（黑白品牌区 + 右侧表单，窄屏只留表单）；
- *   - 会话是 HttpOnly Cookie，前端不做 token 管理，登录后靠 `GET /auth/me` 确认再进工作台；
- *   - 错误按统一错误体的 `code` 分支展示，绝不提示「手机号是否存在」（服务端 401 不区分原因）。
+ * 口径（负责人 2026-11-24 拍板）：
+ *   - 视觉基线 `design/v3.0/index.html` 的 `PG` 登录页：左品牌 6 : 右表单 4，
+ *     样式全部来自 `app-v30.css` 的 `.lg-*`（#443 已合，不改底座、不新造类）。
+ *   - 表单三态走 `data-state="idle|loading|error"`：提交中禁用 + 转圈，
+ *     错误时 `.lg-alert` 出现（常驻 CSS 已就绪），输入框按 `err` 类标红。
+ *   - **入企降级**：后端 `/auth/*` 只有 `code|login|logout|me`，没有邀请码/注册端点，
+ *     所以「未加入任何企业」只做空态（`data-state="empty"`），加入企业由管理员在员工页建号。
+ *   - 会话是 HttpOnly Cookie，登录后靠 `GET /auth/me` 确认再决定去向。
+ *   - 错误按统一错误体的 `code` 分支展示，绝不提示「手机号是否存在」（服务端 401 不区分）。
  *
  * 拆成三层便于测试：`LoginBrandShell`（纯版式）→ `LoginForm`（表单状态机）→ `LoginPage`（接线）。
  */
 
-const FIELD_CLASS =
-  'mt-1.5 h-11 w-full rounded-lg border px-3 text-sm text-neutral-900 outline-none transition ' +
-  'placeholder:text-neutral-400 focus:border-neutral-900 focus:shadow-[0_0_0_3px_rgba(23,23,23,0.10)] ' +
-  'disabled:bg-neutral-100';
-
-function fieldClass(invalid: boolean): string {
-  return `${FIELD_CLASS} ${invalid ? 'border-red-500' : 'border-neutral-300'}`;
+/** 输入框的 `err` 类由 CSS 接管（`.lg-field input.err`），这里只决定要不要加。 */
+function fieldClass(invalid: boolean): string | undefined {
+  return invalid ? 'err' : undefined;
 }
 
 /** 登录失败提示：文案 + 请求编号（排查审计日志用）。 */
 export function LoginErrorAlert({ error }: { error: LoginErrorView }) {
   return (
-    <div className="mt-5 rounded-lg bg-red-50 px-3 py-2.5" role="alert">
-      <p className="text-sm text-red-700">{error.message}</p>
-      {error.requestId && (
-        <p className="mt-1 font-mono text-[11px] text-red-400">请求编号 {error.requestId}</p>
-      )}
+    <div className="lg-alert" role="alert">
+      <Icon name="shield" size={16} />
+      <span>
+        {error.message}
+        {error.requestId && <span className="mono"> · 请求编号 {error.requestId}</span>}
+      </span>
     </div>
   );
 }
 
-/** 版式壳：左侧品牌区（≤ 768px 隐藏）+ 右侧表单区。 */
+/** 版式壳：左侧品牌区（≤ 900px 隐藏，见 app-v30.css §5）+ 右侧表单区。 */
 export function LoginBrandShell({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-screen bg-white">
-      <aside className="hidden w-[42%] shrink-0 flex-col justify-between bg-neutral-950 p-11 text-neutral-100 md:flex">
-        <div className="flex items-baseline gap-3">
-          <span className="text-2xl font-semibold tracking-tight">轻单</span>
-          <span className="text-xs uppercase tracking-[0.2em] text-neutral-400">QINGDAN</span>
-        </div>
-
-        <div>
-          <h2 className="text-[30px] font-semibold leading-[1.4] tracking-tight">
-            每一笔内部交易，
-            <br />
-            都算得清成本。
-          </h2>
-          <p className="mt-4 max-w-[34em] text-sm leading-7 text-neutral-400">
-            采购、加工、销售、内部交易与结算，一套口径跑通；权限服务端判定，数据只给该看的人。
-          </p>
-        </div>
-
-        <div className="border-t border-neutral-800 pt-4 text-xs text-neutral-400">
-          集团内部交易与成本归集 · 内部系统
-        </div>
+    <div className="lg-wrap">
+      <aside className="lg-brand">
+        <div className="lg-mark">轻</div>
+        <h1 className="lg-slogan">
+          每一笔内部交易
+          <br />都<em>算得清</em>成本
+        </h1>
+        <p className="lg-sub">
+          <span>采购 加工 销售 调拨 结算</span>
+          <span>一套账本 口径统一 权限分明 数据透明</span>
+        </p>
+        <div className="lg-foot">QINGDAN · INTERNAL LEDGER</div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 items-center justify-center px-5 py-10 sm:px-8">
-        <div className="w-full max-w-[360px]">{children}</div>
+      <main className="lg-formpane">{children}</main>
+    </div>
+  );
+}
+
+/**
+ * 未加入任何企业（入企降级后的唯一形态）。
+ *
+ * 后端没有邀请码/注册端点，登录成功但 `me.companyIds` 为空时停在这里；
+ * 空态用 `data-state="empty"` + `.st-block .st-empty`（app-v013 的四态机制，不新造）。
+ */
+export function LoginNoCompany({ onBack }: { onBack?: () => void }) {
+  return (
+    <div className="ent-wrap">
+      <aside className="ent-brand">
+        <div className="lg-mark">轻</div>
+        <h1 className="lg-slogan">
+          这个手机号
+          <br />还<em>没有公司</em>
+        </h1>
+        <p className="lg-sub">
+          <span>加入企业由管理员在员工页建号</span>
+          <span>建号后，用同一手机号登录即可进入公司账本</span>
+        </p>
+        <div className="lg-foot">QINGDAN · NO COMPANY YET</div>
+      </aside>
+
+      <main className="ent-pane">
+        <div className="ent-card" data-state="empty">
+          <div className="st-block st-empty">
+            <div className="st-ico">
+              <Icon name="shield" size={96} />
+            </div>
+            <div className="st-title">还没有加入任何企业</div>
+            <p className="st-desc">
+              当前手机号还没有加入任何企业，请联系管理员开通；开通后用同一手机号重新登录即可。
+            </p>
+            <div className="st-actions">
+              <button type="button" className="btn btn-primary" onClick={onBack}>
+                返回登录
+              </button>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
   );
@@ -100,6 +136,8 @@ export function LoginForm({ onLogin, onSendCode, onSucceeded }: LoginFormProps) 
   const [sendNotice, setSendNotice] = useState<string | null>(null);
 
   const busy = pending || succeeded;
+  /** v3.0 三态：提交中 loading、有错 error、其余 idle（样式见 `.lg-form[data-state=…]`）。 */
+  const formState = busy ? 'loading' : formError ? 'error' : 'idle';
 
   // 倒计时每秒减一；到 0 自动停。
   useEffect(() => {
@@ -113,11 +151,18 @@ export function LoginForm({ onLogin, onSendCode, onSucceeded }: LoginFormProps) 
     setFormError(null);
   };
 
+  /** 前端校验失败也走统一的错误条，不另造字段级提示样式（底座里没有这一类）。 */
+  const showFieldErrors = (errors: LoginFieldErrors) => {
+    setFieldErrors(errors);
+    const message = errors.phone ?? errors.code;
+    setFormError(message ? { message, field: errors.phone ? 'phone' : 'code', requestId: null } : null);
+  };
+
   const handleSendCode = async () => {
     if (!onSendCode || sendingCode || cooldown > 0 || busy) return;
     const value = phone.trim();
     if (!PHONE_PATTERN.test(value)) {
-      setFieldErrors((current) => ({ ...current, phone: '手机号需为 11 位数字' }));
+      showFieldErrors({ phone: '手机号需为 11 位数字' });
       return;
     }
     setSendingCode(true);
@@ -142,9 +187,12 @@ export function LoginForm({ onLogin, onSendCode, onSucceeded }: LoginFormProps) 
 
     const input: LoginInput = { phone: phone.trim(), code: code.trim() };
     const errors = validateLoginForm(input);
-    setFieldErrors(errors);
     setFormError(null);
-    if (errors.phone || errors.code) return;
+    if (errors.phone || errors.code) {
+      showFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
 
     setPending(true);
     try {
@@ -159,125 +207,114 @@ export function LoginForm({ onLogin, onSendCode, onSucceeded }: LoginFormProps) 
   };
 
   return (
-    <>
-      <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">登录</h1>
-      <p className="mt-2 text-sm text-neutral-500">使用管理员分配的手机号登录</p>
+    <form className="lg-form" id="lgForm" data-state={formState} onSubmit={handleSubmit} noValidate>
+      <h2>登录轻单</h2>
+      <p className="lg-hint">手机号 + 验证码登录 · 账号由管理员统一创建</p>
 
-      <form className="mt-8" onSubmit={handleSubmit} noValidate>
-        <div>
-          <label htmlFor="phone" className="block text-sm font-medium text-neutral-700">
-            手机号
-          </label>
+      {formError && <LoginErrorAlert error={formError} />}
+
+      <div className="lg-field">
+        <label htmlFor="phone">手机号</label>
+        <input
+          id="phone"
+          name="phone"
+          type="tel"
+          inputMode="numeric"
+          autoComplete="tel"
+          maxLength={11}
+          placeholder="11 位手机号"
+          value={phone}
+          disabled={busy}
+          aria-invalid={Boolean(fieldErrors.phone)}
+          className={fieldClass(Boolean(fieldErrors.phone))}
+          onChange={(event) => {
+            setPhone(event.target.value);
+            clearFieldError('phone');
+          }}
+        />
+      </div>
+
+      <div className="lg-field">
+        <label htmlFor="code">验证码</label>
+        <div className="lg-code">
           <input
-            id="phone"
-            name="phone"
-            type="tel"
+            id="code"
+            name="code"
+            type="text"
             inputMode="numeric"
-            autoComplete="tel"
-            maxLength={11}
-            placeholder="请输入手机号"
-            value={phone}
+            autoComplete="one-time-code"
+            maxLength={6}
+            placeholder="6 位验证码"
+            value={code}
             disabled={busy}
-            aria-invalid={Boolean(fieldErrors.phone)}
-            aria-describedby={fieldErrors.phone ? 'phone-error' : undefined}
+            aria-invalid={Boolean(fieldErrors.code)}
+            className={fieldClass(Boolean(fieldErrors.code))}
             onChange={(event) => {
-              setPhone(event.target.value);
-              clearFieldError('phone');
+              setCode(event.target.value);
+              clearFieldError('code');
             }}
-            className={fieldClass(Boolean(fieldErrors.phone))}
           />
-          {fieldErrors.phone && (
-            <p id="phone-error" className="mt-1.5 text-xs text-red-600">
-              {fieldErrors.phone}
-            </p>
+          {onSendCode && (
+            <button
+              type="button"
+              onClick={() => void handleSendCode()}
+              disabled={busy || sendingCode || cooldown > 0}
+            >
+              {cooldown > 0 ? `${cooldown}s 后重发` : sendingCode ? '发送中…' : '获取验证码'}
+            </button>
           )}
         </div>
-
-        <div className="mt-5">
-          <label htmlFor="code" className="block text-sm font-medium text-neutral-700">
-            验证码
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="code"
-              name="code"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              placeholder="请输入验证码"
-              value={code}
-              disabled={busy}
-              aria-invalid={Boolean(fieldErrors.code)}
-              aria-describedby={fieldErrors.code ? 'code-error' : undefined}
-              onChange={(event) => {
-                setCode(event.target.value);
-                clearFieldError('code');
-              }}
-              className={fieldClass(Boolean(fieldErrors.code))}
-            />
-            {onSendCode && (
-              <button
-                type="button"
-                onClick={() => void handleSendCode()}
-                disabled={busy || sendingCode || cooldown > 0}
-                className="mt-1.5 h-11 shrink-0 rounded-lg border border-neutral-300 px-3 text-sm text-neutral-700 transition hover:border-neutral-900 hover:text-neutral-900 disabled:opacity-50 disabled:hover:border-neutral-300"
-              >
-                {cooldown > 0 ? `${cooldown}s 后重发` : sendingCode ? '发送中…' : '获取验证码'}
-              </button>
-            )}
-          </div>
-          {fieldErrors.code && (
-            <p id="code-error" className="mt-1.5 text-xs text-red-600">
-              {fieldErrors.code}
-            </p>
-          )}
-          {sendNotice && (
-            <p className="mt-1.5 text-xs text-emerald-600" role="status">
-              {sendNotice}
-            </p>
-          )}
-        </div>
-
-        {formError && <LoginErrorAlert error={formError} />}
-
-        {succeeded && (
-          <p
-            className="mt-5 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700"
-            role="status"
-          >
-            登录成功，正在进入工作台…
+        {sendNotice && (
+          <p className="lg-hint" role="status">
+            {sendNotice}
           </p>
         )}
+      </div>
 
-        <button
-          type="submit"
-          disabled={busy}
-          className="mt-6 h-11 w-full rounded-lg bg-neutral-950 text-sm font-medium tracking-[0.1em] text-white transition hover:-translate-y-0.5 hover:bg-neutral-800 hover:shadow-[0_10px_20px_rgba(0,0,0,0.18)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950 active:translate-y-0 disabled:translate-y-0 disabled:opacity-60 disabled:hover:shadow-none"
-        >
-          {pending ? '登录中…' : '登 录'}
-        </button>
-      </form>
+      <button
+        type="submit"
+        className="lg-submit"
+        disabled={busy}
+        aria-busy={pending || undefined}
+      >
+        {pending ? (
+          <>
+            <Icon name="refresh" size={16} className="spin" />
+            登录中…
+          </>
+        ) : (
+          '登 录'
+        )}
+      </button>
 
-      <p className="mt-7 border-t border-neutral-200 pt-4 text-xs leading-6 text-neutral-500">
+      {succeeded && (
+        <p className="lg-hint" role="status">
+          登录成功，正在进入工作台…
+        </p>
+      )}
+
+      <p className="lg-hint">
         企业注册与入企暂未开放（一期），账号由管理员统一创建。
         <br />
         测试环境演示账号 10000000001，验证码 000000。
       </p>
-    </>
+    </form>
   );
 }
 
-/** 页面接线：登录成功 → 写回 me 缓存 → 进工作台（#5）。 */
+/** 页面接线：登录成功 → 写回 me 缓存 → 已绑公司进工作台；未绑公司停在空态。 */
 export function LoginPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [noCompany, setNoCompany] = useState(false);
 
   const handleLogin = async (input: LoginInput) => {
-    // Cookie 落地后再取 /auth/me，一次拿全 companyIds / scope。
+    // Cookie 落地后再取 /auth/me，一次拿全 companyIds / scope / entries。
     await authApi.login(input);
     const me = await authApi.me();
     queryClient.setQueryData(authKeys.me, me);
+    // 入企降级（#435）：没绑任何公司 → 停在空态，不跳工作台（工作台对空公司没有意义）。
+    if (me.companyIds.length === 0) setNoCompany(true);
   };
 
   const handleSendCode = async (phone: string) => {
@@ -285,19 +322,27 @@ export function LoginPage() {
   };
 
   const handleSucceeded = () => {
-    // 留一拍让「登录成功」被看见，再进工作台。
+    // 留一拍让「登录成功」被看见，再进工作台；无公司时由 noCompany 分支接管画面。
     window.setTimeout(() => {
-      void navigate({ to: DEFAULT_ROUTE_PATH });
+      setNoCompany((current) => {
+        if (!current) void navigate({ to: DEFAULT_ROUTE_PATH });
+        return current;
+      });
     }, 500);
   };
 
+  const handleBackToLogin = () => {
+    // 清掉会话与缓存，回到干净登录态（不整页刷新）。
+    void authApi.logout().catch(() => undefined);
+    queryClient.removeQueries({ queryKey: authKeys.me });
+    setNoCompany(false);
+  };
+
+  if (noCompany) return <LoginNoCompany onBack={handleBackToLogin} />;
+
   return (
     <LoginBrandShell>
-      <LoginForm
-        onLogin={handleLogin}
-        onSendCode={handleSendCode}
-        onSucceeded={handleSucceeded}
-      />
+      <LoginForm onLogin={handleLogin} onSendCode={handleSendCode} onSucceeded={handleSucceeded} />
     </LoginBrandShell>
   );
 }

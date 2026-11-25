@@ -123,6 +123,9 @@
 }
 .tf .pager {
   margin-left: auto;
+  /* `.pager` 本体是 v0.13 的「卡片里的一条」，自带 `padding:10px 14px`；
+     挪进 `.tf` 后外边距由 `.tf` 给，再留一层内边距会把页码条挤成两级缩进。 */
+  padding: 0;
 }
 /* 四态收起：只有 filled 才显示分页（稿子 L573）。
    加载/空/错误态由 app-v013 的 data-state 规则控制行显示，这条只管页脚。 */
@@ -144,8 +147,11 @@
    「已有的类不重复定义」，v0.13 的分页按钮本体一个字节都不动。
    为什么要这一条：`app-v013.css:400` 没写 background，而 index.css 有意删掉了全局
    `button{background:none}`（README §2），暗色下按钮会落到浏览器默认浅底 → 白底白字。
-   老的 `.pager` 那处缺口不属本单，已在 #443 评论里报给负责人单独修。 */
-.tf .pager button {
+   老的 `.pager` 那处缺口不属本单，已在 #443 评论里报给负责人单独修。
+
+   `:not(.on)` 不能省：本选择器与上面 `.pager button.on` 同权重（0,2,1）且写在后面，
+   加上 `.on` 会把当前页的实心底洗成透明 —— 白字配白底，页码直接看不见（#431 实测踩到）。 */
+.tf .pager button:not(.on) {
   background: transparent;
   cursor: pointer;
 }
@@ -584,3 +590,84 @@
     transform: rotate(360deg);
   }
 }
+
+/* ============================================================
+   §6 背景装饰：流星雨（#435 追加，设置中心）
+   ------------------------------------------------------------
+   **不是卡片**：装饰层铺在页面内容背后的空白处，`pointer-events: none`
+   不吃鼠标事件，本身没有边框/底色，视觉上直接融进页面背景。
+   位置由 `.meteor-stage`（内容坐标系）+ `.meteor-bg`（绝对铺满）两层决定，
+   内容块加 `.meteor-fg` 压在它上面（`isolation: isolate` 把 z-index 关在本地）。
+   动效降级在组件里做（`prefers-reduced-motion` 时只画静态星点），这里不管。
+   ======================================= */
+.meteor-stage {
+  position: relative;
+  isolation: isolate;
+  min-height: calc(100vh - 120px);
+}
+.meteor-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.meteor-bg canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.meteor-fg {
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================================
+   §7 工作台五块（#435 追加）
+   ------------------------------------------------------------
+   app-v013 只有 `.kpi` / `.card` / `.cellcard` 本体，没有 v3.0 稿子里
+   KPI 的三行结构（label / 数值 / 说明）、卡片头、待办行、链路节点、动态行、趋势行。
+   这里按稿子的视觉补最小一组，全部用 tokens-v013 的变量，不引入新颜色。
+   ======================================= */
+/* KPI：四张卡按数量自适应（2~4 张都不会歪） */
+.kpis{grid-template-columns:repeat(auto-fit,minmax(0,1fr))}
+.kpi .kpi-v{font-size:26px;font-weight:660;letter-spacing:-.02em;margin-top:8px;display:flex;align-items:baseline;gap:6px}
+.kpi .kpi-v i{font-style:normal;font-size:13px;font-weight:500;color:var(--text-3)}
+.kpi .kpi-m{margin-top:8px;font-size:13px;line-height:1.6;color:var(--text-3)}
+
+/* 卡片头 */
+.card-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:16px 18px 10px;margin:0}
+.card-h h3{font-size:16px;font-weight:620;letter-spacing:-.01em}
+.card-h small{font-size:13px;color:var(--text-3)}
+
+/* 待办行 / 动态行 / 趋势行：一条一条，点得动 */
+.wb-list{display:grid;padding:0 14px 12px}
+.wb-row{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;padding:11px 4px;border:0;border-bottom:1px solid var(--line-1);background:none;text-align:left;color:inherit;font:inherit;cursor:pointer;border-radius:0}
+.wb-row:last-child{border-bottom:0}
+.wb-row:hover{background:var(--surf-2)}
+.wb-row b{display:block;font-size:15px;font-weight:600}
+.wb-row small{display:block;margin-top:2px;font-size:13px;color:var(--text-3)}
+.wb-row .wb-num{font-family:var(--mono);color:var(--text-2);white-space:nowrap}
+
+/* 主业务链路 */
+.wb-chain{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;padding:0 16px 16px}
+.wb-chain button{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line-1);border-radius:12px;background:var(--surf-1);text-align:left;color:inherit;font:inherit;cursor:pointer;transition:border-color .14s,background .14s}
+.wb-chain button:hover{border-color:var(--line-3);background:var(--surf-2)}
+.wb-chain .lt{display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;border-radius:10px;background:var(--a-10);color:var(--accent-light);font-family:var(--mono);font-weight:700;font-size:14px}
+.wb-chain b{display:block;font-size:15px;font-weight:600}
+.wb-chain small{display:block;margin-top:2px;font-size:13px;color:var(--text-3)}
+
+/* 块内说明文字 */
+.wb-note{padding:0 16px 12px;font-size:13px;color:var(--text-3)}
+.wb-feed{display:grid;padding:0 16px 12px}
+.wb-feed-row{display:flex;gap:14px;padding:10px 4px;border-bottom:1px solid var(--line-1)}
+.wb-feed-row:last-child{border-bottom:0}
+.wb-feed-row time{flex:0 0 auto;font-family:var(--mono);font-size:14px;color:var(--text-2)}
+.wb-feed-row b{font-family:var(--mono);font-size:14px;font-weight:600}
+.wb-feed-row small{display:block;margin-top:2px;font-size:13px;color:var(--text-3)}
+
+/* 近 6 个月趋势 */
+.wb-trend{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:9px 4px;border-bottom:1px solid var(--line-1)}
+.wb-trend:last-child{border-bottom:0}
+.wb-trend span{font-size:14px;color:var(--text-2)}
+.wb-trend b{font-family:var(--mono)}

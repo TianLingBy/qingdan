@@ -32,6 +32,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { fetchEmployees } from '../../api/platform';
+import { BatchPager } from '../../components/ListPager';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
 import {
   DetailHead,
@@ -2074,12 +2075,14 @@ export function ProcessingOrdersPage() {
       {notice && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{notice}</p>}
 
       {/*
-        列表（v0.13）：容器与 tbody 挂同一个 data-state，数据行 `r-row`、
-        三行状态行常驻且带 `st-tr st-*`，显隐交给 `app-v013.css`。
-        分页按游标契约写「上一批 / 下一批」（ListQuery 没有 total，画页码只能靠猜）。
+        列表（v3.0 `list-card`）：容器与 tbody 挂同一个 data-state，数据行 `r-row`、
+        三行状态行常驻且带 `st-tr st-*`，显隐交给 `app-v013.css`；
+        `.tf` 页脚在非 filled 态自动收起翻页（`app-v30.css`）。
+        分页只能按游标写「上一批 / 下一批」：加工单的列表契约是 `PageQuerySchema`，
+        没有 `total`，画页码只能靠猜（D95 的页码模式还没铺到这个模块）。
       */}
-      <div className="card" data-state={listState}>
-        <div className="overflow-x-auto">
+      <div className="card list-card" data-state={listState}>
+        <div className="tw">
           <table className="w-full text-left" style={{ minWidth: '1040px' }}>
             <thead>
               <tr>
@@ -2181,32 +2184,21 @@ export function ProcessingOrdersPage() {
           </table>
         </div>
 
-        <div className="pager">
-          <span className="count">
-            共 {rows.length} 条 · 第 {pageIndex + 1} 批
-          </span>
-          <div className="nav">
-            <button
-              type="button"
-              className="btn btn-s"
-              disabled={pageIndex === 0}
-              onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-            >
-              上一批
-            </button>
-            <button
-              type="button"
-              className="btn btn-s"
-              disabled={!nextCursor}
-              onClick={() => {
-                if (!nextCursor) return;
-                setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
-                setPageIndex((index) => index + 1);
-              }}
-            >
-              下一批
-            </button>
-          </div>
+        <div className="tf">
+          {/* 批次号由 BatchPager 显示，这里只写条数，别把「第 1 批」写两遍 */}
+          <span>共 {rows.length} 条</span>
+          <BatchPager
+            batch={pageIndex + 1}
+            hasPrev={pageIndex > 0}
+            hasNext={nextCursor !== null}
+            onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
+            onNext={() => {
+              if (!nextCursor) return;
+              setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
+              setPageIndex((index) => index + 1);
+            }}
+            label="加工单分批翻页"
+          />
         </div>
       </div>
 

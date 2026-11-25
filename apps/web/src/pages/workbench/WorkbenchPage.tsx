@@ -1,56 +1,34 @@
 /**
- * 工作台（`/workbench`，22 页 IA 第 2 页，登录后的落地页）。
+ * 工作台（`/workbench`，22 页 IA 第 2 页，登录后的落地页），按 **v3.0** 实现（#435）。
  *
- * 版式对齐 `prototype.html` 的 `pages.home`：问候 + KPI 卡片区 + 「下一步做什么」，
- * 本轮按 #5 的验收拆成三段：身份条、入口卡片（按 scope 显隐）、待办 + 我负责的进行中单据。
+ * 版式按负责人 2026-11-24 拍板（`docs/ui/frontend-change-rules.md` §四 第 7 条）：
+ *   1. 顶部 KPI 四卡 → 2. 待办事项 → 3. 主业务链路（A→B→E→C）→ 4. 近 6 个月毛利趋势 → 5. 最近动态
  *
- * 三条与原型不同的取舍：
- * - 「角色切换」（老板/销售/财务…）是原型为了演示做的，真实产品里没有 ——
- *   #5 明确要求「不在前端写死角色名」，因此身份条只显示姓名 + 公司数 + 可进入页面数；
- * - 「下一步做什么」文案完全由待办与 scope 推导（有待办就说处理待办，没待办就说可浏览资料页）；
- * - **待办接的是真接口**（`GET /api/v1/todos`，D89）。这一块曾经用 `workbench-mock.ts`
- *   的占位数据，注释里还留着「接口待做」；接口早就做了，占位数据一直没换，等于首屏
- *   每天给人看假数字。现在换掉了。
- * - 「我负责的进行中单据」那一块**撤掉了**，理由写在该组件原位置（需要 `handlerId=me`
- *   过滤，后端还不支持，见 #354 第 3 条）。宁可少一块，不留一块假的。
+ * 三条硬口径：
+ *   - **整块不渲染**：KPI / 链路 / 趋势 / 动态每块都先看 `allows(scope, domain, action)`，
+ *     没权限就整块不出现，**不留「—」「已脱敏」这类占位**（比稿子严，负责人拍板）。
+ *   - **待办接真接口** `GET /api/v1/todos`（权限 `workbench.read`，负责人 2026-11-24 确认：
+ *     `workbench.todos.read` 是 operationId，不是 scope）；空态 `data-state="empty"` 文案「暂无待办」；
+ *     点击用后端下发的 `routeId` 拼路由，前端不维护 domain → path 映射。
+ *   - **入口卡片区删除**：工作台不再消费 `/auth/me` 的 `entries`（`servedEntries()` 保留给别处用）。
+ *
+ * 数据缺口（已在 PR 里报给负责人，不臆造）：
+ *   - 「本月销售总额」后端没有销售汇总端点，`/reports/profit` 也只回毛利、不回收入；
+ *   - 「可用库存」没有「按公司汇总可用量」的端点（批次列表是明细）。
+ *   所以 KPI 四卡用**四个都有真源**的口径：待我处理、待签收、已结算单、期间毛利。
  */
 
-import type { TodoItem } from '@qingdan/contracts';
-import { useQuery } from '@tanstack/react-query';
+import type { AuditLog, ProfitReport, ScopeMatrix, TodoItem } from '@qingdan/contracts';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useMemo } from 'react';
-import { servedEntries, type EntryCard } from '../../lib/access';
-import { isImplementedPage } from '../../router/implemented';
-import type { RouteEntry } from '../../router/routes';
+import { Icon } from '../../components/icons/Icon';
+import { platformAdminApi } from '../../api/platform-admin';
+import { allows } from '../../lib/access';
 import { authApi, authKeys } from '../auth/auth-api';
+import { profitReportApi, profitReportQueryKeys } from '../report/profit-report-api';
+import { salesApi, salesQueryKeys } from '../sales/sales-api';
 import { workbenchApi, workbenchKeys } from './workbench-api';
-
-/** 每个入口卡片的一句话说明（与 `ROUTE_TABLE` 的 22 条一一对应，编译期保证不漏）。 */
-const PAGE_BLURB = {
-  login: '手机号 + 验证码登录、企业注册与入企',
-  workbench: '落地页：待办、入口卡片、我负责的进行中单据',
-  flow: 'A → B → E → C → 冲正的全链路单据关系',
-  'purchase-orders': '原材料采购，入库即锁批次价（D5）',
-  'processing-orders': '加工投入产出、损耗与加工费（D35 / F3）',
-  'sales-orders': '选批次出售、破下限审批、内嵌收款（D20 / D22）',
-  'internal-trades': '集团内公司间调拨，双边成本归集',
-  settlements: '按月归集收支与提成，确认后不可改',
-  reversals: '客户退货 R / 供应商退货 S / 盘点盈亏 I',
-  products: '商品与别名、规格、单位、默认售价',
-  customers: '客户档案与联系人',
-  suppliers: '供应商档案与结算口径',
-  processors: '加工厂档案与加工费约定',
-  'masterdata-dedupe': '判掉开单时攒下的疑似重复档案，可合并 / 撤销',
-  inventory: '批次可用量 + 委外在途量',
-  'inventory-flows': '每笔出入库流水，可追溯',
-  stocktakes: '盘点录入与盘盈盘亏冲正（D47 / D71）',
-  employees: '员工、岗位与个人权限覆盖',
-  permissions: '岗位权限矩阵：功能域 × 动作（D15）',
-  companies: '公司主体与数据可见范围',
-  'profit-report': '按公司 / 商品 / 客户看毛利与费用',
-  'audit-logs': '所有写操作的审计流水（D51）',
-  'api-integration': 'API Token 与外部系统对接（D52）',
-} as const satisfies Record<RouteEntry['id'], string>;
 
 /* ------------------------------ 纯函数 ------------------------------ */
 
@@ -72,272 +50,359 @@ export function formatToday(date: Date): string {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${WEEKDAYS[date.getDay()] ?? ''}`;
 }
 
+/** `2026-11-01`（本地时间，不走 toISOString，避免 UTC 偏移把月份挪一天）。 */
+export function isoDate(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+export interface MonthWindow {
+  /** 显示用：`11 月`。 */
+  readonly label: string;
+  readonly periodStart: string;
+  readonly periodEnd: string;
+}
+
+/**
+ * 近 N 个月（含本月）的期间窗口，**按自然月首尾日**。
+ * `/reports/profit` 必填 `periodStart`/`periodEnd`，漏传 422（负责人 2026-11-24 提醒）。
+ */
+export function lastMonths(now: Date, count = 6): readonly MonthWindow[] {
+  const windows: MonthWindow[] = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const start = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const end = new Date(now.getFullYear(), now.getMonth() - offset + 1, 0);
+    windows.push({
+      label: `${start.getMonth() + 1} 月`,
+      periodStart: isoDate(start),
+      periodEnd: isoDate(end),
+    });
+  }
+  return windows;
+}
+
+/** 金额展示：decimal 字符串原样加 ¥，不在前端做四则运算（D54）。`null` = 脱敏/无权限。 */
+export function moneyText(value: string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return value.startsWith('-') ? `−¥${value.slice(1)}` : `¥${value}`;
+}
+
 /* ------------------------------ 小组件 ------------------------------ */
 
-function SkeletonBlock({ className }: { readonly className: string }) {
-  return <div className={`animate-pulse rounded bg-slate-100 ${className}`} />;
-}
-
-interface KpiProps {
-  readonly label: string;
-  readonly value: number | null;
-  readonly unit: string;
-}
-
-function Kpi({ label, value, unit }: KpiProps) {
+function CardHead({ title, hint }: { readonly title: string; readonly hint?: string }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-1 flex items-baseline gap-1">
-        {value === null ? (
-          <SkeletonBlock className="h-6 w-10" />
-        ) : (
-          <>
-            <span className="text-2xl font-semibold tabular-nums text-slate-900">{value}</span>
-            <span className="text-xs text-slate-400">{unit}</span>
-          </>
-        )}
-      </dd>
+    <div className="card-h">
+      <h3>{title}</h3>
+      {hint && <small>{hint}</small>}
     </div>
   );
 }
 
-export interface EntryCardsProps {
-  readonly entries: readonly EntryCard[];
-  readonly onOpen: (path: string) => void;
+export interface KpiCard {
+  readonly key: string;
+  readonly label: string;
+  readonly value: string;
+  readonly unit?: string;
+  readonly hint?: string;
 }
 
-/** 入口卡片区：只渲染 `entries`（已按 scope 过滤），组件本身不判权限。 */
-export function EntryCards({ entries, onOpen }: EntryCardsProps) {
-  if (entries.length === 0) {
-    return (
-      <p className="mt-3 rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">
-        当前身份没有可进入的业务页面，请联系管理员调整岗位权限（D15）。
-      </p>
-    );
-  }
+/** 主业务链路节点：只用路由直跳，不带数字（数字来自各页列表，不在这里臆造）。 */
+const CHAIN = [
+  { id: 'purchase', path: '/purchase-orders', letter: 'A', label: '采购单', note: '原料入库 · 锁批次价' },
+  { id: 'processing', path: '/processing-orders', letter: 'B', label: '加工单', note: '委外加工 · 记损耗' },
+  { id: 'sales', path: '/sales-orders', letter: 'E', label: '销售单', note: '批次出库 · 两步签收' },
+  { id: 'settlement', path: '/settlements', letter: 'C', label: '结算单', note: '一单一成本 · 自动生成' },
+] as const;
 
-  return (
-    <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {entries.map((entry) => {
-        // 后端下发的 id 是普通字符串；这里只用它查本地文案与「待实现」标记，不参与判权。
-        const id = entry.id as RouteEntry['id'];
-        return (
-        <li key={entry.id} className="min-w-0">
-          <a
-            href={entry.path}
-            onClick={(event) => {
-              // 保留 href 以便中键新开标签，左键走客户端路由（不整页刷新）。
-              event.preventDefault();
-              onOpen(entry.path);
-            }}
-            className="block h-full rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-slate-300 hover:bg-slate-50"
-          >
-            <span className="flex items-start justify-between gap-2">
-              <span className="text-sm font-medium text-slate-900">{entry.title}</span>
-              {isImplementedPage(id) ? null : (
-                <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-800">
-                  待实现
-                </span>
-              )}
-            </span>
-            <span className="mt-1 block text-xs leading-relaxed text-slate-500">
-              {PAGE_BLURB[id]}
-            </span>
-          </a>
-        </li>
-        );
-      })}
-    </ul>
-  );
+/* ------------------------------ 展示层 ------------------------------ */
+
+export interface WorkbenchTodo {
+  readonly routeId: string;
+  readonly title: string;
+  readonly hint: string;
+  readonly count: number;
 }
-
-export interface TodoPanelProps {
-  readonly todos: readonly TodoItem[];
-  readonly loading: boolean;
-  /** 无待办时的补充说明（按权限不同说法不一样）。 */
-  readonly emptyHint: string;
-}
-
-/** 待办区：加载骨架 / 空状态 / 列表 三态。 */
-export function TodoPanel({ todos, loading, emptyHint }: TodoPanelProps) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-900">待我处理</h2>
-        <span className="text-[11px] text-slate-400">共 {todos.length} 类</span>
-      </div>
-      <p className="mt-1 text-xs text-slate-400">
-        后端按权限点逐条判：审批类要 `approve`，低库存预警要 `inventory_qty.read`（D89 / #378）。
-        没权限的类别直接不返回 —— 所以「没看到」可能是不归你，不是真的没有。
-      </p>
-
-      {loading ? (
-        <ul className="mt-3 space-y-2" aria-label="待办加载中">
-          {[0, 1, 2].map((index) => (
-            <li key={index} className="rounded-lg border border-slate-100 px-3 py-2">
-              <SkeletonBlock className="h-4 w-32" />
-              <SkeletonBlock className="mt-2 h-3 w-44" />
-            </li>
-          ))}
-        </ul>
-      ) : todos.length === 0 ? (
-        <div className="mt-3 rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center">
-          <p className="text-sm text-slate-600">当前没有待办</p>
-          <p className="mt-1 text-xs text-slate-400">{emptyHint}</p>
-        </div>
-      ) : (
-        <ul className="mt-3 space-y-2">
-          {todos.map((todo) => (
-            // key 用 kind 不用 id：契约里 TodoItem 没有 id 字段，`kind` 才是这套待办的唯一标识
-            // （`TODO_KINDS` 是枚举）。曾经写 key={todo.id} 是因为占位数据类型自带 id。
-            <li
-              key={todo.kind}
-              className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-800">{todo.title}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{todo.hint}</p>
-              </div>
-              <span className="shrink-0 rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium tabular-nums text-rose-700">
-                {todo.count} 笔
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-/**
- * 「我负责的进行中单据」原来在这个位置，2026-11-18 撤掉。
- *
- * 撤掉的理由是**它做不出来真的**：要「负责人是本人且未完结」，需要
- * `GET /api/v1/sales-orders?handlerId=me&status=进行中` 这类过滤，而
- * `handlerId` 目前只接受 uuid（`packages/contracts/src/sales-orders.ts:204`
- * 是 `z.string().uuid()`，没有 `'me'` 魔法值）。前端拿不到自己的 employeeId 之外的
- * 身份信息固然能拼，但拼出来的是「我负责的单据」还是「我随便填的一个 id 的单据」取决于
- * 那一行代码，而契约说了「只接受 uuid」。所以这块等 #354 第 3 条做完再恢复。
- *
- * 留着占位数据的代价比撤掉更大：老板每天第一眼看到的是假单号、假对象、假状态，
- * 而且数字会随着假数据生成逻辑漂移，看起来像真的。
- */
-/* ------------------------------ 页面 ------------------------------ */
 
 export interface WorkbenchViewProps {
   readonly displayName: string;
   readonly companyCount: number;
-  readonly entries: readonly EntryCard[];
+  readonly scope?: ScopeMatrix;
   readonly todos: readonly TodoItem[];
-  readonly loading: boolean;
+  readonly todosLoading: boolean;
+  /** 已发货待签收的销售单笔数；null = 无权限/未取数。 */
+  readonly transitCount: number | null;
+  /** 本月利润报表；null = 无权限或未就绪。 */
+  readonly profit: ProfitReport | null;
+  /** 近 6 个月毛利（金额可能为 null = 该月无看价权限）。 */
+  readonly trends: readonly { readonly label: string; readonly grossProfit: string | null }[];
+  /** 最近动态（审计日志前 5 条）。 */
+  readonly feed: readonly AuditLog[];
   readonly onOpen: (path: string) => void;
   /** 测试注入固定时间，避免问候语随跑测时段变化。 */
   readonly now?: Date;
 }
 
 /**
- * 纯展示层：不取数、不判权限，只按传入的 entries / todos 排版。
- * 拆出来是为了能在没有 Router 上下文的环境里直接 SSR 断言版式（同 `LoginPage` 的做法）。
+ * 纯展示层：不取数、只按传入的数据 + scope 排版。
+ * 判权在这里做（`allows`），这样 SSR 测试能直接断言「没权限整块不出现」。
  */
 export function WorkbenchView({
   displayName,
   companyCount,
-  entries,
+  scope,
   todos,
-  loading,
+  todosLoading,
+  transitCount,
+  profit,
+  trends,
+  feed,
   onOpen,
   now = new Date(),
 }: WorkbenchViewProps) {
+  const canSales = allows(scope, 'sales', 'read');
+  const canProfit = allows(scope, 'profit_report', 'read');
+  const canAudit = allows(scope, 'audit', 'read');
+  const canWorkbench = allows(scope, 'workbench', 'read');
+  const canViewPrice = allows(scope, 'sales', 'view_price') || allows(scope, 'profit_report', 'view_price');
+
   const todoCount = todos.reduce((sum, todo) => sum + todo.count, 0);
 
+  /* 1. KPI 四卡：每张都要「有权限 + 有真数据」，缺任一就不出这张卡 */
+  const kpis: KpiCard[] = [];
+  if (canWorkbench) {
+    kpis.push({ key: 'todos', label: '待我处理', value: todosLoading ? '…' : String(todoCount), unit: '笔' });
+  }
+  if (canSales && transitCount !== null) {
+    kpis.push({ key: 'transit', label: '待签收', value: String(transitCount), unit: '笔', hint: '已发货待客户签收' });
+  }
+  if (canProfit && profit) {
+    kpis.push({
+      key: 'settled',
+      label: '本月已结算',
+      value: String(profit.settledOrderCount),
+      unit: '单',
+      hint: '参与毛利汇总的 C 单',
+    });
+    // 无 view_price 时后端把金额置 null，按拍板整张卡不渲染（不是显示「—」）
+    if (canViewPrice && profit.grossProfit !== null) {
+      kpis.push({ key: 'gross', label: '本月毛利', value: moneyText(profit.grossProfit), hint: '已结算 C 单毛利合计' });
+    }
+  }
+
+  /* 3. 链路：只渲染有 read 的域 */
+  const chain = CHAIN.filter((node) => allows(scope, node.id, 'read'));
+
+  /* 5. 动态：无 audit 权限整块不出现 */
+  const feedRows = canAudit ? feed.slice(0, 5) : [];
+
+  const todosState = todosLoading ? 'loading' : todos.length === 0 ? 'empty' : 'filled';
+
   return (
-    <section className="mx-auto max-w-6xl space-y-4">
-      <header className="rounded-xl border border-slate-200 bg-white px-4 py-4 sm:px-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
-              {greetingFor(now)}，{displayName}
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              {formatToday(now)} · 可访问 {companyCount} 家公司 · 你的身份可进入 {entries.length} 个页面
-            </p>
-          </div>
-          <p className="max-w-xs text-xs leading-relaxed text-slate-400">
-            工作台与业务全流程图对全部登录员工开放（D44），下面的入口按服务端下发的 scope
-            显示；能不能真正打开由接口判定。
+    <section className="wrap">
+      <header className="p-head">
+        <div>
+          <h1>
+            {greetingFor(now)}，{displayName}
+          </h1>
+          <p className="sub">
+            {formatToday(now)} · 可访问 {companyCount} 家公司 · 每一笔内部交易，都算得清成本
           </p>
         </div>
+        {canSales && (
+          <div className="acts">
+            <button type="button" className="btn btn-ghost" onClick={() => onOpen('/inventory')}>
+              查看库存批次
+            </button>
+            <button type="button" className="btn btn-primary" onClick={() => onOpen('/sales-orders')}>
+              进入销售单 E
+            </button>
+          </div>
+        )}
       </header>
 
-      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Kpi label="待我处理" value={loading ? null : todoCount} unit="笔" />
-        <Kpi label="可进入页面" value={entries.length} unit="个" />
-      </dl>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-slate-900">我的入口</h2>
-          <span className="text-xs text-slate-400">
-            按权限域过滤（共 {entries.length} 个）· 带「待实现」标记的还没做完
-          </span>
+      {kpis.length > 0 && (
+        <div className="kpis" aria-label="关键指标">
+          {kpis.map((kpi) => (
+            <div key={kpi.key} className="kpi">
+              <span className="kpi-label">{kpi.label}</span>
+              <div className="kpi-v num">
+                {kpi.value}
+                {kpi.unit && <i>{kpi.unit}</i>}
+              </div>
+              {kpi.hint && <p className="kpi-m">{kpi.hint}</p>}
+            </div>
+          ))}
         </div>
-        <EntryCards entries={entries} onOpen={onOpen} />
-      </section>
+      )}
 
-      <TodoPanel
-        todos={todos}
-        loading={loading}
-        emptyHint={
-          entries.length > 0
-            ? '你的权限里没有待审批的事项，可以先去上面的入口录单据。'
-            : '当前身份没有审批类权限，待办会为空。'
-        }
-      />
+      {/* 2. 待办：真接口 + data-state 四态之一（loading / empty / filled） */}
+      {canWorkbench && (
+        <div className="card" data-state={todosState} aria-label="待办事项">
+          <CardHead title="待办事项" hint={`共 ${todos.length} 类 · 按权限点逐条判，没看到不等于没有`} />
+          <div className="st-block st-filled">
+            <ul className="wb-list">
+              {todos.map((todo) => (
+                <li key={todo.kind}>
+                  <button
+                    type="button"
+                    className="wb-row"
+                    onClick={() => onOpen(`/${todo.routeId}`)}
+                  >
+                    <span>
+                      <b>{todo.title}</b>
+                      <small>{todo.hint}</small>
+                    </span>
+                    <span className="wb-num">{todo.count} 笔</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="st-block st-loading">
+            <p className="hint">正在加载待办…</p>
+          </div>
+          <div className="st-block st-empty">
+            <div className="st-ico">
+              <Icon name="check" size={96} />
+            </div>
+            <div className="st-title">暂无待办</div>
+            <p className="st-desc">当前权限范围内没有待处理事项，可以先去主业务链路录单。</p>
+          </div>
+        </div>
+      )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
-        <h2 className="text-sm font-semibold text-slate-900">下一步做什么</h2>
-        {loading ? (
-          <SkeletonBlock className="mt-3 h-4 w-64" />
-        ) : todos.length > 0 ? (
-          <ul className="mt-2 space-y-1 text-sm text-slate-600">
-            {todos.map((todo) => (
-              <li key={todo.kind}>
-                · 处理「{todo.title}」{todo.count} 笔
+      {/* 3. 主业务链路：按域 read 过滤，一个都没有就整块不渲染 */}
+      {chain.length > 0 && (
+        <div className="card">
+          <CardHead title="主业务链路" hint="点击直达" />
+          <ul className="wb-chain">
+            {chain.map((node) => (
+              <li key={node.id}>
+                <button type="button" onClick={() => onOpen(node.path)}>
+                  <span className="lt">{node.letter}</span>
+                  <span>
+                    <b>{node.label}</b>
+                    <small>{node.note}</small>
+                  </span>
+                </button>
               </li>
             ))}
           </ul>
-        ) : (
-          <p className="mt-2 text-sm text-slate-600">
-            当前身份没有待审批事项，可浏览上方有权访问的资料页。
-          </p>
-        )}
-      </section>
+        </div>
+      )}
+
+      {/* 4. 近 6 个月毛利趋势：无 profit_report.read 整块不出现 */}
+      {canProfit && trends.length > 0 && (
+        <div className="card">
+          <CardHead title="近 6 个月毛利" hint="按自然月首尾日汇总已结算 C 单" />
+          <ul className="wb-list">
+            {trends.map((month) => (
+              <li key={month.label} className="wb-trend">
+                <span>{month.label}</span>
+                <b className="num">{moneyText(month.grossProfit)}</b>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* 5. 最近动态：无 audit.read 整块不出现 */}
+      {canAudit && (
+        <div className="card">
+          <CardHead title="最近动态" hint="审计日志前 5 条" />
+          {feedRows.length === 0 ? (
+            <p className="wb-note">最近没有可展示的操作记录。</p>
+          ) : (
+            <ul className="wb-feed">
+              {feedRows.map((log) => (
+                <li key={log.id} className="wb-feed-row">
+                  <time className="num">{log.time.slice(11, 16)}</time>
+                  <span>
+                    <b className="mono">{log.action}</b>
+                    <small>
+                      {log.objectType}
+                      {log.objectId ? ` · ${log.objectId}` : ''} · {log.result}
+                    </small>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </section>
   );
 }
 
+/* ------------------------------ 页面（取数） ------------------------------ */
+
 export function WorkbenchPage() {
   const navigate = useNavigate();
   const me = useQuery({ queryKey: authKeys.me, queryFn: () => authApi.me() });
+  const scope = me.data?.scope;
+  const ready = me.data !== undefined;
 
-  // 入口清单由后端按 scope 现算下发（Issue #227），前端不再自己推导。
-  const entries = useMemo(() => servedEntries(me.data?.entries), [me.data?.entries]);
+  const canSales = allows(scope, 'sales', 'read');
+  const canProfit = allows(scope, 'profit_report', 'read');
+  const canAudit = allows(scope, 'audit', 'read');
 
-  // 真接口：`GET /api/v1/todos`（D89）。等身份下来再发 —— 没登录时发出去只会拿 401。
+  // 待办：`GET /api/v1/todos`（workbench.read）。
   const todos = useQuery({
     queryKey: workbenchKeys.todos,
     queryFn: () => workbenchApi.todos(),
-    enabled: me.data !== undefined,
+    enabled: ready,
   });
+
+  // 待签收 = 已发货（状态是中文枚举，见 SALES_ORDER_STATES）。
+  const transit = useQuery({
+    queryKey: salesQueryKeys.list({ status: '已发货', page: 1, pageSize: 1 }),
+    queryFn: () => salesApi.list({ status: '已发货', page: 1, pageSize: 1 }),
+    enabled: ready && canSales,
+  });
+
+  const months = useMemo(() => lastMonths(new Date()), []);
+
+  // 本月利润（KPI 用）。
+  const profit = useQuery({
+    queryKey: profitReportQueryKeys.report(months[months.length - 1]!),
+    queryFn: () => profitReportApi.get(months[months.length - 1]!),
+    enabled: ready && canProfit,
+  });
+
+  // 近 6 个月趋势：逐月一次（`/reports/profit` 是单期间聚合，没有按月数组）。
+  const trendQueries = useQueries({
+    queries: months.map((month) => ({
+      queryKey: profitReportQueryKeys.report(month),
+      queryFn: () => profitReportApi.get(month),
+      enabled: ready && canProfit,
+    })),
+  });
+
+  const feed = useQuery({
+    queryKey: ['audit', 'recent'] as const,
+    queryFn: () => platformAdminApi.listAuditLogs(),
+    enabled: ready && canAudit,
+  });
+
+  const trends = months.map((month, index) => ({
+    label: month.label,
+    grossProfit: trendQueries[index]?.data?.grossProfit ?? null,
+  }));
+
+  const loading = !ready || todos.isPending;
 
   return (
     <WorkbenchView
       displayName={me.data?.displayName ?? '同事'}
       companyCount={me.data?.companyIds.length ?? 0}
-      entries={entries}
+      scope={scope}
       todos={todos.data?.items ?? []}
-      loading={me.data === undefined || todos.isPending}
+      todosLoading={loading}
+      transitCount={canSales && transit.data ? transit.data.total : null}
+      profit={canProfit ? (profit.data ?? null) : null}
+      trends={canProfit ? trends : []}
+      feed={feed.data?.items ?? []}
       onOpen={(path) => void navigate({ to: path })}
     />
   );

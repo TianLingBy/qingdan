@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { ACTIONS, DOCUMENT_TYPES, DOMAINS, type SettingsOverview } from '@qingdan/contracts';
 import { ApiError } from '../../api/client';
+import { MeteorBackdrop } from '../../components/MeteorBackdrop';
 import { SessionsBlock } from './SessionsBlock';
 import { settingsApi } from './settings-api';
 
@@ -39,13 +40,16 @@ export function SettingsPage() {
   const state = query.isPending ? 'loading' : query.isError ? 'error' : 'filled';
 
   return (
-    <section className="mx-auto max-w-4xl">
-      <div className="flex flex-wrap items-baseline gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">设置中心</h1>
-        {query.data && (
-          <span className="text-sm text-slate-500">{query.data.companies[0]?.name ?? '—'}</span>
-        )}
-      </div>
+    <div className="meteor-stage">
+      {/* 背景装饰层：不是卡片，铺在整页背后（`.meteor-bg` 纯装饰、不吃鼠标事件、尊重减少动效） */}
+      <MeteorBackdrop />
+      <section className="meteor-fg mx-auto max-w-4xl">
+        <div className="flex flex-wrap items-baseline gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">设置中心</h1>
+          {query.data && (
+            <span className="text-sm text-slate-500">{query.data.companies[0]?.name ?? '—'}</span>
+          )}
+        </div>
 
       <div data-state={state} className="mt-5 flex flex-col gap-5">
         <div className="st-block st-filled">
@@ -60,7 +64,8 @@ export function SettingsPage() {
           <SettingsErrorBlock error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} />
         </div>
       </div>
-    </section>
+      </section>
+    </div>
   );
 }
 
