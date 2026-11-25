@@ -3,6 +3,7 @@ import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-route
 import { useMemo, useState } from 'react';
 import { BROWSER_BASELINE_LABEL } from '../browser-baseline';
 import { SidebarNav } from '../components/nav/SidebarNav';
+import { SkyBackground } from '../components/SkyBackground';
 import { visibleRoutes } from '../lib/access';
 import { authApi, authKeys } from '../pages/auth/auth-api';
 import { ROUTE_TABLE, SETTINGS_ROUTE } from '../router/routes';
@@ -62,7 +63,10 @@ export function AppLayout() {
   const directory = useCompanyDirectory();
 
   return (
-    <ActiveCompanyProvider>
+    <>
+      {/* 星空层（#435）：只有设置中心 + 暗色才出现；挂载点在布局层，不侵入各页 */}
+      <SkyBackground active={currentPath === SETTINGS_ROUTE.path} />
+      <ActiveCompanyProvider>
       <div className="flex min-h-screen bg-slate-50 text-slate-900">
         <aside className="hidden w-60 shrink-0 border-r border-slate-200 bg-white lg:block">
           <div className="border-b border-slate-200 px-4 py-4">
@@ -149,5 +153,6 @@ export function AppLayout() {
         </div>
       </div>
     </ActiveCompanyProvider>
+    </>
   );
 }

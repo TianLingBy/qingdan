@@ -687,8 +687,8 @@
     filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.7));
   }
 }
-/* 面板淡出、只留流星雨；按钮与提示留下 */
-.settings-sky.is-sky {
+/* 面板淡出、只留流星雨：布局层把 body 标成 is-sky，页面内容整体退场（按钮与提示留下） */
+body.is-sky .wrap {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.55s ease;

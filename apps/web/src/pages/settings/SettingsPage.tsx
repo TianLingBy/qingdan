@@ -1,9 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
 import { ACTIONS, DOCUMENT_TYPES, DOMAINS, type SettingsOverview } from '@qingdan/contracts';
 import { ApiError } from '../../api/client';
-import { MeteorBackdrop } from '../../components/MeteorBackdrop';
-import { SessionsBlock } from './SessionsBlock';
+ import { SessionsBlock } from './SessionsBlock';
 import { settingsApi } from './settings-api';
 
 /**
@@ -30,32 +28,6 @@ function isForbidden(error: unknown): boolean {
   return error instanceof ApiError && error.status === 403;
 }
 
-/**
- * 当前是否暗色（`html[data-mode]`）。流星雨与星星按钮只在暗色出现，
- * 所以主题一换就要跟着变 —— 监听属性变化，而不是只在挂载时读一次。
- */
-export function useIsDarkMode(): boolean {
-  const [dark, setDark] = useState(
-    () => typeof document !== 'undefined' && document.documentElement.dataset.mode === 'dark',
-  );
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const root = document.documentElement;
-    const sync = () => setDark(root.dataset.mode === 'dark');
-    sync();
-    const observer = new MutationObserver(sync);
-    observer.observe(root, { attributes: true, attributeFilter: ['data-mode', 'data-theme'] });
-    const media = window.matchMedia?.('(prefers-color-scheme: dark)');
-    const onChange = () => sync();
-    media?.addEventListener?.('change', onChange);
-    return () => {
-      observer.disconnect();
-      media?.removeEventListener?.('change', onChange);
-    };
-  }, []);
-  return dark;
-}
-
 export function SettingsPage() {
   const query = useQuery({
     queryKey: ['settings', 'overview'],
@@ -65,57 +37,15 @@ export function SettingsPage() {
   });
 
   const state = query.isPending ? 'loading' : query.isError ? 'error' : 'filled';
-  const isDark = useIsDarkMode();
-  const [skyOnly, setSkyOnly] = useState(false);
-  const [firing, setFiring] = useState(false);
-  const [burst, setBurst] = useState(0);
-
-  // 切到亮色时自动退出「只看星空」（亮色不出现流星雨与按钮）
-  useEffect(() => {
-    if (!isDark) setSkyOnly(false);
-  }, [isDark]);
-
-  const toggleSky = () => {
-    setSkyOnly((current) => {
-      if (current) return false;
-      setBurst((n) => n + 1);
-      setFiring(true);
-      window.setTimeout(() => setFiring(false), 700);
-      return true;
-    });
-  };
 
   return (
-    <>
-      {/* 背景装饰层：不是卡片，fixed 铺满视口；只在暗色下挂载 */}
-      {isDark && <MeteorBackdrop burst={burst} />}
-      {isDark && (
-        <>
-          <button
-            type="button"
-            className={`sky-btn${skyOnly ? ' on' : ''}${firing ? ' is-firing' : ''}`}
-            aria-pressed={skyOnly}
-            aria-label="只看星空"
-            title="只看星空"
-            onClick={toggleSky}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 3.4l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z" />
-            </svg>
-          </button>
-          <div className="sky-hint" aria-hidden="true">
-            只看星空 · 点击星星回到设置中心
-          </div>
-        </>
-      )}
-      <div className={`settings-sky${skyOnly ? ' is-sky' : ''}`}>
-        <section className="mx-auto max-w-4xl">
-          <div className="flex flex-wrap items-baseline gap-3">
-            <h1 className="text-2xl font-semibold tracking-tight">设置中心</h1>
-            {query.data && (
-              <span className="text-sm text-slate-500">{query.data.companies[0]?.name ?? '—'}</span>
-            )}
-          </div>
+    <section className="mx-auto max-w-4xl">
+      <div className="flex flex-wrap items-baseline gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">设置中心</h1>
+        {query.data && (
+          <span className="text-sm text-slate-500">{query.data.companies[0]?.name ?? '—'}</span>
+        )}
+      </div>
 
       <div data-state={state} className="mt-5 flex flex-col gap-5">
         <div className="st-block st-filled">
@@ -129,10 +59,8 @@ export function SettingsPage() {
         <div className="st-block st-error">
           <SettingsErrorBlock error={query.error} onRetry={() => void query.refetch()} retrying={query.isFetching} />
         </div>
-        </div>
-        </section>
       </div>
-    </>
+    </section>
   );
 }
 
