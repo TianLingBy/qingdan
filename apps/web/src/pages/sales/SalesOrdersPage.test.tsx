@@ -69,6 +69,8 @@ function seedClient(input: {
   readonly orders: readonly SalesOrder[];
   /** 商品簿：列表「商品」列靠它把 productId 换回名字。 */
   readonly products?: readonly Product[];
+  /** 页码模式的总条数（D95）：不传就按本页行数算，即「只有一页」。 */
+  readonly total?: number;
 }): ReturnType<typeof createQueryClient> {
   const client = createQueryClient();
   client.setQueryData(authKeys.me, input.me);
@@ -90,7 +92,7 @@ function seedClient(input: {
     }),
     {
       items: [...input.orders],
-      total: input.orders.length,
+      total: input.total ?? input.orders.length,
       page: 1,
       pageSize: 20,
       nextCursor: null,
@@ -441,5 +443,37 @@ describe('开单现场建档的内联表单（D100）', () => {
     expect(html).not.toContain('已提交');
     // 值应当回填到输入框，而不是只在说明文字里出现
     expect(html).toContain('value="张记建材"');
+  });
+});
+
+describe('v3.0 列表版式（#431）', () => {
+  it('列表落在 card list-card 上，页脚是 .tf（左汇总 + 右分页）', () => {
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
+
+    expect(html).toContain('class="card list-card"');
+    expect(html).toContain('class="tw"');
+    expect(html).toContain('class="tf"');
+    expect(html).toContain('共 1 张');
+  });
+
+  it('页脚画首 / 上 / 页码 / 下 / 末 + 每页条数，总页数取服务端 total', () => {
+    const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER], total: 45 }));
+
+    for (const label of ['第一页', '上一页', '下一页', '最后一页']) {
+      expect(html).toContain(`aria-label="${label}"`);
+    }
+    // 45 张 / 20 条 = 3 页
+    expect(html).toContain('aria-label="第 3 页"');
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain('aria-label="每页条数"');
+  });
+
+  it('合计只在「一页装得下全部」时给，翻页态不拿本页和冒充全量', () => {
+    const single = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
+    expect(single).toContain('· 合计');
+    expect(single).toContain('¥225.00');
+
+    const paged = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER], total: 45 }));
+    expect(paged).not.toContain('· 合计');
   });
 });
