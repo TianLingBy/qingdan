@@ -34,6 +34,8 @@ import { ApiError } from '../../api/client';
 import { fetchEmployees } from '../../api/platform';
 import { BatchPager } from '../../components/ListPager';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import { SuggestHint } from '../../components/SuggestHint';
+import type { SuggestCandidate } from '../../components/masterdata-suggest-api';
 import {
   DetailHead,
   DetailMetaDot,
@@ -257,9 +259,15 @@ function StatusBadge({ status }: { status: ProcessingOrderStatus }) {
 export function NewProcessorInlineForm({
   fields,
   onChange,
+  companyId,
+  onPickExisting,
 }: {
   readonly fields: NewProcessorFields;
   readonly onChange: (patch: Partial<NewProcessorFields>) => void;
+  /** 当前单据公司：建档防重查询的必传参数（D99，漏传 422）。 */
+  readonly companyId: string;
+  /** 点了「已有相同加工厂」的候选：调用方改回从下拉里选这条档案。 */
+  readonly onPickExisting: (candidate: SuggestCandidate) => void;
 }) {
   return (
     <div className="mt-2 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2">
@@ -281,6 +289,16 @@ export function NewProcessorInlineForm({
           className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
         />
       </label>
+      {/* 建档防重（D99）：与销售 E / 采购 A 的草档同一套组件与口径，见销售页注释。 */}
+      <div className="sm:col-span-2">
+        <SuggestHint
+          kind="processor"
+          name={fields.name}
+          companyId={companyId}
+          onPick={onPickExisting}
+          enabled={fields.name.trim().length > 0}
+        />
+      </div>
       <p className="text-xs text-slate-500 sm:col-span-2">
         保存单据时一起建档，不必先去主数据页。建档对你是透明的 —— 保存成功后只提示单据保存，
         不额外提示建档结果，也不需要建加工厂权限（有开单权即可）。
@@ -304,6 +322,8 @@ interface OrderFormProps {
   readonly newProcessor: NewProcessorFields;
   readonly onNewProcessorToggle: (open: boolean) => void;
   readonly onNewProcessorChange: (patch: Partial<NewProcessorFields>) => void;
+  /** 草档里打了名字、命中已有加工厂：改回从下拉里选这条档案（D99）。 */
+  readonly onNewProcessorPick: (candidate: SuggestCandidate) => void;
   readonly outputProductId: string;
   readonly materials: readonly MaterialDraft[];
   readonly fees: readonly FeeDraft[];
@@ -341,6 +361,7 @@ function OrderForm({
   newProcessor,
   onNewProcessorToggle,
   onNewProcessorChange,
+  onNewProcessorPick,
   outputProductId,
   materials,
   fees,
@@ -466,7 +487,12 @@ function OrderForm({
             {newProcessorOpen ? '取消新建，改从已有加工厂里选' : '+ 新建加工厂'}
           </button>
           {newProcessorOpen && (
-            <NewProcessorInlineForm fields={newProcessor} onChange={onNewProcessorChange} />
+            <NewProcessorInlineForm
+              fields={newProcessor}
+              onChange={onNewProcessorChange}
+              companyId={companyId}
+              onPickExisting={onNewProcessorPick}
+            />
           )}
         </div>
       )}
@@ -2022,6 +2048,13 @@ export function ProcessingOrdersPage() {
             else setNewProcessor({ ...EMPTY_NEW_PROCESSOR });
           }}
           onNewProcessorChange={(patch) => setNewProcessor((current) => ({ ...current, ...patch }))}
+          onNewProcessorPick={(candidate) => {
+            // 选中已有档案就不再建档：清草档、关新建，否则 processorId 与 processorDraft 同时给会 422。
+            setFormProcessorId(candidate.id);
+            setNewProcessorOpen(false);
+            setNewProcessor({ ...EMPTY_NEW_PROCESSOR });
+            setNotice(`已选中已有加工厂「${candidate.name}」，这次不再新建档案。`);
+          }}
           onProcessorChange={setFormProcessorId}
           onOutputProductChange={setFormOutputProductId}
           onMaterialChange={(index, patch) =>

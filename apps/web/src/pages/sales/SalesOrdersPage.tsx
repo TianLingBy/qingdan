@@ -28,6 +28,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { ListPager } from '../../components/ListPager';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import { SuggestHint } from '../../components/SuggestHint';
+import type { SuggestCandidate } from '../../components/masterdata-suggest-api';
 import {
   DetailHead,
   DetailMetaDot,
@@ -240,9 +242,15 @@ function StatusBadge({ status }: { status: SalesOrderStatus }) {
 export function NewCustomerInlineForm({
   fields,
   onChange,
+  companyId,
+  onPickExisting,
 }: {
   readonly fields: NewCustomerFields;
   readonly onChange: (patch: Partial<NewCustomerFields>) => void;
+  /** 当前单据公司：建档防重查询的必传参数（D99，漏传 422）。 */
+  readonly companyId: string;
+  /** 点了「已有相同客户」的候选：调用方改回从下拉里选这条档案。 */
+  readonly onPickExisting: (candidate: SuggestCandidate) => void;
 }) {
   return (
     <div className="mt-2 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -284,6 +292,21 @@ export function NewCustomerInlineForm({
           className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
         />
       </label>
+      {/*
+        建档防重（D99）：名称打到 2 个字以上才查，查到相似档案就提示「点一下直接用」。
+        放在格子的最后一行而不是名称输入框下面 —— 输入框在 `<label>` 里，
+        把按钮塞进去会让点击同时触发 label 的聚焦，选中与聚焦打架。
+        组件自己在没候选 / 没权限 / 请求失败时什么都不渲染，不影响开单。
+      */}
+      <div className="sm:col-span-2 lg:col-span-4">
+        <SuggestHint
+          kind="customer"
+          name={fields.name}
+          companyId={companyId}
+          onPick={onPickExisting}
+          enabled={fields.name.trim().length > 0}
+        />
+      </div>
       <p className="text-xs text-slate-500 sm:col-span-2 lg:col-span-4">
         保存单据时一起建档，不必先去主数据页。建档对你是透明的 —— 保存成功后只提示单据保存，
         不额外提示建档结果，也不需要建客户权限（有开单权即可）。
@@ -311,6 +334,8 @@ interface OrderFormProps {
   readonly newCustomer: NewCustomerFields;
   readonly onNewCustomerToggle: (open: boolean) => void;
   readonly onNewCustomerChange: (patch: Partial<NewCustomerFields>) => void;
+  /** 草档里打了名字、命中已有客户：改回从下拉里选这条档案（D99）。 */
+  readonly onNewCustomerPick: (candidate: SuggestCandidate) => void;
   readonly lines: readonly SalesLineDraft[];
   readonly fees: readonly SalesFeeDraft[];
   readonly busy: boolean;
@@ -343,6 +368,7 @@ function OrderForm({
   newCustomer,
   onNewCustomerToggle,
   onNewCustomerChange,
+  onNewCustomerPick,
   lines,
   fees,
   busy,
@@ -458,7 +484,12 @@ function OrderForm({
             {newCustomerOpen ? '取消新建，改从已有客户里选' : '+ 新建客户'}
           </button>
           {newCustomerOpen && (
-            <NewCustomerInlineForm fields={newCustomer} onChange={onNewCustomerChange} />
+            <NewCustomerInlineForm
+              fields={newCustomer}
+              onChange={onNewCustomerChange}
+              companyId={companyId}
+              onPickExisting={onNewCustomerPick}
+            />
           )}
         </div>
       )}
@@ -1998,6 +2029,14 @@ export function SalesOrdersPage() {
             else setNewCustomer({ ...EMPTY_NEW_CUSTOMER });
           }}
           onNewCustomerChange={(patch) => setNewCustomer((current) => ({ ...current, ...patch }))}
+          onNewCustomerPick={(candidate) => {
+            // 选中已有档案就**不再建档**：清掉草档、关掉新建、把下拉指过去，
+            // 否则保存时 customerId 与 customerDraft 同时带上去会 422。
+            setFormCustomerId(candidate.id);
+            setNewCustomerOpen(false);
+            setNewCustomer({ ...EMPTY_NEW_CUSTOMER });
+            setNotice(`已选中已有客户「${candidate.name}」，这次不再新建档案。`);
+          }}
           lines={lines}
           fees={fees}
           busy={save.isPending}
