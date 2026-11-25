@@ -57,6 +57,7 @@
    - 稿子新引入、repo 里**还没有**的：`list-card`、`.tf`（列表页脚条）、`lg-form` / `lg-alert`（登录表单）—— 这些进 `app-v30.css`
    - 禁止：行内 `style=`、新造 CSS 变量名、新引 UI 库 / 图标库 / CSS-in-JS
 3. **图标**：稿子里共 **23 枚**图标（`四态与组件对照-给repo.md` §五：`pg-first`/`pg-prev`/`pg-next`/`pg-last`/`clock`/`trend`/`trash`/`pencil`/`key`/`shield`/`refresh`/`calendar`/`filter`/`arrow-in`/`arrow-out`/`adjust`/`ticket`/`check`/`undo`/`copy`/`star`/`pin`/`split`）按现有 `viewBox="0 0 24 24"`、`stroke=currentColor`、`stroke-width=1.6`、默认 18px 的规范进图标组件，不许引图标库。
+4. **主题默认值**：`apps/web/src/main.tsx` 已写 `document.documentElement.dataset.mode = 'light'`（`tokens-v013.css` 的 `:root` 默认是暗色，浅色只在 `html[data-mode="light"]` 下）。**页面里不要再各自设置 `data-mode`**，将来接主题开关时只改这一处；也不要在页面上写暗色专用样式。
 
 ## 四、四态与权限态（硬性）
 
