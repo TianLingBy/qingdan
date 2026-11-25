@@ -34,7 +34,7 @@
 ## 截图（1440×1000）
 
 - `purchase-before.png` / `purchase-before-footer.png`：改前（v0.13 页码条）
-- `purchase-after-light.png` / `purchase-after-dark.png`：改后亮 / 暗
+- `purchase-after-light.png`：改后亮色（**没有暗色图**：外壳是 Tailwind 浅色写死、`main.tsx` 固定 `data-mode="light"`，切暗色会出现「白底浅字」，见 `docs/ui/v3.0-docs/README.md`）
 - `purchase-footer-light.png` / `purchase-footer-zoom.png`：页脚与 2 倍特写
 
 ## 还没做（本页后续 PR）

@@ -1501,12 +1501,13 @@ export function PurchaseOrdersPage() {
    * 页脚合计。后端列表只回条数（`total`），不回「全部筛选结果的货款汇总」，
    * 所以只能算手上这一页——但把本页和标成「合计」是骗人（翻一页数字就变）。
    * 折中：只有「一页装得下全部」（`rows.length >= total`）时合计才等于全量，
-   * 这时给合计；翻页态只写条数。无看价权限时金额是 `null`，同样不画。
+   * 这时给合计；翻页态只写条数。无看价权限时金额是 `null`，同样不画
+   * （除了看 `null` 再按 `canViewPrice` 兜一道：遮罩页面里冒出「合计 ¥…」比不显示更糟）。
    */
   const amounts = rows.map((row) => row.goodsAmount);
   const allAmountsVisible = amounts.every((value) => value !== null);
   const goodsSum =
-    total !== null && rows.length >= total && allAmountsVisible
+    canViewPrice && total !== null && rows.length >= total && allAmountsVisible
       ? sumDecimal(amounts.filter((value): value is string => value !== null))
       : null;
   const detailOrder = detail.data;
