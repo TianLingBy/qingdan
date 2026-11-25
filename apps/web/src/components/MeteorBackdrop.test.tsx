@@ -42,6 +42,6 @@ describe('流星雨背景（纯装饰）', () => {
     expect(CSS).toMatch(/\.sky-btn\s*\{[^}]*position:\s*fixed/s);
     expect(CSS).toMatch(/\.sky-btn::before\s*\{[^}]*transform:\s*rotate\(45deg\)/s);
     expect(CSS).toMatch(/\.sky-btn:hover svg\s*\{[^}]*rotate\(90deg\)/s);
-    expect(CSS).toMatch(/\.settings-sky\.is-sky\s*\{[^}]*opacity:\s*0/s);
+    expect(CSS).toMatch(/body\.is-sky \.wrap\s*\{[^}]*opacity:\s*0/s);
   });
 });

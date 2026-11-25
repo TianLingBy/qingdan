@@ -165,7 +165,7 @@ a + .grp { margin-top: 12px; }
 @keyframes pulse { 50% { opacity: .35; } }
 
 /* 工作台 */
-.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
 .kpi { padding: 20px; cursor: pointer; text-align: left; transition: transform .25s var(--ease), border-color .2s; }
 .kpi:hover { transform: translateY(-2px); border-color: var(--line-2); }
 .kpi-l { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-2); }
@@ -571,6 +571,43 @@ tbody > tr.st-tr > td { padding: 0; border-bottom: none; white-space: normal; he
 .st-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .st-error .st-ico { color: var(--bad); }
 .list-card:not([data-state="filled"]) .tf .pager { display: none; }
+
+/* ===== 流星雨：整页背景层（不是卡片，没有边框/底色，直接融进页面背景） ===== */
+.sets-wrap { display: grid; grid-template-columns: minmax(0, 760px); gap: 0; align-items: start; }
+.meteor-bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; display: none; }
+.meteor-bg.on { display: block; }
+.meteor-bg canvas { display: block; width: 100%; height: 100%; }
+/* 页面内容整体压在背景层之上（侧栏/卡片各自有底色，流星只在它们的空隙里） */
+#app { position: relative; z-index: 1; }
+
+/* ===== 只看星空：右上角棱形按钮（描边星星） ===== */
+.sky-btn { position: fixed; right: 22px; top: 76px; z-index: 6; width: 29px; height: 29px; display: none; place-items: center;
+  background: none; border: 0; padding: 0; cursor: pointer; opacity: .38;
+  transition: opacity .25s ease; -webkit-tap-highlight-color: transparent; }
+.sky-btn.show { display: grid; }
+.sky-btn::before { content: ""; position: absolute; inset: 0; border-radius: 5px; transform: rotate(45deg);
+  background: rgba(18, 22, 20, .26); border: 1px solid rgba(255, 255, 255, .2);
+  backdrop-filter: blur(4px); transition: border-color .22s, background .22s, box-shadow .22s; }
+.sky-btn:hover { opacity: 1; }
+.sky-btn:hover::before { border-color: rgba(255, 255, 255, .58); box-shadow: 0 0 0 2px rgba(255, 255, 255, .08); }
+.sky-btn svg { position: relative; width: 13px; height: 13px; transition: transform .4s cubic-bezier(.32, .72, 0, 1), filter .3s; }
+.sky-btn svg path { fill: none; stroke: rgba(255, 255, 255, .92); stroke-width: 1.35; stroke-linejoin: round; stroke-linecap: round; }
+.sky-btn:hover svg { transform: rotate(90deg); }
+.sky-btn.on { opacity: .6; }
+.sky-btn.on svg { filter: drop-shadow(0 0 4px rgba(255, 255, 255, .7)); }
+.sky-btn.is-firing svg { animation: sky-fire .64s cubic-bezier(.32, .72, 0, 1); }
+@keyframes sky-fire {
+  0%   { transform: rotate(90deg) scale(1);    filter: none; }
+  32%  { transform: rotate(90deg) scale(1.5);  filter: drop-shadow(0 0 8px #fff) brightness(2); }
+  100% { transform: rotate(90deg) scale(1);    filter: drop-shadow(0 0 4px rgba(255, 255, 255, .7)); }
+}
+/* 只留星空：设置面板淡出，按钮与提示留下 */
+body.sky-mode .ph, body.sky-mode #dyn { opacity: 0; pointer-events: none; transition: opacity .55s ease; }
+.sky-hint { position: fixed; left: 50%; bottom: 34px; z-index: 6; transform: translate(-50%, 8px);
+  font: 500 12px var(--mono); letter-spacing: .18em; color: var(--ink-3); opacity: 0; pointer-events: none;
+  transition: opacity .5s ease, transform .5s ease; }
+body.sky-mode .sky-hint { opacity: .62; transform: translate(-50%, 0); }
+@media (prefers-reduced-motion: reduce) { .sky-btn svg, .sky-btn.is-firing svg { animation: none; transition: none; } }
 </style>
 </head>
 <body>
@@ -590,7 +627,7 @@ tbody > tr.st-tr > td { padding: 0; border-bottom: none; white-space: normal; he
     <div class="lg-field"><label for="lgCode">验证码</label><div class="lg-code"><input id="lgCode" inputmode="numeric" autocomplete="one-time-code" placeholder="6 位验证码"><button type="button" id="lgSend">获取验证码</button></div></div>
     <div class="lg-row"><label><input type="checkbox" id="lgRemember" checked>在这台设备上保持登录</label></div>
     <button class="lg-submit" type="submit" id="lgSubmit">登 录</button>
-    <div class="lg-alt"><button type="button" data-act="enter-open"><svg class="ic"><use href="#i-ticket"/></svg>有企业邀请码？加入企业</button></div>
+    <div class="lg-alt"><button type="button" data-act="enter-open"><svg class="ic"><use href="#i-ticket"/></svg>有企业邀请码？加入企业</button><span style="opacity:.5">·</span><button type="button" data-act="nc-open"><svg class="ic"><use href="#i-employees"/></svg>尚未加入企业？</button></div>
     <div class="lg-mock"><svg class="ic"><use href="#i-warn"/></svg><button type="button" data-act="lg-fail">模拟一次登录失败</button>（演示错误态 data-state="error"）</div>
   </form></div>
   <div class="lg-theme"><button class="ib" data-act="theme" title="切换亮 / 暗" aria-label="切换亮 / 暗主题"><svg class="ic"><use href="#i-theme"/></svg></button></div>
@@ -619,6 +656,33 @@ tbody > tr.st-tr > td { padding: 0; border-bottom: none; white-space: normal; he
     </form>
   </div></div>
 </div>
+<!-- 未加入企业（?view=no-company）：#435 拍板——不做邀请码，登录后未绑公司就停在这个空态 -->
+<div class="ent-wrap" id="ncWrap" style="display:none">
+  <div class="ent-brand">
+    <div class="lg-mark">轻</div>
+    <h1 class="lg-slogan">这个手机号<br>还<em>没有公司</em></h1>
+    <p class="lg-sub"><span>加入企业由管理员在员工页建号</span><span>建号后，用同一手机号登录即可进入公司账本</span></p>
+    <div class="lg-foot">QINGDAN · NO COMPANY YET</div>
+  </div>
+  <div class="ent-pane"><div class="ent-card" data-state="empty">
+    <div class="card state" style="border:1px solid var(--line);border-radius:16px">
+      <div>
+        <div class="ico"><svg class="ic"><use href="#i-employees"/></svg></div>
+        <h4>还没有加入任何企业</h4>
+        <p style="margin:0">当前手机号还没有加入任何企业，请联系管理员开通；开通后在员工页把该手机号绑到公司即可登录。</p>
+        <div class="st-actions" style="margin-top:16px"><button class="btn pri" data-act="enter-back">返回登录</button></div>
+      </div>
+    </div>
+    <p class="note" style="margin:12px 0 0;font-size:11.5px;line-height:1.7"><svg class="ic"><use href="#i-shield"/></svg><span>后端只有 <span class="mono">/auth/code</span> · <span class="mono">login</span> · <span class="mono">logout</span> · <span class="mono">me</span>，没有 register / join / invite 端点；所以本页不提供自助入企。</span></p>
+  </div></div>
+</div>
+<!-- 流星雨背景层（整页，纯装饰）：只在设置中心挂 .on；无边框、无底色，融进页面背景 -->
+<div class="meteor-bg" id="meteorBg" aria-hidden="true"><canvas id="meteor"></canvas></div>
+<!-- 只看星空：右上角棱形按钮（描边星星；悬停转 90°，点击亮一下再隐去面板） -->
+<button class="sky-btn" id="skyBtn" type="button" data-act="sky-toggle" aria-pressed="false" aria-label="只看星空" title="只看星空">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.4l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/></svg>
+</button>
+<div class="sky-hint" aria-hidden="true">只看星空 · 点击星星回到设置中心</div>
 <!-- 打印客户联容器 -->
 <div class="print-sheet" id="printSheet" aria-hidden="true"></div>
 <div class="app" id="app">
@@ -1158,6 +1222,260 @@ function blockStates() {
   <div class="st-block st-error"><div class="st-center st-wrap st-error"><div class="st-ico">${ic('warn')}</div><div class="st-title">数据加载失败</div><p class="st-desc">网络波动或服务暂不可用，已保留你的筛选条件。</p><div class="st-actions"><button class="btn pri" data-act="retry">${ic('refresh')}重试</button></div></div></div>`;
 }
 /* 只改属性：四态切换不重建 DOM */
+/* ===== 流星雨：整页背景层（不是卡片） =====
+   铺在 #app 之下、没有边框和底色，星点与流星只在卡片/侧栏的空隙里出现。
+
+   三种节奏，避免「一条一条乱飘」的单调感：
+   1. 平时零星：每 150–650ms 一颗，俯角 12°–78° 随机、左右两侧都会来，
+      速度 / 长度 / 粗细 / 颜色都抖，不出现两条一样的轨迹；
+   2. 小流星雨（每 18–40s）：6–9 颗，约 5s 内陆续落下，都从同一个辐射点飞出；
+   3. **大流星雨（每 75–135s）：12–20 颗，约 7s 内落下** —— 两种落法各占一半：
+      · 一半是「同方向斜落的小分队」（3–5 颗一组、同一斜角、起点错开、有前有后）；
+      · 一半走辐点模型（从天空中同一点向外散开，近处拖尾短、远处长，泊松间隔）。
+      亮度按「少数很亮、多数偏暗」分布，个别亮流星带余辉。
+
+   prefers-reduced-motion 下只留静态星空；切走页面立即停；标签页在后台不绘制。 */
+const MV = { raf: 0, cv: null, ctx: null, w: 0, h: 0, stars: [], rocks: [], last: 0, next: 0, ro: null, queue: [], burstAt: 0, waveAt: 0, radiant: { x: 0, y: 0 } };
+const mvReduced = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
+const mvPalette = () => {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  return {
+    head: P.accent || '#dc4a26',
+    tail: dark ? 'rgba(255,255,255,.82)' : 'rgba(38,31,22,.78)',
+    star: dark ? 'rgba(255,255,255,.86)' : 'rgba(38,31,22,.75)'
+  };
+};
+function mvResize() {
+  const cv = MV.cv; if (!cv) return;
+  const r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  MV.w = Math.max(1, Math.round(r.width)); MV.h = Math.max(1, Math.round(r.height));
+  cv.width = Math.round(MV.w * dpr); cv.height = Math.round(MV.h * dpr);
+  MV.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // 辐射点：在屏幕上方偏中间的位置（真实流星雨的辐射点在天空某一点，所有流星都从那里散开）
+  // 辐射点压在顶部一带（略高于屏幕上沿到顶部下方 4%），流星从那里向下散开，近处短、远处长
+  MV.radiant = { x: MV.w * (0.26 + Math.random() * 0.48), y: MV.h * (-0.06 + Math.random() * 0.1) };
+  const n = Math.round(MV.w * MV.h / 7000);
+  MV.stars = Array.from({ length: Math.max(60, Math.min(220, n)) }, () => ({
+    x: Math.random() * MV.w, y: Math.random() * MV.h,
+    r: 0.4 + Math.random() * 1.2, a: 0.2 + Math.random() * 0.66,
+    s: 0.3 + Math.random() * 0.95, p: Math.random() * 6.283
+  }));
+}
+/* 一颗流星：支持传入编排好的参数（大流星雨用），否则全随机 */
+function mvSpawn(opt) {
+  const o = opt || {};
+  // 流星雨成员：从辐射点沿任意方向飞出，拖尾长度按「离辐射点的距离」在绘制时算（透视）
+  if (o.radiant) {
+    const r = MV.radiant;
+    const ang = o.ang != null ? o.ang : Math.PI * (0.1 + Math.random() * 0.8); // 只往屏幕下方的扇面
+    const d0 = 30 + Math.random() * 170;
+    const speed = 240 + Math.random() * 260;
+    MV.rocks.push({
+      kind: 'shower', rx: r.x, ry: r.y,
+      x: r.x + Math.cos(ang) * d0, y: r.y + Math.sin(ang) * d0,
+      vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+      len: 20, life: 0, max: 2.8 + Math.random() * 1.4,
+      // 亮度分布：多数偏暗、少数很亮（真实流星雨的 population index ≈ 2~2.6）
+      w: Math.random() < 0.18 ? 2.2 : 1.05 + Math.random() * 0.5,
+      seg: 10,
+      accent: Math.random() < 0.32,
+      glow: Math.random() < 0.14
+    });
+    if (MV.rocks.length > 90) MV.rocks.shift();
+    return;
+  }
+  const fromLeft = o.fromLeft != null ? o.fromLeft : Math.random() < 0.48;
+  const tilt = o.tilt != null ? o.tilt : 12 + Math.random() * 66;      // 俯角 12°–78°
+  const ang = fromLeft ? tilt * Math.PI / 180 : Math.PI - tilt * Math.PI / 180;
+  const speed = o.speed != null ? o.speed : 300 + Math.random() * 640;
+  const high = Math.random() < 0.8;
+  MV.rocks.push({
+    x: o.x != null ? o.x : (fromLeft ? -(60 + Math.random() * 220) : MV.w + 60 + Math.random() * 220),
+    y: o.y != null ? o.y : (high ? -40 - Math.random() * 160 : Math.random() * MV.h * 0.42),
+    vx: Math.cos(ang) * speed,
+    vy: Math.sin(ang) * speed * (o.speed != null ? 0.92 : 0.55 + Math.random() * 0.5),
+    len: o.len != null ? o.len : 80 + Math.random() * 260,
+    life: 0,
+    max: o.max != null ? o.max : 1.1 + Math.random() * 1.6,
+    w: o.w != null ? o.w : 1 + Math.random() * 1.7,
+    seg: o.seg != null ? o.seg : 7 + Math.round(Math.random() * 4),
+    accent: o.accent != null ? o.accent : Math.random() < 0.4,
+    glow: o.glow != null ? o.glow : Math.random() < 0.3
+  });
+  if (MV.rocks.length > 90) MV.rocks.shift();
+}
+/* 零星的一颗（随机方向，用来撒「偶发流星」） */
+function mvBurst(n, spread) {
+  const t0 = MV.last || 0;
+  for (let k = 0; k < n; k++) MV.queue.push({ at: t0 + Math.random() * spread, opt: null });
+}
+/* 流星雨事件：n 颗从同一个辐射点飞出，时间按泊松过程（指数间隔）铺在 durMs 里。
+   真实流星雨就是「一小时一百来颗、一颗一颗随机落」，不是整队同时出发。 */
+function mvShowerRun(n, durMs) {
+  const t0 = MV.last || 0;
+  let t = 0;
+  for (let k = 0; k < n; k++) {
+    t += -Math.log(1 - Math.random() * 0.96) * (durMs / n);
+    MV.queue.push({ at: t0 + t, opt: { radiant: true } });
+  }
+}
+/* 一次大流星雨：12–20 颗 / 约 7 秒。
+   约一半是「同方向斜落的小分队」：3–5 颗一组、同一个斜角，但起点各自错开（不在同一起跑线），
+   前后、深浅、快慢都有微差，看起来是一伙一起斜着掉下来；
+   另一半走辐射点模型（从天空中同一点散开）。 */
+function mvShower() {
+  const total = 12 + Math.round(Math.random() * 8);
+  const t0 = MV.last || 0;
+  let used = 0;
+
+  // 1) 同方向小分队（占比目标 ~50%）
+  while (total - used >= 3 && used < Math.round(total * 0.5)) {
+    const size = Math.min(total - used, 3 + Math.round(Math.random() * 2)); // 3–5 颗
+    const fromLeft = Math.random() < 0.5;
+    const tilt = 26 + Math.random() * 32;          // 斜着：26°–58°，整组一致
+    const speed = 380 + Math.random() * 170;
+    const baseT = Math.random() * 3200;
+    for (let k = 0; k < size; k++) {
+      MV.queue.push({
+        at: t0 + baseT + k * (70 + Math.random() * 150),    // 彼此错开一点点，不齐头并进
+        opt: {
+          group: true, tilt,
+          speed: speed * (0.94 + Math.random() * 0.18),     // 队内快慢微差（保持队形）
+          fromLeft,
+          // 不同起跑线：起点沿进场侧大幅错开，且纵深各自随机
+          x: fromLeft ? -(140 + Math.random() * 320) : MV.w + 140 + Math.random() * 320,
+          y: -(60 + Math.random() * 260),
+          len: 140 + Math.random() * 130,
+          max: 2.2 + Math.random() * 1.1,
+          w: Math.random() < 0.2 ? 2 : 1.05 + Math.random() * 0.5,
+          seg: 10,
+          accent: Math.random() < 0.32,
+          glow: Math.random() < 0.16
+        }
+      });
+    }
+    used += size;
+  }
+
+  // 2) 剩下的一半：辐射点模型（泊松间隔）
+  const rest = total - used;
+  if (rest > 0) mvShowerRun(rest, 7000);
+}
+function mvDrain(ts) {
+  if (!MV.queue.length) return;
+  const due = MV.queue.filter(q => q.at <= ts);
+  if (!due.length) return;
+  MV.queue = MV.queue.filter(q => q.at > ts);
+  for (let k = 0; k < due.length; k++) mvSpawn(due[k].opt);
+}
+function mvFrame(ts) {
+  const ctx = MV.ctx;
+  if (!ctx) return;
+  // 背景层没挂 .on（不是设置页）或标签页在后台：不绘制，但 rAF 挂着以便恢复
+  // 注意：position:fixed 的元素 offsetParent 恒为 null，不能用它判断可见，改看实际尺寸
+  if (!MV.cv.isConnected || MV.cv.getBoundingClientRect().width === 0 || document.hidden) { MV.raf = requestAnimationFrame(mvFrame); return; }
+  const dt = Math.min(0.05, (ts - (MV.last || ts)) / 1000); MV.last = ts;
+  ctx.clearRect(0, 0, MV.w, MV.h);
+  const c = mvPalette(), reduce = mvReduced();
+  for (const s of MV.stars) {
+    const tw = 0.55 + 0.45 * Math.sin(ts / 1000 * s.s + s.p);
+    ctx.globalAlpha = s.a * tw; ctx.fillStyle = c.star;
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.2832); ctx.fill();
+  }
+  if (reduce) { MV.rocks = []; MV.queue = []; }
+  else {
+    if (MV.next === 0) MV.next = ts + 400;
+    if (MV.burstAt === 0) MV.burstAt = ts + 6000 + Math.random() * 8000;
+    if (MV.waveAt === 0) MV.waveAt = ts + 24000 + Math.random() * 20000;
+    if (ts > MV.next) { mvSpawn(); MV.next = ts + 150 + Math.random() * 520; }
+    if (ts > MV.burstAt) { mvShowerRun(6 + Math.round(Math.random() * 4), 5000); MV.burstAt = ts + 18000 + Math.random() * 22000; }
+    if (ts > MV.waveAt) { mvShower(); MV.waveAt = ts + 75000 + Math.random() * 60000; }
+    mvDrain(ts);
+    for (const m of MV.rocks) {
+      m.life += dt; m.x += m.vx * dt; m.y += m.vy * dt;
+      // 流星雨成员：透视 —— 离辐射点越远，拖尾越长（近辐射点只有短短一截）
+      let baseLen = m.len;
+      if (m.kind === 'shower') {
+        const dd = Math.hypot(m.x - m.rx, m.y - m.ry);
+        baseLen = Math.min(280, Math.max(12, dd * 0.17));
+      }
+      // 快结束时才淡出；流星雨成员不因为寿命中途变短而变短
+      const k = m.kind === 'shower' ? Math.min(1, (m.max - m.life) / 0.35) : Math.max(0, 1 - m.life / m.max);
+      const hyp = Math.hypot(m.vx, m.vy) || 1;
+      const dx = m.vx / hyp, dy = m.vy / hyp, tail = baseLen * (0.55 + 0.45 * k);
+      const seg = m.seg || 9, base = m.accent ? 0.88 : 0.62;
+      for (let i = 0; i < seg; i++) {
+        const t0 = i / seg, t1 = (i + 1) / seg, fade = (1 - t0) * (1 - t0);
+        ctx.globalAlpha = base * k * fade;
+        ctx.strokeStyle = m.accent ? c.head : c.tail;
+        ctx.lineWidth = m.w * (0.4 + (1 - t0) * 0.75);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(m.x - dx * tail * t0, m.y - dy * tail * t0);
+        ctx.lineTo(m.x - dx * tail * t1, m.y - dy * tail * t1);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 0.95 * k; ctx.fillStyle = m.accent ? c.head : c.tail;
+      ctx.beginPath(); ctx.arc(m.x, m.y, m.w * 1.05, 0, 6.2832); ctx.fill();
+      if (m.glow) {
+        ctx.globalAlpha = 0.22 * k;
+        ctx.beginPath(); ctx.arc(m.x, m.y, m.w * 3.8, 0, 6.2832); ctx.fill();
+      }
+    }
+    MV.rocks = MV.rocks.filter(m => m.life < m.max && m.x > -620 && m.x < MV.w + 620 && m.y < MV.h + 620);
+  }
+  MV.raf = requestAnimationFrame(mvFrame);
+}
+function meteorStop() {
+  if (MV.raf) cancelAnimationFrame(MV.raf);
+  MV.raf = 0; MV.cv = null; MV.ctx = null; MV.rocks = []; MV.queue = [];
+  MV.burstAt = 0; MV.waveAt = 0; MV.next = 0;
+  if (MV.ro) { MV.ro.disconnect(); MV.ro = null; }
+}
+function meteorStart() {
+  const cv = $('#meteor');
+  if (!cv || !cv.getContext) return;
+  if (MV.cv === cv && MV.raf) return;
+  meteorStop();
+  MV.cv = cv; MV.ctx = cv.getContext('2d'); MV.last = 0;
+  mvResize();
+  if (window.ResizeObserver) { MV.ro = new ResizeObserver(() => mvResize()); MV.ro.observe(cv.parentElement || cv); }
+  MV.raf = requestAnimationFrame(mvFrame);
+}
+function syncMeteor() {
+  const bg = $('#meteorBg'), btn = $('#skyBtn');
+  if (!bg) return;
+  // 只在「暗色模式 + 设置中心」出现：亮色下既不要流星雨，也不要星星按钮
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const on = S.page === 'settings' && dark;
+  bg.classList.toggle('on', on);
+  if (btn) {
+    btn.classList.toggle('show', on);
+    // 离开设置页 / 切到亮色时自动退出「只看星空」
+    if (!on) toggleSky(false);
+  }
+  if (on) meteorStart(); else meteorStop();
+}
+/* 只看星空：点击棱形按钮 → 星星亮一下 → 设置面板淡出，只留流星雨；再点回来 */
+function toggleSky(force) {
+  if (S.page !== 'settings') force = false;
+  const on = force != null ? force : !document.body.classList.contains('sky-mode');
+  document.body.classList.toggle('sky-mode', on);
+  const btn = $('#skyBtn');
+  if (btn) {
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    if (on) {
+      btn.classList.remove('is-firing');
+      void btn.offsetWidth;                 // 重启动画
+      btn.classList.add('is-firing');
+      setTimeout(() => btn.classList.remove('is-firing'), 700);
+      mvBurst(12, 1400);                    // 进星空时顺手撒一拨流星
+    }
+  }
+  return on;
+}
+
 function applyState() {
   const d = $('#dyn');
   if (!d) return;
@@ -1180,6 +1498,7 @@ function render(enter) {
   const el = $('#page');
   el.innerHTML = PG[S.page].head() + `<div id="dyn" data-state="${stateOf()}">${dynHTML()}</div>`;
   applyState();
+  syncMeteor();
   if (enter) {
     el.classList.remove('enter'); void el.offsetWidth; el.classList.add('enter');
     $('#scroll').scrollTop = 0;
@@ -1190,6 +1509,7 @@ function refresh() {
   const d = $('#dyn');
   d.innerHTML = dynHTML();
   applyState();
+  syncMeteor();
   renderNav();
   if (S.open) renderDrawer(); else if (S.master) renderMaster();
   S.flash = null;
@@ -1251,13 +1571,15 @@ PG.workbench = {
     const sum = E.reduce((s, o) => s + (o.status === 'cancel' ? 0 : o.amount), 0), tr = E.filter(o => o.status === 'transit').length, av = INV.reduce((s, b) => s + b.avail, 0);
     const cnt = pg => rows(pg, 1).filter(o => o.status !== 'cancel').length;
     const chain = [['A', 'purchase-orders', '采购单', '原料入库 · 锁批次价'], ['B', 'processing-orders', '加工单', '委外加工 · 记损耗'], ['E', 'sales-orders', '销售单', '批次出库 · 两步签收'], ['C', 'settlements', '结算单', '一单一成本 · 自动生成']];
-    return `<div class="kpis">
-      <button class="card kpi" data-go="sales-orders"><div class="kpi-l"><span>本月销售总额</span><span>E 单</span></div><div class="kpi-v"${r.viewPrice ? ` data-n="${sum}" data-pre="¥"` : ''}>${money(sum)}</div><div class="kpi-m">${r.viewPrice ? (r.readAll ? '<b>+14.2%</b> 较上月' : '仅统计本人单据') : '无 view_price 权限，已脱敏'}</div></button>
-      <button class="card kpi" data-go="sales-orders"><div class="kpi-l"><span>在途 / 待签收</span><span>D94</span></div><div class="kpi-v" data-n="${tr}">${tr}<small>笔</small></div><div class="kpi-m">需 sales.approve 签收认收入</div></button>
-      <button class="card kpi" data-go="inventory"><div class="kpi-l"><span>可用库存</span><span>D38</span></div><div class="kpi-v" data-n="${av}">${av}<small>件</small></div><div class="kpi-m">可用量 = 入库 − 引用 − 在途 − 占用</div></button>
-      <button class="card kpi" data-go="profit-report"><div class="kpi-l"><span>综合毛利率</span><span>C 单</span></div><div class="kpi-v">${sens('24.8%')}</div><div class="kpi-m">结算单确认后按快照算提成</div></button>
-    </div>
-    <div class="g2">
+    /* #435 拍板（负责人 2026-11-24）：KPI 与链路卡按权限「整块不渲染」，不留「—」「已脱敏」占位；
+       这里的演示账号用 viewPrice 近似 view_price / profit_report.read 两个门限，其余两个域三个角色都有 read。 */
+    const K = [];
+    if (r.viewPrice) K.push(`<button class="card kpi" data-go="sales-orders"><div class="kpi-l"><span>本月销售总额</span><span>E 单</span></div><div class="kpi-v" data-n="${sum}" data-pre="¥">${money(sum)}</div><div class="kpi-m">${r.readAll ? '<b>+14.2%</b> 较上月' : '仅统计本人单据'}</div></button>`);
+    K.push(`<button class="card kpi" data-go="sales-orders"><div class="kpi-l"><span>在途 / 待签收</span><span>D94</span></div><div class="kpi-v" data-n="${tr}">${tr}<small>笔</small></div><div class="kpi-m">需 sales.approve 签收认收入</div></button>`);
+    K.push(`<button class="card kpi" data-go="inventory"><div class="kpi-l"><span>可用库存</span><span>D38</span></div><div class="kpi-v" data-n="${av}">${av}<small>件</small></div><div class="kpi-m">可用量 = 入库 − 引用 − 在途 − 占用</div></button>`);
+    if (r.viewPrice) K.push(`<button class="card kpi" data-go="profit-report"><div class="kpi-l"><span>综合毛利率</span><span>C 单</span></div><div class="kpi-v">${sens('24.8%')}</div><div class="kpi-m">结算单确认后按快照算提成</div></button>`);
+    const kpiRow = K.length ? `<div class="kpis">${K.join('')}</div>` : '';
+    return kpiRow + `<div class="g2">
       <div class="card"><div class="card-h"><h3>待办事项 <span class="muted num">${td.length}</span></h3><small>按权限逐条过滤 · 看不到不等于没有</small></div>
         ${td.length ? td.map(t => `<button class="todo" style="--c:var(--${t.c})" ${t.open ? `data-open="${t.open}"` : `data-go="${t.go}"`}><i></i><div><b>${t.t}</b><small>${t.s}</small></div><span>${t.a} →</span></button>`).join('') : `<div class="state" style="padding:44px 20px"><div><div class="ico" style="color:var(--ok)">${ic('stocktakes')}</div><h4>全部处理完了</h4><p style="margin:0">当前账号权限范围内没有待办。</p></div></div>`}
       </div>
@@ -1435,7 +1757,7 @@ PG['profit-report'] = {
     if (!R().viewPrice) return `<div class="card state"><div><div class="ico">${ic('lock')}</div><h4>金额已脱敏</h4><p style="margin:0">当前账号没有 view_price 权限（D79）。</p></div></div>`;
     const data = periodData(), sum = data.reduce((s, m) => s + m[1], 0), neg = data.filter(m => m[1] < 0).length;
     const sorted = data.slice().sort((a, b) => b[1] - a[1]), best = sorted[0] || ['—', 0], worst = sorted[sorted.length - 1] || ['—', 0];
-    return `<div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+    return `<div class="kpis">
       <div class="card kpi"><div class="kpi-l"><span>期间毛利合计</span><span>${data.length} 个月</span></div><div class="kpi-v">${money(sum)}</div><div class="kpi-m">按已结算 C 单聚合</div></div>
       <div class="card kpi"><div class="kpi-l"><span>负毛利月份</span><span>需复核</span></div><div class="kpi-v">${neg}<small>/ ${data.length} 个月</small></div><div class="kpi-m">${neg ? `最差 ${worst[0]} · ${money(worst[1])}` : '本期没有负毛利'}</div></div>
       <div class="card kpi"><div class="kpi-l"><span>最好月份</span><span>峰值</span></div><div class="kpi-v">${money(best[1])}</div><div class="kpi-m">${best[0]} · 占期间 ${(best[1] / Math.max(1, sum) * 100).toFixed(0)}%</div></div>
@@ -1517,7 +1839,7 @@ PG.settings = {
   dyn: () => {
     const seg = (k, opts) => `<div class="seg">${opts.map(([v, l]) => `<button class="${String(P[k]) === String(v) ? 'on' : ''}" data-set="${k}|${v}">${l}</button>`).join('')}</div>`;
     const row = (t, d, c) => `<div class="set"><div><b>${t}</b><small>${d}</small></div>${c}</div>`;
-    return `<div class="sets"><div class="card"><div class="card-h"><h3>外观</h3></div>
+    return `<div class="sets-wrap"><div class="sets"><div class="card"><div class="card-h"><h3>外观</h3></div>
       ${row('主题', '跟随系统，或固定亮 / 暗', seg('theme', [['system', '跟随系统'], ['light', '亮色'], ['dark', '暗色']]))}
       ${row('强调色', '用于选中态、徽标与焦点', `<div class="sw">${[['#dc4a26', '朱砂'], ['#2f5bd8', '靛青'], ['#12805c', '松绿'], ['#6d4fd1', '藤紫']].map(([c, n]) => `<button class="${P.accent === c ? 'on' : ''}" style="--c:${c}" data-set="accent|${c}" title="${n}" aria-label="${n}"></button>`).join('')}</div>`)}
       </div><div class="card"><div class="card-h"><h3>列表与导航</h3></div>
@@ -1978,6 +2300,9 @@ const ACT = {
   print() { printSheet(); },
   'enter-open': () => showEnter(true),
   'enter-back': () => { showEnter(false); showLogin(true); },
+  'nc-open': () => showNoCompany(true),
+  'nc-back': () => { showNoCompany(false); showLogin(true); },
+  'sky-toggle': () => toggleSky(),
   'lg-fail': () => { lgSet('error', '服务暂时不可用（HTTP 503），已保留你输入的内容。'); lgToast('登录失败：服务暂不可用', 1); },
   logout() { try { history.replaceState(null,'','#'); } catch(e){} location.hash=''; showLogin(true); }
 };
@@ -2004,12 +2329,22 @@ function showLogin(on) {
   else render(true);
 }
 function showEnter(on) {
-  const lg = $('#lgWrap'), app = $('#app'), ent = $('#entWrap');
+  const lg = $('#lgWrap'), app = $('#app'), ent = $('#entWrap'), nc = $('#ncWrap');
   if (ent) ent.style.display = on ? 'grid' : 'none';
+  if (nc) nc.style.display = 'none';
   lg.style.display = 'none';
   app.style.display = on ? 'none' : 'grid';
   if (on) setTimeout(() => { const f = $('#entCode'); if (f) f.focus(); }, 60);
   else render(true);
+}
+/* #435 拍板：不做邀请码，未绑公司的手机号停在「没有加入任何企业」空态（data-state="empty"） */
+function showNoCompany(on) {
+  const lg = $('#lgWrap'), app = $('#app'), ent = $('#entWrap'), nc = $('#ncWrap');
+  if (nc) nc.style.display = on ? 'grid' : 'none';
+  if (ent) ent.style.display = 'none';
+  if (lg) lg.style.display = 'none';
+  app.style.display = on ? 'none' : 'grid';
+  if (!on) render(true);
 }
 function lgToast(msg) { toast(msg); }
 $('#lgForm').addEventListener('submit', e => {
@@ -2175,6 +2510,7 @@ try {
   const v = new URLSearchParams(location.search).get('view');
   if (v === 'login') showLogin(true);
   else if (v === 'enter') showEnter(true);
+  else if (v === 'no-company') showNoCompany(true);
   else if (v === 'login-error') { showLogin(true); lgSet('error', '服务暂时不可用（HTTP 503），已保留你输入的内容。'); }
 } catch(e) {}
 S.page = PG[location.hash.slice(1)] ? location.hash.slice(1) : 'workbench';
