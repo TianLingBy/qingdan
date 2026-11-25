@@ -592,21 +592,15 @@
 }
 
 /* ============================================================
-   §6 背景装饰：流星雨（#435 追加，设置中心）
+   §6 背景装饰：流星雨（#435 追加，设置中心；与设计稿个人库同步）
    ------------------------------------------------------------
-   **不是卡片**：装饰层铺在页面内容背后的空白处，`pointer-events: none`
-   不吃鼠标事件，本身没有边框/底色，视觉上直接融进页面背景。
-   位置由 `.meteor-stage`（内容坐标系）+ `.meteor-bg`（绝对铺满）两层决定，
-   内容块加 `.meteor-fg` 压在它上面（`isolation: isolate` 把 z-index 关在本地）。
+   **不是卡片**：装饰层 fixed 铺满视口、`pointer-events: none`，没有边框/底色，
+   视觉上直接融进页面背景（卡片自带底色，流星只在空隙里出现）。
+   只在「暗色 + 设置中心」挂载（组件由页面控制，亮色下根本不渲染）。
    动效降级在组件里做（`prefers-reduced-motion` 时只画静态星点），这里不管。
    ======================================= */
-.meteor-stage {
-  position: relative;
-  isolation: isolate;
-  min-height: calc(100vh - 120px);
-}
 .meteor-bg {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 0;
   overflow: hidden;
@@ -617,9 +611,114 @@
   width: 100%;
   height: 100%;
 }
-.meteor-fg {
+
+/* 只看星空：右上角棱形星星按钮（29px、静止很淡，悬停才明显） */
+.sky-btn {
+  position: fixed;
+  right: 22px;
+  top: 76px;
+  z-index: 6;
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  opacity: 0.38;
+  transition: opacity 0.25s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.sky-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  transform: rotate(45deg);
+  background: rgba(18, 22, 20, 0.26);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(4px);
+  transition: border-color 0.22s, background 0.22s, box-shadow 0.22s;
+}
+.sky-btn:hover {
+  opacity: 1;
+}
+.sky-btn:hover::before {
+  border-color: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+.sky-btn svg {
   position: relative;
-  z-index: 1;
+  width: 13px;
+  height: 13px;
+  transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1), filter 0.3s;
+}
+.sky-btn svg path {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.92);
+  stroke-width: 1.35;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.sky-btn:hover svg {
+  transform: rotate(90deg);
+}
+.sky-btn.on {
+  opacity: 0.6;
+}
+.sky-btn.on svg {
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.7));
+}
+.sky-btn.is-firing svg {
+  animation: sky-fire 0.64s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes sky-fire {
+  0% {
+    transform: rotate(90deg) scale(1);
+    filter: none;
+  }
+  32% {
+    transform: rotate(90deg) scale(1.5);
+    filter: drop-shadow(0 0 8px #fff) brightness(2);
+  }
+  100% {
+    transform: rotate(90deg) scale(1);
+    filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.7));
+  }
+}
+/* 面板淡出、只留流星雨；按钮与提示留下 */
+.settings-sky.is-sky {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.55s ease;
+}
+.sky-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 34px;
+  z-index: 6;
+  transform: translate(-50%, 8px);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: var(--text-3);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.is-sky + .sky-hint,
+.sky-hint.is-on {
+  opacity: 0.62;
+  transform: translate(-50%, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sky-btn svg,
+  .sky-btn.is-firing svg {
+    animation: none;
+    transition: none;
+  }
 }
 
 /* ============================================================
