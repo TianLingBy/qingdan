@@ -168,7 +168,7 @@ body.login .eyebrow::before{background:var(--accent)}
 .sb-link svg{flex:none;stroke:currentColor;fill:none;stroke-width:1.5;transition:stroke var(--d-1);width:14px;height:14px;opacity:.55}
 .sb-link.on svg{stroke:var(--accent-light);opacity:1}
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
-.topbar{background:var(--page-bg);background-attachment:fixed;-webkit-backdrop-filter:none;backdrop-filter:none;height:52px;position:sticky;top:0;z-index:10;border-bottom:1px solid transparent;display:flex;align-items:center;justify-content:space-between;padding:0 26px}
+.topbar{background:var(--page-bg);-webkit-backdrop-filter:none;backdrop-filter:none;height:52px;position:sticky;top:0;z-index:10;border-bottom:1px solid transparent;display:flex;align-items:center;justify-content:space-between;padding:0 26px}
 .crumb{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:16px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-3)}
 .crumb .cur{color:var(--text-1)}
 .crumb .sep{color:var(--text-decor);opacity:.7}
@@ -262,12 +262,13 @@ th[data-sort].desc::after{content:"↓";color:var(--accent-light)}
 #entry label input{display:block;width:100%;margin-top:4px}
 html[data-mode="light"] .entry i,html[data-mode="light"] .card-h .link{color:#14161A!important}
 html[data-mode="light"] .kpi b{-webkit-text-fill-color:#14161A;color:#14161A}
-/* 侧栏：贴边整条，高透玻璃——几乎不填色，让页面渐变直接透出并与右侧连成一体 */
+/* 侧栏：贴边整条
+   性能：这里原先挂了 `backdrop-filter: blur(18px)`，而侧栏是 sticky 的——每滚一帧都要把
+   身后整条内容重新模糊一遍，是页面滚动卡顿的主因之一。改成不透明底色（与页面底同色系），
+   视觉几乎无差，滚动时不再逐帧重算。 */
 .sidebar{position:sticky;top:0;left:0;height:100vh;width:var(--sb-w,236px);flex:none;
   display:flex;flex-direction:column;z-index:20;overflow:hidden;
-  background:rgba(255,255,255,.05);
-  -webkit-backdrop-filter:blur(18px) saturate(125%);
-  backdrop-filter:blur(18px) saturate(125%);
+  background:var(--bg-1);
   border-right:0;
   box-shadow:none}
 /* 右缘拖拽把手：6px 热区，hover / 拖拽时显一条细线 */
@@ -492,17 +493,27 @@ html[data-mode="light"]{
 /* 页面底：浅灰渐变 + 径向光斑（与工作台入口卡同一套玻璃层次）
    已上收为 tokens.css 的 --page-bg，body 与顶栏共用同一张底 */
 /* 页面卡片：统一沿用工作台入口卡的毛玻璃配方
-   白 45% 填充 / 16px 模糊 / 白 70% 描边 / 8-32 投影 8% / 顶部 1px 白 90% 内阴影 */
-html[data-mode="light"] :is(.card,.vessel,.batchcard,.chartbox,.panel,.sk-card,.kpi,.cellcard,.hero,.entry,.sec){
+   白 45% 填充 / 16px 模糊 / 白 70% 描边 / 8-32 投影 8% / 顶部 1px 白 90% 内阴影
+   —— 性能：模糊只留在一层（最外层容器）。嵌套模糊（模糊层里再套模糊层）会让浏览器
+   每帧重算两次 backdrop，滚动/悬停明显掉帧；所以内层小卡只给半透明白 + 描边，不再 blur。 */
+html[data-mode="light"] :is(.card,.vessel,.batchcard,.chartbox,.panel,.hero){
   background:rgba(255,255,255,.45);
   -webkit-backdrop-filter:blur(16px);
   backdrop-filter:blur(16px);
   border-color:rgba(255,255,255,.70);
   box-shadow:0 8px 32px rgba(0,0,0,.08),inset 0 1px 0 rgba(255,255,255,.90);
 }
-html[data-mode="light"] :is(.card,.vessel,.batchcard,.chartbox,.panel,.sk-card,.kpi,.cellcard,.hero,.entry,.sec):hover{
+html[data-mode="light"] :is(.kpi,.cellcard,.entry,.sec,.sk-card){
+  background:rgba(255,255,255,.62);
+  border:1px solid rgba(255,255,255,.70);
+  box-shadow:0 4px 16px rgba(0,0,0,.05),inset 0 1px 0 rgba(255,255,255,.90);
+}
+html[data-mode="light"] :is(.card,.vessel,.batchcard,.chartbox,.panel,.hero,.kpi,.cellcard,.entry,.sec,.sk-card):hover{
   border-color:#d4d4d4;
-  box-shadow:0 14px 40px rgba(0,0,0,.14),inset 0 1px 0 rgba(255,255,255,.90);
+}
+/* 悬停投影只给「没在模糊」的小卡；模糊层改投影会整块重绘，滚动时最明显 */
+html[data-mode="light"] :is(.kpi,.cellcard,.entry,.sec,.sk-card):hover{
+  box-shadow:0 8px 24px rgba(0,0,0,.10),inset 0 1px 0 rgba(255,255,255,.90);
 }
 html[data-mode="light"] .hero::after{display:none}
 /* KPI 顶部强调线改成浅灰，避免黑线过重 */
