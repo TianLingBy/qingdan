@@ -35,9 +35,9 @@ import {
   FIELD_CLASS,
   Field,
   ReversalListCard,
-  ReversalPager,
   TableSkeleton,
 } from './reversals-ui';
+import { BatchPager } from '../../components/ListPager';
 import {
   DetailHead,
   DetailMetaDot,
@@ -261,38 +261,39 @@ export function SupplierReturnsPanel({
         同样只追加，不可改、不可删（D47）。
       </BasisNote>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="toolbar">
         {companyIds.length > 1 ? (
-          <Field label="公司" className="min-w-[180px]">
-            <select value={companyId} onChange={(event) => onCompanyChange(event.target.value)} className={FIELD_CLASS}>
-              {companyIds.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : null}
-        <Field label="状态" className="min-w-[120px]">
           <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value as '' | SupplierReturnStatus)}
-            className={FIELD_CLASS}
+            value={companyId}
+            onChange={(event) => onCompanyChange(event.target.value)}
+            aria-label="按公司筛选"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
-            <option value="">全部</option>
-            <option value="进行中">进行中</option>
-            <option value="已完成">已完成</option>
-            <option value="已取消">已取消</option>
+            {companyIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
           </select>
-        </Field>
-        <Field label="单号关键字" className="min-w-[180px]">
-          <input
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-            placeholder="S-0001-…"
-            className={FIELD_CLASS}
-          />
-        </Field>
+        ) : null}
+        <select
+          value={status}
+          onChange={(event) => setStatus(event.target.value as '' | SupplierReturnStatus)}
+          aria-label="按状态筛选"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">全部状态</option>
+          <option value="进行中">进行中</option>
+          <option value="已完成">已完成</option>
+          <option value="已取消">已取消</option>
+        </select>
+        <input
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="搜索单号 S-0001-…"
+          aria-label="搜索单号"
+          className="search"
+        />
         <button
           type="button"
           onClick={() => {
@@ -301,14 +302,14 @@ export function SupplierReturnsPanel({
           }}
           disabled={!canCreate || companyId.length === 0}
           title={canCreate ? undefined : '当前身份没有 supplier_return.create 权限'}
-          className="mb-0.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+          className="btn btn-primary ml-auto"
         >
           {formOpen ? '收起开单' : '登记供应商退货'}
         </button>
       </div>
 
       {formOpen ? (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+        <section className="card space-y-3 p-4">
           <h3 className="text-sm font-semibold text-slate-900">登记供应商退货</h3>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -460,7 +461,7 @@ export function SupplierReturnsPanel({
             <button
               type="button"
               onClick={() => setLines((current) => [...current, { ...EMPTY_LINE }])}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600"
+              className="btn btn-s"
             >
               + 加一行商品
             </button>
@@ -474,7 +475,7 @@ export function SupplierReturnsPanel({
               type="button"
               onClick={submit}
               disabled={create.isPending}
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+              className="btn btn-primary"
             >
               {create.isPending ? '提交中…' : '登记退货'}
             </button>
@@ -485,7 +486,7 @@ export function SupplierReturnsPanel({
                 setClientErrors([]);
                 setActionError(null);
               }}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600"
+              className="btn"
             >
               取消
             </button>
@@ -494,18 +495,16 @@ export function SupplierReturnsPanel({
       ) : null}
 
       <ReversalListCard
-        title="供应商退货单"
-        meta={`共 ${items.length} 条${canViewPrice ? '' : ' · 当前身份无看价权限，金额显示 —'}`}
         state={listState}
         colCount={5}
-        minWidth="620px"
+        minWidthClass="min-w-[620px]"
         head={
           <tr>
             <th>单号</th>
             <th>原采购单</th>
             <th className="num">应退金额</th>
             <th>状态</th>
-            <th />
+            <th className="text-right">操作</th>
           </tr>
         }
         emptyText="还没有供应商退货单"
@@ -513,10 +512,11 @@ export function SupplierReturnsPanel({
         errorTitle="供应商退货单加载失败"
         error={list.error}
         onRetry={() => void list.refetch()}
+        summary={`共 ${items.length} 条${canViewPrice ? '' : ' · 当前身份无看价权限，金额显示 —'}`}
         pager={
-          <ReversalPager
-            batchIndex={pageIndex}
-            count={items.length}
+          <BatchPager
+            batch={pageIndex + 1}
+            hasPrev={pageIndex > 0}
             hasNext={nextCursor !== null}
             onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
             onNext={() => {
@@ -528,6 +528,7 @@ export function SupplierReturnsPanel({
               });
               setPageIndex((index) => index + 1);
             }}
+            label="供应商退货单分批翻页"
           />
         }
       >

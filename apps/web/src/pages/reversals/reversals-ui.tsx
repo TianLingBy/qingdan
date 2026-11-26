@@ -5,7 +5,7 @@
  * 抽出来的只有「长得一样、没有业务判断」的部分；带状态的都留在各分栏里，
  * 免得一个组件既管渲染又管三种单据的规则。
  *
- * 列表三态（#300）已统一到 `components/ListStates`；这里保留老名字做转出，
+ * 列表四态（#300 起）统一到 `components/ListStates`；这里保留老名字做转出，
  * 三个分栏不用改 import，样式与其它列表页一致。
  */
 
@@ -43,85 +43,16 @@ export function Field({ label, hint, children, className }: FieldProps) {
   );
 }
 
-export function StatusPill({
-  status,
-  className,
-}: {
-  readonly status: string;
-  readonly className: string;
-}) {
-  return (
-    <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${className}`}
-    >
-      {status}
-    </span>
-  );
-}
-
-/* ------------------------------ 列表卡片（v0.13） ------------------------------ */
-
-export interface ReversalPagerProps {
-  /** 当前是第几批（从 0 起）。 */
-  readonly batchIndex: number;
-  /** 本批条数。 */
-  readonly count: number;
-  readonly hasNext: boolean;
-  readonly onPrev: () => void;
-  readonly onNext: () => void;
-}
-
-/**
- * 游标分页条 —— **不是页码条**。
- *
- * 三个 ListQuery 都是 `PageQuerySchema`（cursor / limit），服务端只回 `nextCursor`，
- * 既没有 total 也没有 pageCount。所以这里只能写「共 N 条 · 第 M 批」+ 上一批 / 下一批；
- * 画成「1 2 3 … 9」就得靠猜总页数，翻到空页时用户会以为系统坏了。
- */
-export function ReversalPager({
-  batchIndex,
-  count,
-  hasNext,
-  onPrev,
-  onNext,
-}: ReversalPagerProps) {
-  return (
-    <div className="pager">
-      <span className="count">
-        共 {count} 条 · 第 {batchIndex + 1} 批
-      </span>
-      <div className="nav">
-        <button
-          type="button"
-          className="btn btn-s"
-          disabled={batchIndex === 0}
-          onClick={onPrev}
-        >
-          上一批
-        </button>
-        <button
-          type="button"
-          className="btn btn-s"
-          disabled={!hasNext}
-          onClick={onNext}
-        >
-          下一批
-        </button>
-      </div>
-    </div>
-  );
-}
+/* ------------------------------ 列表卡片（v3.0） ------------------------------ */
 
 export interface ReversalListCardProps {
-  readonly title: string;
-  /** 标题右侧小字（条数 / 看价权限提示）。 */
-  readonly meta?: ReactNode;
   readonly state: ListState;
   /** 表头列数，三行状态行的 `colSpan` 必须等于它，否则表格会塌列。 */
   readonly colCount: number;
   /** `<tr>` 形式的表头单元格。 */
   readonly head: ReactNode;
-  readonly minWidth?: string;
+  /** 最小宽度（Tailwind 字面量类，如 `min-w-[680px]`）；列多时靠 `.tw` 横向滚动。 */
+  readonly minWidthClass?: string;
   /** 数据行（每条自带 `r-row`）。 */
   readonly children: ReactNode;
   readonly emptyText: string;
@@ -129,51 +60,48 @@ export interface ReversalListCardProps {
   readonly errorTitle: string;
   readonly error?: unknown;
   readonly onRetry: () => void;
+  /** 页脚左侧汇总：只写「共 N 条」，能合并合计时才追加（见下方注释）。 */
+  readonly summary: ReactNode;
+  /** 页脚右侧翻页器：冲正三栏都是游标契约，传 `BatchPager`。 */
   readonly pager?: ReactNode;
 }
 
 /**
- * 冲正页三栏共用的列表卡片。
+ * 冲正页三栏共用的列表卡片（v3.0 `card.list-card` + `.tw` + `.tf`）。
  *
- * 四态**不写条件渲染**：容器与 `tbody` 挂同一个 `data-state`，数据行与三个状态行
- * 常驻 DOM，由 `app-v013.css` 的 `[data-state]` / `tbody > tr.st-tr` 规则决定谁可见
- * （见 `styles/README.md`）。这样切换状态时表头宽度与列宽都不跳。
+ * 三件必须做对的事：
+ * 1. 四态**不写条件渲染**：容器与 `tbody` 挂同一个 `data-state`，数据行与三个状态行
+ *    常驻 DOM，由 `app-v013.css` 的 `[data-state]` / `tbody > tr.st-tr` 规则决定谁可见。
+ *    这样切换状态时表头宽度与列宽都不跳。
+ * 2. 表格外层是 `.tw`（不是 `overflow-x-auto`）：列宽超屏时由它横向滚动，
+ *    与其它五页单据列表同一条滚动轨道（#455/#458）。
+ * 3. 页脚是 `.tf`：左边汇总、右边翻页器。`app-v30.css` 的
+ *    `.list-card:not([data-state="filled"]) .tf .pager{display:none}` 会在
+ *    空 / 加载 / 出错态自动收起分页，不用在 JSX 里判断。
+ *
+ * 为什么页脚**不写合计**：冲正三栏走游标分页（`PageQuerySchema`，服务端只回
+ * `nextCursor`），拿不到全量条数，更拿不到全量金额。按本批行数求和标成「合计」
+ * 是假数据——翻到第二批就变了。等后端把 D95 的 `page/pageSize` + 汇总铺到这三个
+ * 模块，再按 #455 的口径（`total !== null && rows.length >= total`）补。
  */
 export function ReversalListCard({
-  title,
-  meta,
   state,
   colCount,
   head,
-  minWidth,
+  minWidthClass,
   children,
   emptyText,
   emptyHint,
   errorTitle,
   error,
   onRetry,
+  summary,
   pager,
 }: ReversalListCardProps) {
   return (
-    <section className="card min-w-0" data-state={state}>
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 pt-3">
-        <h3
-          className="text-sm font-semibold"
-          style={{ color: 'var(--text-1)' }}
-        >
-          {title}
-        </h3>
-        {meta ? (
-          <span className="text-xs" style={{ color: 'var(--text-3)' }}>
-            {meta}
-          </span>
-        ) : null}
-      </div>
-      <div className="overflow-x-auto">
-        <table
-          className="w-full text-left"
-          style={minWidth ? { minWidth } : undefined}
-        >
+    <div className="card list-card" data-state={state}>
+      <div className="tw">
+        <table className={`w-full text-left ${minWidthClass ?? ''}`}>
           <thead>{head}</thead>
           <tbody data-state={state}>
             {children}
@@ -195,8 +123,11 @@ export function ReversalListCard({
           </tbody>
         </table>
       </div>
-      {pager}
-    </section>
+      <div className="tf">
+        <span>{summary}</span>
+        {pager}
+      </div>
+    </div>
   );
 }
 
