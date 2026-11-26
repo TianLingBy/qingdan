@@ -3,7 +3,8 @@ import { useMemo, useState } from 'react';
 import type { Position } from '@qingdan/contracts';
 import { platformAdminApi } from '../../api/platform-admin';
 import { ApiError } from '../../api/client';
-import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import { describeListError } from '../../components/ListStates';
+import { Icon } from '../../components/icons/Icon';
 import { ACTION_WORDS, DOMAIN_WORDS } from '../employees/domain-words';
 import { authApi, authKeys } from '../auth/auth-api';
 import { allows, type ScopeAction } from '../../lib/access';
@@ -154,43 +155,33 @@ export function PermissionsPage() {
     });
 
   return (
-    <section className="mx-auto max-w-6xl">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">权限设置</h1>
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-            已接真实接口
-          </span>
+    <section className="space-y-4">
+      <header className="p-head">
+        <div>
+          <div className="eyebrow">组织 · 岗位模板</div>
+          <h1>权限设置</h1>
+          <p className="sub">
+            岗位模板 = 功能域 × 动作（D4）；岗位只是「一组默认授予的 scope」的预设，不是角色（D44）。
+          </p>
         </div>
-        <div className="flex flex-col items-end gap-1">
+        <div className="actions">
           <button
             type="button"
+            className="btn btn-p"
             disabled={!canCreate}
             onClick={openCreate}
-            className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-            title={canCreate ? undefined : '当前身份没有 permission.create 权限'}
+            title={canCreate ? '新建岗位 · 需要 permission.create 权限' : '需要 permission.create 权限'}
           >
-            新建岗位
+            + 新建岗位
           </button>
-          {!canCreate && (
-            <span className="text-xs text-slate-500">新建岗位需要 permission.create。</span>
-          )}
         </div>
-      </div>
+      </header>
 
-      {notice && (
-        <p className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          {notice}
-        </p>
-      )}
-      {error && (
-        <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          {error}
-        </p>
-      )}
+      {notice && <p className="rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
+      {error && <p className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
-      <div className="card" data-state={listState}>
-        <div className="overflow-x-auto">
+      <div className="card list-card" data-state={listState} aria-busy={listState === 'loading'}>
+        <div className="tw">
           <table className="w-full min-w-[720px] text-left">
             <thead>
               <tr>
@@ -204,26 +195,37 @@ export function PermissionsPage() {
             <tbody data-state={listState}>
               <tr className="st-tr st-loading">
                 <td colSpan={5}>
-                  <ListLoading label="岗位列表加载中…" />
+                  <div className="st-box" aria-label="岗位列表加载中">
+                    <div className="sk sk-line w80" />
+                    <div className="sk sk-line w60" />
+                    <div className="sk sk-line w40" />
+                    <p className="st-desc mt-3">岗位列表加载中…</p>
+                  </div>
                 </td>
               </tr>
               <tr className="st-tr st-error">
                 <td colSpan={5}>
-                  <ListError
-                    title="岗位列表加载失败"
-                    error={listQuery.error ?? null}
-                    hint={
-                      listQuery.error instanceof ApiError && listQuery.error.status === 403
-                        ? '你没有权限设置权限（permission.read），请联系老板开通。'
-                        : '请确认本地 API 已启动后重试。'
-                    }
-                    onRetry={() => void listQuery.refetch()}
-                  />
+                  <div className="st-box st-error">
+                    <div className="st-ico">
+                      <Icon name="refresh" />
+                    </div>
+                    <div className="st-title">岗位列表加载失败</div>
+                    <p className="st-desc">{describeListError('岗位列表加载失败', listQuery.error)}</p>
+                    <button type="button" className="btn" onClick={() => void listQuery.refetch()}>
+                      重试
+                    </button>
+                  </div>
                 </td>
               </tr>
               <tr className="st-tr st-empty">
                 <td colSpan={5}>
-                  <ListEmpty title="还没有岗位模板。点击右上角「新建岗位」创建。" />
+                  <div className="st-box">
+                    <div className="st-ico">
+                      <Icon name="shield" />
+                    </div>
+                    <div className="st-title">还没有岗位模板</div>
+                    <p className="st-desc">点击右上角「+ 新建岗位」创建第一个岗位预设。</p>
+                  </div>
                 </td>
               </tr>
               {positions.map((position) => (
@@ -279,12 +281,13 @@ export function PermissionsPage() {
             </tbody>
           </table>
         </div>
+        <footer className="tf">
+          <span>
+            岗位模板改动即时生效（服务端每请求现算，D52.1②）；「看价」不进模板表，个人级覆盖在员工页处理。
+          </span>
+          <span className="count">共 {positions.length} 个岗位</span>
+        </footer>
       </div>
-
-      <p className="mt-3 text-xs text-slate-400">
-        权限模板 = 功能域 × 动作（D4）；「看价」是数据可见性开关，不进模板表，个人级覆盖在员工页处理。
-        模板改动即时生效（服务端每请求现算，D52.1②）。
-      </p>
 
       {editor && (
         <PositionEditor
