@@ -3,7 +3,8 @@ import { ApiError } from '../../api/client';
 
 export function errorText(error: unknown, fallback = '操作失败'): string {
   if (error instanceof ApiError) {
-    if (error.status === 403) return `${fallback}：没有足够权限（${error.code}）`;
+    if (error.status === 403)
+      return `${fallback}：没有足够权限（${error.code}）`;
     if (error.status === 409) return `${fallback}：数据已被更新，请刷新后重试`;
     return `${fallback}：${error.message}（${error.code}）`;
   }
@@ -55,23 +56,23 @@ export function Pagination({
   onNext: (cursor: string) => void;
 }) {
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="row-actions">
       <button
         type="button"
         disabled={pageIndex === 0}
         onClick={onPrevious}
-        className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-40"
+        className="btn btn-s"
       >
         上一页
       </button>
-      <span className="text-sm text-slate-500">第 {pageIndex + 1} 页</span>
+      <span className="cell-muted">第 {pageIndex + 1} 页</span>
       <button
         type="button"
         disabled={!nextCursor}
         onClick={() => {
           if (nextCursor) onNext(nextCursor);
         }}
-        className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-40"
+        className="btn btn-s"
       >
         下一页
       </button>

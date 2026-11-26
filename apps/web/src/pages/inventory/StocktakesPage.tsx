@@ -13,7 +13,11 @@ import { StocktakesPanel } from '../reversals/StocktakesPanel';
  * - 创建、详情、强 If-Match 审批；
  * - 审批后刷新批次与流水。
  */
-export function StocktakesPage() {
+export function StocktakesPage({
+  initialFormOpen = false,
+}: {
+  readonly initialFormOpen?: boolean;
+} = {}) {
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const me = useQuery({
     queryKey: authKeys.me,
@@ -23,7 +27,7 @@ export function StocktakesPage() {
   const companyId = selectedCompanyId || companyIds[0] || '';
 
   return (
-    <section className="space-y-4">
+    <section className="page-stack">
       <header className="p-head">
         <div>
           <div className="eyebrow">库存 · 盘点</div>
@@ -32,8 +36,8 @@ export function StocktakesPage() {
             盘盈与盘亏分开授权；提交后进入审批。批准会更新库存与流水，驳回只终止审批流。
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="chip inline-flex items-center gap-1">
+        <div className="page-chips">
+          <span className="chip icon-chip">
             <Icon name="shield" size={14} /> 强版本校验
           </span>
           <span className="st ok">D71 权限拆分</span>
@@ -46,6 +50,7 @@ export function StocktakesPage() {
         companyIds={companyIds}
         companyId={companyId}
         onCompanyChange={setSelectedCompanyId}
+        initialFormOpen={initialFormOpen}
       />
     </section>
   );

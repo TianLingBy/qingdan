@@ -138,14 +138,20 @@ function Pager({
   );
 }
 
-export function InventoryPage() {
+export function InventoryPage({
+  initialBatchId = null,
+}: {
+  readonly initialBatchId?: string | null;
+} = {}) {
   const [keyword, setKeyword] = useState('');
   const [companyId, setCompanyId] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(20);
   const [sort, setSort] = useState<InventoryBatchSort>('createdAt');
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
-  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(
+    initialBatchId,
+  );
 
   const me = useQuery({
     queryKey: authKeys.me,
@@ -217,7 +223,7 @@ export function InventoryPage() {
   });
 
   return (
-    <section className="space-y-4">
+    <section className="page-stack">
       <header className="p-head">
         <div>
           <div className="eyebrow">库存 · 批次</div>
@@ -227,8 +233,8 @@ export function InventoryPage() {
             在途 − 占用，是唯一可引用数字（D38）。
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="chip inline-flex items-center gap-1">
+        <div className="page-chips">
+          <span className="chip icon-chip">
             <Icon name="shield" size={14} /> 真实接口
           </span>
           <span className="st ok">D38 口径</span>
@@ -305,21 +311,21 @@ export function InventoryPage() {
         aria-busy={state === 'loading'}
       >
         <div className="tw">
-          <table className="w-full min-w-[1180px] text-left">
+          <table className="data-table wide-inventory">
             <thead>
               <tr>
                 <th>批次号</th>
                 <th>商品</th>
                 <th>保管人</th>
-                <th className="text-right">入库</th>
-                <th className="text-right">已引用</th>
-                <th className="text-right">在途</th>
-                <th className="text-right">占用</th>
-                <th className="text-right">可用</th>
+                <th className="cell-right">入库</th>
+                <th className="cell-right">已引用</th>
+                <th className="cell-right">在途</th>
+                <th className="cell-right">占用</th>
+                <th className="cell-right">可用</th>
                 <th>库龄</th>
                 <th>低库存预警</th>
-                <th className="text-right">锁定单价</th>
-                <th className="text-right">操作</th>
+                <th className="cell-right">锁定单价</th>
+                <th className="cell-right">操作</th>
               </tr>
             </thead>
             <tbody data-state={state}>
@@ -341,27 +347,23 @@ export function InventoryPage() {
                         {shortId(batch.custodianId)}
                       </span>
                     </td>
-                    <td className="num text-right">
+                    <td className="num cell-right">
                       {formatQty(batch.inboundQty)}
                     </td>
-                    <td className="num text-right">
+                    <td className="num cell-right">
                       {formatQty(batch.referencedQty)}
                     </td>
-                    <td className="num text-right">
+                    <td className="num cell-right">
                       {formatQty(batch.inTransitQty)}
                     </td>
-                    <td className="num text-right">
+                    <td className="num cell-right">
                       {formatQty(batch.pendingExecutionQty)}
                     </td>
-                    <td className="num text-right">
+                    <td className="num cell-right">
                       <b>{formatQty(batch.availableQty)}</b>
                     </td>
                     <td>
-                      <span
-                        className={`inline-flex items-center gap-1 ${
-                          age >= 45 ? 'font-semibold text-amber-700' : ''
-                        }`}
-                      >
+                      <span className={`age ${age >= 45 ? 'is-old' : ''}`}>
                         <Icon name="clock" size={14} />
                         {age} 天
                       </span>
@@ -374,11 +376,11 @@ export function InventoryPage() {
                       ) : me.data?.companyIds.length ? (
                         <span className="st ok">充足</span>
                       ) : (
-                        <span className="text-slate-400">—</span>
+                        <span className="cell-muted">—</span>
                       )}
                     </td>
                     <td
-                      className="num text-right"
+                      className="num cell-right"
                       title={
                         canViewPrice
                           ? '批次锁定单价'
@@ -387,7 +389,7 @@ export function InventoryPage() {
                     >
                       {amountText(batch.lockedUnitCost, canViewPrice)}
                     </td>
-                    <td className="text-right">
+                    <td className="cell-right">
                       <button
                         type="button"
                         onClick={() => setSelectedBatchId(batch.id)}
@@ -428,7 +430,7 @@ export function InventoryPage() {
                     <div className="sk sk-line w80" />
                     <div className="sk sk-line w60" />
                     <div className="sk sk-line w40" />
-                    <p className="st-desc mt-3">库存批次加载中…</p>
+                    <p className="st-desc st-desc-next">库存批次加载中…</p>
                   </div>
                 </td>
               </tr>
@@ -470,7 +472,7 @@ export function InventoryPage() {
       </div>
 
       {selectedBatchId ? (
-        <section className="panel p-5" data-state={detailState}>
+        <section className="card detail-card" data-state={detailState}>
           <div className="st-block st-filled">
             {detail.data ? (
               <BatchDetail
@@ -501,7 +503,7 @@ export function InventoryPage() {
               <div className="sk sk-line w80" />
               <div className="sk sk-line w60" />
               <div className="sk sk-line w40" />
-              <p className="st-desc mt-3">批次详情加载中…</p>
+              <p className="st-desc st-desc-next">批次详情加载中…</p>
             </div>
           </div>
           <div className="st-block st-error">
@@ -542,7 +544,7 @@ function BatchDetail({
 }) {
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="detail-head">
         <div>
           <div className="eyebrow">批次详情</div>
           <h2 className="mono">{detail.batchNo}</h2>
@@ -551,24 +553,29 @@ function BatchDetail({
           关闭
         </button>
       </div>
-      <div className="mt-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-        <div>
-          <div className="text-slate-400">商品</div>
-          <div className="mt-1 font-medium">{detail.productName}</div>
-          <div className="mono text-slate-500">
+      <div className="detail-grid">
+        <div className="detail-item">
+          <div className="detail-label">商品</div>
+          <div className="detail-value detail-value-strong">
+            {detail.productName}
+          </div>
+          <div className="detail-value detail-value-mono detail-value-muted">
             {detail.productNo ?? shortId(detail.productId)}
           </div>
         </div>
-        <div>
-          <div className="text-slate-400">保管人</div>
-          <div className="mono mt-1" title={detail.custodianId}>
+        <div className="detail-item">
+          <div className="detail-label">保管人</div>
+          <div
+            className="detail-value detail-value-mono"
+            title={detail.custodianId}
+          >
             {shortId(detail.custodianId)}
           </div>
         </div>
-        <div>
-          <div className="text-slate-400">锁定单价</div>
+        <div className="detail-item">
+          <div className="detail-label">锁定单价</div>
           <div
-            className="num mt-1"
+            className="detail-value num"
             title={
               canViewPrice ? undefined : '需要 inventory_qty.view_price 权限'
             }
@@ -576,16 +583,16 @@ function BatchDetail({
             {amountText(detail.lockedUnitCost, canViewPrice)}
           </div>
         </div>
-        <div>
-          <div className="text-slate-400">更新时间</div>
-          <div className="mt-1">{formatDateTime(detail.updatedAt)}</div>
+        <div className="detail-item">
+          <div className="detail-label">更新时间</div>
+          <div className="detail-value">{formatDateTime(detail.updatedAt)}</div>
         </div>
-        <div className="sm:col-span-2 lg:col-span-4">
-          <div className="text-slate-400">待执行占用来源</div>
+        <div className="detail-item detail-span-all">
+          <div className="detail-label">待执行占用来源</div>
           {detail.pendingOccupancies.length === 0 ? (
-            <p className="mt-1 text-slate-500">无待执行占用。</p>
+            <p className="detail-value detail-value-muted">无待执行占用。</p>
           ) : (
-            <ul className="mt-2 space-y-1">
+            <ul className="detail-list">
               {detail.pendingOccupancies.map((item) => (
                 <li key={`${item.sourceDocType}-${item.sourceDocId}`}>
                   <span className="mono">{item.sourceDocType}</span> ·{' '}
@@ -596,7 +603,7 @@ function BatchDetail({
           )}
         </div>
       </div>
-      <div className="mt-5 border-t border-slate-200 pt-5">
+      <div className="detail-section">
         <BatchCostAdjustments
           batchId={detail.id}
           canRead={canReadCostAdjustments}

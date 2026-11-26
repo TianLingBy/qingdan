@@ -17,6 +17,7 @@ import type {
   StocktakeStatus,
 } from '@qingdan/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../api/client';
 import { formatQty } from '../../lib/decimal';
@@ -38,8 +39,6 @@ import {
   BasisNote,
   ErrorBar,
   ErrorList,
-  FIELD_CLASS,
-  Field,
   ReversalListCard,
   ReversalPager,
   TableSkeleton,
@@ -56,6 +55,28 @@ export interface StocktakesPanelProps {
   readonly companyIds: readonly string[];
   readonly companyId: string;
   readonly onCompanyChange: (id: string) => void;
+  /** 截图与组件测试可直达已展开的草稿表单；产品路由不传时默认收起。 */
+  readonly initialFormOpen?: boolean;
+}
+
+function StocktakeField({
+  label,
+  hint,
+  className,
+  children,
+}: {
+  readonly label: string;
+  readonly hint?: string;
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <label className={`field ${className ?? ''}`}>
+      <span className="field-label">{label}</span>
+      {children}
+      {hint ? <span className="field-hint">{hint}</span> : null}
+    </label>
+  );
 }
 
 export function StocktakesPanel({
@@ -65,6 +86,7 @@ export function StocktakesPanel({
   companyIds,
   companyId,
   onCompanyChange,
+  initialFormOpen = false,
 }: StocktakesPanelProps) {
   const employeeLabel = useEmployeeLabel();
   const queryClient = useQueryClient();
@@ -73,7 +95,7 @@ export function StocktakesPanel({
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [pageIndex, setPageIndex] = useState(0);
 
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(initialFormOpen);
   const [batchId, setBatchId] = useState('');
   const [bookQty, setBookQty] = useState('');
   const [actualQty, setActualQty] = useState('');
@@ -256,7 +278,7 @@ export function StocktakesPanel({
   });
 
   return (
-    <div className="space-y-3">
+    <div className="stack-3">
       <BasisNote>
         盘点是仓库里<b>唯一能直接改批次数量</b>
         的单据：审批通过后调整入库量并追加一条冲正流水， 历史行不改不删（D47 /
@@ -264,13 +286,13 @@ export function StocktakesPanel({
         / 已完成 / 已取消」。盘盈走 create、盘亏走 delete（D71）。
       </BasisNote>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="toolbar stocktake-toolbar">
         {companyIds.length > 1 ? (
-          <Field label="公司" className="min-w-[180px]">
+          <StocktakeField label="公司" className="field-md">
             <select
               value={companyId}
               onChange={(event) => onCompanyChange(event.target.value)}
-              className={FIELD_CLASS}
+              className="field-control"
             >
               {companyIds.map((id) => (
                 <option key={id} value={id}>
@@ -278,30 +300,30 @@ export function StocktakesPanel({
                 </option>
               ))}
             </select>
-          </Field>
+          </StocktakeField>
         ) : null}
-        <Field label="状态" className="min-w-[120px]">
+        <StocktakeField label="状态" className="field-sm">
           <select
             value={status}
             onChange={(event) =>
               setStatus(event.target.value as '' | StocktakeStatus)
             }
-            className={FIELD_CLASS}
+            className="field-control"
           >
             <option value="">全部</option>
             <option value="待审批">待审批</option>
             <option value="已批准">已批准</option>
             <option value="已驳回">已驳回</option>
           </select>
-        </Field>
-        <Field label="单号关键字" className="min-w-[180px]">
+        </StocktakeField>
+        <StocktakeField label="单号关键字" className="field-md">
           <input
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             placeholder="I-0001-…"
-            className={FIELD_CLASS}
+            className="field-control"
           />
-        </Field>
+        </StocktakeField>
         <button
           type="button"
           onClick={() => {
@@ -314,136 +336,134 @@ export function StocktakesPanel({
               ? undefined
               : '需要 stocktake.create 或 stocktake.delete 权限'
           }
-          className="btn btn-primary mb-0.5"
+          className="btn btn-primary stocktake-create-btn"
         >
           {formOpen ? '收起开单' : '发起盘点单'}
         </button>
       </div>
 
-      <p className="text-sm text-[var(--text-3)]">
+      <p className="filter-summary">
         当前筛选：公司 {companyId ? idLabel(companyId) : '全部可见公司'} ·{' '}
         {status || '全部状态'} · 单号 {keyword.trim() || '全部'}
       </p>
 
       {formOpen ? (
-        <section className="space-y-3 rounded-xl border border-[var(--line-2)] bg-[var(--surf-1)] p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-sm font-semibold text-[var(--text-1)]">
-              发起盘点单
-            </h3>
-            <span className="text-xs text-[var(--text-3)]">
+        <section className="card stocktake-form">
+          <div className="card-h">
+            <h3>发起盘点单</h3>
+            <small>
               一张盘点单对应一个批次；差异量由服务端算，前端只填账面量与实盘量
-            </span>
+            </small>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field
-              label="盘点批次"
-              hint="选批次后自动带出可用量作为账面量，可改"
-            >
-              <select
-                value={batchId}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  setBatchId(next);
-                  const batch = batchOptions.find((item) => item.id === next);
-                  // 账面量带出「能看的数」而不是 `300.000000`：人只填自己点的数，6 位小数由服务端管。
-                  if (batch) setBookQty(formatQty(batch.availableQty));
-                }}
-                className={FIELD_CLASS}
+          <div className="card-body stack-3">
+            <div className="form-grid form-grid-3">
+              <StocktakeField
+                label="盘点批次"
+                hint="选批次后自动带出可用量作为账面量，可改"
               >
-                <option value="">请选择批次</option>
-                {batchOptions.map((batch) => (
-                  <option key={batch.id} value={batch.id}>
-                    {batchOptionLabel(batch)}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="账面量" hint="系统账上的数量">
-              <input
-                value={bookQty}
-                onChange={(event) => setBookQty(event.target.value)}
-                inputMode="decimal"
-                className={FIELD_CLASS}
-              />
-            </Field>
-            <Field label="实盘量" hint="实际点出来的数量">
-              <input
-                value={actualQty}
-                onChange={(event) => setActualQty(event.target.value)}
-                inputMode="decimal"
-                className={FIELD_CLASS}
-              />
-            </Field>
-          </div>
+                <select
+                  value={batchId}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setBatchId(next);
+                    const batch = batchOptions.find((item) => item.id === next);
+                    // 账面量带出「能看的数」而不是 `300.000000`：人只填自己点的数，6 位小数由服务端管。
+                    if (batch) setBookQty(formatQty(batch.availableQty));
+                  }}
+                  className="field-control"
+                >
+                  <option value="">请选择批次</option>
+                  {batchOptions.map((batch) => (
+                    <option key={batch.id} value={batch.id}>
+                      {batchOptionLabel(batch)}
+                    </option>
+                  ))}
+                </select>
+              </StocktakeField>
+              <StocktakeField label="账面量" hint="系统账上的数量">
+                <input
+                  value={bookQty}
+                  onChange={(event) => setBookQty(event.target.value)}
+                  inputMode="decimal"
+                  className="field-control"
+                />
+              </StocktakeField>
+              <StocktakeField label="实盘量" hint="实际点出来的数量">
+                <input
+                  value={actualQty}
+                  onChange={(event) => setActualQty(event.target.value)}
+                  inputMode="decimal"
+                  className="field-control"
+                />
+              </StocktakeField>
+            </div>
 
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg bg-[var(--surf-2)] px-3 py-2 text-xs text-[var(--text-2)]">
-            <span>
-              差异量{' '}
-              <b className="font-mono">
-                {stocktakeDiffText(bookQty, actualQty)}
-              </b>
-            </span>
-            <span>
-              方向{' '}
-              <b>
-                {direction === 'none'
-                  ? '无差异（不能开单）'
-                  : stocktakeDirectionText(
-                      stocktakeDiffText(bookQty, actualQty),
-                    )}
-              </b>
-            </span>
-            <span className="text-[var(--text-3)]">
-              {direction === 'increase'
-                ? '需要 stocktake.create 权限'
-                : direction === 'decrease'
-                  ? '需要 stocktake.delete 权限（仅删减，D71）'
-                  : '实盘量与账面量相同'}
-            </span>
-          </div>
-
-          <Field label="备注（选填）" hint="最多 200 字">
-            <input
-              value={remark}
-              onChange={(event) => setRemark(event.target.value)}
-              maxLength={200}
-              className={FIELD_CLASS}
-            />
-          </Field>
-
-          <ErrorList errors={clientErrors} />
-          {actionError ? <ErrorBar message={actionError} /> : null}
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onSubmit}
-              disabled={
-                submit.isPending || direction === 'none' || rightMissing
-              }
-              className="btn btn-primary"
-            >
-              {submit.isPending
-                ? '提交中…'
-                : direction === 'increase'
-                  ? '提交盘盈单'
+            <div className="form-summary">
+              <span>
+                差异量{' '}
+                <b className="mono">{stocktakeDiffText(bookQty, actualQty)}</b>
+              </span>
+              <span>
+                方向{' '}
+                <b>
+                  {direction === 'none'
+                    ? '无差异（不能开单）'
+                    : stocktakeDirectionText(
+                        stocktakeDiffText(bookQty, actualQty),
+                      )}
+                </b>
+              </span>
+              <span className="field-hint">
+                {direction === 'increase'
+                  ? '需要 stocktake.create 权限'
                   : direction === 'decrease'
-                    ? '提交盘亏单'
-                    : '提交'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setFormOpen(false);
-                setClientErrors([]);
-                setActionError(null);
-              }}
-              className="btn"
-            >
-              取消
-            </button>
+                    ? '需要 stocktake.delete 权限（仅删减，D71）'
+                    : '实盘量与账面量相同'}
+              </span>
+            </div>
+
+            <StocktakeField label="备注（选填）" hint="最多 200 字">
+              <input
+                value={remark}
+                onChange={(event) => setRemark(event.target.value)}
+                maxLength={200}
+                className="field-control"
+              />
+            </StocktakeField>
+
+            <ErrorList errors={clientErrors} />
+            {actionError ? <ErrorBar message={actionError} /> : null}
+
+            <div className="form-actions">
+              <button
+                type="button"
+                onClick={onSubmit}
+                disabled={
+                  submit.isPending || direction === 'none' || rightMissing
+                }
+                className="btn btn-primary"
+              >
+                {submit.isPending
+                  ? '提交中…'
+                  : direction === 'increase'
+                    ? '提交盘盈单'
+                    : direction === 'decrease'
+                      ? '提交盘亏单'
+                      : '提交'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormOpen(false);
+                  setClientErrors([]);
+                  setActionError(null);
+                }}
+                className="btn"
+              >
+                取消
+              </button>
+            </div>
           </div>
         </section>
       ) : null}
@@ -490,39 +510,34 @@ export function StocktakesPanel({
       >
         {items.map((item: Stocktake) => (
           <tr key={item.id} className="r-row">
-            <td className="whitespace-nowrap">
+            <td className="cell-nowrap">
               <button
                 type="button"
                 onClick={() => setDetailId(item.id)}
-                className="font-mono text-xs underline-offset-2 hover:underline"
+                className="link-button"
               >
                 {item.stocktakeNo}
               </button>
             </td>
-            <td
-              className="whitespace-nowrap font-mono text-xs"
-              style={{ color: 'var(--text-3)' }}
-            >
+            <td className="cell-nowrap mono-small cell-muted">
               {batchNoById.get(item.batchId) ?? idLabel(item.batchId)}
             </td>
-            <td className="num whitespace-nowrap">{formatQty(item.bookQty)}</td>
-            <td className="num whitespace-nowrap">
-              {formatQty(item.actualQty)}
-            </td>
-            <td className="num whitespace-nowrap">
+            <td className="num cell-nowrap">{formatQty(item.bookQty)}</td>
+            <td className="num cell-nowrap">{formatQty(item.actualQty)}</td>
+            <td className="num cell-nowrap">
               {item.diffQty.startsWith('-') ? '' : '+'}
               {formatQty(item.diffQty)}
-              <span className="ml-1 text-xs" style={{ color: 'var(--text-3)' }}>
+              <span className="mono-small cell-muted">
                 {stocktakeDirectionText(item.diffQty)}
               </span>
             </td>
-            <td className="whitespace-nowrap">
+            <td className="cell-nowrap">
               <DocPill
                 label={item.status}
                 tone={STOCKTAKE_STATUS_TONE[item.status] ?? 'warn'}
               />
             </td>
-            <td className="whitespace-nowrap text-right">
+            <td className="cell-nowrap cell-right">
               <button
                 type="button"
                 onClick={() => setDetailId(item.id)}
@@ -536,7 +551,7 @@ export function StocktakesPanel({
       </ReversalListCard>
 
       {detailId !== null ? (
-        <section className="card min-w-0 p-4">
+        <section className="card detail-card">
           {detail.isError ? (
             <ErrorBar
               message="详情加载失败"
@@ -545,7 +560,7 @@ export function StocktakesPanel({
           ) : detail.isPending || !detail.data ? (
             <TableSkeleton rows={2} />
           ) : (
-            <div className="space-y-3">
+            <div className="stack-3">
               <DetailHead
                 docLabel="盘点单"
                 orderNo={detail.data.stocktakeNo}
@@ -558,9 +573,7 @@ export function StocktakesPanel({
                 meta={
                   <>
                     <span>{stocktakeDirectionText(detail.data.diffQty)}</span>
-                    <span aria-hidden="true" style={{ color: 'var(--line-3)' }}>
-                      ·
-                    </span>
+                    <span aria-hidden="true">·</span>
                     <span>
                       批次{' '}
                       {batchNoById.get(detail.data.batchId) ??
@@ -664,52 +677,41 @@ export function StocktakesPanel({
               />
 
               {actionResult ? (
-                <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                  {actionResult}
-                </p>
+                <p className="notice notice-success">{actionResult}</p>
               ) : null}
               {actionError ? <ErrorBar message={actionError} /> : null}
 
               {detail.data.approvable.allowed ? (
-                <p
-                  className="text-xs leading-relaxed"
-                  style={{ color: 'var(--text-3)' }}
-                >
+                <p className="detail-note">
                   批准后会调整批次可用量并追加一条冲正流水（D47 /
                   D67）；驳回只终止审批流，不改库存、不写流水。
                 </p>
               ) : (
-                <p
-                  className="rounded-lg px-3 py-2 text-xs"
-                  style={{
-                    background: 'var(--surf-2)',
-                    color: 'var(--text-3)',
-                  }}
-                >
+                <p className="notice notice-muted">
                   {approveBlockedText(detail.data.approvable.reason) ??
                     '当前状态不可审批'}
                 </p>
               )}
 
               {rejectOpen && detail.data.approvable.allowed ? (
-                <section className="rounded-xl border border-rose-200 bg-rose-50 p-4">
-                  <h3 className="font-semibold text-rose-900">驳回盘点单</h3>
-                  <p className="mt-1 text-sm text-rose-700">
+                <section className="reject-panel">
+                  <h3 className="reject-title">驳回盘点单</h3>
+                  <p className="reject-copy">
                     驳回后不可再次审批；库存数量与流水不会改变。
                   </p>
-                  <label className="mt-3 block text-sm">
-                    <span className="text-rose-900">驳回原因</span>
+                  <label className="reject-label">
+                    <span>驳回原因</span>
                     <input
                       value={rejectReason}
                       onChange={(event) => setRejectReason(event.target.value)}
                       maxLength={200}
-                      className="mt-1 w-full rounded-lg border border-rose-300 bg-white px-3 py-2"
+                      className="field-control reject-control"
                     />
                   </label>
                   {rejectError ? (
-                    <p className="mt-2 text-sm text-rose-700">{rejectError}</p>
+                    <p className="reject-error">{rejectError}</p>
                   ) : null}
-                  <div className="mt-3 flex gap-2">
+                  <div className="form-actions">
                     <button
                       type="button"
                       disabled={reject.isPending}

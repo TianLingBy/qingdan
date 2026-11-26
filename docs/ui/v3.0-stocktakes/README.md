@@ -7,5 +7,10 @@
 | `stocktakes-before.png`      | 最新 `origin/main`（`8bf74ef`）的改前页面 |
 | `stocktakes-after-light.png` | 改后亮色主题                              |
 | `stocktakes-after-dark.png`  | 改后暗色主题                              |
+| `stocktakes-form-after-light.png` | 草稿表单改后亮色主题                  |
+| `stocktakes-form-after-dark.png`  | 草稿表单改后暗色主题                  |
 
 截图为 1440×1000 视口，使用同一组真实契约结构数据；仅用于版式验收，不代表生产数据。
+
+草稿表单两张图由真实 `StocktakesPage` 的已展开分支渲染，验收筛选条、三列表单网格、
+差异摘要、表单按钮和盘点列表的语义类布局；没有新增接口或权限判断。

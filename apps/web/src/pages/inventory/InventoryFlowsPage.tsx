@@ -103,7 +103,7 @@ export function InventoryFlowsPage() {
   });
 
   return (
-    <section className="space-y-4">
+    <section className="page-stack">
       <header className="p-head">
         <div>
           <div className="eyebrow">库存 · 流水</div>
@@ -112,8 +112,8 @@ export function InventoryFlowsPage() {
             流水只追加、不修改。本页只展示冻结契约真实提供的时间、批次、变动量、来源单据与经手人。
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="chip inline-flex items-center gap-1">
+        <div className="page-chips">
+          <span className="chip icon-chip">
             <Icon name="shield" size={14} /> 只追加
           </span>
           <span className="st ok">D2 口径</span>
@@ -168,7 +168,7 @@ export function InventoryFlowsPage() {
         </label>
         <label>
           <span className="sr-only">批次号追溯</span>
-          <span className="flex items-center gap-2">
+          <span className="toolbar-inline">
             <input
               value={batchNoInput}
               onChange={(event) => {
@@ -210,10 +210,10 @@ export function InventoryFlowsPage() {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-sm">
+      <div className="page-chips">
         {resolvedBatchNo ? (
           <>
-            <span className="chip inline-flex items-center gap-1">
+            <span className="chip icon-chip">
               <Icon name="pin" size={14} />
               当前批次：{resolvedBatchNo}
             </span>
@@ -230,11 +230,7 @@ export function InventoryFlowsPage() {
             </button>
           </>
         ) : null}
-        {traceError ? (
-          <span className="rounded border border-rose-200 bg-rose-50 px-2 py-1 text-rose-700">
-            {traceError}
-          </span>
-        ) : null}
+        {traceError ? <span className="inline-error">{traceError}</span> : null}
       </div>
 
       <div
@@ -243,13 +239,13 @@ export function InventoryFlowsPage() {
         aria-busy={state === 'loading'}
       >
         <div className="tw">
-          <table className="w-full min-w-[980px] text-left">
+          <table className="data-table wide-flows">
             <thead>
               <tr>
                 <th>发生时间</th>
                 <th>批次 ID</th>
                 <th>方向</th>
-                <th className="text-right">变动量</th>
+                <th className="cell-right">变动量</th>
                 <th>来源类型</th>
                 <th>来源单据 ID</th>
                 <th>经手人</th>
@@ -271,7 +267,7 @@ export function InventoryFlowsPage() {
                         {direction.text}
                       </span>
                     </td>
-                    <td className="num text-right">
+                    <td className="num cell-right">
                       <b>{direction.value}</b>
                     </td>
                     <td>
@@ -321,7 +317,7 @@ export function InventoryFlowsPage() {
                     <div className="sk sk-line w80" />
                     <div className="sk sk-line w60" />
                     <div className="sk sk-line w40" />
-                    <p className="st-desc mt-3">库存流水加载中…</p>
+                    <p className="st-desc st-desc-next">库存流水加载中…</p>
                   </div>
                 </td>
               </tr>
