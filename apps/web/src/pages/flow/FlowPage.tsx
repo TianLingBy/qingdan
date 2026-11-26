@@ -75,7 +75,7 @@ const TONE_CLASS: Record<
 const MATURITY_CLASS = {
   ready: 'bg-emerald-50 text-emerald-700',
   partial: 'bg-amber-50 text-amber-800',
-  blocked: 'bg-slate-100 text-slate-600',
+  blocked: 'bg-slate-100 muted',
 } as const;
 
 /* ------------------------------ 小组件 ------------------------------ */
@@ -124,24 +124,24 @@ export function NodeCard({ node, openable, loading, onOpen }: NodeCardProps) {
         </span>
       </div>
 
-      <p className="mt-2 pl-1 text-xs leading-relaxed text-slate-600">{node.summary}</p>
-      <p className="mt-1.5 pl-1 text-xs leading-relaxed text-slate-400">
-        <span className="text-slate-500">批次 · </span>
+      <p className="mt-2 pl-1 text-xs leading-relaxed muted">{node.summary}</p>
+      <p className="mt-1.5 pl-1 text-xs leading-relaxed muted">
+        <span className="muted">批次 · </span>
         {node.stock}
       </p>
 
-      <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-2 pl-1 text-[11px] text-slate-400">
+      <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-2 pl-1 text-[11px] muted">
         <span className={`rounded px-1.5 py-0.5 ${tone.badge}`}>{node.done.length} 条接口已通</span>
         {node.gaps.length > 0 ? (
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500">
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 muted">
             缺 {node.gaps.length} 项
           </span>
         ) : null}
         {pageDone ? null : (
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-500">页面待做</span>
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 muted">页面待做</span>
         )}
         {openable ? null : (
-          <span className="rounded bg-slate-200 px-1.5 py-0.5 font-medium text-slate-600">
+          <span className="rounded bg-slate-200 px-1.5 py-0.5 font-medium muted">
             无权限
           </span>
         )}
@@ -200,7 +200,7 @@ function LinkBand({ link }: { readonly link: FlowLink }) {
       </span>
       <span
         className={`text-center text-[10px] leading-tight ${
-          broken ? 'font-medium text-amber-700' : 'text-slate-400'
+          broken ? 'font-medium text-amber-700' : 'muted'
         }`}
       >
         {broken ? `未接 · ${link.gap?.label}` : link.label}
@@ -269,7 +269,7 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
             采购 A → 加工 B → 销售 E → 结算 C；辅助是内部交易 N、冲正 R / S / I。
           </p>
         </div>
-        <p className="max-w-sm text-xs leading-relaxed text-slate-400">
+        <p className="muted">
           本期只做业务全流程图（D7），实时看板与集团看板二期。图对全部登录员工开放（D44），
           节点能不能点取决于你的岗位权限。
         </p>
@@ -291,7 +291,7 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
       ) : null}
 
       {noneOpenable ? (
-        <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm muted">
           当前身份没有任何单据权限，图仍然可以看（D44），但下面的入口都点不开。要录单请联系管理员调整岗位权限。
         </p>
       ) : null}
@@ -299,7 +299,7 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
       <section className="panel">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-900">主线：一张货的流向</h2>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs muted">
             四张单据卡都能点进对应页面；卡与卡之间的「未接」是还没有人做的一步，不是单据
           </span>
         </div>
@@ -317,7 +317,7 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
           ))}
         </div>
 
-        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-500">
+        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed muted">
           批次是这条链上唯一的数量载体：可用量 = 入库量 − 在途占用 − 待执行占用（D41）。
           目前只有 E 单完成与 I 盘审批会真正改数量，两者走同一个库存写入服务（D67 / D70）。
         </p>
@@ -346,7 +346,7 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
       <section className="panel">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-900">辅助与冲正</h2>
-          <span className="text-xs text-slate-400">
+          <span className="text-xs muted">
             不接在主链上：N 走跨公司调货，R / S 只退钱，I 直接调批次数量
           </span>
         </div>
@@ -362,13 +362,13 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
       <section className="min-w-0 panel">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-900">落地情况</h2>
-          <span className="text-xs text-slate-400">图的可读版：每条链路缺什么，以这张表为准</span>
+          <span className="text-xs muted">图的可读版：每条链路缺什么，以这张表为准</span>
         </div>
 
         <div className="mt-3 -mx-4 overflow-x-auto px-4">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
-              <tr className="text-xs text-slate-400">
+              <tr className="text-xs muted">
                 <th className="py-1.5 pr-3 font-medium">单据</th>
                 <th className="py-1.5 pr-3 font-medium">已经能做什么</th>
                 <th className="py-1.5 pr-3 font-medium">还缺什么</th>
@@ -383,10 +383,10 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
                       {node.code} {node.name}
                     </span>
                   </td>
-                  <td className="py-2 pr-3 text-xs leading-relaxed text-slate-600">
+                  <td className="py-2 pr-3 text-xs leading-relaxed muted">
                     {node.summary}
                     {node.limits?.length ? (
-                      <span className="mt-1 block text-slate-400">
+                      <span className="mt-1 block muted">
                         有意不做：{node.limits.join('；')}
                       </span>
                     ) : null}
@@ -402,14 +402,14 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
                       </ul>
                     )}
                     {node.note ? (
-                      <span className="mt-1 block text-slate-400">{node.note}</span>
+                      <span className="mt-1 block muted">{node.note}</span>
                     ) : null}
                   </td>
                   <td className="whitespace-nowrap py-2 text-xs">
                     {isImplementedPage(node.routeId) ? (
-                      <span className="text-slate-500">已上线</span>
+                      <span className="muted">已上线</span>
                     ) : (
-                      <span className="text-slate-400">占位页</span>
+                      <span className="muted">占位页</span>
                     )}
                   </td>
                 </tr>
@@ -421,7 +421,7 @@ export function FlowView({ scope, loading, error, onRetry, onOpen }: FlowViewPro
 
       <section className="panel">
         <h2 className="text-sm font-semibold text-slate-900">怎么看这张图</h2>
-        <ul className="mt-2 space-y-1 text-xs leading-relaxed text-slate-500">
+        <ul className="mt-2 space-y-1 text-xs leading-relaxed muted">
           <li>· 箭头只表示单据的业务先后，不代表系统会自动跑批；每一步都要有人开单或确认。</li>
           <li>· 「已通」= 这张单的核心动作接口都在；「缺动作」= 单能开，但有关键动作还返回 501。</li>
           <li>· 灰色卡片是你没有权限进入的单据；图本身不拦人，接口会拦（D15 / D27）。</li>
