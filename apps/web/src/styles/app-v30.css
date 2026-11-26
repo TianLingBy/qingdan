@@ -945,10 +945,18 @@
   font-size:var(--fs-12,12px);
   color:var(--v30-ink-2);
 }
+/* 提示块里的「一句话 + 一个动作」：左边说明、右边重试/收起。
+   不用 `.detail-acts` —— 那个带 16px 上边距，会把一行提示撑成两行高。 */
+.alert-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
 .alert-bad{background:var(--v30-bad-10);border:1px solid var(--v30-bad-30);color:var(--v30-bad)}
 .alert-warn{background:var(--v30-warn-10);border:1px solid var(--v30-warn-30);color:var(--v30-warn)}
 .alert-info{background:var(--surf-2);border:1px solid var(--v30-line-2);color:var(--v30-ink-3)}
 .alert-sm{font-size:var(--fs-12,12px);padding:8px 12px}
+/* 第四档「成了」：审批通过 / 入账完成。
+   tokens-v013 里绿只有 `.st.ok` 那一组（`#E3F4E9` 底 + `#1D6B3C` 字），
+   没有 `--v30-ok-10/-30` 这种 alpha 变体，所以这里照 `.st.ok` 的值写一份 ——
+   页面各写 `bg-emerald-50 text-emerald-700` 的话，同一个「已批准」在不同页会是两种绿。 */
+.alert-ok{background:#e3f4e9;border:1px solid rgba(29,107,60,.28);color:#1d6b3c}
 
 /* ---- §8.8 浮层（稿子 `.mask` / `.modal`，L288–290 / L350–359） ---- */
 /* 遮罩 + 面板分开：遮罩负责点外关闭，面板负责宽度。
@@ -1188,6 +1196,18 @@
 /* 表单明细行的靠顶对齐：一行里「引用批次」那格可能是两行 chip，别的格是单行控件，
    默认 `middle` 会把下拉框拉到行中间，跟旁边的标签错开半个控件高。 */
 .ln tr.vtop td{vertical-align:top}
+
+/* ---- §8.13 单个字段外壳（不进 `.fm` 也要能用） ---- */
+/* 分栏里的一摞块（说明条 → 工具条 → 列表 → 详情）：等价于原来的 `space-y-3`。
+   不用 `.page-body` —— 那个带 max-width 与居中，是给页面根用的。 */
+.panel-stack{display:flex;flex-direction:column;gap:12px}
+/* `.fm` 只管分列；字段自己的「标签 / 控件 / 提示」三行排版放这里，
+   好让备注、取消原因这种独占一行的字段也是同样的字号与行距。
+   控件本身统一挂 `.ipt`，所以这里只给文字档。 */
+.fm-field{display:grid;gap:4px;min-width:0;font-size:var(--fs-12,12px);color:var(--v30-ink-2)}
+.fm-field>small{font-size:var(--fs-11,12px);line-height:1.6;color:var(--v30-ink-3)}
+/* 批次选择块的小标题（「引用批次（至少 1 个）」）：`.line-batches` 只给上间距 */
+.line-batches>span{font-size:var(--fs-11,12px);color:var(--v30-ink-3)}
 
 /* ---- §8.12 收款二维码面板（销售详情内嵌） ---- */
 /* 二维码外框**必须永远白底**：手机扫的是深模块与白底的对比度，跟着主题走就扫不出来。

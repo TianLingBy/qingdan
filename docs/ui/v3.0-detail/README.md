@@ -88,10 +88,14 @@ tokens-v013 只有实心 `--danger` / `--danger-on-surface`，没有 alpha 变�
 | 采购 A | 已完成（`purchase.md`） | — |
 | 加工 B | 已完成（`processing.md`） | — |
 | 销售 E | 已完成（`sales.md`） | — |
-| 冲正 R / S / I | 排队 | #459（冲正列表卡）等评审 |
+| 冲正 R / S / I | 已完成（`reversals.md`） | — |
 
-五页都按这一单的类映射改，不再新增底座类；真缺了再加，并在这里补表。
+六页都按这一单的类映射改，不再新增底座类；真缺了再加，并在这里补表。
 
 第五轮（销售 E）补进底座的只有五件：`.chip-x` / `.chip-static` / `.text-warn` / `.text-bad`
 （批次 chip 与句内染色）、`.qr-box` / `.qr-empty` / `.qr-row` / `.qr-meta`（扫码收款面板）、
 `.ln tr.vtop td`（表单明细行靠顶对齐）。
+
+第六轮（冲正 R / S / I）补进底座的五件：`.fm-field`（`.fm` 之外的单个字段）、
+`.alert-row`（提示块里的「一句话 + 重试」）、`.alert-ok`（第四档「成了」）、
+`.panel-stack`（分栏里的一摞块）、`.line-batches > span`（批次块小标题）。
