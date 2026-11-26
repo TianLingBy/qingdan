@@ -35,9 +35,9 @@ import {
   FIELD_CLASS,
   Field,
   ReversalListCard,
-  ReversalPager,
   TableSkeleton,
 } from './reversals-ui';
+import { BatchPager } from '../../components/ListPager';
 import {
   DetailHead,
   DetailMetaDot,
@@ -254,45 +254,46 @@ export function SupplierReturnsPanel({
   });
 
   return (
-    <div className="space-y-3">
+    <div className="panel-stack">
       <BasisNote>
         S 单只做<b>退钱</b>：冲减应付 / 收退款记录。没有「抵下次货款」，也没有「换货补发」
         ——这两种形态现实里不发生，所以契约里连类型字段都没有（F4c）。
         同样只追加，不可改、不可删（D47）。
       </BasisNote>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="toolbar">
         {companyIds.length > 1 ? (
-          <Field label="公司" className="min-w-[180px]">
-            <select value={companyId} onChange={(event) => onCompanyChange(event.target.value)} className={FIELD_CLASS}>
-              {companyIds.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : null}
-        <Field label="状态" className="min-w-[120px]">
           <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value as '' | SupplierReturnStatus)}
-            className={FIELD_CLASS}
+            value={companyId}
+            onChange={(event) => onCompanyChange(event.target.value)}
+            aria-label="按公司筛选"
+            className="sel"
           >
-            <option value="">全部</option>
-            <option value="进行中">进行中</option>
-            <option value="已完成">已完成</option>
-            <option value="已取消">已取消</option>
+            {companyIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
           </select>
-        </Field>
-        <Field label="单号关键字" className="min-w-[180px]">
-          <input
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-            placeholder="S-0001-…"
-            className={FIELD_CLASS}
-          />
-        </Field>
+        ) : null}
+        <select
+          value={status}
+          onChange={(event) => setStatus(event.target.value as '' | SupplierReturnStatus)}
+          aria-label="按状态筛选"
+          className="sel"
+        >
+          <option value="">全部状态</option>
+          <option value="进行中">进行中</option>
+          <option value="已完成">已完成</option>
+          <option value="已取消">已取消</option>
+        </select>
+        <input
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="搜索单号 S-0001-…"
+          aria-label="搜索单号"
+          className="search"
+        />
         <button
           type="button"
           onClick={() => {
@@ -301,17 +302,19 @@ export function SupplierReturnsPanel({
           }}
           disabled={!canCreate || companyId.length === 0}
           title={canCreate ? undefined : '当前身份没有 supplier_return.create 权限'}
-          className="mb-0.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+          className="btn btn-primary act-end"
         >
           {formOpen ? '收起开单' : '登记供应商退货'}
         </button>
       </div>
 
       {formOpen ? (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-slate-900">登记供应商退货</h3>
+        <section className="form-card">
+          <div className="form-head">
+            <h2>登记供应商退货</h2>
+          </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="fm">
             <Field label="原采购单" hint="S 单必须挂原 A 单；下拉取本公司前 200 张">
               <select
                 value={originalPurchaseOrderId}
@@ -337,10 +340,10 @@ export function SupplierReturnsPanel({
             </Field>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h4 className="text-xs font-semibold text-slate-700">退回商品（至少 1 行）</h4>
-              <span className="text-[11px] text-slate-400">
+          <div className="form-stack">
+            <div className="form-head">
+              <h3 className="form-title">退回商品（至少 1 行）</h3>
+              <span className="detail-why">
                 明细合计 {formatMoney(canViewPrice ? returnLinesTotal(lines) : null)}
               </span>
             </div>
@@ -350,8 +353,8 @@ export function SupplierReturnsPanel({
                 (batch) => !line.productId || batch.productId === line.productId,
               );
               return (
-                <div key={index} className="rounded-lg border border-slate-200 p-3">
-                  <div className="grid gap-2 sm:grid-cols-[1.4fr_1fr_1fr_auto_auto]">
+                <div key={index} className="line-card">
+                  <div className="fm lines">
                     <Field label={`第 ${index + 1} 行商品`}>
                       <select
                         value={line.productId}
@@ -399,26 +402,26 @@ export function SupplierReturnsPanel({
                         className={FIELD_CLASS}
                       />
                     </Field>
-                    <div className="self-end pb-2 text-xs text-slate-500">
+                    <div className="line-amount">
                       金额 {formatMoney(canViewPrice ? returnLineAmount(line) : null)}
                     </div>
                     <button
                       type="button"
                       onClick={() => setLines((current) => current.filter((_, i) => i !== index))}
                       disabled={lines.length <= 1}
-                      className="mt-5 h-9 self-start whitespace-nowrap rounded-lg border border-slate-300 px-2 text-xs text-slate-600 disabled:opacity-40"
+                      className="btn btn-row"
                     >
                       删除
                     </button>
                   </div>
 
-                  <div className="mt-2">
-                    <span className="text-[11px] text-slate-500">引用批次（至少 1 个）</span>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
+                  <div className="line-batches">
+                    <span>引用批次（至少 1 个）</span>
+                    <div className="chip-row">
                       {!line.productId ? (
-                        <span className="text-[11px] text-slate-400">先选商品，再选批次</span>
+                        <span className="chip-none">先选商品，再选批次</span>
                       ) : rowBatches.length === 0 ? (
-                        <span className="text-[11px] text-slate-400">本公司该商品暂无批次</span>
+                        <span className="chip-none">本公司该商品暂无批次</span>
                       ) : (
                         rowBatches.map((batch) => {
                           const checked = line.batchIds.includes(batch.id);
@@ -440,11 +443,7 @@ export function SupplierReturnsPanel({
                                   ),
                                 )
                               }
-                              className={`rounded-full border px-2 py-0.5 text-[11px] ${
-                                checked
-                                  ? 'border-slate-900 bg-slate-900 text-white'
-                                  : 'border-slate-300 bg-white text-slate-600'
-                              }`}
+                              className={checked ? 'chip on' : 'chip'}
                             >
                               {batchOptionLabel(batch)}
                             </button>
@@ -460,7 +459,7 @@ export function SupplierReturnsPanel({
             <button
               type="button"
               onClick={() => setLines((current) => [...current, { ...EMPTY_LINE }])}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600"
+              className="btn form-add"
             >
               + 加一行商品
             </button>
@@ -469,12 +468,12 @@ export function SupplierReturnsPanel({
           <ErrorList errors={clientErrors} />
           {actionError ? <ErrorBar message={actionError} /> : null}
 
-          <div className="flex gap-2">
+          <div className="detail-acts">
             <button
               type="button"
               onClick={submit}
               disabled={create.isPending}
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+              className="btn btn-primary"
             >
               {create.isPending ? '提交中…' : '登记退货'}
             </button>
@@ -485,7 +484,7 @@ export function SupplierReturnsPanel({
                 setClientErrors([]);
                 setActionError(null);
               }}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600"
+              className="btn"
             >
               取消
             </button>
@@ -494,18 +493,16 @@ export function SupplierReturnsPanel({
       ) : null}
 
       <ReversalListCard
-        title="供应商退货单"
-        meta={`共 ${items.length} 条${canViewPrice ? '' : ' · 当前身份无看价权限，金额显示 —'}`}
         state={listState}
         colCount={5}
-        minWidth="620px"
+        minWidthClass="min-w-[620px]"
         head={
           <tr>
             <th>单号</th>
             <th>原采购单</th>
             <th className="num">应退金额</th>
             <th>状态</th>
-            <th />
+            <th className="text-right">操作</th>
           </tr>
         }
         emptyText="还没有供应商退货单"
@@ -513,10 +510,11 @@ export function SupplierReturnsPanel({
         errorTitle="供应商退货单加载失败"
         error={list.error}
         onRetry={() => void list.refetch()}
+        summary={`共 ${items.length} 条${canViewPrice ? '' : ' · 当前身份无看价权限，金额显示 —'}`}
         pager={
-          <ReversalPager
-            batchIndex={pageIndex}
-            count={items.length}
+          <BatchPager
+            batch={pageIndex + 1}
+            hasPrev={pageIndex > 0}
             hasNext={nextCursor !== null}
             onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
             onNext={() => {
@@ -528,47 +526,50 @@ export function SupplierReturnsPanel({
               });
               setPageIndex((index) => index + 1);
             }}
+            label="供应商退货单分批翻页"
           />
         }
       >
         {items.map((item: SupplierReturn) => (
           <tr key={item.id} className="r-row">
-            <td className="whitespace-nowrap">
+            <td>
               <button
                 type="button"
                 onClick={() => setDetailId(item.id)}
-                className="font-mono text-xs underline-offset-2 hover:underline"
+                className="doc-link"
               >
                 {item.returnNo}
               </button>
             </td>
-            <td className="whitespace-nowrap font-mono text-xs" style={{ color: 'var(--text-3)' }}>
+            <td className="mono cell-muted">
               {orderNoById.get(item.originalPurchaseOrderId) ??
                 idLabel(item.originalPurchaseOrderId)}
             </td>
-            <td className="num whitespace-nowrap">
+            <td className="num">
               {canViewPrice ? formatMoney(item.refundAmount) : MASKED_AMOUNT}
             </td>
-            <td className="whitespace-nowrap">
+            <td>
               <DocPill label={item.status} tone={RETURN_STATUS_TONE[item.status] ?? 'cancel'} />
             </td>
-            <td className="whitespace-nowrap text-right">
-              <button type="button" onClick={() => setDetailId(item.id)} className="btn btn-s">
-                详情
-              </button>
+            <td>
+              <div className="row-acts">
+                <button type="button" onClick={() => setDetailId(item.id)} className="btn btn-row">
+                  详情
+                </button>
+              </div>
             </td>
           </tr>
         ))}
       </ReversalListCard>
 
       {detailId !== null ? (
-        <section className="card min-w-0 p-4">
+        <section className="card detail">
           {detail.isError ? (
             <ErrorBar message="详情加载失败" onRetry={() => void detail.refetch()} />
           ) : detail.isPending || !detail.data ? (
             <TableSkeleton rows={2} />
           ) : (
-            <div className="space-y-3">
+            <>
               <DetailHead
                 docLabel="供应商退货单"
                 orderNo={detail.data.returnNo}
@@ -651,8 +652,8 @@ export function SupplierReturnsPanel({
                 ]}
               />
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left" style={{ minWidth: '520px' }}>
+              <div className="ln">
+                <table>
                   <thead>
                     <tr>
                       <th>商品</th>
@@ -664,18 +665,16 @@ export function SupplierReturnsPanel({
                   </thead>
                   <tbody>
                     {detail.data.lines.map((line, index) => (
-                      <tr key={`${line.productId}-${index}`} className="r-row">
-                        <td className="text-xs">
-                          {productNameOf(productOptions, line.productId)}
-                        </td>
-                        <td className="font-mono text-xs" style={{ color: 'var(--text-3)' }}>
+                      <tr key={`${line.productId}-${index}`}>
+                        <td>{productNameOf(productOptions, line.productId)}</td>
+                        <td className="mono cell-muted">
                           {line.batchIds.map((id) => batchLabelOf(batchOptions, id)).join(' / ')}
                         </td>
-                        <td className="num whitespace-nowrap">{formatQty(line.qty)}</td>
-                        <td className="num whitespace-nowrap">
+                        <td className="num">{formatQty(line.qty)}</td>
+                        <td className="num">
                           {canViewPrice ? formatMoney(line.unitPrice) : MASKED_AMOUNT}
                         </td>
-                        <td className="num whitespace-nowrap">
+                        <td className="num">
                           {canViewPrice ? formatMoney(line.amount) : MASKED_AMOUNT}
                         </td>
                       </tr>
@@ -696,25 +695,20 @@ export function SupplierReturnsPanel({
               {actionError ? <ErrorBar message={actionError} /> : null}
 
               {cancelOpen && detail.data.status === '进行中' ? (
-                <div
-                  className="space-y-2 rounded-lg border p-3"
-                  style={{ borderColor: 'var(--line-2)', background: 'var(--surf-2)' }}
-                >
-                  <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>
-                    取消这张供应商退货单
-                  </p>
-                  <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
+                <div className="alert alert-bad">
+                  <h4>取消这张供应商退货单</h4>
+                  <p>
                     取消会把单据置为「已取消」并释放待执行的库存占用；只是留档，不物理删除（D47），不可撤销。
                   </p>
-                  <div className="flex flex-wrap items-end gap-2">
-                    <label className="min-w-64 flex-1 text-sm">
-                      <span style={{ color: 'var(--text-2)' }}>取消原因（必填，1–200 字）</span>
+                  <div className="detail-acts">
+                    <label className="reason-field">
+                      <span>取消原因（必填，1–200 字）</span>
                       <input
                         value={cancelReason}
                         onChange={(event) => setCancelReason(event.target.value)}
                         maxLength={200}
                         placeholder="例如：供应商确认不退货，改走补货"
-                        className={FIELD_CLASS}
+                        className="ipt"
                       />
                     </label>
                     <button
@@ -739,11 +733,11 @@ export function SupplierReturnsPanel({
                 </div>
               ) : null}
 
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
+              <p className="detail-why">
                 完成即审批：会按批次出库并写库存流水，然后置为「已完成」；应付冲减尚未接入（见 #211）。
                 冲正单据只追加，不可改、不可删（D47）。
               </p>
-            </div>
+            </>
           )}
         </section>
       ) : null}

@@ -9,8 +9,8 @@
  * 唯一决定，这里只把它显示出来，不让用户选。原来两段共用 warehouse/customer 下拉，
  * 料在路上时会写入一个成品去向，读单的人会以为料要回仓。
  *
- * 外观照 `purchase/ShipDialog.tsx`：`fixed inset-0` 遮罩 + 居中卡片，不引新 UI 库。
- * 本仓没有 `components/` 级的通用弹窗——采购那张就是这么写的，这里保持一致。
+ * 外观照 `purchase/ShipDialog.tsx`（#431 第三轮统一）：`mask-scroll` 遮罩 + `sheet` 三段
+ * （`-h` 标题 / `-b` 正文 / `-f` 按钮），不引新 UI 库 —— 本仓没有 `components/` 级通用弹窗。
  */
 
 import { formatQty } from '../../lib/decimal';
@@ -61,163 +61,143 @@ export function ProcessingShipDialog({
   const finishedStage = draft.transitStage === 'finished';
 
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4">
+    <div className="mask-scroll">
       <section
         role="dialog"
         aria-modal="true"
         aria-label={`加工发货 ${orderNo}`}
-        className="mt-8 w-full max-w-xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl"
+        className="sheet"
       >
-        <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="sheet-h">
           <div>
-            <h2 className="font-semibold">发货 · {orderNo}</h2>
-            <p className="mt-1 text-xs text-slate-500">
+            <h2>发货 · {orderNo}</h2>
+            <small>
               投入量 {formatQty(inputQty)} · 发货后状态变「在途」，到货确认后才算完成。
-            </p>
+            </small>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="text-sm text-slate-500 hover:text-slate-900 disabled:opacity-40"
-          >
+          <button type="button" onClick={onClose} disabled={busy} className="sheet-close">
             关闭
           </button>
         </div>
 
-        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-          一段物流一个分段：<b>料</b>是材料在去加工厂路上（去哪就是本单的加工厂，不用选）；
-          <b>成品</b>是货往仓或客户走。成品段要在发货时承诺损耗量，因为验收口径跟着成品一起走。
-        </p>
+        <div className="sheet-b form-stack">
+          <p className="alert alert-info alert-sm">
+            一段物流一个分段：<b>料</b>是材料在去加工厂路上（去哪就是本单的加工厂，不用选）；
+            <b>成品</b>是货往仓或客户走。成品段要在发货时承诺损耗量，因为验收口径跟着成品一起走。
+          </p>
 
-        <div className="mt-4 space-y-3 text-sm">
-          <label className="block">
-            <span className="text-slate-600">在途分段</span>
-            <select
-              aria-label="在途分段"
-              value={draft.transitStage}
-              disabled={busy}
-              onChange={(event) =>
-                // 切段时清掉只有成品段才合法的字段：留着会被带到请求里，契约直接 422。
-                onChange({
-                  transitStage: event.target.value as TransitStage,
-                  ...(event.target.value === 'materials'
-                    ? { lossQty: '', custodianId: '', confirmFullLoss: false }
-                    : {}),
-                })
-              }
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
-            >
-              <option value="materials">{STAGE_LABEL.materials}</option>
-              <option value="finished">{STAGE_LABEL.finished}</option>
-            </select>
-          </label>
-
-          {finishedStage ? (
-            <label className="block">
-              <span className="text-slate-600">去向</span>
+          <div className="fm">
+            <label>
+              <span>在途分段</span>
               <select
-                aria-label="在途去向"
-                value={draft.transitTo}
+                aria-label="在途分段"
+                value={draft.transitStage}
                 disabled={busy}
-                onChange={(event) => onChange({ transitTo: event.target.value as TransitTo })}
-                className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
+                onChange={(event) =>
+                  // 切段时清掉只有成品段才合法的字段：留着会被带到请求里，契约直接 422。
+                  onChange({
+                    transitStage: event.target.value as TransitStage,
+                    ...(event.target.value === 'materials'
+                      ? { lossQty: '', custodianId: '', confirmFullLoss: false }
+                      : {}),
+                  })
+                }
               >
-                <option value="warehouse">{TRANSIT_LABEL.warehouse}</option>
-                <option value="customer">{TRANSIT_LABEL.customer}</option>
+                <option value="materials">{STAGE_LABEL.materials}</option>
+                <option value="finished">{STAGE_LABEL.finished}</option>
               </select>
             </label>
-          ) : (
-            /**
-             * 料段不给下拉：方向由单据上的加工厂唯一决定。只读展示是为了让人确认
-             * 「料是送到这家」，而不是给一个能改的方向（改了与单据头冲突）。
-             */
-            <div>
-              <span className="text-slate-600">去向</span>
-              <p
-                className="mt-1 w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 text-slate-700"
-                aria-label="料段去向"
-              >
-                加工厂 · {processorName}
-              </p>
-            </div>
-          )}
+
+            {finishedStage ? (
+              <label>
+                <span>去向</span>
+                <select
+                  aria-label="在途去向"
+                  value={draft.transitTo}
+                  disabled={busy}
+                  onChange={(event) => onChange({ transitTo: event.target.value as TransitTo })}
+                >
+                  <option value="warehouse">{TRANSIT_LABEL.warehouse}</option>
+                  <option value="customer">{TRANSIT_LABEL.customer}</option>
+                </select>
+              </label>
+            ) : (
+              /**
+               * 料段不给下拉：方向由单据上的加工厂唯一决定。只读展示是为了让人确认
+               * 「料是送到这家」，而不是给一个能改的方向（改了与单据头冲突）。
+               */
+              <label>
+                <span>去向</span>
+                <p className="fm-readonly" aria-label="料段去向">
+                  加工厂 · {processorName}
+                </p>
+              </label>
+            )}
+          </div>
 
           {finishedStage && (
             <>
-              <label className="block">
-                <span className="text-slate-600">损耗量（成品段必填）</span>
-                <input
-                  aria-label="损耗量"
-                  inputMode="decimal"
-                  value={draft.lossQty}
-                  disabled={busy}
-                  onChange={(event) => onChange({ lossQty: event.target.value })}
-                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
-                />
-              </label>
+              <div className="fm">
+                <label>
+                  <span>损耗量（成品段必填）</span>
+                  <input
+                    aria-label="损耗量"
+                    inputMode="decimal"
+                    value={draft.lossQty}
+                    disabled={busy}
+                    onChange={(event) => onChange({ lossQty: event.target.value })}
+                  />
+                </label>
 
-              <label className="block">
-                <span className="text-slate-600">损失保管人（选填）</span>
-                <select
-                  aria-label="损失保管人"
-                  value={draft.custodianId}
-                  disabled={busy || custodians.length === 0}
-                  onChange={(event) => onChange({ custodianId: event.target.value })}
-                  className="mt-1 w-full rounded border border-slate-300 px-2 py-1 disabled:bg-slate-50 disabled:text-slate-400"
-                >
-                  <option value="">{custodians.length === 0 ? '（无人员可选）' : '不指定'}</option>
-                  {custodians.map((custodian) => (
-                    <option key={custodian.id} value={custodian.id}>
-                      {custodian.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <label>
+                  <span>损失保管人（选填）</span>
+                  <select
+                    aria-label="损失保管人"
+                    value={draft.custodianId}
+                    disabled={busy || custodians.length === 0}
+                    onChange={(event) => onChange({ custodianId: event.target.value })}
+                  >
+                    <option value="">{custodians.length === 0 ? '（无人员可选）' : '不指定'}</option>
+                    {custodians.map((custodian) => (
+                      <option key={custodian.id} value={custodian.id}>
+                        {custodian.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
 
-              <label className="flex items-center gap-2">
+              <label>
                 <input
                   type="checkbox"
                   aria-label="确认全损耗"
                   checked={draft.confirmFullLoss}
                   disabled={busy}
                   onChange={(event) => onChange({ confirmFullLoss: event.target.checked })}
-                />
-                <span className="text-slate-600">确认全损耗（不生成产出批次，材料与加工费全额记损失）</span>
+                />{' '}
+                确认全损耗（不生成产出批次，材料与加工费全额记损失）
               </label>
             </>
           )}
+
+          {finishedStage && custodiansError && (
+            <p className="alert alert-warn alert-sm">{custodiansError}</p>
+          )}
+
+          {errors.length > 0 && (
+            <ul className="alert alert-bad alert-sm">
+              {errors.map((message) => (
+                <li key={message}>· {message}</li>
+              ))}
+            </ul>
+          )}
         </div>
 
-        {finishedStage && custodiansError && (
-          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            {custodiansError}
-          </p>
-        )}
-
-        {errors.length > 0 && (
-          <ul className="mt-3 space-y-1 rounded-lg bg-red-50 p-3 text-sm text-red-700">
-            {errors.map((message) => (
-              <li key={message}>{message}</li>
-            ))}
-          </ul>
-        )}
-
-        <div className="mt-4 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-          >
+        <div className="sheet-f">
+          <button type="button" onClick={onClose} disabled={busy} className="btn">
             取消
           </button>
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={busy}
-            className="rounded bg-slate-900 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-          >
+          <button type="button" onClick={onSubmit} disabled={busy} className="btn btn-primary">
             {busy ? '提交中…' : '确认发货'}
           </button>
         </div>

@@ -110,7 +110,7 @@ function moneyText(value: string | null, canView: boolean): string {
 
 /** 金额单元格：无看价权限时统一显示 `—`（D78），不用 0 顶替。 */
 function Money({ value, canView }: { readonly value: string | null; readonly canView: boolean }) {
-  return <span className="font-mono text-xs">{moneyText(value, canView)}</span>;
+  return <span className="num">{moneyText(value, canView)}</span>;
 }
 
 /* ------------------------------ 详情 ------------------------------ */
@@ -142,7 +142,7 @@ function DetailPanel({
   const loss = lossNote(order.grossProfit, order.relatedLossAmount);
 
   return (
-    <section className="card space-y-4 p-5">
+    <section className="card detail">
       <DetailHead
         docLabel="结算单"
         orderNo={order.orderNo}
@@ -218,50 +218,46 @@ function DetailPanel({
         ]}
       />
 
-      {loss ? <p className="text-xs text-slate-500">{loss}</p> : null}
+      {loss ? <p className="detail-why">{loss}</p> : null}
 
-      <section className="rounded-xl border border-slate-200 p-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 className="text-sm font-semibold">提成（D36 / D77 ②）</h3>
-          <span className="text-xs text-slate-400">
-            比例是<b>确认结算时的快照</b>，之后改比例不影响本单（D5④）
-          </span>
+      <section className="form-sec">
+        <div className="form-sec-h">
+          <h3>提成（D36 / D77 ②）</h3>
+          <span className="sub">比例是确认结算时的快照，之后改比例不影响本单（D5④）</span>
         </div>
-        <dl className="mt-2 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-          <div>
-            <dt className="text-xs text-slate-500">提成比例快照</dt>
-            <dd className="mt-0.5 font-mono text-xs">
-              {formatCommissionRate(order.commissionRateSnapshot)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">提成金额</dt>
-            <dd className="mt-0.5">
-              <Money value={order.commissionAmount} canView={canViewPrice} />
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">提成归属人</dt>
-            <dd className="mt-0.5 text-xs" title={order.commissionOwnerId ?? undefined}>
-              {employeeLabel(order.commissionOwnerId)}
-            </dd>
-          </div>
-        </dl>
-        {note ? <p className="mt-2 text-xs leading-relaxed text-slate-400">{note}</p> : null}
-        <p className="mt-1 text-xs leading-relaxed text-slate-400">
-          一期提成只是报表数字，不在本单发放（D11）。
-        </p>
+        <div className="form-sec-b">
+          <dl className="dl" data-cols="3">
+            <div>
+              <dt>提成比例快照</dt>
+              <dd className="mono">{formatCommissionRate(order.commissionRateSnapshot)}</dd>
+            </div>
+            <div>
+              <dt>提成金额</dt>
+              <dd>
+                <Money value={order.commissionAmount} canView={canViewPrice} />
+              </dd>
+            </div>
+            <div>
+              <dt>提成归属人</dt>
+              <dd title={order.commissionOwnerId ?? undefined}>
+                {employeeLabel(order.commissionOwnerId)}
+              </dd>
+            </div>
+          </dl>
+          {note ? <p className="detail-why">{note}</p> : null}
+          <p className="detail-why">一期提成只是报表数字，不在本单发放（D11）。</p>
+        </div>
       </section>
 
       {!canViewPrice ? (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <p className="alert alert-warn">
           无「看价」权限：金额与提成均显示 {MASKED_AMOUNT}（D78），也不能确认结算——
           看不到毛利就确认结算，等于闭眼签字。
         </p>
       ) : null}
 
       {blocked || (order.confirmable.allowed && !canApprove) ? (
-        <p className="text-xs text-slate-500">
+        <p className="detail-why">
           {blocked ?? '确认结算需要 settlement.approve（审批动作，D52①）。'}
         </p>
       ) : null}
@@ -515,7 +511,7 @@ export function SettlementsPage() {
   };
 
   return (
-    <section className="mx-auto max-w-7xl space-y-5">
+    <section className="page-body">
       <div className="p-head">
         <div>
           <div className="eyebrow">结算单 C · 毛利与提成</div>
@@ -550,20 +546,20 @@ export function SettlementsPage() {
       ) : null}
 
       {me.data && !canViewPrice ? (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="alert alert-warn">
           当前身份无「看价」权限，金额与提成都显示为 <b>{MASKED_AMOUNT}</b>（D78）。
           此时也不放开「确认结算」——看不到毛利就确认结算，等于闭眼签字。
         </p>
       ) : null}
 
       {me.data && !can('approve') ? (
-        <p className="text-xs text-slate-500">
+        <p className="detail-why">
           「确认结算」需要 settlement.approve（审批动作）；当前身份只能查看。
         </p>
       ) : null}
 
       {me.data && canViewPrice ? (
-        <p className="text-xs text-slate-400">
+        <p className="detail-why">
           看过金额的详情读取会由服务端记一条 amount.detail 审计（D51① / D78）。
         </p>
       ) : null}
@@ -598,7 +594,7 @@ export function SettlementsPage() {
             setSourceDocType(event.target.value as '' | SettlementSourceDocType)
           }
           aria-label="按来源单据类型筛选"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="sel"
         >
           <option value="">全部来源</option>
           {(Object.keys(SETTLEMENT_SOURCE_LABEL) as SettlementSourceDocType[]).map((type) => (
@@ -614,19 +610,13 @@ export function SettlementsPage() {
           aria-label="搜索单号"
           className="search"
         />
-        <span className="ml-auto text-sm" style={{ color: 'var(--text-3)' }}>
+        <span className="toolbar-end">
           C 单不手工开：E / N 单完成时自动生成草稿（D19）
         </span>
       </div>
 
-      {staleNotice ? (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          {staleNotice}
-        </p>
-      ) : null}
-      {actionError ? (
-        <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{actionError}</p>
-      ) : null}
+      {staleNotice ? <p className="alert alert-warn">{staleNotice}</p> : null}
+      {actionError ? <p className="alert alert-bad">{actionError}</p> : null}
 
       {/*
         列表（v0.13）：四态由 `data-state` 驱动，`tbody` 里三个状态行常驻。
@@ -634,7 +624,8 @@ export function SettlementsPage() {
         没有 sort 参数，点下去只会静默无效（契约层面就不支持）。
       */}
       <div className="card list-card" data-state={listState}>
-        <div className="tw">
+        {/* `.tw.tight`：C 单 10 列，常规内边距会把「操作」列顶出卡片，底部多一条横向滚动条 */}
+        <div className="tw tight">
           <table className="w-full min-w-[1060px] text-left">
             <thead>
               <tr>
@@ -676,12 +667,12 @@ export function SettlementsPage() {
                     <button
                       type="button"
                       onClick={() => setDetailId(order.id)}
-                      className="font-mono text-xs text-slate-900 underline-offset-2 hover:underline"
+                      className="doc-link"
                     >
                       {order.orderNo}
                     </button>
                   </td>
-                  <td className="whitespace-nowrap text-slate-600">
+                  <td className="whitespace-nowrap cell-muted">
                     {/* 列表用紧凑写法（单号自带 E / N 前缀），省宽给「日期」和「操作」 */}
                     {sourceDocShort(order.sourceDocType, order.sourceDocId, docNoOf(order))}
                   </td>
@@ -703,11 +694,11 @@ export function SettlementsPage() {
                   <td>
                     <StatusBadge status={order.status} />
                   </td>
-                  <td className="whitespace-nowrap text-slate-600">
+                  <td className="whitespace-nowrap cell-muted">
                     {formatShortDateTime(order.createdAt)}
                   </td>
                   <td>
-                    <div className="flex justify-end gap-2">
+                    <div className="row-acts">
                       {/*
                         单号本身就是「进详情」的入口，所以行内不再单独放「详情」按钮：
                         C 单有 10 列，多一个按钮就把「操作」列挤出卡片（视觉稿也没这个按钮）。
@@ -721,7 +712,7 @@ export function SettlementsPage() {
                           confirm.isPending
                         }
                         onClick={() => void askConfirm(order.id)}
-                        className="rounded border border-emerald-300 px-2 py-1 text-xs text-emerald-700 disabled:opacity-40"
+                        className="btn btn-row"
                         title={
                           order.status === '已结算'
                             ? '已结算，一期一单只结算一次（D19）'
@@ -757,7 +748,7 @@ export function SettlementsPage() {
                 setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
                 setPageIndex((index) => index + 1);
               }}
-              label="{label}"
+              label="结算单分批翻页"
             />
           )}
         </div>
@@ -772,15 +763,9 @@ export function SettlementsPage() {
       {detailId !== null ? (
         <>
           {detail.isPending ? (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
-              正在加载结算单详情…
-            </p>
+            <p className="alert alert-info">正在加载结算单详情…</p>
           ) : null}
-          {detail.error ? (
-            <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-red-700">
-              {errorText(detail.error)}
-            </p>
-          ) : null}
+          {detail.error ? <p className="alert alert-bad">{errorText(detail.error)}</p> : null}
           {detailOrder ? (
             <DetailPanel
               order={detailOrder}

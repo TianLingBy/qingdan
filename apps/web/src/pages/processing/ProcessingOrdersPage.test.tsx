@@ -639,10 +639,14 @@ describe('开单现场建档（D100）', () => {
 
   it('内联表单只有名称与联系人（加工厂没有电话列），且无建档提示', () => {
     const html = renderToStaticMarkup(
-      <NewProcessorInlineForm
-        fields={{ name: '顺发加工厂', contactName: '' }}
-        onChange={() => undefined}
-      />,
+      <QueryClientProvider client={createQueryClient()}>
+        <NewProcessorInlineForm
+          fields={{ name: '顺发加工厂', contactName: '' }}
+          onChange={() => undefined}
+          companyId="01900000-0000-7000-8000-000000000002"
+          onPickExisting={() => undefined}
+        />
+      </QueryClientProvider>,
     );
     expect(html).toContain('aria-label="新建加工厂名称"');
     expect(html).toContain('aria-label="新建加工厂联系人"');

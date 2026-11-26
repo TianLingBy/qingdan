@@ -367,12 +367,15 @@ describe('v0.13 详情版式（#337）', () => {
   it('详情落在 card 上，走 DetailHead + DocMeta + LinesFooter 三块公用版式', () => {
     const html = renderDetailPanel();
 
-    expect(html).toContain('class="card min-w-0 space-y-3 p-4"');
+    // v3.0 详情外壳（#431 第五轮）：`.card` 保留（栅格与阴影），内边距/间距交给 `.detail`。
+    expect(html).toContain('class="card detail"');
     // DetailHead：单据名 + 单号 + 状态徽标 + 关闭（关闭按 v0.13 叫「收起」）
     expect(html).toContain('销售单');
     expect(html).toContain('收起');
-    // DocMeta 网格（gap-px 模拟单元格分隔线）
-    expect(html).toContain('gap-px');
+    // DocMeta 网格（v3.0 `.dl`：底色当分隔线，列数走 data-cols 吃媒体查询）
+    expect(html).toContain('class="dl"');
+    expect(html).toContain('data-cols="3"');
+    expect(html).not.toContain('gap-px');
     expect(html).toContain('数量合计');
     // LinesFooter：明细合计行
     expect(html).toContain('共');
@@ -418,7 +421,18 @@ describe('开单现场建档的内联表单（D100）', () => {
     contactName: string;
     contactPhone: string;
     creditTermDays: string;
-  }): string => renderToStaticMarkup(<NewCustomerInlineForm fields={fields} onChange={() => undefined} />);
+  }): string =>
+    // 草档里挂了建档防重（SuggestHint），它要 QueryClient —— 静态渲染也得包一层。
+    renderToStaticMarkup(
+      <QueryClientProvider client={createQueryClient()}>
+        <NewCustomerInlineForm
+          fields={fields}
+          onChange={() => undefined}
+          companyId="01900000-0000-7000-8000-000000000002"
+          onPickExisting={() => undefined}
+        />
+      </QueryClientProvider>,
+    );
 
   it('四个输入齐全：名称必填，其余选填、账期留空即现结', () => {
     const html = render({ name: '', contactName: '', contactPhone: '', creditTermDays: '' });

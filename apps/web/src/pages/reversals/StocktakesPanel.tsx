@@ -41,10 +41,10 @@ import {
   FIELD_CLASS,
   Field,
   ReversalListCard,
-  ReversalPager,
   TableSkeleton,
 } from './reversals-ui';
-import { DetailHead, DocMeta, DocPill } from '../../components/OrderDetailUI';
+import { BatchPager } from '../../components/ListPager';
+import { DetailHead, DetailMetaDot, DocMeta, DocPill } from '../../components/OrderDetailUI';
 import { resolveListState } from '../../lib/list-state';
 
 export interface StocktakesPanelProps {
@@ -256,7 +256,7 @@ export function StocktakesPanel({
   });
 
   return (
-    <div className="space-y-3">
+    <div className="panel-stack">
       <BasisNote>
         盘点是仓库里<b>唯一能直接改批次数量</b>
         的单据：审批通过后调整入库量并追加一条冲正流水， 历史行不改不删（D47 /
@@ -264,44 +264,39 @@ export function StocktakesPanel({
         / 已完成 / 已取消」。盘盈走 create、盘亏走 delete（D71）。
       </BasisNote>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="toolbar">
         {companyIds.length > 1 ? (
-          <Field label="公司" className="min-w-[180px]">
-            <select
-              value={companyId}
-              onChange={(event) => onCompanyChange(event.target.value)}
-              className={FIELD_CLASS}
-            >
-              {companyIds.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : null}
-        <Field label="状态" className="min-w-[120px]">
           <select
-            value={status}
-            onChange={(event) =>
-              setStatus(event.target.value as '' | StocktakeStatus)
-            }
-            className={FIELD_CLASS}
+            value={companyId}
+            onChange={(event) => onCompanyChange(event.target.value)}
+            aria-label="按公司筛选"
+            className="sel"
           >
-            <option value="">全部</option>
-            <option value="待审批">待审批</option>
-            <option value="已批准">已批准</option>
-            <option value="已驳回">已驳回</option>
+            {companyIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
           </select>
-        </Field>
-        <Field label="单号关键字" className="min-w-[180px]">
-          <input
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-            placeholder="I-0001-…"
-            className={FIELD_CLASS}
-          />
-        </Field>
+        ) : null}
+        <select
+          value={status}
+          onChange={(event) => setStatus(event.target.value as '' | StocktakeStatus)}
+          aria-label="按状态筛选"
+          className="sel"
+        >
+          <option value="">全部状态</option>
+          <option value="待审批">待审批</option>
+          <option value="已批准">已批准</option>
+          <option value="已驳回">已驳回</option>
+        </select>
+        <input
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="搜索单号 I-0001-…"
+          aria-label="搜索单号"
+          className="search"
+        />
         <button
           type="button"
           onClick={() => {
@@ -314,29 +309,27 @@ export function StocktakesPanel({
               ? undefined
               : '需要 stocktake.create 或 stocktake.delete 权限'
           }
-          className="btn btn-primary mb-0.5"
+          className="btn btn-primary act-end"
         >
           {formOpen ? '收起开单' : '发起盘点单'}
         </button>
       </div>
 
-      <p className="text-sm text-[var(--text-3)]">
+      <p className="detail-why">
         当前筛选：公司 {companyId ? idLabel(companyId) : '全部可见公司'} ·{' '}
         {status || '全部状态'} · 单号 {keyword.trim() || '全部'}
       </p>
 
       {formOpen ? (
-        <section className="space-y-3 rounded-xl border border-[var(--line-2)] bg-[var(--surf-1)] p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-sm font-semibold text-[var(--text-1)]">
-              发起盘点单
-            </h3>
-            <span className="text-xs text-[var(--text-3)]">
+        <section className="form-card">
+          <div className="form-head">
+            <h2>发起盘点单</h2>
+            <span className="detail-why">
               一张盘点单对应一个批次；差异量由服务端算，前端只填账面量与实盘量
             </span>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="fm c3">
             <Field
               label="盘点批次"
               hint="选批次后自动带出可用量作为账面量，可改"
@@ -378,13 +371,11 @@ export function StocktakesPanel({
             </Field>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg bg-[var(--surf-2)] px-3 py-2 text-xs text-[var(--text-2)]">
+          <div className="alert alert-info alert-sm">
             <span>
-              差异量{' '}
-              <b className="font-mono">
-                {stocktakeDiffText(bookQty, actualQty)}
-              </b>
-            </span>
+              差异量 <b className="mono">{stocktakeDiffText(bookQty, actualQty)}</b>
+            </span>{' '}
+            ·{' '}
             <span>
               方向{' '}
               <b>
@@ -394,8 +385,9 @@ export function StocktakesPanel({
                       stocktakeDiffText(bookQty, actualQty),
                     )}
               </b>
-            </span>
-            <span className="text-[var(--text-3)]">
+            </span>{' '}
+            ·{' '}
+            <span>
               {direction === 'increase'
                 ? '需要 stocktake.create 权限'
                 : direction === 'decrease'
@@ -416,13 +408,11 @@ export function StocktakesPanel({
           <ErrorList errors={clientErrors} />
           {actionError ? <ErrorBar message={actionError} /> : null}
 
-          <div className="flex gap-2">
+          <div className="detail-acts">
             <button
               type="button"
               onClick={onSubmit}
-              disabled={
-                submit.isPending || direction === 'none' || rightMissing
-              }
+              disabled={submit.isPending || direction === 'none' || rightMissing}
               className="btn btn-primary"
             >
               {submit.isPending
@@ -449,11 +439,9 @@ export function StocktakesPanel({
       ) : null}
 
       <ReversalListCard
-        title="盘点单"
-        meta={`共 ${items.length} 条 · 审批后批次数量才会变`}
         state={listState}
         colCount={7}
-        minWidth="720px"
+        minWidthClass="min-w-[720px]"
         head={
           <tr>
             <th>单号</th>
@@ -462,7 +450,7 @@ export function StocktakesPanel({
             <th className="num">实盘量</th>
             <th className="num">差异</th>
             <th>状态</th>
-            <th />
+            <th className="text-right">操作</th>
           </tr>
         }
         emptyText="还没有盘点单"
@@ -470,10 +458,11 @@ export function StocktakesPanel({
         errorTitle="盘点单加载失败"
         error={list.error}
         onRetry={() => void list.refetch()}
+        summary={`共 ${items.length} 条 · 审批后批次数量才会变`}
         pager={
-          <ReversalPager
-            batchIndex={pageIndex}
-            count={items.length}
+          <BatchPager
+            batch={pageIndex + 1}
+            hasPrev={pageIndex > 0}
             hasNext={nextCursor !== null}
             onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
             onNext={() => {
@@ -485,58 +474,54 @@ export function StocktakesPanel({
               });
               setPageIndex((index) => index + 1);
             }}
+            label="盘点单分批翻页"
           />
         }
       >
         {items.map((item: Stocktake) => (
           <tr key={item.id} className="r-row">
-            <td className="whitespace-nowrap">
+            <td>
               <button
                 type="button"
                 onClick={() => setDetailId(item.id)}
-                className="font-mono text-xs underline-offset-2 hover:underline"
+                className="doc-link"
               >
                 {item.stocktakeNo}
               </button>
             </td>
-            <td
-              className="whitespace-nowrap font-mono text-xs"
-              style={{ color: 'var(--text-3)' }}
-            >
+            <td className="mono cell-muted">
               {batchNoById.get(item.batchId) ?? idLabel(item.batchId)}
             </td>
-            <td className="num whitespace-nowrap">{formatQty(item.bookQty)}</td>
-            <td className="num whitespace-nowrap">
-              {formatQty(item.actualQty)}
-            </td>
-            <td className="num whitespace-nowrap">
+            <td className="num">{formatQty(item.bookQty)}</td>
+            <td className="num">{formatQty(item.actualQty)}</td>
+            <td className="num">
               {item.diffQty.startsWith('-') ? '' : '+'}
               {formatQty(item.diffQty)}
-              <span className="ml-1 text-xs" style={{ color: 'var(--text-3)' }}>
-                {stocktakeDirectionText(item.diffQty)}
-              </span>
+              <span className="cell-sub">{stocktakeDirectionText(item.diffQty)}</span>
             </td>
-            <td className="whitespace-nowrap">
+            <td>
               <DocPill
                 label={item.status}
                 tone={STOCKTAKE_STATUS_TONE[item.status] ?? 'warn'}
               />
             </td>
-            <td className="whitespace-nowrap text-right">
-              <button
-                type="button"
-                onClick={() => setDetailId(item.id)}
-                className="btn btn-s"
-              >
-                详情
-              </button>
+            <td>
+              <div className="row-acts">
+                <button
+                  type="button"
+                  onClick={() => setDetailId(item.id)}
+                  className="btn btn-row"
+                >
+                  详情
+                </button>
+              </div>
             </td>
           </tr>
         ))}
       </ReversalListCard>
 
       {detailId !== null ? (
-        <section className="card min-w-0 p-4">
+        <section className="card detail">
           {detail.isError ? (
             <ErrorBar
               message="详情加载失败"
@@ -545,7 +530,7 @@ export function StocktakesPanel({
           ) : detail.isPending || !detail.data ? (
             <TableSkeleton rows={2} />
           ) : (
-            <div className="space-y-3">
+            <>
               <DetailHead
                 docLabel="盘点单"
                 orderNo={detail.data.stocktakeNo}
@@ -558,9 +543,7 @@ export function StocktakesPanel({
                 meta={
                   <>
                     <span>{stocktakeDirectionText(detail.data.diffQty)}</span>
-                    <span aria-hidden="true" style={{ color: 'var(--line-3)' }}>
-                      ·
-                    </span>
+                    <DetailMetaDot />
                     <span>
                       批次{' '}
                       {batchNoById.get(detail.data.batchId) ??
@@ -605,7 +588,7 @@ export function StocktakesPanel({
                             ? '执行「驳回」· 需要 stocktake.approve 权限'
                             : '需要 stocktake.approve 权限'
                         }
-                        className="btn btn-s"
+                        className="btn"
                       >
                         驳回
                       </button>
@@ -664,57 +647,43 @@ export function StocktakesPanel({
               />
 
               {actionResult ? (
-                <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                <p className="alert alert-ok alert-sm">
                   {actionResult}
                 </p>
               ) : null}
               {actionError ? <ErrorBar message={actionError} /> : null}
 
               {detail.data.approvable.allowed ? (
-                <p
-                  className="text-xs leading-relaxed"
-                  style={{ color: 'var(--text-3)' }}
-                >
+                <p className="detail-why">
                   批准后会调整批次可用量并追加一条冲正流水（D47 /
                   D67）；驳回只终止审批流，不改库存、不写流水。
                 </p>
               ) : (
-                <p
-                  className="rounded-lg px-3 py-2 text-xs"
-                  style={{
-                    background: 'var(--surf-2)',
-                    color: 'var(--text-3)',
-                  }}
-                >
+                <p className="alert alert-info alert-sm">
                   {approveBlockedText(detail.data.approvable.reason) ??
                     '当前状态不可审批'}
                 </p>
               )}
 
               {rejectOpen && detail.data.approvable.allowed ? (
-                <section className="rounded-xl border border-rose-200 bg-rose-50 p-4">
-                  <h3 className="font-semibold text-rose-900">驳回盘点单</h3>
-                  <p className="mt-1 text-sm text-rose-700">
-                    驳回后不可再次审批；库存数量与流水不会改变。
-                  </p>
-                  <label className="mt-3 block text-sm">
-                    <span className="text-rose-900">驳回原因</span>
-                    <input
-                      value={rejectReason}
-                      onChange={(event) => setRejectReason(event.target.value)}
-                      maxLength={200}
-                      className="mt-1 w-full rounded-lg border border-rose-300 bg-white px-3 py-2"
-                    />
-                  </label>
-                  {rejectError ? (
-                    <p className="mt-2 text-sm text-rose-700">{rejectError}</p>
-                  ) : null}
-                  <div className="mt-3 flex gap-2">
+                <section className="alert alert-bad">
+                  <h4>驳回盘点单</h4>
+                  <p>驳回后不可再次审批；库存数量与流水不会改变。</p>
+                  <div className="detail-acts">
+                    <label className="reason-field">
+                      <span>驳回原因</span>
+                      <input
+                        value={rejectReason}
+                        onChange={(event) => setRejectReason(event.target.value)}
+                        maxLength={200}
+                        className="ipt"
+                      />
+                    </label>
                     <button
                       type="button"
                       disabled={reject.isPending}
                       onClick={() => submitReject(detail.data)}
-                      className="btn btn-s"
+                      className="btn btn-primary"
                     >
                       {reject.isPending ? '驳回中…' : '确认驳回'}
                     </button>
@@ -730,9 +699,10 @@ export function StocktakesPanel({
                       取消
                     </button>
                   </div>
+                  {rejectError ? <p className="detail-why">{rejectError}</p> : null}
                 </section>
               ) : null}
-            </div>
+            </>
           )}
         </section>
       ) : null}

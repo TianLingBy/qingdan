@@ -83,6 +83,15 @@
   --v30-shadow: var(--sh-1);
   --v30-shadow-lg: var(--sh-2);
   --v30-ease: var(--ease-out);
+  /* 危险 / 警告提示块的三档透明度（§8.7）。
+     tokens-v013 只有实心色（`--danger` / `--danger-on-surface`），没有 alpha 变体；
+     提示块要的是「淡底 + 实字」，所以按 #443 的规矩用 `--v30-` 前缀单开，
+     不去改既有变量。值取 v0.13 里 `#C0533A` / `#B87407` 的 rgb 分量。 */
+  --v30-bad-10: rgba(192, 83, 58, 0.1);
+  --v30-bad-30: rgba(192, 83, 58, 0.3);
+  --v30-warn: #b87407;
+  --v30-warn-10: rgba(184, 116, 7, 0.1);
+  --v30-warn-30: rgba(184, 116, 7, 0.3);
 }
 
 /* ============================================================
@@ -770,3 +779,579 @@ body.is-sky .wrap {
 .wb-trend:last-child{border-bottom:0}
 .wb-trend span{font-size:14px;color:var(--text-2)}
 .wb-trend b{font-family:var(--mono)}
+
+/* ============================================================
+   §8 详情、表单与浮层（#431 追加）
+   ------------------------------------------------------------
+   问题（负责人 2026-11-25 在 #431 的验收）：第一批只把**列表区**换成了 v3.0，
+   点进一张单之后还是旧 Tailwind —— 详情面板、新建/编辑表单、发货/撤销/到货表单、
+   确认弹窗全都手写 `p-4 / gap-3 / text-xs / border-slate-200`。
+   同一套视觉在两处各写一遍，改一处忘另一处。
+
+   稿子（L287–359）里这些块本来就有名字：`.dl`（信息网格）/ `.ln`（行明细紧凑表）/
+   `.tl`（时间线）/ `.act`（宫格动作）/ `.fm`（字段网格）/ `.modal` / `.mask` / `.drawer`。
+   这里按 #443 的口径搬过来，只做两件事：
+
+     1. **token 换名**：稿子的 `--ink/--surface/--line` → 本仓的 `--v30-ink/…`；
+     2. **值取等价**：换皮不换观感 —— 旧 Tailwind 的 `p-4`(16px) / `gap-3`(12px) /
+        `text-sm`(14px) / `text-xs`(12px) 全部原值落进类里，截图上像素级对得上，
+        评审不用为「字号怎么变了」再吵一轮。
+
+   **没有搬**：`.tl`（时间线，审计日志没有按单据过滤的参数，画出来是假数据，见
+   `OrderDetailUI` 顶部注释）、`.drawer`（本仓详情是页内面板不是抽屉，改交互不属换皮）、
+   `.act` / `.act-g`（宫格动作，本仓动作区是 `btn` 一排，`btn` 家族已在 v0.13 定稿）。
+   真要用再加，别提前搬一堆没人用的类。
+
+   区块命名用 `.form-sec`（框）、`.form-sec-h`（框头）、`.form-sec-b`（框身），
+   而不是 `.card` 套 `.card` —— 卡片里再套卡片会把 `--sh-1` 阴影叠两层，暗色下糊成一片。
+   ============================================================ */
+
+/* ---- §8.1 详情面板骨架 ---- */
+/* 等价于旧写法 `section.card + space-y-3`：间距给这一层，卡片本身不再各写 `space-y-*`。
+   内边距统一 20px —— 旧写法里采购/加工是 `p-4`（16px）、结算是 `p-5`（20px），
+   同一个详情区在六页上有两种内边距，本身就该收。 */
+.detail{display:flex;flex-direction:column;gap:12px;padding:20px}
+
+/* 开单表单的外壳。
+   **不能**写成 `form.card`：`app-v013.css:104` 有一条 `form.card .btn{width:100%;height:46px}`，
+   那是 v0.13 给登录页那一张竖排表单定的，一命中就把「+ 加一行商品 / 开单 / 取消」
+   全拉成整宽黑条（#431 内贸页实测踩到）。所以表单走自己的类，视觉与 `.card` 一致。 */
+.form-card{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding:20px;
+  background:var(--bg-2);
+  border:1px solid var(--line-2);
+  border-radius:var(--v30-r);
+  box-shadow:var(--sh-1),var(--sh-inset);
+}
+
+.detail-head{display:flex;flex-direction:column;gap:8px}
+.detail-head-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.detail-title{
+  margin:0;
+  font-size:var(--fs-18,18px);
+  font-weight:600;
+  letter-spacing:-.01em;
+  color:var(--v30-ink);
+}
+.detail-title .no{font-family:var(--mono);font-weight:500}
+/* 右侧动作槽：`ml-auto` 把「编辑 / 发货 / 关闭」推到最右，单号长了也不会挤下来 */
+.detail-tools{margin-left:auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.detail-meta{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:4px 12px;
+  margin:0;
+  font-size:var(--fs-14,14px);
+  color:var(--v30-ink-3);
+}
+.detail-dot{color:var(--line-3)}
+/* 详情底部的动作区：按钮一排，禁用原因跟在后面换行 */
+.detail-acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:16px}
+/* 动作区里推到最右的那个（「取消单据」这类破坏性动作要和常规动作分开） */
+.act-end{margin-left:auto}
+/* 禁用原因 / 口径说明：12px + 弱色。**不复用** v0.13 的 `.hint`（那个是 16px 的段落色） */
+.detail-why{font-size:var(--fs-12,12px);color:var(--v30-ink-3);line-height:1.6}
+/* 两条说明挨在一起时留一点缝（原来是 `mt-1` / `mt-2` 手写的） */
+.detail-why + .detail-why{margin-top:4px}
+
+/* ---- §8.2 单据信息网格（稿子 `.dl`，L304–307） ---- */
+/* 底色 = 描边色，格子自己有底色 → 1px 网格线不用给每格加 border，少一半规则。
+   列数走 `data-cols` 而不是 `style={{gridTemplateColumns}}`：style 属性是内联样式，
+   审查时看不出来，也不吃媒体查询。 */
+.dl{
+  display:grid;
+  gap:1px;
+  overflow:hidden;
+  border:1px solid var(--v30-line);
+  border-radius:var(--v30-r);
+  background:var(--v30-line);
+}
+.dl[data-cols="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.dl[data-cols="3"]{grid-template-columns:repeat(3,minmax(0,1fr))}
+.dl[data-cols="4"]{grid-template-columns:repeat(4,minmax(0,1fr))}
+.dl>div{min-width:0;padding:12px 16px;background:var(--surf-1)}
+.dl dt{font-size:var(--fs-12,12px);color:var(--v30-ink-3)}
+.dl dd{
+  margin:4px 0 0;
+  font-size:var(--fs-14,14px);
+  color:var(--v30-ink);
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.dl dd.mono{font-family:var(--mono)}
+.dl dd.money{font-weight:500;color:var(--accent-light)}
+.dl dd.dim{color:var(--v30-ink-3)}
+@media (max-width:860px){
+  .dl[data-cols="3"],.dl[data-cols="4"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* ---- §8.3 行明细紧凑表（稿子 `.ln`，L309–317） ---- */
+/* 详情里的明细表比列表页小一号：行高 38、内边距 16，列多也放得下。
+   外层套一层带 border 的盒子，圆角才不会把首行表头切出白角。 */
+.ln{overflow:hidden;border:1px solid var(--v30-line);border-radius:var(--v30-r)}
+.ln table{width:100%;border-collapse:collapse;text-align:left}
+/* 表头不吸顶：`app-v013.css:183` 给整页列表写了 `thead th{position:sticky;top:var(--topbar-h)}`，
+   `.ln` 自己是 `overflow:hidden` 的滚动容器，吸顶的表头会停在 56px 处**压住第一行数据**
+   —— 发货弹层里表现为「明细一行都看不见」，详情里表现为表头盖住首行。稿子的 `.ln` 也不吸顶。 */
+.ln thead th{position:static;z-index:auto}
+/* 对齐按稿子（`index.html:235` th 左对齐 / `:248` 数字列右对齐）：
+   v0.13 的 `tbody td{text-align:center}`（`app-v013.css:184`）是列表口径，
+   详情明细直接继承会变成「商品名居中、金额居中」，金额位数对不齐。 */
+.ln th,.ln td{
+  height:38px;
+  padding:0 16px;
+  font-size:var(--fs-13,13px);
+  text-align:left;
+  border-bottom:1px solid var(--line-1);
+  white-space:nowrap;
+}
+.ln th.num,.ln td.num{text-align:right}
+.ln th{
+  font-size:var(--fs-12,12px);
+  font-weight:550;
+  color:var(--v30-ink-3);
+  background:var(--surf-2);
+  border-bottom:1px solid var(--v30-line);
+}
+/* 品名两行（名称 + 规格），只有这类列允许换行 */
+.ln td.nm{white-space:normal;padding-top:8px;padding-bottom:8px}
+.ln td.nm b{display:block;font-weight:600}
+.ln td.nm small{display:block;font-size:var(--fs-11,12px);color:var(--v30-ink-3)}
+.ln tbody tr:last-child td{border-bottom:0}
+/* 明细表脚：`.ln` 里靠这两条，但 `LinesFooter` 也用在没 `.ln` 包裹的表里
+   （收货 / 发货弹层），所以样式挂在 td 自己的类上，不依赖父容器。 */
+.ln tfoot td{border-top:1px solid var(--v30-line-2);border-bottom:0;background:var(--surf-2)}
+.ln-note{
+  padding:12px 16px;
+  font-size:var(--fs-12,12px);
+  font-weight:400;
+  color:var(--v30-ink-3);
+  border-top:1px solid var(--v30-line-2);
+}
+.ln-sum{
+  padding:12px 16px;
+  text-align:right;
+  font-family:var(--mono);
+  font-size:var(--fs-14,14px);
+  font-weight:600;
+  color:var(--v30-ink);
+  border-top:1px solid var(--v30-line-2);
+}
+/* 没看价权限时金额整列显示「—」：弱色，别让人以为是 0 */
+.ln .masked{color:var(--v30-ink-3)}
+
+/* ---- §8.4 表单分区块 ---- */
+.form-sec{border:1px solid var(--v30-line-2);border-radius:var(--v30-r)}
+.form-sec-h{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:8px 16px;
+  border-bottom:1px solid var(--v30-line-2);
+  background:var(--surf-2);
+}
+.form-sec-h h3{margin:0;font-size:var(--fs-14,14px);font-weight:550;color:var(--v30-ink)}
+.form-sec-h .sub{font-size:var(--fs-12,12px);color:var(--v30-ink-3)}
+.form-sec-b{padding:12px 16px}
+.form-note{padding:0 16px 12px;font-size:var(--fs-11,12px);color:var(--v30-ink-3)}
+/* 表单里的空行提示（「暂无费用行」）：不占表格高度，也不再加一条虚线 */
+.form-empty{padding:12px 16px;font-size:var(--fs-14,14px);color:var(--v30-ink-3)}
+
+/* ---- §8.5 字段网格（稿子 `.fm`，L353–357） ---- */
+.fm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.fm.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.fm.c4{grid-template-columns:repeat(4,minmax(0,1fr))}
+/* 跨整行：备注 / 说明这类长字段 */
+.fm>.w{grid-column:1/-1}
+.fm label{display:grid;gap:4px;min-width:0;font-size:var(--fs-12,12px);color:var(--v30-ink-2)}
+.fm label>small{font-size:var(--fs-11,12px);color:var(--v30-ink-3)}
+.fm input,.fm select,.fm textarea{
+  height:36px;
+  width:100%;
+  padding:0 12px;
+  border:1px solid var(--v30-line-2);
+  border-radius:var(--r-control);
+  background:var(--v30-surface);
+  color:var(--v30-ink);
+  font-family:inherit;
+  font-size:var(--fs-14,14px);
+  outline:0;
+  transition:border-color .16s,box-shadow .16s;
+}
+.fm textarea{height:auto;padding:8px 12px;line-height:1.6;resize:vertical}
+.fm input:focus,.fm select:focus,.fm textarea:focus{
+  border-color:var(--accent-light);
+  box-shadow:0 0 0 3px var(--a-18);
+}
+.fm input:disabled,.fm select:disabled,.fm textarea:disabled{
+  background:var(--surf-2);
+  color:var(--v30-ink-3);
+}
+@media (max-width:860px){
+  .fm,.fm.c3,.fm.c4{grid-template-columns:1fr}
+}
+
+/* 零散单行输入（表格里、弹层里、只占一格的）：与 `.fm input` 同一副长相 */
+.ipt{
+  height:36px;
+  width:100%;
+  padding:0 12px;
+  border:1px solid var(--v30-line-2);
+  border-radius:var(--r-control);
+  background:var(--v30-surface);
+  color:var(--v30-ink);
+  font-family:inherit;
+  font-size:var(--fs-14,14px);
+  outline:0;
+}
+.ipt:focus{border-color:var(--accent-light);box-shadow:0 0 0 3px var(--a-18)}
+.ipt:disabled{background:var(--surf-2);color:var(--v30-ink-3)}
+
+/* ---- §8.6 合计条 ---- */
+/* 货款 / 费用 / 合计 三个数并排：表单尾部、明细下方都用它 */
+.sum-bar{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:24px;
+  padding:12px 16px;
+  border-radius:var(--v30-r);
+  background:var(--surf-2);
+  font-size:var(--fs-14,14px);
+}
+.sum-bar span{color:var(--v30-ink-3)}
+.sum-bar b{margin-left:4px;font-family:var(--mono);color:var(--v30-ink)}
+
+/* ---- §8.7 提示与错误块 ---- */
+/* 三档：bad（会被服务端拒）/ warn（要人确认）/ info（口径说明）。
+   底色用 --v30-* 的 8~10% alpha 叠在页面上，暗色下自动变暗红/暗黄，不会出现白底。 */
+.alert{padding:12px 16px;border-radius:var(--v30-r);font-size:var(--fs-14,14px);line-height:1.6}
+.alert h4{margin:0 0 4px;font-size:var(--fs-14,14px);font-weight:600}
+.alert p{margin:0 0 8px;line-height:1.6}
+.alert p:last-child{margin-bottom:0}
+.alert ul{margin:0;padding-left:18px}
+/* 提示块里的单字段输入（撤销原因）：占满一行、够长，别让用户在小框里打 200 字 */
+.reason-field{
+  display:grid;
+  gap:4px;
+  flex:1 1 260px;
+  min-width:0;
+  font-size:var(--fs-12,12px);
+  color:var(--v30-ink-2);
+}
+/* 提示块里的「一句话 + 一个动作」：左边说明、右边重试/收起。
+   不用 `.detail-acts` —— 那个带 16px 上边距，会把一行提示撑成两行高。 */
+.alert-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.alert-bad{background:var(--v30-bad-10);border:1px solid var(--v30-bad-30);color:var(--v30-bad)}
+.alert-warn{background:var(--v30-warn-10);border:1px solid var(--v30-warn-30);color:var(--v30-warn)}
+.alert-info{background:var(--surf-2);border:1px solid var(--v30-line-2);color:var(--v30-ink-3)}
+.alert-sm{font-size:var(--fs-12,12px);padding:8px 12px}
+/* 第四档「成了」：审批通过 / 入账完成。
+   tokens-v013 里绿只有 `.st.ok` 那一组（`#E3F4E9` 底 + `#1D6B3C` 字），
+   没有 `--v30-ok-10/-30` 这种 alpha 变体，所以这里照 `.st.ok` 的值写一份 ——
+   页面各写 `bg-emerald-50 text-emerald-700` 的话，同一个「已批准」在不同页会是两种绿。 */
+.alert-ok{background:#e3f4e9;border:1px solid rgba(29,107,60,.28);color:#1d6b3c}
+
+/* ---- §8.8 浮层（稿子 `.mask` / `.modal`，L288–290 / L350–359） ---- */
+/* 遮罩 + 面板分开：遮罩负责点外关闭，面板负责宽度。
+   宽弹层（发货要逐行选去向）用 `.sheet`，窄确认框用 `.modal`。 */
+.mask{position:fixed;inset:0;z-index:40;background:rgba(15,14,10,.36);backdrop-filter:blur(2px)}
+.mask-scroll{position:fixed;inset:0;z-index:40;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:16px;background:rgba(15,14,10,.36);backdrop-filter:blur(2px)}
+.sheet{
+  width:100%;
+  max-width:768px;
+  margin-top:32px;
+  background:var(--v30-surface);
+  border:1px solid var(--v30-line-2);
+  border-radius:var(--v30-r);
+  box-shadow:var(--v30-shadow-lg);
+}
+.sheet-h{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px;padding:20px 20px 0}
+.sheet-h h2{margin:0;font-size:var(--fs-18,18px);font-weight:600;color:var(--v30-ink)}
+.sheet-h small{display:block;margin-top:4px;font-size:var(--fs-12,12px);color:var(--v30-ink-3)}
+.sheet-b{padding:12px 20px 0}
+.sheet-f{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:16px 20px 20px}
+.sheet-close{
+  border:0;
+  background:none;
+  padding:4px 6px;
+  font-size:var(--fs-14,14px);
+  color:var(--v30-ink-3);
+  cursor:pointer;
+}
+.sheet-close:hover{color:var(--v30-ink)}
+.sheet-close:disabled{opacity:.4;cursor:not-allowed}
+
+/* 窄确认框：居中、460 上限（稿子 L350） */
+.modal{
+  position:fixed;
+  left:50%;
+  top:50%;
+  z-index:60;
+  width:min(460px,calc(100vw - 32px));
+  translate:-50% -50%;
+  padding:24px;
+  border-radius:var(--v30-r);
+  background:var(--v30-surface);
+  border:1px solid var(--v30-line-2);
+  box-shadow:var(--v30-shadow-lg);
+}
+.modal h3{margin:0 0 4px;font-size:var(--fs-18,18px);font-weight:600;color:var(--v30-ink)}
+.modal p{margin:0 0 16px;font-size:var(--fs-13,13px);color:var(--v30-ink-3);line-height:1.6}
+.modal .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+
+/* ---- §8.9 页面根容器与单元格文字档 ---- */
+/* `.btn` 单独使用时的默认长相（描边按钮）。
+   v0.13 的 `.btn` 只有尺寸与布局，背景 / 边框挂在 `.btn-ghost` / `.btn-primary` 上；
+   而 v3.0 页面里 `btn` 经常单独出现（详情动作区、表单里的次要动作）。
+   `index.css` 有意删掉了全局 `button{background:none}`，不兜底就会落到浏览器默认的
+   灰底凸起按钮 —— 暗色下是一块白底，比样式不对更难看。
+   不覆盖 `.btn-ghost` / `.btn-primary` / `.danger`：它们各有自己的底色与语义。 */
+.btn:not(.btn-ghost):not(.btn-g):not(.btn-primary):not(.btn-p):not(.danger){
+  background:var(--surf-1);
+  color:var(--v30-ink);
+  border:1px solid var(--v30-line-2);
+}
+.btn:not(.btn-ghost):not(.btn-g):not(.btn-primary):not(.btn-p):not(.danger):hover{
+  background:var(--surf-2);
+  border-color:var(--line-3);
+}
+/* 上面把 `.btn-p` 让了出来，但 `.btn-p` 其实没接住 —— 补回主按钮的底色。
+   v0.13 在 `app-v013.css:98` 给 `.btn-primary,.btn-p` 写了 accent 底 + on-accent 字，
+   但同文件 322 行又有一条裸 `.btn{background:var(--surf-1)}`：两者特异性都是 0,1,0，
+   322 行在后，于是 `<button className="btn btn-p">` 的底色被压成浅底（亮色下纯白）；
+   383 行的 `.btn{border:1px solid var(--line-2)}` 顺带把 `border-color:var(--accent)` 也压成了普通描边色。
+   结果全仓 13 处主按钮长得和次要按钮一模一样，主次不分。
+   `.btn-primary` 不用补：`app-v013.css:384` 在 322 之后又完整写了一遍 background。
+   这里用双类名（0,2,0）确保压过 322 / 383 两条单类规则；`:not(:disabled)` 是为了
+   禁用态别跟着变亮（588 行只给了 opacity）。 */
+.btn.btn-p{
+  background:var(--accent-deep);
+  color:var(--on-accent);
+  border-color:var(--accent);
+  box-shadow:0 8px 24px -10px var(--a-50),inset 0 1px 0 var(--btn-inset);
+}
+.btn.btn-p:hover:not(:disabled){
+  background:var(--accent);
+  color:var(--on-accent);
+  box-shadow:0 12px 30px -10px var(--a-65);
+}
+/* 底色回来之后，禁用态得单独收一下：原来主按钮是浅底，靠 588 行的 `opacity:.42` 就够淡了；
+   现在底下压着 accent，只降不透明度会变成「一块半透明黑底的灰按钮」，看着仍然可点
+   （`/companies` 的「创建」在名称没填时就是这一态）。这里把底色换回中性，再叠 588 行的
+   opacity，与禁用的次要按钮长得一致。 */
+.btn.btn-p:disabled{
+  background:var(--surf-2);
+  color:var(--text-3);
+  border-color:var(--line-2);
+  box-shadow:none;
+}
+/* 五个页面根容器原来各写 `mx-auto max-w-7xl space-y-5`：三件事（居中 / 限宽 / 间距）
+   散在 5 个文件里，改一个忘四个。1280 = Tailwind 的 max-w-7xl，20px = space-y-5。 */
+.page-body{
+  display:flex;
+  flex-direction:column;
+  gap:20px;
+  width:100%;
+  max-width:1280px;
+  margin:0 auto;
+}
+/* 表格单元格的两档文字：次要（日期 / 来源单）与正文（单号）。
+   不用 `text-slate-600` 这类写死灰 —— 亮色下还行，暗色下会糊在深底里。 */
+.cell-muted{color:var(--v30-ink-3)}
+.cell-strong{color:var(--v30-ink)}
+/* 空值占位（「—」）与单元格里的后缀小字（「等 3 种」） */
+.cell-none{color:var(--v30-ink-3)}
+.cell-sub{margin-left:4px;font-size:var(--fs-12,12px);color:var(--v30-ink-3)}
+/* 名称列限宽截断：商品名长起来能把整行撑宽，悬停给 title 看全名 */
+.cell-clip{
+  display:inline-block;
+  max-width:140px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  vertical-align:bottom;
+}
+
+/* ---- §8.10 工具条与表格里的小件 ---- */
+/* 工具条里的下拉：`.search` 是圆角胶囊的输入框，下拉没有对应类，原来各页各写一遍
+   `rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm`。 */
+.sel{
+  height:32px;
+  padding:0 10px;
+  border:1px solid var(--v30-line-2);
+  border-radius:var(--r-control);
+  background:var(--v30-surface);
+  color:var(--v30-ink);
+  font-family:inherit;
+  font-size:var(--fs-14,14px);
+}
+/* 工具条最右一条说明（「C 单不手工开…」这种） */
+.toolbar-end{margin-left:auto;font-size:var(--fs-14,14px);color:var(--v30-ink-3)}
+/* 表格里的单号入口：等宽 + 下划线只在悬停出现，避免整列看起来全是链接 */
+.doc-link{
+  border:0;
+  background:none;
+  padding:0;
+  font-family:var(--mono);
+  font-size:var(--fs-12,12px);
+  color:var(--v30-ink);
+  cursor:pointer;
+  text-underline-offset:2px;
+}
+.doc-link:hover{text-decoration:underline}
+/* 可排序表头：整格就是一个按钮。
+   原来写作 `inline-flex items-center gap-1 font-medium hover:text-slate-900`，
+   箭头另挂 `text-xs text-slate-400` —— 两处写死的灰在暗色下都糊在深底里。
+   `index.css` 有意删了全局 `button{background:none}`，所以这里必须自己归零，
+   否则表头会冒出一块浏览器默认灰底。 */
+.th-sort{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  border:0;
+  background:none;
+  padding:0;
+  font:inherit;
+  font-weight:550;
+  color:inherit;
+  cursor:pointer;
+}
+.th-sort:hover{color:var(--v30-ink)}
+.th-sort i{font-style:normal;font-size:var(--fs-11,12px);color:var(--v30-ink-3)}
+/* 行内动作槽：右对齐的一排小按钮 */
+.row-acts{display:flex;justify-content:flex-end;gap:8px}
+/* 表格行内按钮：比 `.btn-s` 再小一号。
+   为什么不直接用 `.btn-s` —— v0.13 的 `.btn-s` 是 16px（`app-v013.css:530`），
+   放进结算单这种 10 列表格会把「操作」列撑出去，表格底部多一条横向滚动条。 */
+.btn-row{height:26px;padding:0 9px;font-size:var(--fs-12,12px)}
+
+/* ---- §8.11 开单表单里的行卡与批次 chip ---- */
+/* 表单标题行：左标题、右一句口径说明 */
+.form-head{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px}
+.form-head h2{margin:0;font-size:var(--fs-16,16px);font-weight:600;color:var(--v30-ink)}
+/* 表单里的二级小标题（「商品明细（至少 1 行）」） */
+.form-title{margin:0;font-size:var(--fs-13,13px);font-weight:600;color:var(--v30-ink-2)}
+/* 表单里成组往下排的块（明细行一张张排） */
+.form-stack{display:flex;flex-direction:column;gap:12px}
+/* 只读字段（编辑态不让改的公司名）：与 `.fm input` 同高同圆角，底色换成弱一级，
+   让人一眼看出「这里改不了」，而不是以为输入框坏了 */
+.fm-readonly{
+  margin:0;
+  height:36px;
+  display:flex;
+  align-items:center;
+  padding:0 12px;
+  border:1px solid var(--v30-line-2);
+  border-radius:var(--r-control);
+  background:var(--surf-2);
+  font-size:var(--fs-14,14px);
+  color:var(--v30-ink-2);
+}
+/* 明细行卡：一行商品一个框（商品 / 数量 / 单价 / 金额 / 删除 + 批次 chip） */
+.line-card{border:1px solid var(--v30-line-2);border-radius:var(--v30-r);padding:12px}
+/* 行内的五列网格：写成 `.fm.lines` 是为了让 `.fm label` / `.fm input` 直接生效
+   （label 里的 span + 控件要竖排两行；单独一个 `.line-grid` 继承不到那套规则） */
+.fm.lines{
+  display:grid;
+  gap:8px;
+  grid-template-columns:1.4fr 1fr 1fr auto auto;
+  align-items:start;
+}
+@media (max-width:860px){
+  .fm.lines{grid-template-columns:1fr}
+}
+/* 行内金额：与输入框底边对齐（原来是 `self-end pb-2`） */
+.line-amount{
+  align-self:end;
+  padding-bottom:10px;
+  white-space:nowrap;
+  font-size:var(--fs-12,12px);
+  color:var(--v30-ink-3);
+}
+/* 明细行里的「删除」：这一列没有 label，默认会顶到框口；压到与输入框齐平 */
+.line-card .btn-row{align-self:end}
+/* 批次 chip（稿子 L222–226 的 `.chip`，高度收一档：一单能引好几个批次，32px 太占） */
+.line-batches{margin-top:8px}
+.form-add{align-self:flex-start}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  height:26px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid var(--v30-line-2);
+  background:var(--v30-surface);
+  color:var(--v30-ink-2);
+  font-family:inherit;
+  font-size:var(--fs-11,12px);
+  white-space:nowrap;
+  cursor:pointer;
+  transition:background .14s,border-color .14s,color .14s;
+}
+.chip:hover{border-color:var(--line-3);color:var(--v30-ink)}
+.chip.on{
+  background:var(--v30-accent-solid);
+  border-color:var(--v30-accent-solid);
+  color:var(--v30-on-accent);
+  font-weight:550;
+}
+.chip-none{font-size:var(--fs-11,12px);color:var(--v30-ink-3)}
+/* 只上色、不套盒子的一句警示（表格单元格里用）：套 `.alert` 会把行高撑开 */
+.text-warn{color:var(--v30-warn)}
+/* 批次 chip 里的「×」：chip 本身才 26px 高，这个必须比它更小；
+   与 `.doc-link` 同理，`index.css` 删过全局 button 归零，这里得自己来。 */
+.chip-x{
+  border:0;
+  background:none;
+  padding:0 0 0 2px;
+  font-size:var(--fs-12,12px);
+  line-height:1;
+  color:var(--v30-ink-3);
+  cursor:pointer;
+}
+.chip-x:hover{color:var(--v30-bad)}
+.chip-x:disabled{opacity:.4;cursor:not-allowed}
+/* 批次 chip 的只读形态（详情里只展示、不能删）：比 `.chip` 少一个手型光标 */
+.chip-static{cursor:default}
+.chip-static:hover{border-color:var(--v30-line-2);color:var(--v30-ink-2)}
+/* 与 `.text-warn` 对称：要在句子里染红但不套盒子（倒计时过期了） */
+.text-bad{color:var(--v30-bad)}
+
+/* 表单明细行的靠顶对齐：一行里「引用批次」那格可能是两行 chip，别的格是单行控件，
+   默认 `middle` 会把下拉框拉到行中间，跟旁边的标签错开半个控件高。 */
+.ln tr.vtop td{vertical-align:top}
+
+/* ---- §8.13 单个字段外壳（不进 `.fm` 也要能用） ---- */
+/* 分栏里的一摞块（说明条 → 工具条 → 列表 → 详情）：等价于原来的 `space-y-3`。
+   不用 `.page-body` —— 那个带 max-width 与居中，是给页面根用的。 */
+.panel-stack{display:flex;flex-direction:column;gap:12px}
+/* `.fm` 只管分列；字段自己的「标签 / 控件 / 提示」三行排版放这里，
+   好让备注、取消原因这种独占一行的字段也是同样的字号与行距。
+   控件本身统一挂 `.ipt`，所以这里只给文字档。 */
+.fm-field{display:grid;gap:4px;min-width:0;font-size:var(--fs-12,12px);color:var(--v30-ink-2)}
+.fm-field>small{font-size:var(--fs-11,12px);line-height:1.6;color:var(--v30-ink-3)}
+/* 批次选择块的小标题（「引用批次（至少 1 个）」）：`.line-batches` 只给上间距 */
+.line-batches>span{font-size:var(--fs-11,12px);color:var(--v30-ink-3)}
+
+/* ---- §8.12 收款二维码面板（销售详情内嵌） ---- */
+/* 二维码外框**必须永远白底**：手机扫的是深模块与白底的对比度，跟着主题走就扫不出来。
+   `--v30-*` 里没有「永远是白」这一档，所以这是整个 v3.0 里唯一一处有意写死的底色。 */
+.qr-box{padding:12px;border:1px solid var(--v30-line-2);border-radius:var(--v30-r);background:#fff}
+.qr-box svg{display:block}
+.qr-empty{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:168px;
+  height:168px;
+  text-align:center;
+  font-size:var(--fs-12,12px);
+  color:#666;
+}
+.qr-row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:20px}
+.qr-meta{display:flex;flex-direction:column;gap:6px;min-width:240px;font-size:var(--fs-14,14px)}

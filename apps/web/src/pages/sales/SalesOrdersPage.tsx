@@ -28,6 +28,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
 import { ListPager } from '../../components/ListPager';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import { SuggestHint } from '../../components/SuggestHint';
+import type { SuggestCandidate } from '../../components/masterdata-suggest-api';
 import {
   DetailHead,
   DetailMetaDot,
@@ -150,13 +152,11 @@ function SortableHead(props: {
       <button
         type="button"
         onClick={() => props.onSort(props.field)}
-        className="inline-flex items-center gap-1 font-medium hover:text-slate-900"
+        className="th-sort"
         title={`按${typeof props.children === 'string' ? props.children : '该列'}排序`}
       >
         {props.children}
-        <span aria-hidden="true" className="text-xs text-slate-400">
-          {active ? (props.order === 'asc' ? '↑' : '↓') : '↕'}
-        </span>
+        <i aria-hidden="true">{active ? (props.order === 'asc' ? '↑' : '↓') : '↕'}</i>
       </button>
     </th>
   );
@@ -240,54 +240,59 @@ function StatusBadge({ status }: { status: SalesOrderStatus }) {
 export function NewCustomerInlineForm({
   fields,
   onChange,
+  companyId,
+  onPickExisting,
 }: {
   readonly fields: NewCustomerFields;
   readonly onChange: (patch: Partial<NewCustomerFields>) => void;
+  /** 当前单据公司：建档防重查询的必传参数（D99，漏传 422）。 */
+  readonly companyId: string;
+  /** 点了「已有相同客户」的候选：调用方改回从下拉里选这条档案。 */
+  readonly onPickExisting: (candidate: SuggestCandidate) => void;
 }) {
   return (
-    <div className="mt-2 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 lg:grid-cols-4">
-      <label className="text-sm">
-        <span className="text-slate-600">客户名称（必填）</span>
-        <input
-          aria-label="新建客户名称"
-          value={fields.name}
-          onChange={(event) => onChange({ name: event.target.value })}
-          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-        />
-      </label>
-      <label className="text-sm">
-        <span className="text-slate-600">联系人（选填）</span>
-        <input
-          aria-label="新建客户联系人"
-          value={fields.contactName}
-          onChange={(event) => onChange({ contactName: event.target.value })}
-          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-        />
-      </label>
-      <label className="text-sm">
-        <span className="text-slate-600">电话（选填）</span>
-        <input
-          aria-label="新建客户电话"
-          value={fields.contactPhone}
-          onChange={(event) => onChange({ contactPhone: event.target.value })}
-          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-        />
-      </label>
-      <label className="text-sm">
-        <span className="text-slate-600">账期天数（选填）</span>
-        <input
-          aria-label="新建客户账期"
-          inputMode="numeric"
-          placeholder="留空 = 现结"
-          value={fields.creditTermDays}
-          onChange={(event) => onChange({ creditTermDays: event.target.value })}
-          className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
-        />
-      </label>
-      <p className="text-xs text-slate-500 sm:col-span-2 lg:col-span-4">
-        保存单据时一起建档，不必先去主数据页。建档对你是透明的 —— 保存成功后只提示单据保存，
-        不额外提示建档结果，也不需要建客户权限（有开单权即可）。
-      </p>
+    <div className="form-sec">
+      <div className="form-sec-b fm c4">
+        <label>
+          <span>客户名称（必填）</span>
+          <input
+            aria-label="新建客户名称"
+            value={fields.name}
+            onChange={(event) => onChange({ name: event.target.value })}
+          />
+        </label>
+        <label>
+          <span>联系人（选填）</span>
+          <input
+            aria-label="新建客户联系人"
+            value={fields.contactName}
+            onChange={(event) => onChange({ contactName: event.target.value })}
+          />
+        </label>
+        <label>
+          <span>电话（选填）</span>
+          <input
+            aria-label="新建客户电话"
+            value={fields.contactPhone}
+            onChange={(event) => onChange({ contactPhone: event.target.value })}
+          />
+        </label>
+        <label>
+          <span>账期天数（选填）</span>
+          <input
+            aria-label="新建客户账期"
+            inputMode="numeric"
+            placeholder="留空 = 现结"
+            value={fields.creditTermDays}
+            onChange={(event) => onChange({ creditTermDays: event.target.value })}
+          />
+        </label>
+        {/* `.fm > .w` 横跨整行 */}
+        <p className="detail-why w">
+          保存单据时一起建档，不必先去主数据页。建档对你是透明的 —— 保存成功后只提示单据保存，
+          不额外提示建档结果，也不需要建客户权限（有开单权即可）。
+        </p>
+      </div>
     </div>
   );
 }
@@ -311,6 +316,8 @@ interface OrderFormProps {
   readonly newCustomer: NewCustomerFields;
   readonly onNewCustomerToggle: (open: boolean) => void;
   readonly onNewCustomerChange: (patch: Partial<NewCustomerFields>) => void;
+  /** 草档里打了名字、命中已有客户：改回从下拉里选这条档案（D99）。 */
+  readonly onNewCustomerPick: (candidate: SuggestCandidate) => void;
   readonly lines: readonly SalesLineDraft[];
   readonly fees: readonly SalesFeeDraft[];
   readonly busy: boolean;
@@ -343,6 +350,7 @@ function OrderForm({
   newCustomer,
   onNewCustomerToggle,
   onNewCustomerChange,
+  onNewCustomerPick,
   lines,
   fees,
   busy,
@@ -368,31 +376,21 @@ function OrderForm({
     batches.filter((batch) => batch.productId === productId);
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-semibold">
-          {editing ? `编辑销售单 ${editing.orderNo}` : '新建销售单'}
-        </h2>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-sm text-slate-500 hover:text-slate-900"
-        >
-          取消
-        </button>
+    <form onSubmit={onSubmit} className="form-card">
+      <div className="form-head">
+        <h2>{editing ? `编辑销售单 ${editing.orderNo}` : '新建销售单'}</h2>
+        <span className="detail-why">
+          单号由服务端生成（D16）；开单是业务动作，AI 默认禁止（D52）。
+        </span>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="text-sm">
-          <span className="text-slate-600">所属公司</span>
+      <div className="fm c4">
+        <label>
+          <span>所属公司</span>
           <select
             value={companyId}
             onChange={(event) => onCompanyChange(event.target.value)}
             disabled={editing !== null}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-100"
           >
             {companyIds.length === 0 && <option value="">当前账号没有可用公司</option>}
             {companyIds.map((id) => (
@@ -402,19 +400,20 @@ function OrderForm({
             ))}
           </select>
         </label>
-        <label className="text-sm">
-          <span className="text-slate-600">客户</span>
+        <label>
+          <span>客户</span>
           {newCustomerOpen ? (
-            <p className="mt-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-slate-700">
+            <p className="fm-readonly">
               开单时新建：
-              <b>{newCustomer.name.trim() === '' ? '在下方填名称' : newCustomer.name.trim()}</b>
+              <b className="cell-clip">
+                {newCustomer.name.trim() === '' ? '在下方填名称' : newCustomer.name.trim()}
+              </b>
             </p>
           ) : (
             <select
               required
               value={customerId}
               onChange={(event) => onCustomerChange(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
             >
               <option value="">请选择客户</option>
               {customers.map((customer) => (
@@ -428,20 +427,15 @@ function OrderForm({
             </select>
           )}
         </label>
-        <label className="text-sm">
-          <span className="text-slate-600">经手人</span>
-          <input
-            readOnly
-            value={handlerName}
-            className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-600"
-          />
+        {/* 经手人 = 当前登录人，改不了；用只读块而不是输入框 */}
+        <label>
+          <span>经手人</span>
+          <p className="fm-readonly">{handlerName}</p>
         </label>
-        <div className="text-sm">
-          <span className="text-slate-600">单据合计（预览）</span>
-          <p className="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono">
-            {formatMoney(total)}
-          </p>
-        </div>
+        <label>
+          <span>单据合计（预览）</span>
+          <p className="fm-readonly mono">{formatMoney(total)}</p>
+        </label>
       </div>
 
       {/**
@@ -449,22 +443,27 @@ function OrderForm({
        * ——改单顺带建新客户会让「这张单原来卖给谁」无从追溯。
        */}
       {editing === null && (
-        <div>
+        <div className="form-stack">
           <button
             type="button"
             onClick={() => onNewCustomerToggle(!newCustomerOpen)}
-            className="btn btn-s"
+            className="btn btn-s form-add"
           >
             {newCustomerOpen ? '取消新建，改从已有客户里选' : '+ 新建客户'}
           </button>
           {newCustomerOpen && (
-            <NewCustomerInlineForm fields={newCustomer} onChange={onNewCustomerChange} />
+            <NewCustomerInlineForm
+              fields={newCustomer}
+              onChange={onNewCustomerChange}
+              companyId={companyId}
+              onPickExisting={onNewCustomerPick}
+            />
           )}
         </div>
       )}
 
       {(customers.length === 0 || products.length === 0 || batches.length === 0) && (
-        <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <div className="alert alert-warn alert-sm">
           {customers.length === 0 && (
             <p>
               {customersError ??
@@ -483,33 +482,24 @@ function OrderForm({
         </div>
       )}
 
-      <section className="rounded-lg border border-slate-200">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
-          <div className="flex items-center gap-3">
-            <h3 className="text-sm font-medium">商品明细</h3>
-            <span className="text-xs text-slate-500">
-              行合计 <b className="font-mono">{formatMoney(lineTotal)}</b>
-              （数量 × 单价，定点计算，D54）
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onAddLine}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
-          >
-            + 加一行
-          </button>
+      <div className="form-stack">
+        <div className="form-head">
+          <h3 className="form-title">商品明细</h3>
+          <span className="detail-why">
+            行合计 <b className="mono">{formatMoney(lineTotal)}</b>（数量 × 单价，定点计算，D54）
+          </span>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px] text-left text-sm">
-            <thead className="text-xs text-slate-500">
+
+        <div className="ln">
+          <table>
+            <thead>
               <tr>
-                <th className="px-4 py-2">商品</th>
-                <th className="px-4 py-2 w-28">数量</th>
-                <th className="px-4 py-2 w-32">单价（售价）</th>
-                <th className="px-4 py-2 w-32">金额</th>
-                <th className="px-4 py-2">引用批次（D22，至少 1 个）</th>
-                <th className="px-4 py-2 w-16" />
+                <th>商品</th>
+                <th className="num">数量</th>
+                <th className="num">单价（售价）</th>
+                <th className="num">金额</th>
+                <th>引用批次（D22，至少 1 个）</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -519,15 +509,15 @@ function OrderForm({
                   (batch) => !line.batchIds.includes(batch.id),
                 );
                 return (
-                  <tr key={index} className="border-t border-slate-100 align-top">
-                    <td className="px-4 py-2">
+                  <tr key={index} className="vtop">
+                    <td>
                       <select
                         required
                         value={line.productId}
                         onChange={(event) =>
                           onLineChange(index, { productId: event.target.value, batchIds: [] })
                         }
-                        className="w-full rounded border border-slate-300 bg-white px-2 py-1"
+                        className="ipt"
                       >
                         <option value="">请选择商品</option>
                         {products.map((product) => (
@@ -538,17 +528,17 @@ function OrderForm({
                         ))}
                       </select>
                     </td>
-                    <td className="px-4 py-2">
+                    <td>
                       <input
                         required
                         inputMode="decimal"
                         value={line.qty}
                         onChange={(event) => onLineChange(index, { qty: event.target.value })}
                         placeholder="0"
-                        className="w-full rounded border border-slate-300 px-2 py-1"
+                        className="ipt"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td>
                       <input
                         required
                         inputMode="decimal"
@@ -557,20 +547,15 @@ function OrderForm({
                           onLineChange(index, { unitPrice: event.target.value })
                         }
                         placeholder="0"
-                        className="w-full rounded border border-slate-300 px-2 py-1"
+                        className="ipt"
                       />
                     </td>
-                    <td className="px-4 py-2 font-mono text-xs">
-                      {formatMoney(lineAmountOf(line))}
-                    </td>
-                    <td className="px-4 py-2">
-                      <div className="flex flex-wrap gap-1">
+                    <td className="mono">{formatMoney(lineAmountOf(line))}</td>
+                    <td>
+                      <div className="chip-row">
                         {line.batchIds.map((batchId) => (
-                          <span
-                            key={batchId}
-                            className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700"
-                          >
-                            <span className="font-mono">{batchLabel(batches, batchId)}</span>
+                          <span key={batchId} className="chip">
+                            <span className="mono">{batchLabel(batches, batchId)}</span>
                             <button
                               type="button"
                               aria-label={`移除批次 ${batchLabel(batches, batchId)}`}
@@ -579,22 +564,23 @@ function OrderForm({
                                   batchIds: line.batchIds.filter((id) => id !== batchId),
                                 })
                               }
-                              className="text-slate-400 hover:text-red-700"
+                              className="chip-x"
                             >
                               ×
                             </button>
                           </span>
                         ))}
                         {line.productId.length === 0 ? (
-                          <span className="text-xs text-slate-400">先选商品，再挑批次</span>
+                          <span className="chip-none">先选商品，再挑批次</span>
                         ) : candidates.length === 0 ? (
-                          <span className="text-xs text-amber-700">
+                          <span className="chip-none text-warn">
                             该商品暂无可用批次，先在 A / B 单里入库
                           </span>
                         ) : available.length === 0 ? (
-                          <span className="text-xs text-slate-400">已引用全部可选批次</span>
+                          <span className="chip-none">已引用全部可选批次</span>
                         ) : (
                           <select
+                            aria-label={`第 ${index + 1} 行添加批次`}
                             value=""
                             onChange={(event) => {
                               if (!event.target.value) return;
@@ -602,7 +588,7 @@ function OrderForm({
                                 batchIds: [...line.batchIds, event.target.value],
                               });
                             }}
-                            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+                            className="ipt"
                           >
                             <option value="">+ 添加批次</option>
                             {available.map((batch) => (
@@ -614,12 +600,12 @@ function OrderForm({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="row-acts">
                       <button
                         type="button"
                         onClick={() => onRemoveLine(index)}
                         disabled={lines.length <= 1}
-                        className="whitespace-nowrap text-xs text-slate-500 hover:text-red-700 disabled:opacity-30"
+                        className="btn btn-row"
                       >
                         删除
                       </button>
@@ -630,48 +616,44 @@ function OrderForm({
             </tbody>
           </table>
         </div>
-        <p className="border-t border-slate-200 px-4 py-2 text-xs text-slate-500">
-          一行引用多个批次时，完成按行内批次<b>均分扣减</b>，除不尽的余量由最后一个批次承接（D72）。
-          售价低于该行加权平均批次成本会被服务端拒绝（D20）——本批没有审批端点，只能先走 platform 审批。
-        </p>
-      </section>
 
-      <section className="rounded-lg border border-slate-200">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
-          <div className="flex items-center gap-3">
-            <h3 className="text-sm font-medium">费用明细（选填）</h3>
-            <span className="text-xs text-slate-500">
-              运费 / 杂费，金额必须 ≥ 0（D39）；合计{' '}
-              <b className="font-mono">{formatMoney(feeTotal)}</b>
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onAddFee}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
-          >
-            + 加一行
-          </button>
+        <button type="button" onClick={onAddLine} className="btn form-add">
+          + 加一行商品
+        </button>
+      </div>
+
+      <p className="detail-why">
+        一行引用多个批次时，完成按行内批次<b>均分扣减</b>，除不尽的余量由最后一个批次承接（D72）。
+        售价低于该行加权平均批次成本会被服务端拒绝（D20）——本批没有审批端点，只能先走 platform 审批。
+      </p>
+
+      <div className="form-stack">
+        <div className="form-head">
+          <h3 className="form-title">费用明细（选填）</h3>
+          <span className="detail-why">
+            运费 / 杂费，金额必须 ≥ 0（D39）；合计 <b className="mono">{formatMoney(feeTotal)}</b>
+          </span>
         </div>
+
         {fees.length === 0 ? (
-          <p className="px-4 py-3 text-xs text-slate-500">没有费用行；需要时点「+ 加一行」。</p>
+          <p className="form-empty">没有费用行；需要时点「+ 加一行」。</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="text-xs text-slate-500">
+          <div className="ln">
+            <table>
+              <thead>
                 <tr>
-                  <th className="px-4 py-2">费用名称</th>
-                  <th className="px-4 py-2 w-24">数量</th>
-                  <th className="px-4 py-2 w-28">单价</th>
-                  <th className="px-4 py-2 w-28">金额</th>
-                  <th className="px-4 py-2">备注</th>
-                  <th className="px-4 py-2 w-12" />
+                  <th>费用名称</th>
+                  <th className="num">数量</th>
+                  <th className="num">单价</th>
+                  <th className="num">金额</th>
+                  <th>备注</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {fees.map((fee, index) => (
-                  <tr key={index} className="border-t border-slate-100">
-                    <td className="px-4 py-2">
+                  <tr key={index}>
+                    <td>
                       <input
                         required
                         value={fee.feeName}
@@ -679,19 +661,19 @@ function OrderForm({
                           onFeeChange(index, { feeName: event.target.value })
                         }
                         placeholder="运费 / 包装费"
-                        className="w-full rounded border border-slate-300 px-2 py-1"
+                        className="ipt"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td>
                       <input
                         required
                         inputMode="decimal"
                         value={fee.qty}
                         onChange={(event) => onFeeChange(index, { qty: event.target.value })}
-                        className="w-full rounded border border-slate-300 px-2 py-1"
+                        className="ipt"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td>
                       <input
                         required
                         inputMode="decimal"
@@ -699,30 +681,30 @@ function OrderForm({
                         onChange={(event) =>
                           onFeeChange(index, { unitPrice: event.target.value })
                         }
-                        className="w-full rounded border border-slate-300 px-2 py-1"
+                        className="ipt"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td>
                       <input
                         value={fee.amount}
                         onChange={(event) => onFeeChange(index, { amount: event.target.value })}
                         placeholder={feeAmountOf(fee)}
-                        className="w-full rounded border border-slate-300 px-2 py-1"
+                        className="ipt"
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td>
                       <input
                         value={fee.remark}
                         onChange={(event) => onFeeChange(index, { remark: event.target.value })}
                         maxLength={255}
-                        className="w-full rounded border border-slate-300 px-2 py-1"
+                        className="ipt"
                       />
                     </td>
-                    <td className="px-4 py-2 text-right">
+                    <td className="row-acts">
                       <button
                         type="button"
                         onClick={() => onRemoveFee(index)}
-                        className="whitespace-nowrap text-xs text-slate-500 hover:text-red-700"
+                        className="btn btn-row"
                       >
                         删除
                       </button>
@@ -733,44 +715,48 @@ function OrderForm({
             </table>
           </div>
         )}
-      </section>
 
-      <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm">
-        商品行 <b className="font-mono">{formatMoney(lineTotal)}</b>
-        <span className="mx-2 text-slate-400">+</span>
-        费用 <b className="font-mono">{formatMoney(feeTotal)}</b>
-        <span className="mx-2 text-slate-400">=</span>
-        单据合计 <b className="font-mono">{formatMoney(total)}</b>
-      </p>
+        <button type="button" onClick={onAddFee} className="btn form-add">
+          + 加一行费用
+        </button>
+      </div>
+
+      <div className="sum-bar">
+        <span>
+          商品行 <b>{formatMoney(lineTotal)}</b>
+        </span>
+        <span>
+          费用 <b>{formatMoney(feeTotal)}</b>
+        </span>
+        <span>
+          单据合计 <b>{formatMoney(total)}</b>
+        </span>
+      </div>
 
       {errors.length > 0 && (
-        <ul className="space-y-1 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+        <ul className="alert alert-bad alert-sm">
           {errors.map((message) => (
             <li key={message}>· {message}</li>
           ))}
         </ul>
       )}
       {serverIssues.length > 0 && (
-        <ul className="space-y-1 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+        <ul className="alert alert-bad alert-sm">
           {serverIssues.map((issue) => (
             <li key={`${issue.path}-${issue.message}`}>
-              · {issue.path && <code className="font-mono text-xs">{issue.path}</code>} {issue.message}
+              · {issue.path && <code className="mono">{issue.path}</code>} {issue.message}
             </li>
           ))}
         </ul>
       )}
 
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-        >
+      <div className="detail-acts">
+        <button type="submit" disabled={busy} className="btn btn-primary">
           {busy ? '提交中…' : editing ? '保存修改' : '开单'}
         </button>
-        <span className="text-xs text-slate-500">
-          单号由服务端生成（D16）；开单是业务动作，AI 默认禁止（D52）。
-        </span>
+        <button type="button" onClick={onCancel} className="btn">
+          取消
+        </button>
       </div>
     </form>
   );
@@ -852,18 +838,20 @@ function ReceiptBlock({
   };
 
   return (
-    <section className="rounded-lg border border-slate-200">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2">
-        <div className="flex items-center gap-3">
-          <h3 className="text-sm font-medium">收款记录</h3>
-          <span className="text-xs text-slate-500">
+    <section className="form-sec">
+      {/* 标题条：`form-head` 只用来把「收款记录」与「块内余额」挤在一起（它本身 space-between，
+          但这一组是 auto 宽、没有多余空间，等于左对齐 + gap 8），右侧另起一组按钮。 */}
+      <div className="form-sec-h">
+        <div className="form-head">
+          <h3>收款记录</h3>
+          <span className="detail-why">
             块内余额{' '}
-            <b className="font-mono">{balance === null ? MASKED_AMOUNT : formatMoney(balance)}</b>
+            <b className="mono">{balance === null ? MASKED_AMOUNT : formatMoney(balance)}</b>
             （收款合计 − 退款合计，服务端计算，D34）
           </span>
         </div>
         {(canAdd || canCreatePayment) && status !== '已取消' && (
-          <div className="flex items-center gap-2">
+          <div className="detail-tools">
             {/*
               扫码收款与线下补录并列但不混：一个让客户自己付、一个由操作员录入已发生的钱。
               两道权限（`payment.create` / `sales.update`）各自判、各自置灰 ——
@@ -875,7 +863,7 @@ function ReceiptBlock({
               onClick={() => setPayOpen((value) => !value)}
               disabled={!canCreatePayment}
               title={canCreatePayment ? undefined : '发起收款需要 payment.create 权限'}
-              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-40"
+              className="btn btn-row"
             >
               {payOpen ? '收起收款码' : '+ 发起扫码收款'}
             </button>
@@ -884,7 +872,7 @@ function ReceiptBlock({
               onClick={() => setOpen((value) => !value)}
               disabled={!canAdd}
               title={canAdd ? undefined : '追加收款需要 sales.update 权限'}
-              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-40"
+              className="btn btn-row"
             >
               {open ? '收起' : '+ 追加收款 / 退款'}
             </button>
@@ -892,8 +880,8 @@ function ReceiptBlock({
         )}
       </div>
 
-      {payOpen && canCreatePayment && status !== '已取消' && (
-        <div className="border-b border-slate-200 px-4 py-3">
+      <div className="form-sec-b form-stack">
+        {payOpen && canCreatePayment && status !== '已取消' && (
           <PaymentRequestPanel
             orderId={orderId}
             canCreate={canCreatePayment}
@@ -902,143 +890,131 @@ function ReceiptBlock({
             onPaid={onRefresh}
             onError={onError}
           />
-        </div>
-      )}
+        )}
 
-      {!canViewPrice && (
-        <p className="px-4 py-3 text-xs text-amber-900">
-          无「看价」权限：收款金额显示为 {MASKED_AMOUNT}，也不能追加收款——
-          看不到金额就录钱账，会把余额改错（D27 / D79）。
-        </p>
-      )}
-      {canViewPrice && !canAdd && (
-        <p className="px-4 py-3 text-xs text-slate-500">
-          追加收款需要 sales.update；当前身份只能查看收款台账。
-        </p>
-      )}
-      {canViewPrice && canAdd && status === '已取消' && (
-        <p className="px-4 py-3 text-xs text-slate-500">已取消的销售单不可追加收款或退款。</p>
-      )}
+        {!canViewPrice && (
+          <p className="detail-why text-warn">
+            无「看价」权限：收款金额显示为 {MASKED_AMOUNT}，也不能追加收款——
+            看不到金额就录钱账，会把余额改错（D27 / D79）。
+          </p>
+        )}
+        {canViewPrice && !canAdd && (
+          <p className="detail-why">追加收款需要 sales.update；当前身份只能查看收款台账。</p>
+        )}
+        {canViewPrice && canAdd && status === '已取消' && (
+          <p className="detail-why">已取消的销售单不可追加收款或退款。</p>
+        )}
 
-      {receipts.length === 0 ? (
-        <p className="px-4 py-3 text-sm text-slate-500">还没有收款记录。</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs text-slate-500">
-              <tr>
-                <th className="px-4 py-2">方向</th>
-                <th className="px-4 py-2">金额</th>
-                <th className="px-4 py-2">方式</th>
-                <th className="px-4 py-2">发生时间</th>
-                <th className="px-4 py-2">备注</th>
-              </tr>
-            </thead>
-            <tbody>
-              {receipts.map((receipt) => (
-                <tr key={receipt.id} className="border-b border-slate-100 last:border-0">
-                  <td className="px-4 py-2">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        receipt.direction === '退款'
-                          ? 'bg-amber-50 text-amber-700'
-                          : 'bg-emerald-50 text-emerald-700'
-                      }`}
-                    >
-                      {receipt.direction}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 font-mono text-xs">
-                    {canViewPrice && receipt.amount !== null
-                      ? formatMoney(receiptAmountText(receipt.direction, receipt.amount))
-                      : MASKED_AMOUNT}
-                  </td>
-                  <td className="px-4 py-2">{receipt.method}</td>
-                  <td className="px-4 py-2 text-slate-600">{formatDateTime(receipt.occurredAt)}</td>
-                  <td className="px-4 py-2 text-slate-600">{receipt.remark ?? '—'}</td>
+        {receipts.length === 0 ? (
+          <p className="detail-why">还没有收款记录。</p>
+        ) : (
+          <div className="ln">
+            <table>
+              <thead>
+                <tr>
+                  <th>方向</th>
+                  <th className="num">金额</th>
+                  <th>方式</th>
+                  <th>发生时间</th>
+                  <th>备注</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {open && canAdd && canViewPrice && status !== '已取消' && (
-        <form onSubmit={submit} className="grid gap-3 border-t border-slate-200 px-4 py-3 sm:grid-cols-2 lg:grid-cols-5">
-          <label className="text-sm">
-            <span className="text-slate-600">方向</span>
-            <select
-              value={direction}
-              onChange={(event) => {
-                const next = event.target.value as SalesReceiptDirection;
-                setDirection(next);
-                setMethod(next === '退款' ? '原路退款' : '线下转账');
-              }}
-              className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1"
-            >
-              <option value="收款">收款</option>
-              <option value="退款">退款</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="text-slate-600">金额（填正数）</span>
-            <input
-              required
-              inputMode="decimal"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-              placeholder="0.00"
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="text-slate-600">方式</span>
-            <select
-              value={method}
-              onChange={(event) => setMethod(event.target.value as typeof method)}
-              className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1"
-            >
-              {RECEIPT_METHODS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="text-slate-600">发生时间</span>
-            <input
-              required
-              type="datetime-local"
-              value={occurredAt}
-              onChange={(event) => setOccurredAt(event.target.value)}
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="text-slate-600">备注（选填）</span>
-            <input
-              value={remark}
-              onChange={(event) => setRemark(event.target.value)}
-              maxLength={200}
-              className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
-            />
-          </label>
-          <div className="sm:col-span-2 lg:col-span-5 flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              disabled={create.isPending}
-              className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40"
-            >
-              {create.isPending ? '提交中…' : direction === '退款' ? '追加退款行' : '追加收款行'}
-            </button>
-            <span className="text-xs text-slate-500">
-              退款只追加负数行，不改历史行（D34 / D40）；涉及钱账，AI 默认禁止（D52①）。
-            </span>
-            {localError && <span className="text-xs text-red-700">{localError}</span>}
+              </thead>
+              <tbody>
+                {receipts.map((receipt) => (
+                  <tr key={receipt.id}>
+                    <td>
+                      <span className={`st ${receipt.direction === '退款' ? 'warn' : 'ok'}`}>
+                        {receipt.direction}
+                      </span>
+                    </td>
+                    <td className="num">
+                      {canViewPrice && receipt.amount !== null
+                        ? formatMoney(receiptAmountText(receipt.direction, receipt.amount))
+                        : MASKED_AMOUNT}
+                    </td>
+                    <td>{receipt.method}</td>
+                    <td className="cell-muted">{formatDateTime(receipt.occurredAt)}</td>
+                    <td className="cell-muted">{receipt.remark ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </form>
-      )}
+        )}
+
+        {open && canAdd && canViewPrice && status !== '已取消' && (
+          <div className="form-sec">
+            <form onSubmit={submit} className="form-sec-b form-stack">
+              <div className="fm c4">
+                <label>
+                  <span>方向</span>
+                  <select
+                    value={direction}
+                    onChange={(event) => {
+                      const next = event.target.value as SalesReceiptDirection;
+                      setDirection(next);
+                      setMethod(next === '退款' ? '原路退款' : '线下转账');
+                    }}
+                  >
+                    <option value="收款">收款</option>
+                    <option value="退款">退款</option>
+                  </select>
+                </label>
+                <label>
+                  <span>金额（填正数）</span>
+                  <input
+                    required
+                    inputMode="decimal"
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    placeholder="0.00"
+                  />
+                </label>
+                <label>
+                  <span>方式</span>
+                  <select
+                    value={method}
+                    onChange={(event) => setMethod(event.target.value as typeof method)}
+                  >
+                    {RECEIPT_METHODS.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>发生时间</span>
+                  <input
+                    required
+                    type="datetime-local"
+                    value={occurredAt}
+                    onChange={(event) => setOccurredAt(event.target.value)}
+                  />
+                </label>
+                <label className="w">
+                  <span>备注（选填）</span>
+                  <input
+                    value={remark}
+                    onChange={(event) => setRemark(event.target.value)}
+                    maxLength={200}
+                  />
+                </label>
+              </div>
+
+              <div className="detail-acts">
+                <button type="submit" disabled={create.isPending} className="btn btn-primary">
+                  {create.isPending ? '提交中…' : direction === '退款' ? '追加退款行' : '追加收款行'}
+                </button>
+                <span className="detail-why">
+                  退款只追加负数行，不改历史行（D34 / D40）；涉及钱账，AI 默认禁止（D52①）。
+                </span>
+                {localError && <span className="detail-why text-warn">{localError}</span>}
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -1104,7 +1080,7 @@ export function DetailPanel({
   });
 
   return (
-    <section className="card min-w-0 space-y-3 p-4">
+    <section className="card detail">
       <DetailHead
         docLabel="销售单"
         orderNo={order.orderNo}
@@ -1131,8 +1107,8 @@ export function DetailPanel({
         贴着商品读才顺；也为了把 `LinesFooter` 的合计放到最后一列「金额」下面 ——
         合计落在「引用批次」列下会被读成批次的数量。
       */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left" style={{ minWidth: '760px' }}>
+      <div className="ln">
+        <table>
           <thead>
             <tr>
               <th>商品</th>
@@ -1144,26 +1120,22 @@ export function DetailPanel({
           </thead>
           <tbody>
             {order.lines.map((line, index) => (
-              <tr key={`${line.productId}-${index}`} className="r-row">
+              <tr key={`${line.productId}-${index}`}>
                 <td>{productLabel(products, line.productId)}</td>
                 <td>
-                  <div className="flex flex-wrap gap-1">
+                  <div className="chip-row">
                     {line.batchIds.map((batchId) => (
-                      <span
-                        key={batchId}
-                        className="rounded px-2 py-0.5 font-mono text-xs"
-                        style={{ background: 'var(--surf-2)', color: 'var(--text-2)' }}
-                      >
-                        {batchLabel(batches, batchId)}
+                      <span key={batchId} className="chip chip-static">
+                        <span className="mono">{batchLabel(batches, batchId)}</span>
                       </span>
                     ))}
                   </div>
                 </td>
-                <td className="num whitespace-nowrap">{formatQty(line.qty)}</td>
-                <td className="num whitespace-nowrap">
+                <td className="num">{formatQty(line.qty)}</td>
+                <td className="num">
                   {canViewPrice ? formatMoney(line.unitPrice) : MASKED_AMOUNT}
                 </td>
-                <td className="num whitespace-nowrap">
+                <td className="num">
                   {canViewPrice ? formatMoney(line.amount) : MASKED_AMOUNT}
                 </td>
               </tr>
@@ -1178,8 +1150,8 @@ export function DetailPanel({
       </div>
 
       {order.fees.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left" style={{ minWidth: '560px' }}>
+        <div className="ln">
+          <table>
             <thead>
               <tr>
                 <th>费用</th>
@@ -1191,14 +1163,14 @@ export function DetailPanel({
             </thead>
             <tbody>
               {order.fees.map((fee, index) => (
-                <tr key={`${fee.feeName}-${index}`} className="r-row">
+                <tr key={`${fee.feeName}-${index}`}>
                   <td>{fee.feeName}</td>
-                  <td className="num whitespace-nowrap">{formatQty(fee.qty)}</td>
-                  <td className="num whitespace-nowrap">
+                  <td className="num">{formatQty(fee.qty)}</td>
+                  <td className="num">
                     {canViewPrice ? formatMoney(fee.unitPrice) : MASKED_AMOUNT}
                   </td>
-                  <td style={{ color: 'var(--text-3)' }}>{fee.remark ?? '—'}</td>
-                  <td className="num whitespace-nowrap">
+                  <td className="cell-muted">{fee.remark ?? '—'}</td>
+                  <td className="num">
                     {canViewPrice ? formatMoney(fee.amount) : MASKED_AMOUNT}
                   </td>
                 </tr>
@@ -1263,7 +1235,7 @@ export function DetailPanel({
         这里两个动作是同一批货的两步，并排才看得出「先发货再签收」。
         主色只给当前状态该做的那一个，避免出现两个同等重要的按钮。
       */}
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="detail-acts">
         <button
           type="button"
           onClick={onEdit}
@@ -1310,38 +1282,37 @@ export function DetailPanel({
         </button>
         <button
           type="button"
-          onClick={onCancel}
-          disabled={!order.cancelable.allowed || !canCancel || busy}
-          className="btn danger"
-        >
-          取消销售单
-        </button>
-        <button
-          type="button"
           onClick={onPrint}
           title={canViewPrice ? undefined : '无看价权限：打印件上的金额是「—」（D79），不会印出具体金额'}
           className="btn"
         >
           打印客户联
         </button>
-      </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={!order.cancelable.allowed || !canCancel || busy}
+          className="btn danger act-end"
+        >
+          取消销售单
+        </button>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1">
-        {cancelReason && <span className="text-xs text-slate-500">{cancelReason}</span>}
-        {editBlocked && <span className="text-xs text-slate-500">{editBlocked}</span>}
+        {/* 禁用原因说出口（不能只挂 title）：与采购 / 加工同口径，跟在按钮同一行 */}
+        {cancelReason && <span className="detail-why">{cancelReason}</span>}
+        {editBlocked && <span className="detail-why">{editBlocked}</span>}
         {!canCancel && order.cancelable.allowed && (
-          <span className="text-xs text-slate-500">当前身份无取消权限（sales.delete）</span>
+          <span className="detail-why">当前身份无取消权限（sales.delete）</span>
         )}
         {!canShip && order.status === '进行中' && (
-          <span className="text-xs text-slate-500">当前身份没有 sales.ship 权限</span>
+          <span className="detail-why">当前身份没有 sales.ship 权限</span>
         )}
         {!canComplete && order.status === '已发货' && (
-          <span className="text-xs text-slate-500">
+          <span className="detail-why">
             签收需要 sales.approve（签收才认收入、才生成结算草稿）
           </span>
         )}
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="detail-why">
         完成会按 D72 扣减批次可用量并生成结算单 C 草稿（同事务）；已完成不可取消，错账走冲正（D21）。
       </p>
     </section>
@@ -1847,7 +1818,7 @@ export function SalesOrdersPage() {
       : null;
 
   return (
-    <section className="mx-auto max-w-7xl space-y-4">
+    <section className="page-body">
       <div className="p-head">
         <div>
           <div className="eyebrow">销售单 E · 按批次出库</div>
@@ -1881,20 +1852,20 @@ export function SalesOrdersPage() {
       </p>
 
       {meData && !canViewPrice && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="alert alert-warn">
           当前身份无「看价」权限，金额显示为 <b>{MASKED_AMOUNT}</b>（D79）。
           此时不能编辑单据，也不能追加收款——看不到金额就改钱账，会把账面改错。
         </p>
       )}
 
       {meData && !can('create') && (
-        <p className="text-xs text-slate-500">
+        <p className="detail-why">
           「新建」需要 sales.create；当前身份只能查看（权限判定在服务端，前端只是不画按钮）。
         </p>
       )}
 
       {meData && !can('export') && (
-        <p className="text-xs text-slate-500">
+        <p className="detail-why">
           「导出 CSV」需要 sales.export：导出会把整批单据落成文件，服务端按敏感读记审计（D54②）。
         </p>
       )}
@@ -1930,6 +1901,7 @@ export function SalesOrdersPage() {
               setPage(1);
             }}
             aria-label="看谁的单据"
+            className="sel"
           >
             <option value="">默认（按我的权限）</option>
             <option value="mine">只看我经手的</option>
@@ -1941,7 +1913,7 @@ export function SalesOrdersPage() {
             value={companyId}
             onChange={(event) => setCompanyId(event.target.value)}
             aria-label="按公司筛选"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="sel"
           >
             <option value="">全部公司</option>
             {companyIds.map((id) => (
@@ -1955,7 +1927,7 @@ export function SalesOrdersPage() {
           value={customerFilter}
           onChange={(event) => setCustomerFilter(event.target.value)}
           aria-label="按客户筛选"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="sel"
         >
           <option value="">全部客户</option>
           {filterCustomers.map((customer) => (
@@ -1971,9 +1943,7 @@ export function SalesOrdersPage() {
           aria-label="搜索单号或客户名"
           className="search"
         />
-        <span className="ml-auto text-sm" style={{ color: 'var(--text-3)' }}>
-          点表头可排序：单号 / 金额 / 日期
-        </span>
+        <span className="toolbar-end">点表头可排序：单号 / 金额 / 日期</span>
       </div>
 
       {formOpen && (
@@ -1998,6 +1968,14 @@ export function SalesOrdersPage() {
             else setNewCustomer({ ...EMPTY_NEW_CUSTOMER });
           }}
           onNewCustomerChange={(patch) => setNewCustomer((current) => ({ ...current, ...patch }))}
+          onNewCustomerPick={(candidate) => {
+            // 选中已有档案就**不再建档**：清掉草档、关掉新建、把下拉指过去，
+            // 否则保存时 customerId 与 customerDraft 同时带上去会 422。
+            setFormCustomerId(candidate.id);
+            setNewCustomerOpen(false);
+            setNewCustomer({ ...EMPTY_NEW_CUSTOMER });
+            setNotice(`已选中已有客户「${candidate.name}」，这次不再新建档案。`);
+          }}
           lines={lines}
           fees={fees}
           busy={save.isPending}
@@ -2043,16 +2021,12 @@ export function SalesOrdersPage() {
         />
       )}
 
-      {staleNotice && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          {staleNotice}
-        </p>
-      )}
+      {staleNotice && <p className="alert alert-warn">{staleNotice}</p>}
       {save.error && serverIssues.length === 0 && !isStaleVersionError(save.error) && (
-        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+        <div className="alert alert-bad">
           <p>{errorText(save.error)}</p>
           {priceFloorIssue && (
-            <p className="mt-1 text-xs">
+            <p className="detail-why">
               第 {priceFloorIssue.lineNo ?? '?'} 行售价低于加权平均批次成本（下限{' '}
               {priceFloorIssue.costFloor ?? '—'}）。本批没有审批端点（D20），
               需先完成 platform 审批再重试——这里不代做审批。
@@ -2060,18 +2034,12 @@ export function SalesOrdersPage() {
           )}
         </div>
       )}
-      {shipOrder.error && (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-          发货失败：{errorText(shipOrder.error)}
-        </p>
-      )}
+      {shipOrder.error && <p className="alert alert-bad">发货失败：{errorText(shipOrder.error)}</p>}
       {completeOrder.error && (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-          签收失败：{errorText(completeOrder.error)}
-        </p>
+        <p className="alert alert-bad">签收失败：{errorText(completeOrder.error)}</p>
       )}
-      {actionError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>}
-      {notice && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{notice}</p>}
+      {actionError && <p className="alert alert-bad">{actionError}</p>}
+      {notice && <p className="alert alert-warn">{notice}</p>}
 
       {/*
         列表区（v0.13）。四态由容器与 tbody 上的 `data-state` 驱动，**不写 JSX 分支**：
@@ -2133,25 +2101,25 @@ export function SalesOrdersPage() {
               </tr>
               {rows.map((order) => (
                 <tr key={order.id} className="r-row">
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => setDetailId(order.id)}
-                      className="font-mono text-xs text-slate-900 underline-offset-2 hover:underline"
+                      className="doc-link"
                     >
                       {order.orderNo}
                     </button>
                   </td>
-                  <td className="px-4 py-3">{order.customerName}</td>
-                  <td className="px-4 py-3">{orderProductSummary(products, order.lines)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{formatQty(totalLineQty(order.lines))}</td>
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap">{order.customerName}</td>
+                  <td className="cell-muted">{orderProductSummary(products, order.lines)}</td>
+                  <td className="num whitespace-nowrap">{formatQty(totalLineQty(order.lines))}</td>
+                  <td className="num whitespace-nowrap">
                     {canViewPrice ? formatMoney(order.totalAmount) : MASKED_AMOUNT}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap">
                     <StatusBadge status={order.status} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap">
                     {/*
                       经手人列原先直接 `shortId(handlerId)` —— 界面上是一串 8 位十六进制，
                       对使用者没有意义（详情里同一个字段明明显示的是姓名）。走姓名簿，
@@ -2159,9 +2127,11 @@ export function SalesOrdersPage() {
                     */}
                     {order.handlerId ? employeeLabel(order.handlerId) : '—'}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{formatShortDateTime(order.createdAt)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1.5">
+                  <td className="num whitespace-nowrap cell-muted">
+                    {formatShortDateTime(order.createdAt)}
+                  </td>
+                  <td className="whitespace-nowrap text-right">
+                    <div className="row-acts">
                       {/*
                         这一格原来还有「详情」——和点单号进的是同一个页面，纯冗余。
                         补「商品」列后 9 列装不下 1150px 的卡片，先去掉重复入口，
@@ -2171,7 +2141,7 @@ export function SalesOrdersPage() {
                         type="button"
                         disabled={!can('update') || !canViewPrice || order.status !== '进行中'}
                         onClick={() => void withFreshDetail(order.id, beginEdit)}
-                        className="btn btn-s"
+                        className="btn btn-row"
                         title={
                           orderEditBlockedText({
                             domain: 'sales',
@@ -2198,7 +2168,7 @@ export function SalesOrdersPage() {
                               ? '仅「进行中」状态的销售单可出库'
                               : undefined
                         }
-                        className="btn btn-s"
+                        className="btn btn-row"
                       >
                         发货
                       </button>
@@ -2206,7 +2176,7 @@ export function SalesOrdersPage() {
                         type="button"
                         disabled={!can('delete') || order.status !== '进行中' || cancelOrder.isPending}
                         onClick={() => void withFreshDetail(order.id, askCancel)}
-                        className="btn btn-s danger"
+                        className="btn btn-row danger"
                       >
                         取消
                       </button>
@@ -2249,16 +2219,8 @@ export function SalesOrdersPage() {
 
       {detailId !== null && (
         <>
-          {detail.isPending && (
-            <p className="card p-4 text-sm" style={{ color: 'var(--text-3)' }}>
-              正在加载销售单详情…
-            </p>
-          )}
-          {detail.error && (
-            <p className="card p-4 text-sm" style={{ color: 'var(--danger-on-surface)' }}>
-              {errorText(detail.error)}
-            </p>
-          )}
+          {detail.isPending && <p className="alert alert-info">正在加载销售单详情…</p>}
+          {detail.error && <p className="alert alert-bad">{errorText(detail.error)}</p>}
           {detailOrder && (
             <DetailPanel
               order={detailOrder}

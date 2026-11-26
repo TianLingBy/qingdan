@@ -221,7 +221,8 @@ describe('结算单 C 页面', () => {
     const html = renderPage(seedClient({ me: FULL, orders: [ORDER] }));
 
     expect(html).toContain('class="card list-card"');
-    expect(html).toContain('class="tw"');
+    // `.tight`：C 单 10 列，常规内边距会把「操作」列顶出卡片（实测 1119 > 1135−padding）
+    expect(html).toContain('class="tw tight"');
     expect(html).toContain('class="tf"');
     expect(html).toContain('共 1 条');
   });

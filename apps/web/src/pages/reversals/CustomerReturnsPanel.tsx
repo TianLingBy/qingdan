@@ -57,9 +57,9 @@ import {
   FIELD_CLASS,
   Field,
   ReversalListCard,
-  ReversalPager,
   TableSkeleton,
 } from './reversals-ui';
+import { BatchPager } from '../../components/ListPager';
 import {
   DetailHead,
   DetailMetaDot,
@@ -253,45 +253,48 @@ export function CustomerReturnsPanel({
   });
 
   return (
-    <div className="space-y-3">
+    <div className="panel-stack">
       <BasisNote>
         R 单挂原销售单，两型：<b>退货退款</b>（货退回库、要商品明细）/ <b>仅退款</b>
         （只退钱，要选纠收款或减成交额）。退款只走 E 单收款记录的负数行（D40），
         R 单本身不改 E 单。冲正单据只追加，不可改、不可删（D47）。
       </BasisNote>
 
-      <div className="flex flex-wrap items-end gap-3">
+      {/* 筛选条走 v3.0 `.toolbar`：控件直接摆在一条线上，标签交给 `aria-label`，
+          和销售 E / 采购 A 的筛选条同一套版式（下拉带无标签时不能省 aria-label）。 */}
+      <div className="toolbar">
         {companyIds.length > 1 ? (
-          <Field label="公司" className="min-w-[180px]">
-            <select value={companyId} onChange={(event) => onCompanyChange(event.target.value)} className={FIELD_CLASS}>
-              {companyIds.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : null}
-        <Field label="状态" className="min-w-[120px]">
           <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value as '' | CustomerReturnStatus)}
-            className={FIELD_CLASS}
+            value={companyId}
+            onChange={(event) => onCompanyChange(event.target.value)}
+            aria-label="按公司筛选"
+            className="sel"
           >
-            <option value="">全部</option>
-            <option value="进行中">进行中</option>
-            <option value="已完成">已完成</option>
-            <option value="已取消">已取消</option>
+            {companyIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
           </select>
-        </Field>
-        <Field label="单号关键字" className="min-w-[180px]">
-          <input
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-            placeholder="R-0001-…"
-            className={FIELD_CLASS}
-          />
-        </Field>
+        ) : null}
+        <select
+          value={status}
+          onChange={(event) => setStatus(event.target.value as '' | CustomerReturnStatus)}
+          aria-label="按状态筛选"
+          className="sel"
+        >
+          <option value="">全部状态</option>
+          <option value="进行中">进行中</option>
+          <option value="已完成">已完成</option>
+          <option value="已取消">已取消</option>
+        </select>
+        <input
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="搜索单号 R-0001-…"
+          aria-label="搜索单号"
+          className="search"
+        />
         <button
           type="button"
           onClick={() => {
@@ -300,20 +303,22 @@ export function CustomerReturnsPanel({
           }}
           disabled={!canCreate || companyId.length === 0}
           title={canCreate ? undefined : '当前身份没有 customer_return.create 权限'}
-          className="mb-0.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+          className="btn btn-primary act-end"
         >
           {formOpen ? '收起开单' : '登记客户退货'}
         </button>
       </div>
 
       {formOpen ? (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className="text-sm font-semibold text-slate-900">登记客户退货</h3>
-            <span className="text-xs text-slate-400">录入岗位由服务端校验（D47：老板 / 经理 / 财务）</span>
+        <section className="form-card">
+          <div className="form-head">
+            <h2>登记客户退货</h2>
+            <span className="detail-why">
+              录入岗位由服务端校验（D47：老板 / 经理 / 财务）
+            </span>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="fm">
             <Field label="原销售单" hint="R 单必须挂原 E 单；下拉取本公司前 200 张">
               <select
                 value={originalSalesOrderId}
@@ -391,10 +396,10 @@ export function CustomerReturnsPanel({
           </div>
 
           {needsLines(returnType) ? (
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h4 className="text-xs font-semibold text-slate-700">退回商品（至少 1 行）</h4>
-                <span className="text-[11px] text-slate-400">
+            <div className="form-stack">
+              <div className="form-head">
+                <h3 className="form-title">退回商品（至少 1 行）</h3>
+                <span className="detail-why">
                   一行可引多个本公司批次（D22）；明细合计 {formatMoney(canViewPrice ? linesTotal : null)}
                 </span>
               </div>
@@ -404,8 +409,8 @@ export function CustomerReturnsPanel({
                   (batch) => !line.productId || batch.productId === line.productId,
                 );
                 return (
-                  <div key={index} className="rounded-lg border border-slate-200 p-3">
-                    <div className="grid gap-2 sm:grid-cols-[1.4fr_1fr_1fr_auto_auto]">
+                  <div key={index} className="line-card">
+                    <div className="fm lines">
                       <Field label={`第 ${index + 1} 行商品`}>
                         <select
                           value={line.productId}
@@ -453,26 +458,26 @@ export function CustomerReturnsPanel({
                           className={FIELD_CLASS}
                         />
                       </Field>
-                      <div className="self-end pb-2 text-xs text-slate-500">
+                      <div className="line-amount">
                         金额 {formatMoney(canViewPrice ? returnLineAmount(line) : null)}
                       </div>
                       <button
                         type="button"
                         onClick={() => setLines((current) => current.filter((_, i) => i !== index))}
                         disabled={lines.length <= 1}
-                        className="mt-5 h-9 self-start whitespace-nowrap rounded-lg border border-slate-300 px-2 text-xs text-slate-600 disabled:opacity-40"
+                        className="btn btn-row"
                       >
                         删除
                       </button>
                     </div>
 
-                    <div className="mt-2">
-                      <span className="text-[11px] text-slate-500">引用批次（至少 1 个）</span>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
+                    <div className="line-batches">
+                      <span>引用批次（至少 1 个）</span>
+                      <div className="chip-row">
                         {!line.productId ? (
-                          <span className="text-[11px] text-slate-400">先选商品，再选批次</span>
+                          <span className="chip-none">先选商品，再选批次</span>
                         ) : rowBatches.length === 0 ? (
-                          <span className="text-[11px] text-slate-400">本公司该商品暂无批次</span>
+                          <span className="chip-none">本公司该商品暂无批次</span>
                         ) : (
                           rowBatches.map((batch: InventoryBatch) => {
                             const checked = line.batchIds.includes(batch.id);
@@ -494,11 +499,7 @@ export function CustomerReturnsPanel({
                                     ),
                                   )
                                 }
-                                className={`rounded-full border px-2 py-0.5 text-[11px] ${
-                                  checked
-                                    ? 'border-slate-900 bg-slate-900 text-white'
-                                    : 'border-slate-300 bg-white text-slate-600'
-                                }`}
+                                className={checked ? 'chip on' : 'chip'}
                               >
                                 {batchOptionLabel(batch)}
                               </button>
@@ -514,7 +515,7 @@ export function CustomerReturnsPanel({
               <button
                 type="button"
                 onClick={() => setLines((current) => [...current, { ...EMPTY_LINE }])}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600"
+                className="btn form-add"
               >
                 + 加一行商品
               </button>
@@ -524,12 +525,12 @@ export function CustomerReturnsPanel({
           <ErrorList errors={clientErrors} />
           {actionError ? <ErrorBar message={actionError} /> : null}
 
-          <div className="flex gap-2">
+          <div className="detail-acts">
             <button
               type="button"
               onClick={submit}
               disabled={create.isPending}
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+              className="btn btn-primary"
             >
               {create.isPending ? '提交中…' : '登记退货'}
             </button>
@@ -540,7 +541,7 @@ export function CustomerReturnsPanel({
                 setClientErrors([]);
                 setActionError(null);
               }}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600"
+              className="btn"
             >
               取消
             </button>
@@ -549,11 +550,9 @@ export function CustomerReturnsPanel({
       ) : null}
 
       <ReversalListCard
-        title="客户退货单"
-        meta={`共 ${items.length} 条${canViewPrice ? '' : ' · 当前身份无看价权限，金额显示 —'}`}
         state={listState}
         colCount={6}
-        minWidth="680px"
+        minWidthClass="min-w-[680px]"
         head={
           <tr>
             <th>单号</th>
@@ -561,7 +560,9 @@ export function CustomerReturnsPanel({
             <th>类型</th>
             <th className="num">应退金额</th>
             <th>状态</th>
-            <th />
+            {/* 表头跟着按钮走右对齐：`text-right` 是布局类（不在 #431 那条「不许出现」的清单里），
+                其余页面用的是空表头 `<th />`，这里要写「操作」两个字，就得自己对齐。 */}
+            <th className="text-right">操作</th>
           </tr>
         }
         emptyText="还没有客户退货单"
@@ -569,10 +570,11 @@ export function CustomerReturnsPanel({
         errorTitle="客户退货单加载失败"
         error={list.error}
         onRetry={() => void list.refetch()}
+        summary={`共 ${items.length} 条${canViewPrice ? '' : ' · 当前身份无看价权限，金额显示 —'}`}
         pager={
-          <ReversalPager
-            batchIndex={pageIndex}
-            count={items.length}
+          <BatchPager
+            batch={pageIndex + 1}
+            hasPrev={pageIndex > 0}
             hasNext={nextCursor !== null}
             onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
             onNext={() => {
@@ -584,50 +586,53 @@ export function CustomerReturnsPanel({
               });
               setPageIndex((index) => index + 1);
             }}
+            label="客户退货单分批翻页"
           />
         }
       >
         {items.map((item: CustomerReturn) => (
           <tr key={item.id} className="r-row">
-            <td className="whitespace-nowrap">
+            <td>
               <button
                 type="button"
                 onClick={() => setDetailId(item.id)}
-                className="font-mono text-xs underline-offset-2 hover:underline"
+                className="doc-link"
               >
                 {item.returnNo}
               </button>
             </td>
-            <td className="whitespace-nowrap font-mono text-xs" style={{ color: 'var(--text-3)' }}>
+            <td className="mono cell-muted">
               {orderNoById.get(item.originalSalesOrderId) ?? idLabel(item.originalSalesOrderId)}
             </td>
-            <td className="whitespace-nowrap text-xs">
+            <td>
               {item.returnType}
               {item.onlyRefundKind ? ` · ${item.onlyRefundKind}` : ''}
             </td>
-            <td className="num whitespace-nowrap">
+            <td className="num">
               {canViewPrice ? formatMoney(item.refundAmount) : MASKED_AMOUNT}
             </td>
-            <td className="whitespace-nowrap">
+            <td>
               <DocPill label={item.status} tone={RETURN_STATUS_TONE[item.status] ?? 'cancel'} />
             </td>
-            <td className="whitespace-nowrap text-right">
-              <button type="button" onClick={() => setDetailId(item.id)} className="btn btn-s">
-                详情
-              </button>
+            <td>
+              <div className="row-acts">
+                <button type="button" onClick={() => setDetailId(item.id)} className="btn btn-row">
+                  详情
+                </button>
+              </div>
             </td>
           </tr>
         ))}
       </ReversalListCard>
 
       {detailId !== null ? (
-        <section className="card min-w-0 p-4">
+        <section className="card detail">
           {detail.isError ? (
             <ErrorBar message="详情加载失败" onRetry={() => void detail.refetch()} />
           ) : detail.isPending || !detail.data ? (
             <TableSkeleton rows={2} />
           ) : (
-            <div className="space-y-3">
+            <>
               <DetailHead
                 docLabel="客户退货单"
                 orderNo={detail.data.returnNo}
@@ -716,15 +721,12 @@ export function CustomerReturnsPanel({
               />
 
               {detail.data.lines.length === 0 ? (
-                <p
-                  className="rounded-lg px-3 py-2 text-xs"
-                  style={{ background: 'var(--surf-2)', color: 'var(--text-3)' }}
-                >
+                <p className="alert alert-info alert-sm">
                   仅退款单没有实物流水，所以没有商品明细（F4）。
                 </p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left" style={{ minWidth: '520px' }}>
+                <div className="ln">
+                  <table>
                     <thead>
                       <tr>
                         <th>商品</th>
@@ -736,21 +738,16 @@ export function CustomerReturnsPanel({
                     </thead>
                     <tbody>
                       {detail.data.lines.map((line, index) => (
-                        <tr key={`${line.productId}-${index}`} className="r-row">
-                          <td className="text-xs">
-                            {productNameOf(productOptions, line.productId)}
-                          </td>
-                          <td
-                            className="font-mono text-xs"
-                            style={{ color: 'var(--text-3)' }}
-                          >
+                        <tr key={`${line.productId}-${index}`}>
+                          <td>{productNameOf(productOptions, line.productId)}</td>
+                          <td className="mono cell-muted">
                             {line.batchIds.map((id) => batchLabelOf(batchOptions, id)).join(' / ')}
                           </td>
-                          <td className="num whitespace-nowrap">{formatQty(line.qty)}</td>
-                          <td className="num whitespace-nowrap">
+                          <td className="num">{formatQty(line.qty)}</td>
+                          <td className="num">
                             {canViewPrice ? formatMoney(line.unitPrice) : MASKED_AMOUNT}
                           </td>
-                          <td className="num whitespace-nowrap">
+                          <td className="num">
                             {canViewPrice ? formatMoney(line.amount) : MASKED_AMOUNT}
                           </td>
                         </tr>
@@ -771,12 +768,12 @@ export function CustomerReturnsPanel({
 
               {actionError ? <ErrorBar message={actionError} /> : null}
 
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-3)' }}>
+              <p className="detail-why">
                 完成即审批：退货退款类型会按批次入库并写库存流水，然后置为「已完成」；仅退款类型不动库存。
                 冲正单据只追加，不可改、不可删（D47）。完成本身不写账（D40）：实际退款请回原销售单追加负数收款行，
                 应收余额才会跟着变。
               </p>
-            </div>
+            </>
           )}
         </section>
       ) : null}

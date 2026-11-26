@@ -85,7 +85,7 @@ export function ReversalsView({
   const effectiveCompanyId = companyId || companyIds[0] || '';
 
   return (
-    <section className="mx-auto max-w-6xl space-y-4">
+    <section className="page-body">
       <div className="p-head">
         <div>
           <div className="eyebrow">冲正单据 R / S / I</div>
@@ -131,7 +131,7 @@ export function ReversalsView({
       </div>
 
       {activeTab === null ? (
-        <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-600">
+        <p className="alert alert-info">
           当前身份没有冲正单据的可读权限（customer_return / supplier_return / stocktake 任一）。
           需要查看请联系管理员调整岗位权限（D15）。
         </p>
