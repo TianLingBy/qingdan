@@ -1022,6 +1022,36 @@
   background:var(--surf-2);
   border-color:var(--line-3);
 }
+/* 上面把 `.btn-p` 让了出来，但 `.btn-p` 其实没接住 —— 补回主按钮的底色。
+   v0.13 在 `app-v013.css:98` 给 `.btn-primary,.btn-p` 写了 accent 底 + on-accent 字，
+   但同文件 322 行又有一条裸 `.btn{background:var(--surf-1)}`：两者特异性都是 0,1,0，
+   322 行在后，于是 `<button className="btn btn-p">` 的底色被压成浅底（亮色下纯白）；
+   383 行的 `.btn{border:1px solid var(--line-2)}` 顺带把 `border-color:var(--accent)` 也压成了普通描边色。
+   结果全仓 13 处主按钮长得和次要按钮一模一样，主次不分。
+   `.btn-primary` 不用补：`app-v013.css:384` 在 322 之后又完整写了一遍 background。
+   这里用双类名（0,2,0）确保压过 322 / 383 两条单类规则；`:not(:disabled)` 是为了
+   禁用态别跟着变亮（588 行只给了 opacity）。 */
+.btn.btn-p{
+  background:var(--accent-deep);
+  color:var(--on-accent);
+  border-color:var(--accent);
+  box-shadow:0 8px 24px -10px var(--a-50),inset 0 1px 0 var(--btn-inset);
+}
+.btn.btn-p:hover:not(:disabled){
+  background:var(--accent);
+  color:var(--on-accent);
+  box-shadow:0 12px 30px -10px var(--a-65);
+}
+/* 底色回来之后，禁用态得单独收一下：原来主按钮是浅底，靠 588 行的 `opacity:.42` 就够淡了；
+   现在底下压着 accent，只降不透明度会变成「一块半透明黑底的灰按钮」，看着仍然可点
+   （`/companies` 的「创建」在名称没填时就是这一态）。这里把底色换回中性，再叠 588 行的
+   opacity，与禁用的次要按钮长得一致。 */
+.btn.btn-p:disabled{
+  background:var(--surf-2);
+  color:var(--text-3);
+  border-color:var(--line-2);
+  box-shadow:none;
+}
 /* 五个页面根容器原来各写 `mx-auto max-w-7xl space-y-5`：三件事（居中 / 限宽 / 间距）
    散在 5 个文件里，改一个忘四个。1280 = Tailwind 的 max-w-7xl，20px = space-y-5。 */
 .page-body{
