@@ -1,16 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ScopeMatrix } from '@qingdan/contracts';
 import { platformAdminApi } from '../../api/platform-admin';
 import { ApiError } from '../../api/client';
-import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import { describeListError } from '../../components/ListStates';
+import { Icon } from '../../components/icons/Icon';
 import { fetchMe } from '../../api/platform';
 import { DOMAIN_WORDS } from '../employees/domain-words';
-import { resolveListState, type ListState } from '../../lib/list-state';
-import { allows, type ScopeAction } from '../../lib/access';
+import { resolveListState } from '../../lib/list-state';
+import { allows } from '../../lib/access';
 
 /**
- * API 与集成页（22 页之第 22 页，#144；v0.13 重做 #340）。
+ * API 与集成页（22 页之第 22 页，#144；v3.0 重做 #434）。
  *
  * - Token 列表：`GET /api/v1/api-tokens`（敏感读）；
  * - 创建：`POST /api/v1/api-tokens`，scope ⊆ 创建人授权；明文 secret 只显示一次；
@@ -22,6 +23,8 @@ interface CreatedSecret {
   name: string;
   secret: string;
 }
+
+type StatusFilter = 'all' | 'active' | 'revoked';
 
 export function ApiIntegrationPage() {
   const queryClient = useQueryClient();
@@ -35,9 +38,8 @@ export function ApiIntegrationPage() {
   });
 
   const scope = meQuery.data?.scope as ScopeMatrix | undefined;
-  const can = (action: ScopeAction) => allows(scope, 'api_integration', action);
-  const canCreate = can('create');
-  const canDelete = can('delete');
+  const canCreate = allows(scope, 'api_integration', 'create');
+  const canDelete = allows(scope, 'api_integration', 'delete');
 
   const [form, setForm] = useState<{ open: boolean; name: string; domains: ReadonlySet<string> }>({
     open: false,
@@ -47,6 +49,8 @@ export function ApiIntegrationPage() {
   const [created, setCreated] = useState<CreatedSecret | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [keyword, setKeyword] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('all');
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin', 'api-tokens'] });
 
@@ -85,9 +89,21 @@ export function ApiIntegrationPage() {
   });
 
   const tokens = listQuery.data?.items ?? [];
-  const listState: ListState = resolveListState({
+  const filtered = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return tokens.filter((token) => {
+      if (status === 'active' && token.status !== 'active') return false;
+      if (status === 'revoked' && token.status !== 'revoked') return false;
+      if (kw !== '') {
+        const haystack = `${token.name} ${token.scope.map((entry) => entry.domain).join(' ')}`.toLowerCase();
+        if (!haystack.includes(kw)) return false;
+      }
+      return true;
+    });
+  }, [tokens, keyword, status]);
+  const state = resolveListState({
     isPending: listQuery.isPending,
-    hasError: listQuery.error !== null,
+    hasError: listQuery.isError,
     isEmpty: tokens.length === 0,
   });
   const myScope = meQuery.data?.scope ?? [];
@@ -95,37 +111,75 @@ export function ApiIntegrationPage() {
     myScope.some((s) => s.domain === d.key && s.actions.length > 0),
   );
 
+  const statusCell = (token: (typeof tokens)[number]) =>
+    token.status === 'revoked' ? (
+      <span className="st bad">已吊销</span>
+    ) : token.status === 'active' ? (
+      <span className="st ok">生效中</span>
+    ) : (
+      <span className="st cancel">已停用</span>
+    );
+
   return (
-    <section className="mx-auto max-w-6xl space-y-4">
-      <div className="p-head">
+    <section className="space-y-4">
+      <header className="p-head">
         <div>
           <div className="eyebrow">系统 · 外部集成</div>
           <h1>API 与集成</h1>
-          <p className="sub">为 AI 助手 / 脚本 / CLI 发放受限 Token；明文密钥只在创建时显示一次。</p>
+          <p className="sub">外部系统接入与密钥管理。密钥只在创建时完整显示一次；吊销立即生效，不可恢复。</p>
         </div>
         <div className="actions">
           <button
             type="button"
+            className="btn btn-p"
             disabled={!canCreate}
             onClick={() => setForm({ open: true, name: '', domains: new Set() })}
-            className="btn btn-p"
-            title={!canCreate ? '当前身份没有 api_integration.create 权限' : undefined}
+            title={canCreate ? '新建密钥 · 需要 api_integration.create 权限' : '需要 api_integration.create 权限'}
           >
-            + 创建 Token
+            新建密钥
           </button>
         </div>
-      </div>
+      </header>
 
-      {!canCreate && (
-        <p className="text-xs text-slate-500">创建 Token 需要 api_integration.create。</p>
-      )}
+      <div className="toolbar">
+        <label>
+          <span className="sr-only">搜索</span>
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="搜索密钥名称、授权范围…"
+            className="search"
+          />
+        </label>
+        <div className="chips">
+          {([
+            ['all', '全部'],
+            ['active', '生效中'],
+            ['revoked', '已吊销'],
+          ] as ReadonlyArray<readonly [StatusFilter, string]>).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className={`chip${status === value ? ' on' : ''}`}
+              onClick={() => setStatus(value)}
+            >
+              {label}
+              <b>{value === 'all' ? tokens.length : tokens.filter((t) => t.status === value).length}</b>
+            </button>
+          ))}
+        </div>
+        <span className="grow" />
+        <span className="note">
+          <Icon name="shield" size={14} /> 密钥仅创建时显示一次，之后只能吊销重发
+        </span>
+      </div>
 
       {notice && <p className="rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{notice}</p>}
       {error && <p className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
-      <div className="card" data-state={listState}>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left">
+      <div className="card list-card" data-state={state} aria-busy={state === 'loading'}>
+        <div className="tw">
+          <table className="w-full min-w-[900px] text-left">
             <thead>
               <tr>
                 <th>名称</th>
@@ -136,35 +190,13 @@ export function ApiIntegrationPage() {
                 <th className="text-right">操作</th>
               </tr>
             </thead>
-            <tbody data-state={listState}>
-              <tr className="st-tr st-loading">
-                <td colSpan={6}>
-                  <ListLoading label="Token 列表加载中…" />
-                </td>
-              </tr>
-              <tr className="st-tr st-error">
-                <td colSpan={6}>
-                  <ListError
-                    title="Token 列表加载失败"
-                    error={listQuery.error ?? null}
-                    hint={
-                      listQuery.error instanceof ApiError && listQuery.error.status === 403
-                        ? '查看 Token 列表需要 api_integration.read 权限（敏感读），请联系老板开通。'
-                        : undefined
-                    }
-                    onRetry={() => void listQuery.refetch()}
-                  />
-                </td>
-              </tr>
-              <tr className="st-tr st-empty">
-                <td colSpan={6}>
-                  <ListEmpty title="还没有 API Token。外部系统（AI 助手 / 脚本 / CLI）通过 Token 调用 /api/v1。" />
-                </td>
-              </tr>
-              {tokens.map((token) => (
+            <tbody data-state={state}>
+              {filtered.map((token) => (
                 <tr key={token.id} className="r-row">
-                  <td className="px-4 py-3">{token.name}</td>
-                  <td className="px-4 py-3 text-xs text-slate-600">
+                  <td>
+                    <b>{token.name}</b>
+                  </td>
+                  <td className="mono muted">
                     {token.scope
                       .slice(0, 3)
                       .map(
@@ -174,47 +206,79 @@ export function ApiIntegrationPage() {
                       .concat(token.scope.length > 3 ? [`…共 ${token.scope.length} 域`] : [])
                       .join('、') || '—'}
                   </td>
-                  <td className="px-4 py-3">
-                    <span className={token.status === 'active' ? 'text-emerald-600' : 'text-slate-400'}>
-                      {token.status === 'active' ? '生效中' : token.status === 'revoked' ? '已撤销' : '已过期'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                  <td>{statusCell(token)}</td>
+                  <td className="mono muted">
                     {token.expiresAt ? token.expiresAt.slice(0, 10) : '永不过期'}
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">
+                  <td className="mono muted">
                     {token.lastUsedAt ? token.lastUsedAt.slice(0, 19).replace('T', ' ') : '从未使用'}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="text-right">
                     {token.status === 'active' && (
-                      <button
-                        type="button"
-                        disabled={!canDelete || revokeMutation.isPending}
-                        onClick={() =>
-                          revokeMutation.mutate({ id: token.id, name: token.name, version: token.version })
-                        }
-                        className="btn btn-s"
-                        title={
-                          !canDelete
-                            ? '当前身份没有 api_integration.delete 权限'
-                            : '撤销后持有该密钥的请求即刻失效（If-Match 版本校验）'
-                        }
-                      >
-                        撤销
-                      </button>
+                      <span className="rowacts">
+                        <button
+                          type="button"
+                          disabled={!canDelete || revokeMutation.isPending}
+                          onClick={() =>
+                            revokeMutation.mutate({ id: token.id, name: token.name, version: token.version })
+                          }
+                          className="btn btn-s danger"
+                          title={
+                            canDelete
+                              ? '吊销后立即失效，不可恢复（If-Match 版本校验）'
+                              : '需要 api_integration.delete 权限'
+                          }
+                        >
+                          <Icon name="trash" size={14} /> 吊销
+                        </button>
+                      </span>
                     )}
                   </td>
                 </tr>
               ))}
+              <tr className="st-tr st-empty">
+                <td colSpan={6}>
+                  <div className="st-box">
+                    <div className="st-ico">
+                      <Icon name="key" />
+                    </div>
+                    <div className="st-title">还没有 API Token</div>
+                    <p className="st-desc">外部系统（AI 助手 / 脚本 / CLI）通过 Token 调用 /api/v1。</p>
+                  </div>
+                </td>
+              </tr>
+              <tr className="st-tr st-loading">
+                <td colSpan={6}>
+                  <div className="st-box" aria-label="Token 列表加载中">
+                    <div className="sk sk-line w80" />
+                    <div className="sk sk-line w60" />
+                    <div className="sk sk-line w40" />
+                    <p className="st-desc mt-3">Token 列表加载中…</p>
+                  </div>
+                </td>
+              </tr>
+              <tr className="st-tr st-error">
+                <td colSpan={6}>
+                  <div className="st-box st-error">
+                    <div className="st-ico">
+                      <Icon name="refresh" />
+                    </div>
+                    <div className="st-title">Token 列表加载失败</div>
+                    <p className="st-desc">{describeListError('Token 列表加载失败', listQuery.error)}</p>
+                    <button type="button" className="btn" onClick={() => void listQuery.refetch()}>
+                      重试
+                    </button>
+                  </div>
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
+        <footer className="tf">
+          <span>接口契约真源：GET /api/v1/openapi.json（公开只读）。</span>
+          <span className="count">共 {tokens.length} 枚 · 吊销后不可恢复</span>
+        </footer>
       </div>
-
-      <p className="note">
-        明文密钥只在创建时显示一次，服务端只存 SHA-256；授权范围不能超出你自己的权限（服务端强制）。
-        接口契约真源：<span className="font-mono">GET /api/v1/openapi.json</span>（公开只读）。
-      </p>
 
       {form.open && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-6">
@@ -224,7 +288,7 @@ export function ApiIntegrationPage() {
               <button
                 type="button"
                 onClick={() => setForm({ open: false, name: '', domains: new Set() })}
-                className="rounded border border-slate-300 px-2.5 py-1 text-xs hover:bg-slate-50"
+                className="btn btn-ghost"
               >
                 关闭
               </button>
@@ -232,12 +296,14 @@ export function ApiIntegrationPage() {
             <div className="mt-3">
               <input
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                onChange={(event) => setForm({ ...form, name: event.target.value })}
                 placeholder="Token 名称（如：AI 助手-温汇敏）"
-                className="w-72 rounded border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-slate-400"
+                className="search"
               />
             </div>
-            <p className="mt-3 text-xs text-slate-500">勾选授权功能域（继承你在该域的全部动作；可勾 = 你自己有权限）：</p>
+            <p className="mt-3 text-sm text-slate-500">
+              勾选授权功能域（继承你在该域的全部动作；可勾 = 你自己有权限）：
+            </p>
             <div className="mt-2 flex flex-wrap gap-2">
               {grantableDomains.map((domain) => {
                 const checked = form.domains.has(domain.key);
@@ -252,12 +318,7 @@ export function ApiIntegrationPage() {
                       else next.add(domain.key);
                       setForm({ ...form, domains: next });
                     }}
-                    className={[
-                      'rounded-full px-3 py-1 text-xs',
-                      checked
-                        ? 'bg-slate-800 text-white hover:bg-slate-700'
-                        : 'border border-slate-200 text-slate-600 hover:border-slate-400',
-                    ].join(' ')}
+                    className={`chip${checked ? ' on' : ''}`}
                   >
                     {domain.label}
                   </button>
@@ -265,13 +326,13 @@ export function ApiIntegrationPage() {
               })}
             </div>
             {grantableDomains.length === 0 && (
-              <p className="mt-2 text-xs text-slate-400">你的账号当前没有任何可授予的功能域。</p>
+              <p className="mt-2 text-sm text-slate-400">你的账号当前没有任何可授予的功能域。</p>
             )}
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setForm({ open: false, name: '', domains: new Set() })}
-                className="rounded border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+                className="btn"
               >
                 取消
               </button>
@@ -279,7 +340,7 @@ export function ApiIntegrationPage() {
                 type="button"
                 disabled={form.name.trim().length === 0 || form.domains.size === 0 || createMutation.isPending}
                 onClick={() => createMutation.mutate()}
-                className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className="btn btn-p"
               >
                 {createMutation.isPending ? '创建中…' : '创建'}
               </button>
@@ -302,17 +363,13 @@ export function ApiIntegrationPage() {
               <button
                 type="button"
                 onClick={() => void navigator.clipboard.writeText(created.secret)}
-                className="rounded border border-slate-300 px-2.5 py-1.5 text-xs hover:bg-slate-50"
+                className="btn btn-s"
               >
-                复制
+                <Icon name="copy" size={14} /> 复制
               </button>
             </div>
             <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setCreated(null)}
-                className="rounded bg-slate-800 px-3 py-1.5 text-sm text-white hover:bg-slate-700"
-              >
+              <button type="button" onClick={() => setCreated(null)} className="btn btn-p">
                 我已保存
               </button>
             </div>
