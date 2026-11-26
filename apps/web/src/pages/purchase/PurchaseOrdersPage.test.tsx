@@ -485,10 +485,14 @@ describe('开单现场建档（D100）', () => {
 
   it('内联表单三个输入齐全，且无建档提示', () => {
     const html = renderToStaticMarkup(
-      <NewSupplierInlineForm
-        fields={{ name: '宏发五金', contactName: '', contactPhone: '' }}
-        onChange={() => undefined}
-      />,
+      <QueryClientProvider client={createQueryClient()}>
+        <NewSupplierInlineForm
+          fields={{ name: '宏发五金', contactName: '', contactPhone: '' }}
+          onChange={() => undefined}
+          companyId="01900000-0000-7000-8000-000000000002"
+          onPickExisting={() => undefined}
+        />
+      </QueryClientProvider>,
     );
     for (const label of ['新建供应商名称', '新建供应商联系人', '新建供应商电话']) {
       expect(html).toContain(`aria-label="${label}"`);

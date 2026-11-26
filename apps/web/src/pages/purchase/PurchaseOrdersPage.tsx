@@ -35,6 +35,8 @@ import {
 } from '../../components/OrderDetailUI';
 import { ListPager } from '../../components/ListPager';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import { SuggestHint } from '../../components/SuggestHint';
+import type { SuggestCandidate } from '../../components/masterdata-suggest-api';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useCompanyLabel } from '../../lib/company-directory';
 import { useEmployeeLabel } from '../../lib/employee-directory';
@@ -269,9 +271,15 @@ export function validateDraft(
 export function NewSupplierInlineForm({
   fields,
   onChange,
+  companyId,
+  onPickExisting,
 }: {
   readonly fields: NewSupplierFields;
   readonly onChange: (patch: Partial<NewSupplierFields>) => void;
+  /** 当前单据公司：建档防重查询的必传参数（D99，漏传 422）。 */
+  readonly companyId: string;
+  /** 点了「已有相同供应商」的候选：调用方改回从下拉里选这条档案。 */
+  readonly onPickExisting: (candidate: SuggestCandidate) => void;
 }) {
   return (
     <div className="mt-2 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
@@ -302,6 +310,16 @@ export function NewSupplierInlineForm({
           className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
         />
       </label>
+      {/* 建档防重（D99）：与销售 E 的客户草档同一套组件与口径，见那里的注释。 */}
+      <div className="sm:col-span-3">
+        <SuggestHint
+          kind="supplier"
+          name={fields.name}
+          companyId={companyId}
+          onPick={onPickExisting}
+          enabled={fields.name.trim().length > 0}
+        />
+      </div>
       <p className="text-xs text-slate-500 sm:col-span-3">
         保存单据时一起建档，不必先去主数据页。建档对你是透明的 —— 保存成功后只提示单据保存，
         不额外提示建档结果，也不需要建供应商权限（有开单权即可）。
@@ -325,6 +343,8 @@ interface OrderFormProps {
   readonly newSupplier: NewSupplierFields;
   readonly onNewSupplierToggle: (open: boolean) => void;
   readonly onNewSupplierChange: (patch: Partial<NewSupplierFields>) => void;
+  /** 草档里打了名字、命中已有供应商：改回从下拉里选这条档案（D99）。 */
+  readonly onNewSupplierPick: (candidate: SuggestCandidate) => void;
   readonly busy: boolean;
   readonly errors: readonly string[];
   readonly serverIssues: readonly { path: string; message: string }[];
@@ -354,6 +374,7 @@ function OrderForm({
   newSupplier,
   onNewSupplierToggle,
   onNewSupplierChange,
+  onNewSupplierPick,
   busy,
   errors,
   serverIssues,
@@ -453,7 +474,12 @@ function OrderForm({
             {newSupplierOpen ? '取消新建，改从已有供应商里选' : '+ 新建供应商'}
           </button>
           {newSupplierOpen && (
-            <NewSupplierInlineForm fields={newSupplier} onChange={onNewSupplierChange} />
+            <NewSupplierInlineForm
+              fields={newSupplier}
+              onChange={onNewSupplierChange}
+              companyId={companyId}
+              onPickExisting={onNewSupplierPick}
+            />
           )}
         </div>
       )}
@@ -1038,6 +1064,8 @@ export function PurchaseOrdersPage() {
   const [editing, setEditing] = useState<PurchaseOrderDetail | null>(null);
   const [formCompanyId, setFormCompanyId] = useState('');
   const [formSupplierId, setFormSupplierId] = useState('');
+  /** 非错误提示（如「已选中已有供应商」）。与 `actionError` 互斥 —— 成功的事别挂在红条上。 */
+  const [notice, setNotice] = useState<string | null>(null);
   /**
    * 开单现场建档（D100）：打开后供应商不选下拉，改为填草档随单据一起提交。
    * 与 `formSupplierId` 分开是因为「打开了但没填名称」与「没打开」提交时报的错不同。
@@ -1642,6 +1670,13 @@ export function PurchaseOrdersPage() {
             else setNewSupplier({ ...EMPTY_NEW_SUPPLIER });
           }}
           onNewSupplierChange={(patch) => setNewSupplier((current) => ({ ...current, ...patch }))}
+          onNewSupplierPick={(candidate) => {
+            // 选中已有档案就不再建档：清草档、关新建，否则 supplierId 与 supplierDraft 同时给会 422。
+            setFormSupplierId(candidate.id);
+            setNewSupplierOpen(false);
+            setNewSupplier({ ...EMPTY_NEW_SUPPLIER });
+            setNotice(`已选中已有供应商「${candidate.name}」，这次不再新建档案。`);
+          }}
           busy={save.isPending}
           errors={clientErrors}
           serverIssues={serverIssues}
@@ -1685,6 +1720,11 @@ export function PurchaseOrdersPage() {
       )}
       {actionError && (
         <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{actionError}</p>
+      )}
+      {notice && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          {notice}
+        </p>
       )}
 
       {/*

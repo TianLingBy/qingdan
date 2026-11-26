@@ -418,7 +418,18 @@ describe('开单现场建档的内联表单（D100）', () => {
     contactName: string;
     contactPhone: string;
     creditTermDays: string;
-  }): string => renderToStaticMarkup(<NewCustomerInlineForm fields={fields} onChange={() => undefined} />);
+  }): string =>
+    // 草档里挂了建档防重（SuggestHint），它要 QueryClient —— 静态渲染也得包一层。
+    renderToStaticMarkup(
+      <QueryClientProvider client={createQueryClient()}>
+        <NewCustomerInlineForm
+          fields={fields}
+          onChange={() => undefined}
+          companyId="01900000-0000-7000-8000-000000000002"
+          onPickExisting={() => undefined}
+        />
+      </QueryClientProvider>,
+    );
 
   it('四个输入齐全：名称必填，其余选填、账期留空即现结', () => {
     const html = render({ name: '', contactName: '', contactPhone: '', creditTermDays: '' });
