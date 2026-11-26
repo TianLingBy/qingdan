@@ -275,7 +275,9 @@ export function ApiIntegrationPage() {
           </table>
         </div>
         <footer className="tf">
-          <span>接口契约真源：GET /api/v1/openapi.json（公开只读）。</span>
+          <span>
+            接口契约真源：GET /api/v1/openapi.json（公开只读）；密钥只显示一次，服务端只存 SHA-256。
+          </span>
           <span className="count">共 {tokens.length} 枚 · 吊销后不可恢复</span>
         </footer>
       </div>
