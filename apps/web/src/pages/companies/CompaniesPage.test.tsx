@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
+import { authKeys } from '../auth/auth-api';
 import { ApiIntegrationPage } from '../api-integration/ApiIntegrationPage';
 import { AuditLogsPage } from '../audit/AuditLogsPage';
 import { CompaniesPage } from './CompaniesPage';
@@ -108,6 +109,13 @@ describe('权限设置页（#144）', () => {
 describe('操作日志页（#144）', () => {
   it('渲染敏感读标识与日志行', () => {
     const html = render(<AuditLogsPage />, (client) => {
+      client.setQueryData(authKeys.me, {
+        employeeId: 'e1',
+        tenantId: 't1',
+        displayName: '张明',
+        companyIds: ['c1'],
+        scope: [{ domain: 'audit', actions: ['read'] }],
+      });
       client.setQueryData(['admin', 'audit-logs', null], { items: [AUDIT_LOG], nextCursor: null });
     });
     expect(html).toContain('操作日志');
@@ -118,6 +126,13 @@ describe('操作日志页（#144）', () => {
 
   it('空列表提供明确空态', () => {
     const html = render(<AuditLogsPage />, (client) => {
+      client.setQueryData(authKeys.me, {
+        employeeId: 'e1',
+        tenantId: 't1',
+        displayName: '张明',
+        companyIds: ['c1'],
+        scope: [{ domain: 'audit', actions: ['read'] }],
+      });
       client.setQueryData(['admin', 'audit-logs', null], { items: [], nextCursor: null });
     });
     expect(html).toContain('还没有操作记录');

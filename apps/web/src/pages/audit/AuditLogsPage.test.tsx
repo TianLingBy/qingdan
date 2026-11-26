@@ -84,11 +84,14 @@ describe('操作日志页（v3.0 四态 / 翻页，#434）', () => {
     expect(html).toContain('敏感读');
   });
 
-  it('有 nextCursor 渲染「下一批」，否则不渲染（游标翻页入口）', () => {
+  it('分页条「下一批」由 nextCursor 决定可点与否（游标翻页入口）', () => {
     const withNext = render((client) => seedLogs(client, [log()], 'cursor-2'));
-    expect(withNext).toContain('下一批');
     const withoutNext = render((client) => seedLogs(client, [log()], null));
-    expect(withoutNext).not.toContain('下一批');
+    expect(withNext).toContain('下一批');
+    expect(withoutNext).toContain('下一批');
+    // 无 nextCursor 时「下一批」按钮禁用；有 nextCursor 时可点
+    expect(/<button[^>]*disabled[^>]*>下一批<\/button>/.test(withoutNext)).toBe(true);
+    expect(/<button[^>]*disabled[^>]*>下一批<\/button>/.test(withNext)).toBe(false);
   });
 
   it('无 audit.read 时整块不渲染，显示无权限态', () => {
