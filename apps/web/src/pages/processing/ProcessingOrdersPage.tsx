@@ -107,8 +107,8 @@ const STATUS_TONE: Readonly<Record<ProcessingOrderStatus, DocPillTone>> = {
   已取消: 'cancel',
 };
 
-const PAGE_DESCRIPTION =
-  '委外加工：引用本公司批次 + 辅料 + 加工费 / 运费，完成后产出新批次并按 D5 锁价；「归属单」用于全损耗（可售量 = 0）的损失归属（D35 / G2）。';
+/** 页头说明：一字不改照抄稿子 `DOC['processing-orders'].sub`（`design/v3.0/index.html` L803）。 */
+const PAGE_DESCRIPTION = '委托外部加工，料段与成品段两段在途，记损耗归属（D35）。';
 
 interface MaterialDraft {
   batchId: string;
@@ -143,6 +143,20 @@ function formatDateTime(value: string): string {
     timeStyle: 'short',
     timeZone: 'Asia/Shanghai',
   }).format(date);
+}
+
+/** 列表「日期」列：稿子这一列只写到天（`2026-11-22`），到分钟的时间留在详情里。 */
+function formatDateOnly(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Shanghai',
+  })
+    .format(date)
+    .replace(/\//g, '-');
 }
 
 function productLabel(products: readonly Product[], productId: string | null): string {
@@ -1259,7 +1273,6 @@ export function DetailPanel({
 }
 
 export function ProcessingOrdersPage() {
-  const companyLabel = useCompanyLabel();
   const employeeLabel = useEmployeeLabel();
   const queryClient = useQueryClient();
   const me = useQuery({ queryKey: authKeys.me, queryFn: authApi.me });
@@ -1268,8 +1281,7 @@ export function ProcessingOrdersPage() {
   const canViewPrice = can('view_price');
   const companyIds = meData?.companyIds ?? [];
 
-  const [companyId, setCompanyId] = useState('');
-  const [processorFilter, setProcessorFilter] = useState('');
+  /* 列表过滤只留「状态 / 关键字 / 看谁的」三样，与稿子的工具栏一一对应。 */
   const [status, setStatus] = useState<'' | ProcessingOrderStatus>('');
   /**
    * 看谁的（D106）。空串 = 不传参数，由服务端按权限定。
@@ -1365,7 +1377,7 @@ export function ProcessingOrdersPage() {
   useEffect(() => {
     setCursors([null]);
     setPageIndex(0);
-  }, [companyId, processorFilter, status, keyword]);
+  }, [status, keyword]);
 
   useEffect(() => {
     return () => {
@@ -1375,14 +1387,12 @@ export function ProcessingOrdersPage() {
 
   const filters = useMemo(
     () => ({
-      companyId: optionalText(companyId),
-      processorId: optionalText(processorFilter),
       status: status || undefined,
       keyword: optionalText(keyword),
       cursor: cursors[pageIndex] ?? null,
       scope: scopeFilter || undefined,
     }),
-    [companyId, processorFilter, status, keyword, cursors, pageIndex, scopeFilter],
+    [status, keyword, cursors, pageIndex, scopeFilter],
   );
 
   const list = useQuery({
@@ -1862,117 +1872,113 @@ export function ProcessingOrdersPage() {
     hasError: list.isError,
     isEmpty: rows.length === 0,
   });
+  /**
+   * 统计片只列「本页出现过」的状态 + 当前选中的那一档。
+   * 加工单列表走游标分页（`PageQuerySchema`），响应里没有 `total`、更没有分组计数，
+   * 所以这里不画条数（画本页的会被读成全量）。
+   */
+  const statusesInPage = (['进行中', '在途', '已完成', '已取消'] as const).filter(
+    (value) => status === value || rows.some((row) => row.status === value),
+  );
 
   return (
     <section className="page-body">
-      <div className="p-head">
+      {/* 页头照稿子 `.ph`：标题 + 一行原文说明，右侧只放「+ 新建加工单」。 */}
+      <div className="ph">
         <div>
-          <div className="eyebrow">加工单 B · 投料与损耗</div>
           <h1>加工单 B</h1>
-          <p className="sub">{PAGE_DESCRIPTION}</p>
+          <p>{PAGE_DESCRIPTION}</p>
         </div>
-        <div className="actions">
+        <div className="acts">
           <button
             type="button"
             onClick={beginCreate}
             disabled={!can('create') || companyIds.length === 0}
-            className="btn-primary"
+            className="btn btn-p"
+            title={
+              !can('create')
+                ? '需要 processing.create 权限'
+                : companyIds.length === 0
+                  ? '当前账号没有可下单的公司，请联系管理员分配公司权限'
+                  : '执行「新建加工单」· 需要 processing.create 权限'
+            }
           >
-            + 新建
+            + 新建加工单
           </button>
         </div>
       </div>
 
-      {meData && !canViewPrice && (
-        <div className="alert alert-warn">
-          <p>
-            当前身份无「看价」权限，金额显示为 <b>{MASKED_AMOUNT}</b>（D79）。
-          </p>
-          <p>
-            注意：processing 端点目前<b>没有服务端金额脱敏</b>（与采购单不同），
-            页面这里只是不渲染；已在 PR 里报给主线在 API 侧补 view_price 口径。
-          </p>
-        </div>
-      )}
-
-      {meData && !can('create') && (
-        <p className="detail-why">
-          「新建」需要 processing.create；当前身份只能查看（权限判定在服务端，前端只是不画按钮）。
-        </p>
-      )}
-
       {/*
-        工具条：状态用 `.seg` 分段（视觉稿 `加工单B.html` 就是分段，不是下拉）。
-        分段里只有契约认的四个状态 —— 视觉稿那段「草稿」是模板残留，契约
-        `PROCESSING_ORDER_STATES` 里没有草稿态，画出来就是个永远筛不出数据的按钮。
+        工具栏照稿子的 `orderTools()` 顺序：搜索框 → 状态统计片 →（撑开）→ 范围控件。
+        状态改回统计片（上一版做成了 `.seg` 分段）；加工厂名走 keyword（后端就搜单号与加工厂名），
+        公司由顶栏切换器决定，所以不再各摆一个下拉 —— 三个下拉会把工具栏挤成两行。
       */}
-      <div className="toolbar">
-        <div className="seg" role="group" aria-label="按状态筛选">
-          {(['', '进行中', '在途', '已完成', '已取消'] as const).map((value) => (
+      <div className="tools">
+        <label className="field">
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="搜索单号、加工厂、成品…"
+            aria-label="搜索单号、加工厂或成品"
+          />
+        </label>
+        <div className="chips" role="group" aria-label="按状态筛选">
+          <button
+            type="button"
+            className={status === '' ? 'chip on' : 'chip'}
+            aria-pressed={status === ''}
+            onClick={() => setStatus('')}
+          >
+            全部
+          </button>
+          {statusesInPage.map((value) => (
             <button
-              key={value === '' ? 'all' : value}
+              key={value}
               type="button"
-              className={status === value ? 'on' : undefined}
+              className={status === value ? 'chip on' : 'chip'}
               aria-pressed={status === value}
               onClick={() => setStatus(value)}
             >
-              {value === '' ? '全部状态' : value}
+              {value}
             </button>
           ))}
         </div>
-        {/*
-          看谁的（D106）。只在有 `processing.read_all` 时才给这个下拉 ——
-          没权限的人看到一个切不动的框，会以为「全部」里该有别人的单。
-        */}
-        {can('read_all') && (
-          <select
-            value={scopeFilter}
-            onChange={(event) => {
-              setScopeFilter(event.target.value as '' | 'mine' | 'all');
-              // 换「看谁的」等于换了一组数据，旧游标指向的位置在新集合里没有意义。
-              setCursors([null]);
-              setPageIndex(0);
-            }}
-            aria-label="看谁的单据"
-          >
-            <option value="">默认（按我的权限）</option>
-            <option value="mine">只看我经手的</option>
-            <option value="all">全部</option>
-          </select>
+        <div className="grow" />
+        {can('read_all') ? (
+          <div className="seg" role="group" aria-label="看谁的单据">
+            <button
+              type="button"
+              className={scopeFilter !== 'mine' ? 'on' : undefined}
+              aria-pressed={scopeFilter !== 'mine'}
+              onClick={() => {
+                setScopeFilter('all');
+                setCursors([null]);
+                setPageIndex(0);
+              }}
+            >
+              全部单据
+            </button>
+            <button
+              type="button"
+              className={scopeFilter === 'mine' ? 'on' : undefined}
+              aria-pressed={scopeFilter === 'mine'}
+              onClick={() => {
+                setScopeFilter('mine');
+                setCursors([null]);
+                setPageIndex(0);
+              }}
+            >
+              只看我的
+            </button>
+          </div>
+        ) : (
+          <span className="note">仅显示本人单据（无 read_all 权限）</span>
         )}
-        {companyIds.length > 1 && (
-          <select
-            value={companyId}
-            onChange={(event) => setCompanyId(event.target.value)}
-            className="sel"
-          >
-            <option value="">全部公司</option>
-            {companyIds.map((id) => (
-              <option key={id} value={id} title={id}>
-                {companyLabel(id)}
-              </option>
-            ))}
-          </select>
+        {meData && !canViewPrice && (
+          <span className="note">
+            当前身份无「看价」权限，金额显示为 {MASKED_AMOUNT}（D79）
+          </span>
         )}
-        <select
-          value={processorFilter}
-          onChange={(event) => setProcessorFilter(event.target.value)}
-          className="sel"
-        >
-          <option value="">全部加工厂</option>
-          {processors.map((processor) => (
-            <option key={processor.id} value={processor.id}>
-              {processor.name}
-            </option>
-          ))}
-        </select>
-        <input
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-          placeholder="搜索单号、加工厂名"
-          aria-label="搜索单号或加工厂名"
-          className="search"
-        />
       </div>
 
       {formOpen && (
@@ -2069,27 +2075,29 @@ export function ProcessingOrdersPage() {
       <div className="card list-card" data-state={listState}>
         <div className="tw">
           {/* 8 列在 1040px 以下会挤到换行，交给 `.tw` 横向滚（与采购 / 内贸同口径） */}
-          <table className="w-full min-w-[1040px] text-left">
+          {/* 列头照稿子 `orderTable()`：单号 / 加工厂 / 成品 / 数量 / 加工费 / 损耗 / 状态 / 负责人 / 日期，共 9 列。 */}
+          <table>
             <thead>
               <tr>
                 <th>单号</th>
                 <th>加工厂</th>
                 <th>成品</th>
-                <th className="num">投入 → 可售</th>
-                <th className="num">损耗</th>
-                <th className="num">费用</th>
+                <th className="r">数量</th>
+                <th className="r">加工费</th>
+                <th className="r">损耗</th>
                 <th>状态</th>
-                <th />
+                <th>负责人</th>
+                <th>日期</th>
               </tr>
             </thead>
             <tbody data-state={listState}>
               <tr className="st-tr st-loading">
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <ListLoading label="正在加载加工单…" />
                 </td>
               </tr>
               <tr className="st-tr st-error">
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <ListError
                     title="加工单加载失败"
                     error={list.error}
@@ -2098,72 +2106,50 @@ export function ProcessingOrdersPage() {
                 </td>
               </tr>
               <tr className="st-tr st-empty">
-                <td colSpan={8}>
-                  <ListEmpty title="暂无加工单。可调整筛选条件，或用右上角「+ 新建」开第一张。" />
+                <td colSpan={9}>
+                  <ListEmpty title="暂无加工单。可调整筛选条件，或用右上角「+ 新建加工单」开第一张。" />
                 </td>
               </tr>
               {rows.map((order) => (
-                <tr key={order.id} className="r-row">
-                  <td className="whitespace-nowrap">
-                    <button
-                      type="button"
-                      onClick={() => setDetailId(order.id)}
-                      className="doc-link"
-                    >
-                      {order.orderNo}
-                    </button>
+                /*
+                  整行点进详情（稿子 `tr.r-row.click`）：行内不再放「详情 / 编辑 / 取消」，
+                  三个动作都在详情面板里，列表只负责「找到并打开」。键盘 Enter 同效。
+                */
+                <tr
+                  key={order.id}
+                  className="r-row click"
+                  tabIndex={0}
+                  onClick={() => setDetailId(order.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setDetailId(order.id);
+                    }
+                  }}
+                >
+                  <td className="mono">
+                    <b>{order.orderNo}</b>
                   </td>
-                  <td className="whitespace-nowrap">{order.processorName}</td>
-                  <td className="cell-muted">
-                    {productLabel(products, order.outputProductId)}
+                  <td>{order.processorName}</td>
+                  <td>{productLabel(products, order.outputProductId)}</td>
+                  <td className="r num">{formatQty(order.inputQty)}</td>
+                  <td className="r num">
+                    {canViewPrice
+                      ? formatMoney(sumDecimal(order.fees.map((fee) => fee.amount)))
+                      : MASKED_AMOUNT}
                   </td>
-                  <td className="num whitespace-nowrap">
-                    {formatQty(order.inputQty)} →{' '}
-                    {order.sellableQty === null ? '待验收' : formatQty(order.sellableQty)}
-                  </td>
-                  <td className="num whitespace-nowrap">
+                  <td className="r num">
                     {order.lossQty === null ? (
                       <span className="cell-muted">待验收</span>
                     ) : (
                       formatQty(order.lossQty)
                     )}
                   </td>
-                  <td className="num whitespace-nowrap">
-                    {canViewPrice
-                      ? formatMoney(sumDecimal(order.fees.map((fee) => fee.amount)))
-                      : MASKED_AMOUNT}
-                  </td>
-                  <td className="whitespace-nowrap">
+                  <td>
                     <StatusBadge status={order.status} />
                   </td>
-                  <td className="whitespace-nowrap text-right">
-                    <div className="row-acts">
-                      <button
-                        type="button"
-                        onClick={() => setDetailId(order.id)}
-                        className="btn btn-row"
-                      >
-                        详情
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!can('update') || !canViewPrice || order.status !== '进行中'}
-                        onClick={() => void withFreshDetail(order.id, beginEdit)}
-                        className="btn btn-row"
-                        title={!canViewPrice ? '无看价权限：看不到加工费就没法改单' : undefined}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!can('delete') || order.status !== '进行中' || cancelOrder.isPending}
-                        onClick={() => void withFreshDetail(order.id, askCancel)}
-                        className="btn btn-row danger"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </td>
+                  <td>{employeeLabel(order.handlerId)}</td>
+                  <td className="mono muted">{formatDateOnly(order.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -2187,13 +2173,6 @@ export function ProcessingOrdersPage() {
           />
         </div>
       </div>
-
-      <p className="note">
-        「完成 / 验收」是一次性走完的老路径（同样要{' '}
-        <code className="mono">processing.approve</code>）：损耗量只填一次、事后不改，
-        可售量为 0 时必须二次确认全损耗。提交带强 <code className="mono">If-Match</code>，
-        版本冲突会提示并同步最新状态。「草稿」不在状态机里，所以分段里没有它。
-      </p>
 
       {detailId !== null && (
         <>

@@ -176,11 +176,12 @@ describe('加工单 B 页面', () => {
     expect(html).toContain('暂无加工单');
   });
 
-  it('进行中的单据显示「完成 / 验收」入口，不再写早已过期的 501 说明', () => {
+  it('行整行可点进详情（「完成 / 验收」入口改在详情面板里，不再写早已过期的 501 说明）', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
-    expect(html).toContain('完成 / 验收');
-    expect(html).toContain('processing.approve');
+    // 稿子没有行内按钮：入口是「点整行 → 详情面板」，面板里的「完成 / 验收」由下面
+    // `加工单完成 / 验收` 那个 describe 覆盖（那里断言 完成 / 验收、损耗量、可售量）。
+    expect(html).toContain('class="r-row click"');
     expect(html).not.toContain('调用会回 501');
     expect(html).not.toContain('尚未登记');
   });
@@ -551,7 +552,7 @@ describe('v3.0 列表版式（#431）', () => {
     expect(html).toContain('class="tw"');
     expect(html).toContain('class="tf"');
     expect(html).toContain('data-state="filled"');
-    expect(html).toContain('class="r-row"');
+    expect(html).toContain('class="r-row click"');
     for (const stateClass of ['st-tr st-loading', 'st-tr st-error', 'st-tr st-empty']) {
       expect(html).toContain(stateClass);
     }
