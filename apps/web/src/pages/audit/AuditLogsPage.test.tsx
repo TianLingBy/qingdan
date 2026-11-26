@@ -3,10 +3,11 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../api/query';
+import { authKeys } from '../auth/auth-api';
 import { AuditLogsPage, filterAuditLogs } from './AuditLogsPage';
 
 /**
- * #396 补测试网：操作日志页的四态 / 游标翻页 / 客户端筛选 / 敏感读标识。
+ * #434 操作日志页 v3.0：四态 / 游标翻页 / 客户端筛选（关键字·结果·来源）/ 敏感读标识。
  * 模式同 CompaniesPage.test.tsx —— renderToStaticMarkup + 预置 query 数据。
  */
 
@@ -38,6 +39,13 @@ function log(over: Partial<AuditLog> = {}): AuditLog {
 
 function render(seed: (client: ReturnType<typeof createQueryClient>) => void): string {
   const client = createQueryClient();
+  client.setQueryData(authKeys.me, {
+    employeeId: 'e1',
+    tenantId: 't1',
+    displayName: '张明',
+    companyIds: ['c1'],
+    scope: [{ domain: 'audit', actions: ['read'] }],
+  });
   seed(client);
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
@@ -50,7 +58,7 @@ function seedLogs(client: ReturnType<typeof createQueryClient>, items: AuditLog[
   client.setQueryData(['admin', 'audit-logs', null], { items, nextCursor });
 }
 
-describe('操作日志页（v0.13 四态 / 翻页，#396）', () => {
+describe('操作日志页（v3.0 四态 / 翻页，#434）', () => {
   it('首屏未取数：data-state=loading 且不含数据行', () => {
     const html = render(() => {});
     expect(html).toContain('data-state="loading"');
@@ -76,33 +84,58 @@ describe('操作日志页（v0.13 四态 / 翻页，#396）', () => {
     expect(html).toContain('敏感读');
   });
 
-  it('有 nextCursor 渲染「下一页」，否则不渲染（游标翻页入口）', () => {
+  it('有 nextCursor 渲染「下一批」，否则不渲染（游标翻页入口）', () => {
     const withNext = render((client) => seedLogs(client, [log()], 'cursor-2'));
-    expect(withNext).toContain('下一页');
+    expect(withNext).toContain('下一批');
     const withoutNext = render((client) => seedLogs(client, [log()], null));
-    expect(withoutNext).not.toContain('下一页');
+    expect(withoutNext).not.toContain('下一批');
+  });
+
+  it('无 audit.read 时整块不渲染，显示无权限态', () => {
+    const client = createQueryClient();
+    client.setQueryData(authKeys.me, {
+      employeeId: 'e1',
+      tenantId: 't1',
+      displayName: '张明',
+      companyIds: ['c1'],
+      scope: [],
+    });
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <AuditLogsPage />
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('没有查看权限');
+    expect(html).not.toContain('r-row');
   });
 });
 
 describe('filterAuditLogs 客户端筛选（纯函数）', () => {
   const logs: AuditLog[] = [
-    log({ id: 'a1', actorType: 'employee', actorId: 'e1', objectType: 'company', objectId: 'c1' }),
-    log({ id: 'a2', actorType: 'ai', actorId: 'ai1', objectType: 'sales_order', objectId: null }),
+    log({ id: 'a1', actorType: 'employee', actorId: 'e1', objectType: 'company', objectId: 'c1', source: 'web', result: 'success' }),
+    log({ id: 'a2', actorType: 'ai', actorId: 'ai1', objectType: 'sales_order', objectId: null, source: 'api', result: 'fail', action: 'sales.ship' }),
   ];
 
-  it('操作人关键字命中 actorType / actorId', () => {
-    expect(filterAuditLogs(logs, 'ai', '').map((l) => l.id)).toEqual(['a2']);
+  it('关键字命中操作人 / 动作 / 对象', () => {
+    expect(filterAuditLogs(logs, { keyword: 'ai', result: 'all', source: 'all' }).map((l) => l.id)).toEqual(['a2']);
+    expect(filterAuditLogs(logs, { keyword: 'ship', result: 'all', source: 'all' }).map((l) => l.id)).toEqual(['a2']);
   });
 
-  it('对象关键字命中 objectType / objectId', () => {
-    expect(filterAuditLogs(logs, '', 'company').map((l) => l.id)).toEqual(['a1']);
+  it('结果筛选命中 success / fail', () => {
+    expect(filterAuditLogs(logs, { keyword: '', result: 'success', source: 'all' }).map((l) => l.id)).toEqual(['a1']);
+    expect(filterAuditLogs(logs, { keyword: '', result: 'fail', source: 'all' }).map((l) => l.id)).toEqual(['a2']);
+  });
+
+  it('来源筛选命中 web / api', () => {
+    expect(filterAuditLogs(logs, { keyword: '', result: 'all', source: 'web' }).map((l) => l.id)).toEqual(['a1']);
+    expect(filterAuditLogs(logs, { keyword: '', result: 'all', source: 'api' }).map((l) => l.id)).toEqual(['a2']);
   });
 
   it('空关键字不过滤', () => {
-    expect(filterAuditLogs(logs, '', '').map((l) => l.id)).toEqual(['a1', 'a2']);
+    expect(filterAuditLogs(logs, { keyword: '', result: 'all', source: 'all' }).map((l) => l.id)).toEqual(['a1', 'a2']);
   });
 
   it('大小写不敏感', () => {
-    expect(filterAuditLogs(logs, 'AI', '').map((l) => l.id)).toEqual(['a2']);
+    expect(filterAuditLogs(logs, { keyword: 'AI', result: 'all', source: 'all' }).map((l) => l.id)).toEqual(['a2']);
   });
 });
