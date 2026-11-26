@@ -1,8 +1,10 @@
 import type { ProfitReport } from '@qingdan/contracts';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { ListEmpty, ListError } from '../../components/ListStates';
+import { describeListError } from '../../components/ListStates';
+import { Icon } from '../../components/icons/Icon';
 import { formatMoney } from '../../lib/decimal';
+import { resolveListState } from '../../lib/list-state';
 import { authApi, authKeys } from '../auth/auth-api';
 import { shortId } from '../inventory/inventory-ui';
 import {
@@ -13,6 +15,12 @@ import {
 
 function amount(value: string | null): string {
   return formatMoney(value);
+}
+
+function toneOf(value: string | null): string {
+  const n = Number(value ?? '0');
+  if (Number.isNaN(n)) return 'muted';
+  return n >= 0 ? 'st ok' : 'st bad';
 }
 
 export function ProfitReportSummary({
@@ -26,29 +34,29 @@ export function ProfitReportSummary({
     <>
       <div className="grid gap-4 md:grid-cols-3">
         {[
-          { label: '毛利', value: report.grossProfit, tone: 'text-sky-700' },
-          { label: '全损耗损失', value: report.fullLossAmount, tone: 'text-rose-700' },
-          { label: '净毛利', value: report.netProfit, tone: 'text-emerald-700' },
+          { label: '毛利', value: report.grossProfit },
+          { label: '全损耗损失', value: report.fullLossAmount },
+          { label: '净毛利', value: report.netProfit },
         ].map((item) => (
-          <section key={item.label} className="rounded-xl border border-slate-200 bg-white p-5">
-            <p className="text-xs text-slate-400">{item.label}</p>
-            <p className={`mt-2 text-2xl font-semibold tabular-nums ${item.tone}`}>
+          <section key={item.label} className="panel">
+            <p className="muted">{item.label}</p>
+            <p className={`mt-2 text-2xl font-semibold tabular-nums ${toneOf(item.value)}`}>
               {canViewPrice ? amount(item.value) : '—'}
             </p>
           </section>
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+      <div className="flex flex-wrap items-center gap-3 text-sm muted">
         <span>期间：{report.periodStart} 至 {report.periodEnd}</span>
         <span>参与汇总的已结算单：{report.settledOrderCount} 张</span>
-        {!canViewPrice && <span className="text-amber-700">当前身份无看价权限，金额显示占位。</span>}
+        {!canViewPrice && (
+          <span className="st warn">当前身份无看价权限，金额显示占位。</span>
+        )}
       </div>
 
       {report.unattributedLossAvailable && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
-          未归属损失下钻已开放，但当前一期契约尚未启用。
-        </section>
+        <section className="panel muted">未归属损失下钻已开放，但当前一期契约尚未启用。</section>
       )}
     </>
   );
@@ -85,20 +93,28 @@ export function ProfitReportPage() {
     setSubmitted({ periodStart, periodEnd, companyId: companyId || undefined });
   };
 
+  const state = resolveListState({
+    isPending: report.isPending,
+    hasError: report.isError,
+    isEmpty: submitted === null,
+  });
+
   return (
-    <section className="mx-auto max-w-7xl space-y-4">
-      <div className="p-head">
+    <section className="space-y-4">
+      <header className="p-head">
         <div>
           <div className="eyebrow">报表 · 期间汇总</div>
           <h1>利润报表</h1>
-          <p className="sub">按期间汇总已结算毛利、全损耗与净毛利；金额始终以服务端权限结果为准。</p>
+          <p className="sub">
+            由已结算 C 单按期间聚合，正青负红。无看价权限时全部金额显示「—」（D79）。
+          </p>
         </div>
-      </div>
+      </header>
 
       <form onSubmit={submit} className="panel">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <label className="text-sm">
-            <span className="text-slate-600">开始日期</span>
+          <label>
+            <span className="muted">开始日期</span>
             <input
               required
               type="date"
@@ -107,8 +123,8 @@ export function ProfitReportPage() {
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </label>
-          <label className="text-sm">
-            <span className="text-slate-600">结束日期</span>
+          <label>
+            <span className="muted">结束日期</span>
             <input
               required
               type="date"
@@ -117,8 +133,8 @@ export function ProfitReportPage() {
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </label>
-          <label className="text-sm">
-            <span className="text-slate-600">可见公司</span>
+          <label>
+            <span className="muted">可见公司</span>
             <select
               value={companyId}
               onChange={(event) => setCompanyId(event.target.value)}
@@ -141,27 +157,40 @@ export function ProfitReportPage() {
         {formError && <p className="mt-2 text-sm text-rose-600">{formError}</p>}
       </form>
 
-      {!submitted ? (
-        <div className="panel">
-          <ListEmpty title="选择起止日期后查询；不使用隐式默认期间。" />
+      <section className="panel" data-state={state}>
+        <div className="st-block st-filled">
+          {report.data ? <ProfitReportSummary report={report.data} canViewPrice={canViewPrice} /> : null}
         </div>
-      ) : report.isPending ? (
-        <div className="panel">
-          <div className="grid gap-4 md:grid-cols-3" aria-busy="true">
-            {[0, 1, 2].map((item) => (
-              <div key={item} className="h-28 animate-pulse rounded-xl bg-slate-100" />
-            ))}
+        <div className="st-block st-empty">
+          <div className="st-box">
+            <div className="st-ico">
+              <Icon name="calendar" />
+            </div>
+            <div className="st-title">选择起止日期后查询</div>
+            <p className="st-desc">不使用隐式默认期间；期间必填，缺了后端会 422。</p>
           </div>
         </div>
-      ) : report.isError ? (
-        <div className="panel">
-          <ListError title="利润报表加载失败" error={report.error} onRetry={() => void report.refetch()} />
+        <div className="st-block st-loading">
+          <div className="st-box" aria-label="利润报表加载中">
+            <div className="sk sk-line w80" />
+            <div className="sk sk-line w60" />
+            <div className="sk sk-line w40" />
+            <p className="st-desc mt-3">利润报表加载中…</p>
+          </div>
         </div>
-      ) : report.data ? (
-        <div className="panel">
-          <ProfitReportSummary report={report.data} canViewPrice={canViewPrice} />
+        <div className="st-block st-error">
+          <div className="st-box st-error">
+            <div className="st-ico">
+              <Icon name="refresh" />
+            </div>
+            <div className="st-title">利润报表加载失败</div>
+            <p className="st-desc">{describeListError('利润报表加载失败', report.error)}</p>
+            <button type="button" className="btn" onClick={() => void report.refetch()}>
+              重试
+            </button>
+          </div>
         </div>
-      ) : null}
+      </section>
     </section>
   );
 }
