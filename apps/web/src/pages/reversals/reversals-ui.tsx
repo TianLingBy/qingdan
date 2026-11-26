@@ -19,8 +19,9 @@ export {
 } from '../../components/ListStates';
 
 /** 输入控件统一样式（只在这里改，三个分栏一起变）。 */
-export const FIELD_CLASS =
-  'mt-1 w-full rounded-lg border border-[var(--line-2)] bg-[var(--surf-1)] px-3 py-2 text-sm text-[var(--text-1)] disabled:bg-[var(--surf-2)]';
+/* `.ipt` 是 v3.0 底座里的输入控件（`app-v30.css` §8.5），与 `.fm input` 同一套值；
+   单独挂它也成立，所以不进 `.fm` 的字段（备注 / 取消原因）不用另写一份。 */
+export const FIELD_CLASS = 'ipt';
 
 export interface FieldProps {
   readonly label: string;
@@ -29,16 +30,13 @@ export interface FieldProps {
   readonly className?: string;
 }
 
+/** 单个字段：标签 / 控件 / 一行提示。分列交给外层的 `.fm`，这里只管竖排与文字档。 */
 export function Field({ label, hint, children, className }: FieldProps) {
   return (
-    <label className={`block text-sm ${className ?? ''}`}>
-      <span className="text-[var(--text-2)]">{label}</span>
+    <label className={className ? `fm-field ${className}` : 'fm-field'}>
+      <span>{label}</span>
       {children}
-      {hint ? (
-        <span className="mt-1 block text-[11px] leading-relaxed text-[var(--text-3)]">
-          {hint}
-        </span>
-      ) : null}
+      {hint ? <small>{hint}</small> : null}
     </label>
   );
 }
@@ -101,6 +99,9 @@ export function ReversalListCard({
   return (
     <div className="card list-card" data-state={state}>
       <div className="tw">
+        {/* 表宽与左对齐按其余五页列表的同一条口径写（`w-full … text-left`）：
+            `app-v013.css` 的 `th` 只给了字色字重，对齐仍是 UA 默认的居中，所以 `text-left` 不能省。
+            列多时靠 `.tw` 横向滚动，最小宽度用 Tailwind 字面量类 —— 三栏列数不同，值分别是 680/620/720。 */}
         <table className={`w-full text-left ${minWidthClass ?? ''}`}>
           <thead>{head}</thead>
           <tbody data-state={state}>
@@ -133,11 +134,8 @@ export function ReversalListCard({
 
 /** 分栏内的口径说明条：一句话讲清这张单「是什么 / 不是什么」。 */
 export function BasisNote({ children }: { readonly children: ReactNode }) {
-  return (
-    <p className="rounded-lg bg-[var(--surf-2)] px-3 py-2 text-xs leading-relaxed text-[var(--text-3)]">
-      {children}
-    </p>
-  );
+  // 说明条不是告警，用 `.alert-info`（中性底）；`alert-sm` 收到 12px，一栏顶部不抢眼睛。
+  return <p className="alert alert-info alert-sm">{children}</p>;
 }
 
 export function ErrorBar({
@@ -148,17 +146,15 @@ export function ErrorBar({
   readonly onRetry?: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
-      <p className="text-xs text-rose-800">{message}</p>
-      {onRetry ? (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-md border border-rose-300 bg-white px-2 py-0.5 text-xs font-medium text-rose-700 hover:bg-rose-50"
-        >
-          重试
-        </button>
-      ) : null}
+    <div className="alert alert-bad alert-sm">
+      <div className="alert-row">
+        <span>{message}</span>
+        {onRetry ? (
+          <button type="button" onClick={onRetry} className="btn btn-row">
+            重试
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -167,26 +163,15 @@ export function ErrorBar({
 export function ErrorList({ errors }: { readonly errors: readonly string[] }) {
   if (errors.length === 0) return null;
   return (
-    <ul className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-      {errors.map((error) => (
-        <li key={error}>· {error}</li>
-      ))}
-    </ul>
-  );
-}
-
-/** 详情里的一行「键 → 值」。 */
-export function Kv({
-  label,
-  children,
-}: {
-  readonly label: string;
-  readonly children: ReactNode;
-}) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-[11px] text-slate-400">{label}</dt>
-      <dd className="mt-0.5 break-words text-sm text-slate-700">{children}</dd>
+    <div className="alert alert-warn alert-sm">
+      <ul>
+        {errors.map((error) => (
+          <li key={error}>· {error}</li>
+        ))}
+      </ul>
     </div>
   );
 }
+
+/** 详情里的「键 → 值」不再单列组件：三栏都走 `OrderDetailUI` 的 `DocMeta`，
+ *  `Kv` 一直没有调用点，随本轮换皮删掉（留着只是一个没人用的 Tailwind 残留）。 */

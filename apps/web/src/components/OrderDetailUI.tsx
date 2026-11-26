@@ -73,31 +73,27 @@ export function DetailHead({
   closeLabel = '关闭',
 }: DetailHeadProps) {
   return (
-    <header className="space-y-2">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-lg font-semibold tracking-tight" style={{ color: 'var(--text-1)' }}>
-          {docLabel} <span className="font-mono font-medium">{orderNo}</span>
+    <header className="detail-head">
+      <div className="detail-head-row">
+        <h2 className="detail-title">
+          {docLabel} <span className="no">{orderNo}</span>
         </h2>
         {pill}
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="detail-tools">
           {actions}
           <button type="button" onClick={onClose} className="btn btn-ghost">
             {closeLabel}
           </button>
         </div>
       </div>
-      {meta ? (
-        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" style={{ color: 'var(--text-3)' }}>
-          {meta}
-        </p>
-      ) : null}
+      {meta ? <p className="detail-meta">{meta}</p> : null}
     </header>
   );
 }
 
 /** 详情第二行里的分隔符（`·`），省得每页各写一个 `<span>|</span>`。 */
 export function DetailMetaDot() {
-  return <span aria-hidden="true" style={{ color: 'var(--line-3)' }}>·</span>;
+  return <span className="detail-dot" aria-hidden="true">·</span>;
 }
 
 /* ------------------------------ 单据信息网格 ------------------------------ */
@@ -119,7 +115,11 @@ export interface DocMetaProps {
 
 /**
  * 「单据信息」网格：`gap-px` + 底色描边模拟视觉稿的单元格分隔线
- * （视觉稿用 `background:var(--line-1)` + 每格自己的底色，比给每格加 border 少一半规则）。
+ * （v3.0 稿子 `.dl`：`background:var(--line)` + 每格自己的底色，
+ * 比给每格加 border 少一半规则，圆角裁切也不会切出台阶）。
+ *
+ * 列数走 `data-cols` 而不是内联 `style={{gridTemplateColumns}}`：
+ * 内联样式不参与媒体查询，窄屏时会硬撑成 4 列把格子挤成一条线。
  */
 export function DocMeta({ items, columns = 3 }: DocMetaProps) {
   if (items.length === 0) return null;
@@ -132,42 +132,25 @@ export function DocMeta({ items, columns = 3 }: DocMetaProps) {
    */
   const filler = (columns - (items.length % columns)) % columns;
   return (
-    <dl
-      className="grid gap-px overflow-hidden rounded-xl border sm:grid-cols-2"
-      style={{
-        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-        background: 'var(--line-1)',
-        borderColor: 'var(--line-1)',
-      }}
-    >
+    <dl className="dl" data-cols={columns}>
       {items.map((item) => (
-        <div key={item.label} className="px-4 py-3" style={{ background: 'var(--surf-1)' }}>
-          <dt className="text-xs" style={{ color: 'var(--text-3)' }}>
-            {item.label}
-          </dt>
+        <div key={item.label}>
+          <dt>{item.label}</dt>
           <dd
-            className={`mt-1 text-sm ${item.mono ? 'font-mono' : ''} ${
-              item.tone === 'money' ? 'font-medium' : ''
-            }`}
-            style={{
-              color:
-                item.tone === 'money'
-                  ? 'var(--accent-light)'
-                  : item.tone === 'dim'
-                    ? 'var(--text-3)'
-                    : 'var(--text-1)',
-            }}
+            className={[
+              item.mono ? 'mono' : '',
+              item.tone === 'money' ? 'money' : '',
+              item.tone === 'dim' ? 'dim' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
           >
             {item.value}
           </dd>
         </div>
       ))}
       {Array.from({ length: filler }, (_, index) => (
-        <div
-          key={`filler-${index}`}
-          aria-hidden="true"
-          style={{ background: 'var(--surf-1)' }}
-        />
+        <div key={`filler-${index}`} aria-hidden="true" />
       ))}
     </dl>
   );
@@ -188,21 +171,10 @@ export function LinesFooter({ colSpan, note, sum }: LinesFooterProps) {
   return (
     <tfoot>
       <tr>
-        <td
-          colSpan={colSpan}
-          className="px-4 py-3 text-xs"
-          style={{ color: 'var(--text-3)', borderTop: '1px solid var(--line-2)' }}
-        >
+        <td colSpan={colSpan} className="ln-note">
           {note}
         </td>
-        {sum === undefined ? null : (
-          <td
-            className="px-4 py-3 text-right font-mono text-sm font-semibold"
-            style={{ color: 'var(--text-1)', borderTop: '1px solid var(--line-2)' }}
-          >
-            {sum}
-          </td>
-        )}
+        {sum === undefined ? null : <td className="ln-sum">{sum}</td>}
       </tr>
     </tfoot>
   );

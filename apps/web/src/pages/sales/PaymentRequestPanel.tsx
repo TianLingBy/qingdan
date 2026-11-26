@@ -104,22 +104,28 @@ export function PaymentRequestPanel({
   if (!canViewPrice) {
     // 看不到金额就不该发起收款：屏幕上会是一个「¥ —」的二维码，客户付多少都对不上账。
     return (
-      <section className="rounded-lg border border-slate-200 p-4 text-sm text-amber-900">
-        无「看价」权限，不能发起收款 —— 看不到金额就无法确认客户付的是不是这一单（D27 / D79）。
-        <button type="button" onClick={onClose} className="ml-3 underline">
-          收起
-        </button>
+      <section className="alert alert-warn">
+        <p>
+          无「看价」权限，不能发起收款 —— 看不到金额就无法确认客户付的是不是这一单（D27 / D79）。
+        </p>
+        <div className="detail-acts">
+          <button type="button" onClick={onClose} className="btn btn-row">
+            收起
+          </button>
+        </div>
       </section>
     );
   }
 
   if (!canCreate) {
     return (
-      <section className="rounded-lg border border-slate-200 p-4 text-sm text-slate-600">
-        发起收款需要 payment.create 权限；当前身份只能查看收款台账。
-        <button type="button" onClick={onClose} className="ml-3 underline">
-          收起
-        </button>
+      <section className="alert alert-info">
+        <p>发起收款需要 payment.create 权限；当前身份只能查看收款台账。</p>
+        <div className="detail-acts">
+          <button type="button" onClick={onClose} className="btn btn-row">
+            收起
+          </button>
+        </div>
       </section>
     );
   }
@@ -129,48 +135,51 @@ export function PaymentRequestPanel({
   const live = request !== null && request.status === 'pending' && remaining > 0;
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-medium">发起扫码收款</h4>
-        <button type="button" onClick={onClose} className="text-xs text-slate-500 underline">
+    <section className="form-sec">
+      <div className="form-sec-h">
+        <h3>发起扫码收款</h3>
+        <button type="button" onClick={onClose} className="btn btn-row">
           收起
         </button>
       </div>
 
       {!request && (
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="text-sm">
-            <span className="text-slate-600">收款渠道</span>
-            <select
-              value={channel}
-              onChange={(event) => setChannel(event.target.value as PaymentChannel)}
-              className="mt-1 block rounded border border-slate-300 bg-white px-2 py-1"
+        <div className="form-sec-b form-stack">
+          <div className="fm c4">
+            <label>
+              <span>收款渠道</span>
+              <select
+                value={channel}
+                onChange={(event) => setChannel(event.target.value as PaymentChannel)}
+              >
+                <option value="wechat">微信</option>
+                <option value="alipay">支付宝</option>
+              </select>
+            </label>
+          </div>
+          <div className="detail-acts">
+            <button
+              type="button"
+              disabled={create.isPending}
+              onClick={() => create.mutate()}
+              className="btn btn-p"
             >
-              <option value="wechat">微信</option>
-              <option value="alipay">支付宝</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            disabled={create.isPending}
-            onClick={() => create.mutate()}
-            className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40"
-          >
-            {create.isPending ? '生成中…' : '生成收款二维码'}
-          </button>
-          <p className="text-xs text-slate-500">
+              {create.isPending ? '生成中…' : '生成收款二维码'}
+            </button>
+          </div>
+          <p className="detail-why">
             金额由服务端按「应收余额」算 —— 本单还差多少就收多少，不用手填。
           </p>
         </div>
       )}
 
       {request && (
-        <div className="mt-3 flex flex-wrap items-start gap-5">
-          <div className="rounded-lg border border-slate-300 bg-white p-3">
+        <div className="form-sec-b qr-row">
+          <div className="qr-box">
             {live && request.qrContent ? (
               <QRCodeSVG value={request.qrContent} size={168} />
             ) : (
-              <div className="flex h-[168px] w-[168px] items-center justify-center text-center text-xs text-slate-500">
+              <div className="qr-empty">
                 {request.status === 'paid'
                   ? '已收款'
                   : request.status === 'cancelled'
@@ -180,48 +189,51 @@ export function PaymentRequestPanel({
             )}
           </div>
 
-          <div className="min-w-[240px] space-y-1 text-sm">
+          <div className="qr-meta">
             <p>
-              应收金额{' '}
-              <b className="font-mono">{formatMoney(request.amount)}</b>
-              <span className="ml-2 text-xs text-slate-500">（{CHANNEL_LABEL[request.channel]}）</span>
+              应收金额 <b className="mono">{formatMoney(request.amount)}</b>
+              <span className="cell-sub">（{CHANNEL_LABEL[request.channel]}）</span>
             </p>
-            <p className="text-xs text-slate-500">
-              商户订单号 <span className="font-mono">{request.providerOrderNo}</span>
+            <p className="cell-muted">
+              商户订单号 <span className="mono">{request.providerOrderNo}</span>
             </p>
-            <p className={remaining > 0 ? 'text-xs text-slate-500' : 'text-xs text-red-700'}>
+            <p className={remaining > 0 ? 'cell-muted' : 'text-bad'}>
               {request.status === 'paid' ? '已到账' : countdownText(remaining)}
             </p>
 
             {isMock && live && (
-              <div className="mt-3 rounded border border-amber-300 bg-amber-50 p-2">
-                <p className="text-xs text-amber-900">
+              <div className="alert alert-warn alert-sm">
+                <p>
                   当前是<b>模拟支付</b>模式：这个二维码扫不出真钱。点下面的按钮相当于「客户已付款」，
                   走的是和真实回调完全相同的入账路径。
                 </p>
-                <button
-                  type="button"
-                  disabled={confirm.isPending}
-                  onClick={() => confirm.mutate(request.providerOrderNo)}
-                  className="mt-2 rounded bg-amber-700 px-3 py-1.5 text-xs text-white disabled:opacity-40"
-                >
-                  {confirm.isPending ? '入账中…' : '模拟客户已付款'}
-                </button>
+                <div className="detail-acts">
+                  <button
+                    type="button"
+                    disabled={confirm.isPending}
+                    onClick={() => confirm.mutate(request.providerOrderNo)}
+                    className="btn btn-row"
+                  >
+                    {confirm.isPending ? '入账中…' : '模拟客户已付款'}
+                  </button>
+                </div>
               </div>
             )}
 
             {!live && request.status !== 'paid' && (
-              <button
-                type="button"
-                onClick={() => {
-                  setRequest(null);
-                  create.mutate();
-                }}
-                disabled={create.isPending}
-                className="mt-3 rounded border border-slate-300 bg-white px-3 py-1.5 text-xs disabled:opacity-40"
-              >
-                {create.isPending ? '重新生成中…' : '重新发起'}
-              </button>
+              <div className="detail-acts">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRequest(null);
+                    create.mutate();
+                  }}
+                  disabled={create.isPending}
+                  className="btn btn-row"
+                >
+                  {create.isPending ? '重新生成中…' : '重新发起'}
+                </button>
+              </div>
             )}
           </div>
         </div>
