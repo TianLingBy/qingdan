@@ -57,9 +57,9 @@ import {
   FIELD_CLASS,
   Field,
   ReversalListCard,
-  ReversalPager,
   TableSkeleton,
 } from './reversals-ui';
+import { BatchPager } from '../../components/ListPager';
 import {
   DetailHead,
   DetailMetaDot,
@@ -260,38 +260,41 @@ export function CustomerReturnsPanel({
         R 单本身不改 E 单。冲正单据只追加，不可改、不可删（D47）。
       </BasisNote>
 
-      <div className="flex flex-wrap items-end gap-3">
+      {/* 筛选条走 v3.0 `.toolbar`：控件直接摆在一条线上，标签交给 `aria-label`，
+          和销售 E / 采购 A 的筛选条同一套版式（下拉带无标签时不能省 aria-label）。 */}
+      <div className="toolbar">
         {companyIds.length > 1 ? (
-          <Field label="公司" className="min-w-[180px]">
-            <select value={companyId} onChange={(event) => onCompanyChange(event.target.value)} className={FIELD_CLASS}>
-              {companyIds.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : null}
-        <Field label="状态" className="min-w-[120px]">
           <select
-            value={status}
-            onChange={(event) => setStatus(event.target.value as '' | CustomerReturnStatus)}
-            className={FIELD_CLASS}
+            value={companyId}
+            onChange={(event) => onCompanyChange(event.target.value)}
+            aria-label="按公司筛选"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
-            <option value="">全部</option>
-            <option value="进行中">进行中</option>
-            <option value="已完成">已完成</option>
-            <option value="已取消">已取消</option>
+            {companyIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
           </select>
-        </Field>
-        <Field label="单号关键字" className="min-w-[180px]">
-          <input
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-            placeholder="R-0001-…"
-            className={FIELD_CLASS}
-          />
-        </Field>
+        ) : null}
+        <select
+          value={status}
+          onChange={(event) => setStatus(event.target.value as '' | CustomerReturnStatus)}
+          aria-label="按状态筛选"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">全部状态</option>
+          <option value="进行中">进行中</option>
+          <option value="已完成">已完成</option>
+          <option value="已取消">已取消</option>
+        </select>
+        <input
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="搜索单号 R-0001-…"
+          aria-label="搜索单号"
+          className="search"
+        />
         <button
           type="button"
           onClick={() => {
@@ -300,14 +303,14 @@ export function CustomerReturnsPanel({
           }}
           disabled={!canCreate || companyId.length === 0}
           title={canCreate ? undefined : '当前身份没有 customer_return.create 权限'}
-          className="mb-0.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+          className="btn btn-primary ml-auto"
         >
           {formOpen ? '收起开单' : '登记客户退货'}
         </button>
       </div>
 
       {formOpen ? (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+        <section className="card space-y-3 p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="text-sm font-semibold text-slate-900">登记客户退货</h3>
             <span className="text-xs text-slate-400">录入岗位由服务端校验（D47：老板 / 经理 / 财务）</span>
@@ -514,7 +517,7 @@ export function CustomerReturnsPanel({
               <button
                 type="button"
                 onClick={() => setLines((current) => [...current, { ...EMPTY_LINE }])}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600"
+                className="btn btn-s"
               >
                 + 加一行商品
               </button>
@@ -529,7 +532,7 @@ export function CustomerReturnsPanel({
               type="button"
               onClick={submit}
               disabled={create.isPending}
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+              className="btn btn-primary"
             >
               {create.isPending ? '提交中…' : '登记退货'}
             </button>
@@ -540,7 +543,7 @@ export function CustomerReturnsPanel({
                 setClientErrors([]);
                 setActionError(null);
               }}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600"
+              className="btn"
             >
               取消
             </button>
@@ -549,11 +552,9 @@ export function CustomerReturnsPanel({
       ) : null}
 
       <ReversalListCard
-        title="客户退货单"
-        meta={`共 ${items.length} 条${canViewPrice ? '' : ' · 当前身份无看价权限，金额显示 —'}`}
         state={listState}
         colCount={6}
-        minWidth="680px"
+        minWidthClass="min-w-[680px]"
         head={
           <tr>
             <th>单号</th>
@@ -561,7 +562,7 @@ export function CustomerReturnsPanel({
             <th>类型</th>
             <th className="num">应退金额</th>
             <th>状态</th>
-            <th />
+            <th className="text-right">操作</th>
           </tr>
         }
         emptyText="还没有客户退货单"
@@ -569,10 +570,11 @@ export function CustomerReturnsPanel({
         errorTitle="客户退货单加载失败"
         error={list.error}
         onRetry={() => void list.refetch()}
+        summary={`共 ${items.length} 条${canViewPrice ? '' : ' · 当前身份无看价权限，金额显示 —'}`}
         pager={
-          <ReversalPager
-            batchIndex={pageIndex}
-            count={items.length}
+          <BatchPager
+            batch={pageIndex + 1}
+            hasPrev={pageIndex > 0}
             hasNext={nextCursor !== null}
             onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
             onNext={() => {
@@ -584,6 +586,7 @@ export function CustomerReturnsPanel({
               });
               setPageIndex((index) => index + 1);
             }}
+            label="客户退货单分批翻页"
           />
         }
       >

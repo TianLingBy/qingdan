@@ -41,9 +41,9 @@ import {
   FIELD_CLASS,
   Field,
   ReversalListCard,
-  ReversalPager,
   TableSkeleton,
 } from './reversals-ui';
+import { BatchPager } from '../../components/ListPager';
 import { DetailHead, DocMeta, DocPill } from '../../components/OrderDetailUI';
 import { resolveListState } from '../../lib/list-state';
 
@@ -264,44 +264,39 @@ export function StocktakesPanel({
         / 已完成 / 已取消」。盘盈走 create、盘亏走 delete（D71）。
       </BasisNote>
 
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="toolbar">
         {companyIds.length > 1 ? (
-          <Field label="公司" className="min-w-[180px]">
-            <select
-              value={companyId}
-              onChange={(event) => onCompanyChange(event.target.value)}
-              className={FIELD_CLASS}
-            >
-              {companyIds.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : null}
-        <Field label="状态" className="min-w-[120px]">
           <select
-            value={status}
-            onChange={(event) =>
-              setStatus(event.target.value as '' | StocktakeStatus)
-            }
-            className={FIELD_CLASS}
+            value={companyId}
+            onChange={(event) => onCompanyChange(event.target.value)}
+            aria-label="按公司筛选"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           >
-            <option value="">全部</option>
-            <option value="待审批">待审批</option>
-            <option value="已批准">已批准</option>
-            <option value="已驳回">已驳回</option>
+            {companyIds.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
           </select>
-        </Field>
-        <Field label="单号关键字" className="min-w-[180px]">
-          <input
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
-            placeholder="I-0001-…"
-            className={FIELD_CLASS}
-          />
-        </Field>
+        ) : null}
+        <select
+          value={status}
+          onChange={(event) => setStatus(event.target.value as '' | StocktakeStatus)}
+          aria-label="按状态筛选"
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">全部状态</option>
+          <option value="待审批">待审批</option>
+          <option value="已批准">已批准</option>
+          <option value="已驳回">已驳回</option>
+        </select>
+        <input
+          value={keyword}
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="搜索单号 I-0001-…"
+          aria-label="搜索单号"
+          className="search"
+        />
         <button
           type="button"
           onClick={() => {
@@ -314,7 +309,7 @@ export function StocktakesPanel({
               ? undefined
               : '需要 stocktake.create 或 stocktake.delete 权限'
           }
-          className="btn btn-primary mb-0.5"
+          className="btn btn-primary ml-auto"
         >
           {formOpen ? '收起开单' : '发起盘点单'}
         </button>
@@ -326,7 +321,7 @@ export function StocktakesPanel({
       </p>
 
       {formOpen ? (
-        <section className="space-y-3 rounded-xl border border-[var(--line-2)] bg-[var(--surf-1)] p-4">
+        <section className="card space-y-3 p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="text-sm font-semibold text-[var(--text-1)]">
               发起盘点单
@@ -420,9 +415,7 @@ export function StocktakesPanel({
             <button
               type="button"
               onClick={onSubmit}
-              disabled={
-                submit.isPending || direction === 'none' || rightMissing
-              }
+              disabled={submit.isPending || direction === 'none' || rightMissing}
               className="btn btn-primary"
             >
               {submit.isPending
@@ -449,11 +442,9 @@ export function StocktakesPanel({
       ) : null}
 
       <ReversalListCard
-        title="盘点单"
-        meta={`共 ${items.length} 条 · 审批后批次数量才会变`}
         state={listState}
         colCount={7}
-        minWidth="720px"
+        minWidthClass="min-w-[720px]"
         head={
           <tr>
             <th>单号</th>
@@ -462,7 +453,7 @@ export function StocktakesPanel({
             <th className="num">实盘量</th>
             <th className="num">差异</th>
             <th>状态</th>
-            <th />
+            <th className="text-right">操作</th>
           </tr>
         }
         emptyText="还没有盘点单"
@@ -470,10 +461,11 @@ export function StocktakesPanel({
         errorTitle="盘点单加载失败"
         error={list.error}
         onRetry={() => void list.refetch()}
+        summary={`共 ${items.length} 条 · 审批后批次数量才会变`}
         pager={
-          <ReversalPager
-            batchIndex={pageIndex}
-            count={items.length}
+          <BatchPager
+            batch={pageIndex + 1}
+            hasPrev={pageIndex > 0}
             hasNext={nextCursor !== null}
             onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
             onNext={() => {
@@ -485,6 +477,7 @@ export function StocktakesPanel({
               });
               setPageIndex((index) => index + 1);
             }}
+            label="盘点单分批翻页"
           />
         }
       >

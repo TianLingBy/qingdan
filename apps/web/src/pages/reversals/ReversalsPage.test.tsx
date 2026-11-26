@@ -121,10 +121,12 @@ describe('盘点权限拆得比别的页细（D71）', () => {
   });
 });
 
-describe('v0.13 列表版式（#337）', () => {
-  it('列表落在 card 上，三个状态行常驻 tbody、靠 data-state 显隐', () => {
+describe('v3.0 列表版式（#431）', () => {
+  it('列表落在 card.list-card 上，表格套 .tw、页脚是 .tf，三个状态行常驻 tbody', () => {
     const html = view(OWNER);
-    expect(html).toContain('class="card min-w-0"');
+    expect(html).toContain('class="card list-card"');
+    expect(html).toContain('class="tw"');
+    expect(html).toContain('class="tf"');
     expect(html).toContain('data-state="loading"');
     for (const stateClass of [
       'st-tr st-loading',
@@ -135,12 +137,19 @@ describe('v0.13 列表版式（#337）', () => {
     }
   });
 
-  it('游标分页只写「上一批 / 下一批」，不画页码', () => {
+  it('游标分页只写「第 N 批」+ 上一批 / 下一批，不画页码', () => {
     const html = view(OWNER);
     expect(html).toContain('上一批');
     expect(html).toContain('下一批');
+    expect(html).toContain('第 1 批');
     expect(html).not.toContain('下一页');
     expect(html).not.toContain('第 1 页');
+  });
+
+  it('页脚左侧只写条数，不写合计（游标契约拿不到全量金额）', () => {
+    const html = view(OWNER);
+    expect(html).toContain('共 0 条');
+    expect(html).not.toContain('合计');
   });
 });
 
