@@ -367,7 +367,8 @@ describe('v0.13 详情版式（#337）', () => {
   it('详情落在 card 上，走 DetailHead + DocMeta + LinesFooter 三块公用版式', () => {
     const html = renderDetailPanel();
 
-    expect(html).toContain('class="card min-w-0 space-y-3 p-4"');
+    // v3.0 详情外壳（#431 第五轮）：`.card` 保留（栅格与阴影），内边距/间距交给 `.detail`。
+    expect(html).toContain('class="card detail"');
     // DetailHead：单据名 + 单号 + 状态徽标 + 关闭（关闭按 v0.13 叫「收起」）
     expect(html).toContain('销售单');
     expect(html).toContain('收起');

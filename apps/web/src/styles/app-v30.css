@@ -1164,3 +1164,45 @@
   font-weight:550;
 }
 .chip-none{font-size:var(--fs-11,12px);color:var(--v30-ink-3)}
+/* 只上色、不套盒子的一句警示（表格单元格里用）：套 `.alert` 会把行高撑开 */
+.text-warn{color:var(--v30-warn)}
+/* 批次 chip 里的「×」：chip 本身才 26px 高，这个必须比它更小；
+   与 `.doc-link` 同理，`index.css` 删过全局 button 归零，这里得自己来。 */
+.chip-x{
+  border:0;
+  background:none;
+  padding:0 0 0 2px;
+  font-size:var(--fs-12,12px);
+  line-height:1;
+  color:var(--v30-ink-3);
+  cursor:pointer;
+}
+.chip-x:hover{color:var(--v30-bad)}
+.chip-x:disabled{opacity:.4;cursor:not-allowed}
+/* 批次 chip 的只读形态（详情里只展示、不能删）：比 `.chip` 少一个手型光标 */
+.chip-static{cursor:default}
+.chip-static:hover{border-color:var(--v30-line-2);color:var(--v30-ink-2)}
+/* 与 `.text-warn` 对称：要在句子里染红但不套盒子（倒计时过期了） */
+.text-bad{color:var(--v30-bad)}
+
+/* 表单明细行的靠顶对齐：一行里「引用批次」那格可能是两行 chip，别的格是单行控件，
+   默认 `middle` 会把下拉框拉到行中间，跟旁边的标签错开半个控件高。 */
+.ln tr.vtop td{vertical-align:top}
+
+/* ---- §8.12 收款二维码面板（销售详情内嵌） ---- */
+/* 二维码外框**必须永远白底**：手机扫的是深模块与白底的对比度，跟着主题走就扫不出来。
+   `--v30-*` 里没有「永远是白」这一档，所以这是整个 v3.0 里唯一一处有意写死的底色。 */
+.qr-box{padding:12px;border:1px solid var(--v30-line-2);border-radius:var(--v30-r);background:#fff}
+.qr-box svg{display:block}
+.qr-empty{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:168px;
+  height:168px;
+  text-align:center;
+  font-size:var(--fs-12,12px);
+  color:#666;
+}
+.qr-row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:20px}
+.qr-meta{display:flex;flex-direction:column;gap:6px;min-width:240px;font-size:var(--fs-14,14px)}

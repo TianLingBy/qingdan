@@ -87,7 +87,11 @@ tokens-v013 只有实心 `--danger` / `--danger-on-surface`，没有 alpha 变�
 | 内贸 N | 已完成（`internal.md`） | — |
 | 采购 A | 已完成（`purchase.md`） | — |
 | 加工 B | 已完成（`processing.md`） | — |
-| 销售 E | 排队 | #461（开单草档联想）仍在评审，它在改同文件的表单区；先改也行，进 main 后 rebase 一次 |
+| 销售 E | 已完成（`sales.md`） | — |
 | 冲正 R / S / I | 排队 | #459（冲正列表卡）等评审 |
 
-四页都按这一单的类映射改，不再新增底座类；真缺了再加，并在这里补表。
+五页都按这一单的类映射改，不再新增底座类；真缺了再加，并在这里补表。
+
+第五轮（销售 E）补进底座的只有五件：`.chip-x` / `.chip-static` / `.text-warn` / `.text-bad`
+（批次 chip 与句内染色）、`.qr-box` / `.qr-empty` / `.qr-row` / `.qr-meta`（扫码收款面板）、
+`.ln tr.vtop td`（表单明细行靠顶对齐）。
