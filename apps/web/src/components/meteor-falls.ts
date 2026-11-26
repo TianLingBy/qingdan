@@ -129,3 +129,12 @@ export function planSmallShower(total = 6 + Math.round(Math.random() * 4)): read
   }
   return entries;
 }
+
+/** 画布 DPR 上限：面积越大越降，避免 4K 屏每帧重绘上千万像素（#性能）。 */
+export function pickCanvasDpr(cssWidth: number, cssHeight: number, devicePixelRatio: number): number {
+  const area = Math.max(1, cssWidth * cssHeight);
+  const dpr = Math.max(1, devicePixelRatio || 1);
+  if (area > 2_600_000) return Math.min(dpr, 1.25);
+  if (area > 1_200_000) return Math.min(dpr, 1.5);
+  return Math.min(dpr, 2);
+}

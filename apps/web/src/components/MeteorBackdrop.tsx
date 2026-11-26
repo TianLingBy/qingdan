@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { planShower, planSmallShower, type FallPlanEntry } from './meteor-falls';
+import { planShower, planSmallShower, pickCanvasDpr, type FallPlanEntry } from './meteor-falls';
 
 /**
  * 背景装饰：流星雨（#435；落法见 `meteor-falls.ts`）。
@@ -93,6 +93,7 @@ export function MeteorBackdrop({ active = true, burst = 0 }: MeteorBackdropProps
     let height = 0;
     let raf = 0;
     let lastFrame = 0;
+    let lastPaint = 0;
     let nextSporadicAt = 0;
     let nextSmallAt = 0;
     let nextBigAt = 0;
@@ -105,7 +106,8 @@ export function MeteorBackdrop({ active = true, burst = 0 }: MeteorBackdropProps
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      // DPR 按画布面积封顶：4K / 2× 屏上原本每帧重绘上千万像素，是设置页卡顿的主因
+      const dpr = pickCanvasDpr(rect.width, rect.height, window.devicePixelRatio || 1);
       width = Math.max(1, Math.round(rect.width));
       height = Math.max(1, Math.round(rect.height));
       canvas.width = Math.round(width * dpr);
@@ -207,6 +209,9 @@ export function MeteorBackdrop({ active = true, burst = 0 }: MeteorBackdropProps
     const frame = (ts: number) => {
       raf = window.requestAnimationFrame(frame);
       if (document.hidden) return;
+      // 30fps 封顶：流星本来就慢，60fps 只是白烧一倍绘制；离线帧直接跳过
+      if (ts - lastPaint < 30) return;
+      lastPaint = ts;
       const delta = Math.min(0.05, (ts - (lastFrame || ts)) / 1000);
       lastFrame = ts;
       context.clearRect(0, 0, width, height);
