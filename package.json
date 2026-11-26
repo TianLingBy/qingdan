@@ -15,6 +15,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "openapi": "pnpm -C packages/contracts openapi:build",
+    "ui:parity": "node tools/ui-parity/check.mjs",
     "dev:api": "pnpm -C apps/api dev",
     "dev:web": "pnpm -C apps/web dev"
   },

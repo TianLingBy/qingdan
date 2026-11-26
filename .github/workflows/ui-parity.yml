@@ -1,0 +1,36 @@
+name: ui-parity
+
+# 机器验收第 1 关：本次 PR 改到的页面，标题/表头/筛选项必须与 design/v3.0/index.html 一致。
+# 红 = 该页没按稿子做（少列 / 改列名 / 少了筛选项），改页面，别改脚本和 anchors。
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/src/pages/**'
+      - 'tools/ui-parity/**'
+      - '.github/workflows/ui-parity.yml'
+
+jobs:
+  parity:
+    name: ui-parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 取本次改动的页面文件
+        id: changed
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}" || true
+          FILES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" -- 'apps/web/src/pages' | tr '\n' ',' | sed 's/,$//')
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+          echo "改动文件：$FILES"
+      - name: 结构锚点比对
+        if: steps.changed.outputs.files != ''
+        run: node tools/ui-parity/check.mjs --files "${{ steps.changed.outputs.files }}"
+      - name: 未改动页面，跳过
+        if: steps.changed.outputs.files == ''
+        run: echo '本次 PR 没有改动 apps/web/src/pages，跳过锚点比对'
