@@ -176,10 +176,12 @@ describe('采购单 A 页面', () => {
     expect(html).toContain('不锈钢合页 4寸');
     expect(html).toContain('¥4,300.00');
     expect(html).toContain('进行中');
-    // 经手人不再占列表一列（8 列已把「操作」挤到卡片外），改在详情里给
-    expect(html).not.toContain('>经手<');
-    // 页头主按钮按视觉稿是「+ 新建」（`采购单A.html` 的 .btn-primary）
-    expect(html).toContain('+ 新建');
+    // 稿子列表是 8 列：单号 / 供应商 / 物料 / 数量 / 金额 / 状态 / 负责人 / 日期。
+    // 经手人在列表里以「负责人」列出现（以前塞在详情里，少了这一列）。
+    expect(html).toContain('<th>负责人</th>');
+    expect(html).toContain('>日期</th>');
+    // 页头主按钮按稿子是「+ 新建采购单」（`design/v3.0/index.html` L1637）
+    expect(html).toContain('+ 新建采购单');
   });
 
   it('无看价权限时金额全遮罩，且不把 null 当 0（D79）', () => {
@@ -223,7 +225,7 @@ describe('采购单 A 页面', () => {
   it('空列表给出明确空态与下一步', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [] }));
     expect(html).toContain('暂无采购单');
-    expect(html).toContain('+ 新建');
+    expect(html).toContain('+ 新建采购单');
   });
 });
 
@@ -379,7 +381,7 @@ describe('v3.0 版式（#431）', () => {
     // list-card 是 v3.0 的列表卡：非 filled 态由它收起页脚分页
     expect(html).toContain('class="card list-card"');
     expect(html).toContain('data-state="filled"');
-    expect(html).toContain('class="r-row"');
+    expect(html).toContain('class="r-row click"');
     // 数据行带 st-tr 就会命中 `tbody > tr.st-tr{display:none}`，filled 态没有复原规则
     expect(html).not.toContain('st-tr r-row');
     for (const stateClass of ['st-tr st-loading', 'st-tr st-error', 'st-tr st-empty']) {
@@ -395,7 +397,7 @@ describe('v3.0 版式（#431）', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER], total: 45 }));
 
     expect(html).toContain('class="tf"');
-    expect(html).toContain('共 45 张');
+    expect(html).toContain('共 45 条');
     for (const label of ['第一页', '上一页', '下一页', '最后一页']) {
       expect(html).toContain(`aria-label="${label}"`);
     }
@@ -447,7 +449,7 @@ describe('v3.0 版式（#431）', () => {
   it('只有排序白名单里的三列可点（单号 / 货款 / 开单时间），其余表头是纯文本', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
-    for (const label of ['单号', '货款', '开单时间']) {
+    for (const label of ['单号', '金额', '日期']) {
       expect(html).toContain(`title="按${label}排序"`);
     }
     // 供应商 / 物料 / 数量 / 状态 后端没有排序白名单，点了只会 422 —— 不画箭头

@@ -93,8 +93,12 @@ const STATUS_TONE: Readonly<Record<PurchaseOrderStatus, DocPillTone>> = {
   已取消: 'cancel',
 };
 
-const PAGE_DESCRIPTION =
-  '原材料采购：选供应商、填物料与单价，费用行可含运费 / 杂费（不得为负，最低 0）。单号由服务端生成（D16）；完成时费用按明细金额占比摊入批次成本（D83）。';
+/**
+ * 页头说明：一字不改照抄 `design/v3.0/index.html` 的 `DOC['purchase-orders'].sub`。
+ * 以前这里是自写的三行长文（选供应商、填物料、费用摊入成本…），与稿子对不上，
+ * #431 重做第一轮因此被打回 —— 稿子是验收基准，不是参考意见。
+ */
+const PAGE_DESCRIPTION = '向供应商采购，货到入库建批次并锁定批次价（D5）。';
 
 /**
  * 可排序表头（D95）。点一次切方向，再点换字段。
@@ -114,17 +118,27 @@ function SortableHead(props: {
 }) {
   const active = props.current === props.field;
   const ariaSort = active ? (props.order === 'asc' ? 'ascending' : 'descending') : 'none';
+  /**
+   * 稿子的排序表头是「`th.so` + 伪元素画 ↕ / ↑ / ↓」（`design/v3.0/index.html` L237–238），
+   * 不是表头里再嵌一个自绘按钮。这里照稿子的结构写：整格可点、可聚焦，方向由 class 表达。
+   */
+  const direction = active ? (props.order === 'asc' ? 'asc' : 'desc') : '';
   return (
-    <th className={props.className} aria-sort={ariaSort} data-sort={active ? '' : undefined}>
-      <button
-        type="button"
-        onClick={() => props.onSort(props.field)}
-        className="th-sort"
-        title={`按${typeof props.children === 'string' ? props.children : '该列'}排序`}
-      >
-        {props.children}
-        <i aria-hidden="true">{active ? (props.order === 'asc' ? '↑' : '↓') : '↕'}</i>
-      </button>
+    <th
+      className={`so ${direction}${props.className ? ` ${props.className}` : ''}`.trim()}
+      aria-sort={ariaSort}
+      data-sort={active ? '' : undefined}
+      tabIndex={0}
+      onClick={() => props.onSort(props.field)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          props.onSort(props.field);
+        }
+      }}
+      title={`按${typeof props.children === 'string' ? props.children : '该列'}排序`}
+    >
+      {props.children}
     </th>
   );
 }
@@ -177,6 +191,23 @@ function formatShortDateTime(value: string): string {
     hour12: false,
     timeZone: 'Asia/Shanghai',
   }).format(date);
+}
+
+/**
+ * 列表「日期」列：稿子这一列只写到天（`2026-11-22`），列表不再是「开单时间 + 操作」两列。
+ * 具体到分钟的创建时间仍在详情面板里，列表不重复占宽度。
+ */
+function formatDateOnly(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Shanghai',
+  })
+    .format(date)
+    .replace(/\//g, '-');
 }
 
 /** 商品名映射：没有 `product.read` 时回退短 id，不假装有名字。 */
@@ -990,7 +1021,6 @@ export function DetailPanel({
 
 export function PurchaseOrdersPage() {
   const employeeLabel = useEmployeeLabel();
-  const companyLabel = useCompanyLabel();
   const queryClient = useQueryClient();
   const me = useQuery({ queryKey: authKeys.me, queryFn: authApi.me });
   const meData = me.data;
@@ -998,8 +1028,11 @@ export function PurchaseOrdersPage() {
   const canViewPrice = can('view_price');
   const companyIds = meData?.companyIds ?? [];
 
-  const [companyId, setCompanyId] = useState('');
-  const [supplierFilter, setSupplierFilter] = useState('');
+  /*
+   * 列表过滤只留「状态 / 关键字 / 看谁的」三样 —— 与稿子的工具栏一一对应。
+   * 公司由顶栏的公司切换器决定（外壳已有），供应商名走关键字（后端 keyword 就搜单号与供应商名），
+   * 所以页面里不再各摆一个下拉：两个下拉会把工具栏挤到换行（1440 下实测），也和稿子对不上。
+   */
   const [status, setStatus] = useState<'' | PurchaseOrderStatus>('');
   /**
    * 看谁的（D106）。空串 = 不传参数，由服务端按权限定。
@@ -1086,12 +1119,10 @@ export function PurchaseOrdersPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [companyId, supplierFilter, status, keyword]);
+  }, [status, keyword]);
 
   const filters = useMemo(
     () => ({
-      companyId: optionalText(companyId),
-      supplierId: optionalText(supplierFilter),
       status: status || undefined,
       keyword: optionalText(keyword),
       page,
@@ -1100,7 +1131,7 @@ export function PurchaseOrdersPage() {
       order,
       scope: scopeFilter || undefined,
     }),
-    [companyId, supplierFilter, status, keyword, page, pageSize, sort, order, scopeFilter],
+    [status, keyword, page, pageSize, sort, order, scopeFilter],
   );
 
   const list = useQuery({
@@ -1508,109 +1539,125 @@ export function PurchaseOrdersPage() {
     isEmpty: rows.length === 0,
   });
 
+  /**
+   * 状态统计片的条数（稿子 `.chip > b`）。后端列表只回 `total`、不回分组计数，
+   * 所以**只有一页装得下全部时**计数才等于全量；翻页态下不画数字，
+   * 免得用户把「本页 7 张进行中」当成「全部 7 张」。
+   */
+  const statusesInPage = (['进行中', '在途', '已完成', '已取消'] as const).filter(
+    (value) => status === value || rows.some((row) => row.status === value),
+  );
+  const countsVisible = total !== null && rows.length >= total;
+  const countOf = (value: '' | PurchaseOrderStatus) =>
+    value === '' ? rows.length : rows.filter((row) => row.status === value).length;
+
   return (
     <section className="page-body">
-      <div className="p-head">
+      {/* 页头照稿子 `.ph`：一行大标题 + 一行短说明，右侧只放「+ 新建采购单」。
+          以前自写的 eyebrow、三行说明、告示条都不在稿子里，已删。 */}
+      <div className="ph">
         <div>
-          <div className="eyebrow">采购单 A · 货到入库</div>
           <h1>采购单 A</h1>
-          <p className="sub">{PAGE_DESCRIPTION}</p>
+          <p>{PAGE_DESCRIPTION}</p>
         </div>
-        <div className="actions">
+        <div className="acts">
           <button
             type="button"
             onClick={beginCreate}
             disabled={!can('create') || companyIds.length === 0}
-            className="btn-primary"
+            className="btn btn-p"
+            title={
+              !can('create')
+                ? '需要 purchase.create 权限'
+                : companyIds.length === 0
+                  ? '当前账号没有可下单的公司，请联系管理员分配公司权限'
+                  : '执行「新建采购单」· 需要 purchase.create 权限'
+            }
           >
-            + 新建
+            + 新建采购单
           </button>
         </div>
       </div>
 
-      {meData && !canViewPrice && (
-        <p className="alert alert-warn">
-          当前身份无「看价」权限，金额列显示为 <b>{MASKED_AMOUNT}</b>（D79）。
-          服务端把金额回 <code className="mono">null</code>，页面不会用 0 顶替。
-        </p>
-      )}
-
-      {meData && !can('create') && (
-        <p className="detail-why">
-          「新建」需要 purchase.create；当前身份只能查看（权限判定在服务端，前端只是不画按钮）。
-        </p>
-      )}
-
       {/*
-        工具条：状态用 `.seg` 分段（视觉稿 `采购单A.html` 就是分段，不是下拉），
-        供应商 / 公司 / 关键字仍用下拉与搜索框。四态里没有「草稿」——契约里采购单
-        没有草稿态，所以分段里也不画（画了就是个永远点不出数据的按钮）。
+        工具栏照稿子 `orderTools()`（`design/v3.0/index.html` L1608–1618）的顺序：
+        搜索框 → 状态统计片 →（撑开）→ 范围控件。
+        状态从 `.seg` 分段改成 `.chips` 统计片（稿子就是统计片，带条数）。
+        右侧：稿子是「全部单据 / 只看我的」+「全部经手人」。经手人下拉后端列表没有对应
+        查询参数（`PurchaseOrderListQuerySchema` 只有 companyId / supplierId / status /
+        keyword / scope），不画一个接线不上的空壳，已在 PR 里列为有意差异。
       */}
-      <div className="toolbar">
-        <div className="seg" role="group" aria-label="按状态筛选">
-          {(['', '进行中', '在途', '已完成', '已取消'] as const).map((value) => (
+      <div className="tools">
+        <label className="field">
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="搜索单号、供应商、物料…"
+            aria-label="搜索单号、供应商或物料"
+          />
+        </label>
+        <div className="chips" role="group" aria-label="按状态筛选">
+          <button
+            type="button"
+            className={status === '' ? 'chip on' : 'chip'}
+            aria-pressed={status === ''}
+            onClick={() => setStatus('')}
+          >
+            全部
+            {countsVisible && <b>{countOf('')}</b>}
+          </button>
+          {statusesInPage.map((value) => (
             <button
-              key={value === '' ? 'all' : value}
+              key={value}
               type="button"
-              className={status === value ? 'on' : undefined}
+              className={status === value ? 'chip on' : 'chip'}
               aria-pressed={status === value}
               onClick={() => setStatus(value)}
             >
-              {value === '' ? '全部状态' : value}
+              {value}
+              {countsVisible && <b>{countOf(value)}</b>}
             </button>
           ))}
         </div>
+        <div className="grow" />
         {/*
-          看谁的（D106）。只在有 `purchase.read_all` 时才给这个下拉 ——
-          没权限的人看到一个切不动的框，会以为「全部」里该有别人的单。
+          看谁的（D106）：有 `purchase.read_all` 才给开关；没有就直说「仅显示本人单据」，
+          不画一个切不动的框 —— 那会让人以为「全部」里该有别人的单。
+          不传 scope 时由服务端按权限定，所以「全部单据」是默认亮着的那一档。
         */}
-        {can('read_all') && (
-          <select
-            value={scopeFilter}
-            onChange={(event) => {
-              setScopeFilter(event.target.value as '' | 'mine' | 'all');
-              setPage(1);
-            }}
-            aria-label="看谁的单据"
-          >
-            <option value="">默认（按我的权限）</option>
-            <option value="mine">只看我经手的</option>
-            <option value="all">全部</option>
-          </select>
+        {can('read_all') ? (
+          <div className="seg" role="group" aria-label="看谁的单据">
+            <button
+              type="button"
+              className={scopeFilter !== 'mine' ? 'on' : undefined}
+              aria-pressed={scopeFilter !== 'mine'}
+              onClick={() => {
+                setScopeFilter('all');
+                setPage(1);
+              }}
+            >
+              全部单据
+            </button>
+            <button
+              type="button"
+              className={scopeFilter === 'mine' ? 'on' : undefined}
+              aria-pressed={scopeFilter === 'mine'}
+              onClick={() => {
+                setScopeFilter('mine');
+                setPage(1);
+              }}
+            >
+              只看我的
+            </button>
+          </div>
+        ) : (
+          <span className="note">仅显示本人单据（无 read_all 权限）</span>
         )}
-        {companyIds.length > 1 && (
-          <select
-            value={companyId}
-            onChange={(event) => setCompanyId(event.target.value)}
-            className="sel"
-          >
-            <option value="">全部公司</option>
-            {companyIds.map((id) => (
-              <option key={id} value={id} title={id}>
-                {companyLabel(id)}
-              </option>
-            ))}
-          </select>
+        {meData && !canViewPrice && (
+          <span className="note">
+            当前身份无「看价」权限，金额显示为 {MASKED_AMOUNT}（D79）
+          </span>
         )}
-        <select
-          value={supplierFilter}
-          onChange={(event) => setSupplierFilter(event.target.value)}
-          className="sel"
-        >
-          <option value="">全部供应商</option>
-          {suppliers.map((supplier) => (
-            <option key={supplier.id} value={supplier.id}>
-              {supplier.name}
-            </option>
-          ))}
-        </select>
-        <input
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-          placeholder="搜索单号、供应商名"
-          aria-label="搜索单号或供应商名"
-          className="search"
-        />
       </div>
 
       {formOpen && (
@@ -1688,8 +1735,13 @@ export function PurchaseOrdersPage() {
       */}
       <div className="card list-card" data-state={listState}>
         <div className="tw">
-          {/* 8 列在 920px 以下会挤到换行，交给 `.tw` 横向滚（与内贸 / 结算同口径） */}
-          <table className="w-full min-w-[920px] text-left">
+          {/*
+            列头照稿子 `orderTable()`（L1627）：单号 / 供应商 / 物料 / 数量 / 金额 / 状态 /
+            负责人 / 日期，共 8 列。此前是「货款 / 开单时间 + 一个操作列」，少了两列、
+            却多塞了三个行内按钮 —— 重做第一轮被打回的第二条就是这个。
+            宽度靠 `.tw` 横向滚，不再挂 Tailwind 的 `min-w-[920px]`。
+          */}
+          <table>
             <thead>
               <tr>
                 <SortableHead field="orderNo" current={sort} order={order} onSort={handleSort}>
@@ -1697,27 +1749,21 @@ export function PurchaseOrdersPage() {
                 </SortableHead>
                 <th>供应商</th>
                 <th>物料</th>
-                <th className="num">数量</th>
+                <th className="r">数量</th>
                 <SortableHead
                   field="totalAmount"
                   current={sort}
                   order={order}
                   onSort={handleSort}
-                  className="num"
+                  className="r"
                 >
-                  货款
+                  金额
                 </SortableHead>
                 <th>状态</th>
-                <SortableHead
-                  field="createdAt"
-                  current={sort}
-                  order={order}
-                  onSort={handleSort}
-                  className="num"
-                >
-                  开单时间
+                <th>负责人</th>
+                <SortableHead field="createdAt" current={sort} order={order} onSort={handleSort}>
+                  日期
                 </SortableHead>
-                <th />
               </tr>
             </thead>
             <tbody data-state={listState}>
@@ -1737,65 +1783,39 @@ export function PurchaseOrdersPage() {
               </tr>
               <tr className="st-tr st-empty">
                 <td colSpan={8}>
-                  <ListEmpty title="暂无采购单。可调整筛选条件，或用右上角「+ 新建」开第一张。" />
+                  <ListEmpty title="暂无采购单。可调整筛选条件，或用右上角「+ 新建采购单」开第一张。" />
                 </td>
               </tr>
               {rows.map((order) => (
-                <tr key={order.id} className="r-row">
-                  <td className="whitespace-nowrap">
-                    <button
-                      type="button"
-                      onClick={() => setDetailId(order.id)}
-                      className="doc-link"
-                    >
-                      {order.orderNo}
-                    </button>
+                /*
+                  整行可点进详情（稿子 `tr.r-row.click`）：行内不再放「详情 / 编辑 / 取消」，
+                  编辑与取消都在详情面板里，列表只负责「找到并打开」。
+                  键盘用户 Enter 同效，`tabIndex` 让行可以聚焦。
+                */
+                <tr
+                  key={order.id}
+                  className="r-row click"
+                  tabIndex={0}
+                  onClick={() => setDetailId(order.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setDetailId(order.id);
+                    }
+                  }}
+                >
+                  <td className="mono">
+                    <b>{order.orderNo}</b>
                   </td>
-                  <td className="whitespace-nowrap">{order.supplierName}</td>
-                  <td className="cell-muted">{lineSummary(order, products)}</td>
-                  <td className="num whitespace-nowrap">{qtySummary(order)}</td>
-                  <td className="num whitespace-nowrap">{formatMoney(order.goodsAmount)}</td>
-                  <td className="whitespace-nowrap">
+                  <td>{order.supplierName}</td>
+                  <td>{lineSummary(order, products)}</td>
+                  <td className="r num">{qtySummary(order)}</td>
+                  <td className="r num">{formatMoney(order.goodsAmount)}</td>
+                  <td>
                     <StatusBadge status={order.status} />
                   </td>
-                  <td className="num whitespace-nowrap cell-muted">
-                    {formatShortDateTime(order.createdAt)}
-                  </td>
-                  <td className="whitespace-nowrap text-right">
-                    <div className="row-acts">
-                      <button
-                        type="button"
-                        onClick={() => setDetailId(order.id)}
-                        className="btn btn-row"
-                      >
-                        详情
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!can('update') || !canViewPrice || order.status !== '进行中'}
-                        onClick={() => void withFreshDetail(order.id, beginEdit)}
-                        className="btn btn-row"
-                        title={
-                          orderEditBlockedText({
-                            domain: 'purchase',
-                            canUpdate: can('update'),
-                            canViewPrice,
-                            status: order.status,
-                          }) ?? undefined
-                        }
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!can('delete') || order.status !== '进行中' || cancelOrder.isPending}
-                        onClick={() => void withFreshDetail(order.id, askCancel)}
-                        className="btn btn-row danger"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </td>
+                  <td>{employeeLabel(order.handlerId)}</td>
+                  <td className="mono muted">{formatDateOnly(order.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1803,13 +1823,13 @@ export function PurchaseOrdersPage() {
         </div>
 
         {/*
-          页脚条（v3.0 `.tf`）：左边「共 N 张 · 合计」，右边首 / 上 / 页码 / 下 / 末 + 条数。
+          页脚条照稿子（`.tf`）：左边「共 N 条 · 合计」，右边首 / 上 / 页码 / 下 / 末 + 条数。
           `total` 为 null 说明后端还走游标模式（老端点），这时不画分页——画了也点不动。
           非 filled 态整条分页由 `.list-card:not([data-state="filled"])` 收起，只留汇总。
         */}
         <div className="tf">
           <span>
-            共 {total ?? rows.length} 张
+            共 {total ?? rows.length} 条
             {goodsSum !== null ? (
               <>
                 {' '}

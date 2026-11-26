@@ -1355,3 +1355,109 @@ body.is-sky .wrap {
 }
 .qr-row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:20px}
 .qr-meta{display:flex;flex-direction:column;gap:6px;min-width:240px;font-size:var(--fs-14,14px)}
+
+/* ============================================================
+   §9 列表页骨架（#431 重做第一批，稿子 L139–250）
+   ------------------------------------------------------------
+   为什么单开这一节：#443 当时为了不动另外 21 页，没有搬稿子的列表页外壳
+   （`.ph` / `.acts` / `.tools` / `.chips` / `.grow` / `th.so` / `tr.click`），
+   页面只能拿 `p-head` + `toolbar` + Tailwind 拼，验收五轮退回的共同原因就是
+   「骨架像、细节全跑偏」。重做口径要求逐块照抄稿子 DOM，所以把这组类补进来，
+   页面按稿子的标签结构写，不再各自拼一套。
+
+   落库原则不变：只用已经桥接好的 `--v30-*` 与 tokens-v013 的 `--mono` / `--fs-*`，
+   不新造令牌；`.card` / `.btn` / `.chip` / `.pager` 本体仍然复用 app-v013。
+   ============================================================ */
+
+/* ---- §9.1 页头（稿子 .ph / .acts）---- */
+.ph{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:20px;
+  flex-wrap:wrap;
+  margin-bottom:26px;
+}
+.ph h1{margin:0;font-size:26px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+.ph p{margin:6px 0 0;color:var(--v30-ink-2);font-size:13.5px;max-width:56em}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.grow{flex:1}
+
+/* ---- §9.2 工具栏（搜索 → 状态统计片 → 右侧范围控件）---- */
+.tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+/* 带图标的搜索框：稿子 `.field`。repo 原来的 `.search` 是不带图标的一条输入框，
+   `.search` 在 v0.13 里还被顶栏、登录页复用，所以不覆盖它，另立 `.field`。 */
+.field{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  height:36px;
+  padding:0 12px;
+  border:1px solid var(--v30-line);
+  border-radius:10px;
+  background:var(--v30-surface);
+  color:var(--v30-ink-3);
+  transition:border-color .2s,box-shadow .2s;
+}
+.field:focus-within{border-color:var(--v30-ink);box-shadow:0 0 0 3px var(--hover)}
+.field input{border:0;outline:0;background:none;width:200px;font-size:13px;color:var(--v30-ink)}
+.field svg{width:15px;height:15px;flex:none}
+/* 状态统计片：`.chip` 本体在 app-v013 / 本文件 §8 已有，这里只补容器与计数 */
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip b{font:500 11px var(--mono);margin-left:5px;opacity:.65}
+/* 工具条右侧的说明（「仅显示本人单据」/「无看价权限」）。
+   v0.13 的 `.note` 是段落（16px、margin-top:12px），这里只对 `.tools` 内收口，
+   不动全局 `.note`（登录页 / 集成页 / 内贸页都在用）。 */
+.tools .note{display:inline-flex;align-items:center;gap:6px;margin:0;font-size:12px;color:var(--v30-ink-3)}
+.tools .note svg{width:14px;height:14px}
+
+/* ---- §9.3 列表卡内的表格密度（稿子 L234–249）----
+   v0.13 的 `.card table` 是 16px / 行内 padding 12–16px 的「详情卡」口径，
+   比稿子的列表密一档。这里只对 `.list-card` 内部收口，详情卡不受影响。
+   选择器写成 `.list-card thead th` / `.list-card tbody td`，与 `.card thead th`
+   同为 0,1,2，靠本文件后加载生效。 */
+.list-card table{font-size:13.5px}
+.list-card thead th{
+  height:42px;
+  padding:0 16px;
+  font-size:12px;
+  font-weight:600;
+  color:var(--v30-ink-3);
+  background:var(--v30-surface-2);
+  border-bottom:1px solid var(--v30-line);
+  box-shadow:none;
+  user-select:none;
+}
+.list-card tbody td{
+  height:50px;
+  padding:0 16px;
+  font-size:13.5px;
+  border-bottom:1px solid var(--v30-line);
+  white-space:nowrap;
+}
+.list-card thead th:first-child,
+.list-card tbody td:first-child{padding-left:20px}
+.list-card thead th:last-child,
+.list-card tbody td:last-child{padding-right:20px}
+.list-card tbody tr:last-child td{border-bottom:0}
+
+/* 可排序表头：稿子用伪元素画 ↕ / ↑ / ↓，不再塞一个自绘按钮 */
+th.so{cursor:pointer}
+th.so:hover{color:var(--v30-ink)}
+th.so::after{content:"↕";margin-left:5px;opacity:.35}
+th.so.asc::after{content:"↑";opacity:1;color:var(--v30-accent)}
+th.so.desc::after{content:"↓";opacity:1;color:var(--v30-accent)}
+
+/* 整行可点（稿子 tr.click）：进详情靠点行，行内不再塞「详情 / 编辑 / 取消」三个小按钮 */
+tr.click{cursor:pointer;transition:background .15s}
+tr.click:hover{background:var(--v30-surface-2)}
+tr.click:hover td:first-child{box-shadow:inset 3px 0 0 var(--v30-accent)}
+tr.click:focus-visible{outline:2px solid var(--v30-accent);outline-offset:-2px}
+
+/* 数字列右对齐（稿子 td.r / th.r） */
+td.r,th.r{text-align:right}
+
+/* 工具条里的状态统计片按稿子尺寸（32px / 12.5px / 圆角 16px）。
+   `.chip` 本体是 26px 的表单口径（批次选择那种密排），这里只放大 `.chips` 内的，
+   不动别的页面里已经在用的 26px 版本。 */
+.chips .chip{height:32px;padding:0 12px;border-radius:16px;font-size:12.5px}
