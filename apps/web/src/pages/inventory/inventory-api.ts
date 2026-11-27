@@ -36,6 +36,11 @@ export interface InventoryBatchFilters {
   readonly order?: 'asc' | 'desc';
 }
 
+export interface InventoryBatchExport {
+  readonly blob: Blob;
+  readonly filename: string;
+}
+
 export interface InventoryFlowFilters {
   readonly companyId?: string;
   readonly batchId?: string;
@@ -56,6 +61,30 @@ export interface StocktakeFilters {
 export type StocktakeDirection = 'increase' | 'decrease';
 
 const DEFAULT_LIMIT = 50;
+const DEFAULT_EXPORT_FILENAME = '库存批次.csv';
+
+/**
+ * 从 `Content-Disposition` 提取下载名。
+ *
+ * 服务端同时兼容 `filename*=UTF-8''...` 与普通 `filename="..."`；浏览器通过 fetch
+ * 拿到的响应头可以被同源代码读取，所以这里优先取 UTF-8 形式，避免中文名被解码坏。
+ */
+export function exportFilename(
+  disposition: string | null,
+  fallback = DEFAULT_EXPORT_FILENAME,
+): string {
+  if (!disposition) return fallback;
+  const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim().replace(/^"|"$/g, ''));
+    } catch {
+      // 响应头损坏时退回普通 filename，不让一次下载因为文件名解析失败。
+    }
+  }
+  const plain = /filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;]+)/i.exec(disposition);
+  return (plain?.[1] ?? plain?.[2] ?? fallback).trim();
+}
 
 function queryOf(
   filters: Record<string, QueryValue>,
@@ -109,6 +138,25 @@ export const inventoryApi = {
     return client.get<InventoryAlertListResponse>('/inventory/alerts', {
       query: { companyId },
     });
+  },
+
+  async exportBatches(
+    filters: Pick<InventoryBatchFilters, 'companyId' | 'productId' | 'keyword'>,
+    client: ApiClient = apiClient,
+  ): Promise<InventoryBatchExport> {
+    let filename = DEFAULT_EXPORT_FILENAME;
+    const blob = await client.get<Blob>('/inventory/batches/export', {
+      query: {
+        companyId: filters.companyId,
+        productId: filters.productId,
+        keyword: filters.keyword,
+      },
+      responseType: 'blob',
+      responseMeta: ({ headers }) => {
+        filename = exportFilename(headers.get('content-disposition'));
+      },
+    });
+    return { blob, filename };
   },
 
   async getBatch(

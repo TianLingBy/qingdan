@@ -226,11 +226,11 @@ export function BatchCostAdjustments({
   };
 
   return (
-    <section className="space-y-3 border-t border-slate-200 pt-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="cost-panel">
+      <div className="cost-head">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">成本更正</h3>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          <h3 className="cost-title">成本更正</h3>
+          <p className="cost-desc">
             只改批次成本、不改数量。档位由服务端按下游引用自动判定：T1 直接生效，T2
             待审批，T3 已结算锁定。
           </p>
@@ -244,55 +244,55 @@ export function BatchCostAdjustments({
             setActionError(null);
             setActionResult(null);
           }}
-          className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+          className="btn btn-p"
         >
           {formOpen ? '收起更正' : '发起成本更正'}
         </button>
       </div>
 
       {!canViewPrice ? (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <p className="notice notice-warn">
           当前身份没有 inventory_qty.view_price，成本与差额统一显示占位；接口仍会返回记录状态。
         </p>
       ) : null}
 
       {formOpen ? (
-        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm">
-              <span className="text-slate-600">更正后单位成本</span>
+        <div className="cost-form">
+          <div className="cost-form-grid">
+            <label className="cost-field">
+              <span>更正后单位成本</span>
               <input
                 value={afterUnitCost}
                 onChange={(event) => setAfterUnitCost(event.target.value)}
                 inputMode="decimal"
                 placeholder="例如 21.50"
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                className="cost-input"
               />
             </label>
-            <label className="text-sm">
-              <span className="text-slate-600">更正原因</span>
+            <label className="cost-field">
+              <span>更正原因</span>
               <input
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 maxLength={200}
                 placeholder="例如 补录供应商运费"
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                className="cost-input"
               />
             </label>
           </div>
           {clientErrors.length > 0 ? (
-            <ul className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <ul className="notice notice-warn cost-errors">
               {clientErrors.map((error) => (
                 <li key={error}>· {error}</li>
               ))}
             </ul>
           ) : null}
-          <div className="flex gap-2">
+          <div className="cost-actions">
             <button
               type="button"
               disabled={!canUpdate || create.isPending}
               onClick={submitCreate}
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:bg-slate-300"
+              className="btn btn-p"
             >
               {create.isPending ? '提交中…' : '提交更正'}
             </button>
@@ -302,7 +302,7 @@ export function BatchCostAdjustments({
                 setFormOpen(false);
                 setClientErrors([]);
               }}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600"
+              className="btn"
             >
               取消
             </button>
@@ -311,17 +311,17 @@ export function BatchCostAdjustments({
       ) : null}
 
       {actionResult ? (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p className="notice notice-ok">
           {actionResult}
         </p>
       ) : null}
       {actionError ? (
-        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <p className="notice notice-bad" role="alert">
           {actionError}
         </p>
       ) : null}
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+      <div className="cost-table-wrap">
         {list.isPending ? (
           <ListLoading label="成本更正历史加载中…" />
         ) : list.isError ? (
@@ -334,51 +334,51 @@ export function BatchCostAdjustments({
         ) : items.length === 0 ? (
           <ListEmpty title="暂无成本更正记录。只有确实需要修正批次锁价时才发起。" />
         ) : (
-          <table className="w-full min-w-[960px] text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+          <table className="cost-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2">时间</th>
-                <th className="px-3 py-2">档位 / 状态</th>
-                <th className="px-3 py-2">成本变动</th>
-                <th className="px-3 py-2">差额</th>
-                <th className="px-3 py-2">原因</th>
-                <th className="px-3 py-2">发起 / 审批</th>
-                <th className="px-3 py-2">下游引用</th>
-                <th className="px-3 py-2 text-right">操作</th>
+                <th>时间</th>
+                <th>档位 / 状态</th>
+                <th>成本变动</th>
+                <th>差额</th>
+                <th>原因</th>
+                <th>发起 / 审批</th>
+                <th>下游引用</th>
+                <th>操作</th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.id} className="border-b border-slate-100 last:border-0">
-                  <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-500">
+                <tr key={item.id}>
+                  <td className="cost-muted">
                     {formatDateTime(item.createdAt)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-xs">
+                  <td>
                     <div>{COST_ADJUSTMENT_TIER_LABEL[item.tier]}</div>
-                    <div className="mt-0.5 text-slate-500">
+                    <div className="cost-muted">
                       {COST_ADJUSTMENT_STATUS_LABEL[item.status]}
                     </div>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">
+                  <td className="mono">
                     {amountText(item.beforeUnitCost, canViewPrice)} →{' '}
                     {amountText(item.afterUnitCost, canViewPrice)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">
+                  <td className="mono">
                     {amountText(item.deltaAmount, canViewPrice)}
                   </td>
-                  <td className="max-w-64 px-3 py-2 text-xs text-slate-700">{item.reason}</td>
-                  <td className="px-3 py-2 text-xs text-slate-500">
+                  <td className="cost-reason">{item.reason}</td>
+                  <td className="cost-muted">
                     <div title={item.requestedBy}>{shortId(item.requestedBy)}</div>
-                    <div className="mt-0.5" title={item.approvedBy ?? undefined}>
+                    <div title={item.approvedBy ?? undefined}>
                       {item.approvedBy ? shortId(item.approvedBy) : '—'}
                     </div>
                   </td>
-                  <td className="max-w-64 px-3 py-2 text-xs text-slate-500">
+                  <td className="cost-refs">
                     {referenceText(item)}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                  <td className="cost-cell-actions">
                     {item.status === 'pending_approval' && canApprove ? (
-                      <div className="flex justify-end gap-2">
+                      <div className="cost-actions">
                         <button
                           type="button"
                           disabled={approve.isPending || reject.isPending}
@@ -394,7 +394,7 @@ export function BatchCostAdjustments({
                             setActionResult(null);
                             approve.mutate(item);
                           }}
-                          className="rounded border border-emerald-300 px-2 py-1 text-xs text-emerald-700 disabled:opacity-40"
+                          className="btn btn-s"
                         >
                           审批通过
                         </button>
@@ -406,13 +406,13 @@ export function BatchCostAdjustments({
                             setRejectReason('');
                             setRejectError(null);
                           }}
-                          className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700 disabled:opacity-40"
+                          className="btn btn-s text-bad"
                         >
                           驳回
                         </button>
                       </div>
                     ) : (
-                      <span className="text-xs text-slate-400">
+                      <span className="cost-muted">
                         {item.status === 'pending_approval'
                           ? '需 inventory_qty.approve'
                           : '已处理'}
@@ -427,26 +427,26 @@ export function BatchCostAdjustments({
       </div>
 
       {rejectingItem ? (
-        <div className="space-y-2 rounded-lg border border-rose-200 bg-rose-50 p-3">
-          <p className="text-sm font-medium text-rose-900">驳回成本更正</p>
-          <p className="text-xs text-rose-700">
+        <div className="cost-reject">
+          <p className="cost-title">驳回成本更正</p>
+          <p className="cost-desc">
             原更正原因：{rejectingItem.reason}。驳回不会改变批次锁定成本。
           </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="min-w-64 flex-1 text-sm">
-              <span className="text-slate-600">驳回原因</span>
+          <div className="cost-reject-row">
+            <label className="cost-field cost-reject-field">
+              <span>驳回原因</span>
               <input
                 value={rejectReason}
                 onChange={(event) => setRejectReason(event.target.value)}
                 maxLength={200}
-                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                className="cost-input"
               />
             </label>
             <button
               type="button"
               disabled={reject.isPending}
               onClick={submitReject}
-              className="rounded-lg bg-rose-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+              className="btn btn-p cost-reject-submit"
             >
               {reject.isPending ? '驳回中…' : '确认驳回'}
             </button>
@@ -456,12 +456,12 @@ export function BatchCostAdjustments({
                 setRejectingId(null);
                 setRejectError(null);
               }}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-600"
+              className="btn"
             >
               取消
             </button>
           </div>
-          {rejectError ? <p className="text-xs text-rose-700">{rejectError}</p> : null}
+          {rejectError ? <p className="text-bad">{rejectError}</p> : null}
         </div>
       ) : null}
 

@@ -11,7 +11,11 @@ import { isImplementedPage } from '../../router/implemented';
 import { authKeys } from '../auth/auth-api';
 import { reversalsQueryKeys } from '../reversals/reversals-api';
 import { InventoryFlowsPage } from './InventoryFlowsPage';
-import { batchAgeDays, InventoryPage } from './InventoryPage';
+import {
+  batchAgeDays,
+  InventoryPage,
+  quickFilterMatches,
+} from './InventoryPage';
 import { inventoryQueryKeys } from './inventory-api';
 import { StocktakesPage } from './StocktakesPage';
 
@@ -93,7 +97,6 @@ const ALERT = {
 };
 
 const INVENTORY_PAGE_FILTERS = {
-  companyId: undefined,
   keyword: undefined,
   page: 1,
   pageSize: 20,
@@ -157,7 +160,7 @@ describe('库存数量页（#143）', () => {
     expect(html).not.toContain('18.75');
   });
 
-  it('批次列表使用页码模式并展示当前筛选条件', () => {
+  it('批次列表使用页码模式并展示预警口径页脚', () => {
     const html = render(<InventoryPage />, (client) => {
       client.setQueryData(authKeys.me, ME);
       client.setQueryData(inventoryQueryKeys.batches(INVENTORY_PAGE_FILTERS), {
@@ -172,9 +175,72 @@ describe('库存数量页（#143）', () => {
       });
     });
 
-    expect(html).toContain('当前筛选：全部可见公司 · 全部批次 · 按入库时间');
+    expect(html).toContain(
+      '预警阈值按 /inventory/alerts 口径（D104，服务端实时判定）',
+    );
+    expect(html).toContain('点击行查看该批次明细');
     expect(html).toContain('20 条 / 页');
     expect(html).toContain('共 1 个批次');
+  });
+
+  it('表头、四个快速筛选项与库存构成图例按设计稿常驻', () => {
+    const html = render(<InventoryPage />, (client) => {
+      client.setQueryData(authKeys.me, ME);
+      client.setQueryData(inventoryQueryKeys.batches(INVENTORY_PAGE_FILTERS), {
+        items: [BATCH],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+        nextCursor: null,
+      });
+      client.setQueryData(inventoryQueryKeys.alerts(COMPANY_ID), {
+        items: [],
+      });
+    });
+
+    expect(html).toContain('仓库 / 保管人');
+    expect(html).toContain('构成');
+    expect(html).toContain('低库存预警');
+    expect(html).toContain('有在途');
+    expect(html).toContain('有占用');
+    expect(html).toContain('库存构成：已引用、在途、占用、可用');
+  });
+
+  it('无 inventory_qty.export 时导出按钮禁用并写明权限', () => {
+    const html = render(<InventoryPage />, (client) => {
+      client.setQueryData(authKeys.me, ME);
+      client.setQueryData(inventoryQueryKeys.batches(INVENTORY_PAGE_FILTERS), {
+        items: [BATCH],
+        total: 1,
+        page: 1,
+        pageSize: 20,
+        nextCursor: null,
+      });
+      client.setQueryData(inventoryQueryKeys.alerts(COMPANY_ID), {
+        items: [],
+      });
+    });
+
+    expect(html).toContain('导出 CSV');
+    expect(html).toContain('disabled');
+    expect(html).toContain('需要 inventory_qty.export 权限');
+  });
+
+  it('快速筛选只改变当前页呈现，三个库存口径各自判定', () => {
+    const alertIds = new Set([BATCH.id]);
+    expect(quickFilterMatches(BATCH, 'all', alertIds)).toBe(true);
+    expect(quickFilterMatches(BATCH, 'low', alertIds)).toBe(true);
+    expect(quickFilterMatches(BATCH, 'transit', alertIds)).toBe(true);
+    expect(quickFilterMatches(BATCH, 'hold', alertIds)).toBe(true);
+
+    const empty = {
+      ...BATCH,
+      inTransitQty: '0',
+      pendingExecutionQty: '0',
+    };
+    expect(quickFilterMatches(empty, 'low', new Set())).toBe(false);
+    expect(quickFilterMatches(empty, 'transit', new Set())).toBe(false);
+    expect(quickFilterMatches(empty, 'hold', new Set())).toBe(false);
   });
 
   it('四态行常驻 DOM，加载、空与错误只靠 tbody 属性切换', () => {
@@ -215,7 +281,7 @@ describe('库存数量页（#143）', () => {
     });
 
     expect(html).toContain('批次号');
-    expect(html).toContain('当前筛选');
+    expect(html).toContain('预警阈值按 /inventory/alerts 口径');
     expect(html).toContain('没有符合条件的库存批次');
   });
 

@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ApiClient } from '../../api/client';
 import { compareDecimal } from '../../lib/decimal';
-import { inventoryApi, type InventoryBatchFilters } from './inventory-api';
+import {
+  exportFilename,
+  inventoryApi,
+  type InventoryBatchFilters,
+} from './inventory-api';
 
 function clientWith(payload: unknown) {
   const calls: { input: string; init?: RequestInit }[] = [];
@@ -107,6 +111,47 @@ describe('库存页面 API 封装', () => {
     expect(calls[0]?.input).toBe(
       '/api/v1/inventory/alerts?companyId=00000000-0000-4000-8000-000000000001',
     );
+  });
+
+  it('库存导出按当前筛选拉 CSV，并读取服务端文件名', async () => {
+    const calls: { input: string; init?: RequestInit }[] = [];
+    const client = new ApiClient({
+      baseUrl: '/api/v1',
+      fetchImpl: async (input, init) => {
+        calls.push({ input: String(input), init });
+        return new Response('批次号,可用\nP-1,10', {
+          status: 200,
+          headers: {
+            'content-type': 'text/csv',
+            'content-disposition': "attachment; filename*=UTF-8''%E5%BA%93%E5%AD%98.csv",
+          },
+        });
+      },
+    });
+
+    const file = await inventoryApi.exportBatches(
+      { keyword: 'PB-0001' },
+      client,
+    );
+
+    expect(calls[0]?.input).toBe(
+      '/api/v1/inventory/batches/export?keyword=PB-0001',
+    );
+    expect(new Headers(calls[0]?.init?.headers).get('accept')).toBe('*/*');
+    expect(file.filename).toBe('库存.csv');
+    expect(await file.blob.text()).toContain('P-1,10');
+  });
+
+  it('Content-Disposition 的 UTF-8 与普通文件名都能解析', () => {
+    expect(
+      exportFilename(
+        "attachment; filename*=UTF-8''%E5%BA%93%E5%AD%98%E6%89%B9%E6%AC%A1.csv",
+      ),
+    ).toBe('库存批次.csv');
+    expect(exportFilename('attachment; filename="batch.csv"')).toBe(
+      'batch.csv',
+    );
+    expect(exportFilename(null)).toBe('库存批次.csv');
   });
 
   it('盘点审批发送强 If-Match', async () => {
