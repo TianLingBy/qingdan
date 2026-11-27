@@ -1355,3 +1355,657 @@ body.is-sky .wrap {
 }
 .qr-row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:20px}
 .qr-meta{display:flex;flex-direction:column;gap:6px;min-width:240px;font-size:var(--fs-14,14px)}
+
+/* ============================================================
+   §10 库存数量页（#433 重做）
+   ------------------------------------------------------------
+   表头与行密度逐项对齐 `design/v3.0/index.html` 的 `.tools`
+   / `.chips` / `table` 口径。共享 `.card` / `.tw` / `.tf` / `.pager`
+   继续复用，这里只补库存页自己的结构类。
+   ============================================================ */
+.inventory-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.inv-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 26px;
+}
+
+.inv-head h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--v30-ink);
+}
+
+.inv-head p {
+  max-width: 56em;
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--v30-ink-2);
+}
+
+.inv-actions,
+.inv-chips,
+.inv-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.inv-actions {
+  gap: 8px;
+}
+
+.inv-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.inv-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--v30-line);
+  border-radius: 10px;
+  background: var(--v30-surface);
+  color: var(--v30-ink-3);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.inv-field:focus-within {
+  border-color: var(--v30-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v30-ink) 8%, transparent);
+}
+
+.inv-field input {
+  width: 220px;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--v30-ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.inv-chips {
+  gap: 6px;
+}
+
+.inv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--v30-line);
+  border-radius: 16px;
+  background: var(--v30-surface);
+  color: var(--v30-ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.18s,
+    border-color 0.18s,
+    color 0.18s;
+}
+
+.inv-chip:hover {
+  border-color: var(--v30-line-2);
+  color: var(--v30-ink);
+}
+
+.inv-chip.on {
+  border-color: var(--v30-ink);
+  background: var(--v30-ink);
+  color: var(--v30-bg);
+  font-weight: 600;
+}
+
+.inv-chip b {
+  margin-left: 2px;
+  opacity: 0.65;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.inv-grow {
+  flex: 1;
+}
+
+.inv-legend {
+  gap: 16px;
+  color: var(--v30-ink-3);
+  font-size: 12px;
+}
+
+.inv-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inv-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.inv-legend-ref,
+.inv-composition-ref {
+  background: var(--v30-ink-3);
+  fill: var(--v30-ink-3);
+}
+
+.inv-legend-transit,
+.inv-composition-transit {
+  background: var(--transit);
+  fill: var(--transit);
+}
+
+.inv-legend-hold,
+.inv-composition-hold {
+  background: var(--warn);
+  fill: var(--warn);
+}
+
+.inv-legend-available,
+.inv-composition-available {
+  background: var(--ok);
+  fill: var(--ok);
+}
+
+.inv-notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--v30-line);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.inv-notice-error {
+  border-color: var(--v30-bad-30);
+  background: var(--v30-bad-10);
+  color: var(--v30-bad);
+}
+
+.inv-table {
+  width: 100%;
+  min-width: 1000px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 13.5px;
+}
+
+/* 12 列在 1440 桌面下必须完整落在卡片内，不依赖横向滚动。 */
+.inv-table th:nth-child(1),
+.inv-table td:nth-child(1) {
+  width: 9%;
+}
+
+.inv-table th:nth-child(2),
+.inv-table td:nth-child(2) {
+  width: 12%;
+}
+
+.inv-table th:nth-child(3),
+.inv-table td:nth-child(3) {
+  width: 13%;
+}
+
+.inv-table th:nth-child(4),
+.inv-table td:nth-child(4) {
+  width: 6%;
+}
+
+.inv-table th:nth-child(5),
+.inv-table td:nth-child(5) {
+  width: 15%;
+}
+
+.inv-table th:nth-child(6),
+.inv-table td:nth-child(6) {
+  width: 6%;
+}
+
+.inv-table th:nth-child(7),
+.inv-table td:nth-child(7),
+.inv-table th:nth-child(8),
+.inv-table td:nth-child(8) {
+  width: 5%;
+}
+
+.inv-table th:nth-child(9),
+.inv-table td:nth-child(9) {
+  width: 6%;
+}
+
+.inv-table th:nth-child(10),
+.inv-table td:nth-child(10) {
+  width: 7%;
+}
+
+.inv-table th:nth-child(11),
+.inv-table td:nth-child(11) {
+  width: 10%;
+}
+
+.inv-table th:nth-child(12),
+.inv-table td:nth-child(12) {
+  width: 6%;
+}
+
+.inv-table th {
+  height: 42px;
+  padding: 0 7px;
+  border-bottom: 1px solid var(--v30-line);
+  background: var(--surf-2);
+  color: var(--v30-ink-3);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.inv-table th:first-child {
+  padding-left: 12px;
+}
+
+.inv-table th:last-child {
+  padding-right: 12px;
+}
+
+.inv-table td {
+  height: 50px;
+  padding: 0 7px;
+  border-bottom: 1px solid var(--v30-line);
+  color: var(--v30-ink);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.inv-table td:first-child {
+  padding-left: 12px;
+}
+
+.inv-table td:last-child {
+  padding-right: 12px;
+}
+
+.inv-table .inv-num {
+  text-align: right;
+}
+
+.inv-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.inv-sort:hover {
+  color: var(--v30-ink);
+}
+
+.inv-num .inv-sort {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.inv-sort i {
+  color: var(--v30-ink-3);
+  font-size: 11px;
+  font-style: normal;
+  opacity: 0.55;
+}
+
+.inv-row {
+  cursor: pointer;
+  outline-offset: -2px;
+  transition: background 0.15s;
+}
+
+.inv-row:hover,
+.inv-row:focus-visible {
+  background: var(--surf-2);
+}
+
+.inv-warehouse {
+  display: block;
+  font-family: var(--mono);
+  color: var(--v30-ink);
+}
+
+.inv-keeper {
+  display: block;
+  color: var(--v30-ink-3);
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.inv-composition {
+  min-width: 140px;
+}
+
+.inv-composition-track {
+  display: block;
+  width: 100%;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--hover);
+}
+
+.inv-age {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-age svg {
+  color: var(--v30-ink-3);
+}
+
+.inv-age.slow {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.inv-age.slow svg {
+  color: var(--warn);
+}
+
+.inv-available {
+  color: var(--ok);
+}
+
+.st.inv-st-low {
+  --st-bg: var(--v30-bad-10);
+  --st-ink: var(--v30-bad);
+  --st-line: var(--v30-bad-30);
+}
+
+.inv-detail-row > td {
+  padding: 0 !important;
+  background: var(--v30-surface);
+}
+
+.inv-detail {
+  border-top: 1px solid var(--v30-line-2);
+  background: var(--v30-surface);
+}
+
+.inv-detail .detail {
+  padding: 20px;
+  background: var(--v30-surface);
+}
+
+.inv-detail .dl > div {
+  background: var(--v30-surface);
+}
+
+.inv-subtitle {
+  margin: 0 0 8px;
+  color: var(--v30-ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.inv-occupancies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  color: var(--v30-ink-2);
+  font-size: 12px;
+  list-style: none;
+}
+
+.inv-occupancies li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid var(--v30-line);
+  border-radius: 8px;
+  background: var(--v30-surface);
+}
+
+.cost-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--v30-line);
+}
+
+.cost-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cost-title {
+  margin: 0;
+  color: var(--v30-ink);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.cost-desc {
+  max-width: 72em;
+  margin: 3px 0 0;
+  color: var(--v30-ink-3);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.notice {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--v30-line);
+  border-radius: 9px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.notice-warn {
+  border-color: var(--v30-warn-30);
+  background: var(--v30-warn-10);
+  color: var(--v30-warn);
+}
+
+.notice-ok {
+  border-color: color-mix(in srgb, var(--v30-ok) 30%, transparent);
+  background: color-mix(in srgb, var(--v30-ok) 10%, transparent);
+  color: var(--v30-ok);
+}
+
+.notice-bad {
+  border-color: var(--v30-bad-30);
+  background: var(--v30-bad-10);
+  color: var(--v30-bad);
+}
+
+.cost-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--v30-line);
+  border-radius: 10px;
+  background: var(--surf-2);
+}
+
+.cost-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cost-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--v30-ink-2);
+  font-size: 12px;
+}
+
+.cost-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--v30-line-2);
+  border-radius: 8px;
+  outline: 0;
+  background: var(--v30-surface);
+  color: var(--v30-ink);
+  font: inherit;
+}
+
+.cost-input:focus {
+  border-color: var(--v30-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v30-ink) 8%, transparent);
+}
+
+.cost-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cost-errors {
+  margin: 0;
+  padding-left: 24px;
+}
+
+.cost-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--v30-line);
+  border-radius: 10px;
+  background: var(--v30-surface);
+}
+
+.cost-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  color: var(--v30-ink);
+  font-size: 12px;
+  text-align: left;
+}
+
+.cost-table th {
+  height: 34px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--v30-line);
+  background: var(--surf-2);
+  color: var(--v30-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.cost-table td {
+  height: 40px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--v30-line);
+  color: var(--v30-ink-2);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.cost-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.cost-table .cost-muted {
+  color: var(--v30-ink-3);
+}
+
+.cost-table .cost-reason {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cost-table .cost-refs {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--v30-ink-3);
+  text-overflow: ellipsis;
+}
+
+.cost-table .cost-cell-actions {
+  text-align: right;
+}
+
+.cost-table .cost-actions {
+  justify-content: flex-end;
+}
+
+.cost-reject {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--v30-bad-30);
+  border-radius: 10px;
+  background: var(--v30-bad-10);
+}
+
+.cost-reject-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.cost-reject-field {
+  flex: 1;
+}
+
+.cost-reject-submit {
+  border-color: var(--v30-bad);
+  background: var(--v30-bad);
+  color: #fff;
+}
+
+.text-bad {
+  color: var(--v30-bad);
+}
