@@ -10,7 +10,11 @@ import { createQueryClient } from '../../api/query';
 import { isImplementedPage } from '../../router/implemented';
 import { authKeys } from '../auth/auth-api';
 import { reversalsQueryKeys } from '../reversals/reversals-api';
-import { InventoryFlowsPage } from './InventoryFlowsPage';
+import {
+  flowDirection,
+  flowMatchesKeyword,
+  InventoryFlowsPage,
+} from './InventoryFlowsPage';
 import {
   batchAgeDays,
   InventoryPage,
@@ -340,6 +344,33 @@ describe('库存流水页（#143）', () => {
     expect(html).toContain('当前返回 2 条');
     expect(html).not.toContain('金额');
     expect(html).not.toContain('锁定 / 调整');
+    expect(html).not.toContain('导出');
+  });
+
+  it('方向 chip、来源筛选和当前筛选条件按设计稿常驻', () => {
+    const html = render(<InventoryFlowsPage />, (client) => {
+      client.setQueryData(authKeys.me, ME);
+      client.setQueryData(
+        inventoryQueryKeys.flows({
+          companyId: undefined,
+          batchId: undefined,
+          sourceDocType: undefined,
+          sourceDocId: undefined,
+          cursor: null,
+        }),
+        { items: [FLOW, INBOUND_FLOW], nextCursor: null },
+      );
+    });
+
+    expect(html).toContain('方向');
+    expect(html).toContain('正变动');
+    expect(html).toContain('负变动');
+    expect(html).toContain('零变动');
+    expect(html).toContain('来源类型');
+    expect(html).toContain('来源单据号');
+    expect(html).toContain('批次追溯');
+    expect(html).toContain('当前筛选：');
+    expect(html).toContain('只追加，不允许改历史流水');
   });
 
   it('四态行常驻 DOM，空流水保留表头', () => {
@@ -363,6 +394,15 @@ describe('库存流水页（#143）', () => {
     expect(html).toContain('st-error');
     expect(html).toContain('批次 ID');
     expect(html).toContain('没有符合条件的库存流水');
+  });
+
+  it('方向与关键字只过滤当前批返回结果', () => {
+    expect(flowDirection('-3')).toBe('negative');
+    expect(flowDirection('5')).toBe('positive');
+    expect(flowDirection('0.000000')).toBe('zero');
+    expect(flowMatchesKeyword(FLOW, 'SALE-0007', null, '仓管')).toBe(true);
+    expect(flowMatchesKeyword(FLOW, '仓管', null, '仓管')).toBe(true);
+    expect(flowMatchesKeyword(FLOW, '不存在', null, '仓管')).toBe(false);
   });
 });
 
