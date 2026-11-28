@@ -860,38 +860,38 @@ const ORD = {
   ]
 };
 const INV = [
-  { batch: 'P-2201', product: '特级冷萃咖啡豆', wh: '上海一号仓', keeper: '李明', inQ: 300, refQ: 120, transitQ: 20, holdQ: 10, avail: 150, price: 118, age: 8, minQ: 120 },
-  { batch: 'P-2200', product: '有机燕麦奶 1L', wh: '上海一号仓', keeper: '李明', inQ: 200, refQ: 85, transitQ: 0, holdQ: 15, avail: 100, price: 88, age: 21, minQ: 80 },
-  { batch: 'P-2199', product: '烘焙坚果礼盒', wh: '苏州冷链仓', keeper: '周婷', inQ: 450, refQ: 200, transitQ: 50, holdQ: 0, avail: 200, price: 115, age: 45, minQ: 150 },
-  { batch: 'P-2202', product: '阿拉比卡生豆', wh: '上海一号仓', keeper: '周婷', inQ: 900, refQ: 640, transitQ: 120, holdQ: 0, avail: 140, price: 76, age: 12, minQ: 200 },
-  { batch: 'P-2203', product: '燕麦浓缩浆', wh: '上海一号仓', keeper: '李明', inQ: 700, refQ: 430, transitQ: 0, holdQ: 40, avail: 230, price: 88, age: 26, minQ: 150 },
-  { batch: 'P-2204', product: '烘焙坚果礼盒', wh: '苏州冷链仓', keeper: '周婷', inQ: 420, refQ: 360, transitQ: 30, holdQ: 0, avail: 30, price: 118, age: 48, minQ: 80 },
-  { batch: 'P-2205', product: '冷链果汁拼箱', wh: '上海一号仓', keeper: '李明', inQ: 260, refQ: 210, transitQ: 0, holdQ: 12, avail: 38, price: 96, age: 63, minQ: 60 },
-  { batch: 'P-2206', product: '特级纸皮核桃', wh: '苏州冷链仓', keeper: '周婷', inQ: 520, refQ: 300, transitQ: 60, holdQ: 20, avail: 140, price: 25, age: 34, minQ: 120 }
+  { batch: 'P-2201', product: '特级冷萃咖啡豆', wh: '星辰商贸总公司', keeper: '李明', inQ: 300, refQ: 120, transitQ: 20, holdQ: 10, avail: 150, price: 118, age: 8, minQ: 120 },
+  { batch: 'P-2200', product: '有机燕麦奶 1L', wh: '星辰商贸总公司', keeper: '李明', inQ: 200, refQ: 85, transitQ: 0, holdQ: 15, avail: 100, price: 88, age: 21, minQ: 80 },
+  { batch: 'P-2199', product: '烘焙坚果礼盒', wh: '星辰商贸 · 苏州分部', keeper: '周婷', inQ: 450, refQ: 200, transitQ: 50, holdQ: 0, avail: 200, price: 115, age: 45, minQ: 150 },
+  { batch: 'P-2202', product: '阿拉比卡生豆', wh: '星辰商贸总公司', keeper: '周婷', inQ: 900, refQ: 640, transitQ: 120, holdQ: 0, avail: 140, price: 76, age: 12, minQ: 200 },
+  { batch: 'P-2203', product: '燕麦浓缩浆', wh: '星辰商贸总公司', keeper: '李明', inQ: 700, refQ: 430, transitQ: 0, holdQ: 40, avail: 230, price: 88, age: 26, minQ: 150 },
+  { batch: 'P-2204', product: '烘焙坚果礼盒', wh: '星辰商贸 · 苏州分部', keeper: '周婷', inQ: 420, refQ: 360, transitQ: 30, holdQ: 0, avail: 30, price: 118, age: 48, minQ: 80 },
+  { batch: 'P-2205', product: '冷链果汁拼箱', wh: '星辰商贸总公司', keeper: '李明', inQ: 260, refQ: 210, transitQ: 0, holdQ: 12, avail: 38, price: 96, age: 63, minQ: 60 },
+  { batch: 'P-2206', product: '特级纸皮核桃', wh: '星辰商贸 · 苏州分部', keeper: '周婷', inQ: 520, refQ: 300, transitQ: 60, holdQ: 20, avail: 140, price: 25, age: 34, minQ: 120 }
 ];
-const FTYPE = { in: ['入库', 'arrow-in'], out: ['出库', 'arrow-out'], lock: ['锁定', 'pin'], adjust: ['调整', 'adjust'] };
+const FTYPE = { in: ['入库', 'arrow-in'], out: ['出库', 'arrow-out'] };
 const FLOWS = [
   { t: '11-21 17:30', batch: 'P-2201', type: 'in', d: '+5 箱', amt: 590, src: 'R-0086', by: '王倩' },
   { t: '11-21 16:05', batch: 'P-2199', type: 'out', d: '−200 盒', amt: 23000, src: 'E-2611-083', by: '王倩' },
-  { t: '11-21 09:12', batch: 'P-2204', type: 'lock', d: '−30 盒', amt: 3540, src: 'E-2611-087', by: '张伟' },
+  { t: '11-21 09:12', batch: 'P-2204', type: 'out', d: '−30 盒', amt: 3540, src: 'E-2611-087', by: '张伟' },
   { t: '11-20 10:22', batch: 'P-2200', type: 'out', d: '−85 箱', amt: 7480, src: 'E-2611-082', by: '张伟' },
   { t: '11-19 14:20', batch: 'P-2199', type: 'in', d: '+450 盒', amt: 51750, src: 'B-2611-005', by: '周婷' },
   { t: '11-19 11:05', batch: 'P-2202', type: 'in', d: '+620 kg', amt: 47120, src: 'A-2611-011', by: '陈浩' },
-  { t: '11-19 09:40', batch: 'P-2204', type: 'adjust', d: '−4 盒', amt: 472, src: 'I-2611-02', by: '周婷' },
-  { t: '11-18 16:48', batch: 'P-2203', type: 'lock', d: '−40 桶', amt: 3520, src: 'B-2611-004', by: '李明' },
+  { t: '11-19 09:40', batch: 'P-2204', type: 'in', d: '−4 盒', amt: 472, src: 'I-2611-02', by: '周婷' },
+  { t: '11-18 16:48', batch: 'P-2203', type: 'out', d: '−40 桶', amt: 3520, src: 'B-2611-004', by: '李明' },
   { t: '11-18 15:02', batch: 'P-2201', type: 'out', d: '−75 箱', amt: 8850, src: 'E-2611-088', by: '王倩' },
   { t: '11-18 09:30', batch: 'P-2205', type: 'in', d: '+260 件', amt: 24960, src: 'A-2611-010', by: '陈浩' },
   { t: '11-17 18:15', batch: 'P-2206', type: 'in', d: '+520 kg', amt: 13000, src: 'A-2611-012', by: '周婷' },
-  { t: '11-17 14:40', batch: 'P-2202', type: 'lock', d: '−120 kg', amt: 9120, src: 'N-2611-002', by: '王倩' },
-  { t: '11-16 11:20', batch: 'P-2200', type: 'adjust', d: '+2 箱', amt: 176, src: 'I-2611-04', by: '李明' },
+  { t: '11-17 14:40', batch: 'P-2202', type: 'out', d: '−120 kg', amt: 9120, src: 'N-2611-002', by: '王倩' },
+  { t: '11-16 11:20', batch: 'P-2200', type: 'in', d: '+2 箱', amt: 176, src: 'I-2611-04', by: '李明' },
   { t: '11-15 17:08', batch: 'P-2206', type: 'out', d: '−200 kg', amt: 5000, src: 'B-2611-002', by: '周婷' },
   { t: '11-14 10:36', batch: 'P-2203', type: 'out', d: '−180 桶', amt: 15840, src: 'N-2611-003', by: '王倩' }
 ];
 const STK = [
-  { id: 'I-2611-01', wh: '上海一号仓', product: '特级冷萃咖啡豆', up: '+4 箱', down: '0', status: 'warn', note: '咖啡豆袋破损，称重补差', by: '李明' },
-  { id: 'I-2611-02', wh: '苏州冷链仓', product: '烘焙坚果礼盒', up: '0', down: '−2 盒', status: 'ok', note: '礼盒压损，批准后追加 I 单', by: '周婷' },
-  { id: 'I-2611-03', wh: '上海一号仓', product: '阿拉比卡生豆', up: '0', down: '−10 kg', status: 'bad', note: '生豆受潮，驳回待复核', by: '陈浩' },
-  { id: 'I-2611-04', wh: '上海一号仓', product: '有机燕麦奶 1L', up: '+2 箱', down: '0', status: 'warn', note: '燕麦奶溢装，等待审批', by: '李明' }
+  { id: 'I-2611-01', wh: '星辰商贸总公司', product: '特级冷萃咖啡豆', up: '+4 箱', down: '0', status: 'warn', note: '咖啡豆袋破损，称重补差', by: '李明' },
+  { id: 'I-2611-02', wh: '星辰商贸 · 苏州分部', product: '烘焙坚果礼盒', up: '0', down: '−2 盒', status: 'ok', note: '礼盒压损，批准后追加 I 单', by: '周婷' },
+  { id: 'I-2611-03', wh: '星辰商贸总公司', product: '阿拉比卡生豆', up: '0', down: '−10 kg', status: 'bad', note: '生豆受潮，驳回待复核', by: '陈浩' },
+  { id: 'I-2611-04', wh: '星辰商贸总公司', product: '有机燕麦奶 1L', up: '+2 箱', down: '0', status: 'warn', note: '燕麦奶溢装，等待审批', by: '李明' }
 ];
 const STK_L2 = { warn: '待审批', ok: '已批准', bad: '已驳回' };
 const WHS = ['上海一号仓', '苏州冷链仓', '深圳中转仓'];
@@ -1691,7 +1691,7 @@ PG.inventory = {
     const f = FV('inv'), match = b => f === 'all' ? 1 : f === 'low' ? lowStock(b) : f === 'transit' ? b.transitQ > 0 : b.holdQ > 0;
     const list = INV.filter(b => match(b) && hit(b.batch, b.product, b.wh, b.keeper));
     return tableCard([{ l: '批次号', c: 'mono', f: d => `<b>${d.batch}</b>` }, { l: '商品', f: d => esc(d.product) },
-      { l: '仓库 / 保管人', f: d => `${d.wh}<small style="display:block;color:var(--ink-3);font-size:11px">保管 ${who(d.keeper)}</small>` },
+      { l: '公司 / 保管人', f: d => `${d.wh}<small style="display:block;color:var(--ink-3);font-size:11px">保管 ${who(d.keeper)}</small>` },
       { l: '入库', r: 1, f: d => d.inQ },
       { l: '构成', f: d => `<div class="avail"><div class="trk">${LEG.map(([c, , k]) => `<i style="width:${d[k] / d.inQ * 100}%;background:${c}"></i>`).join('')}</div></div>` },
       { l: '已引用', r: 1, f: d => d.refQ }, { l: '在途', r: 1, f: d => d.transitQ }, { l: '占用', r: 1, f: d => d.holdQ },
@@ -1722,9 +1722,8 @@ PG['inventory-flows'] = {
     return tableCard([{ l: '发生时间', c: 'mono muted', f: d => d.t }, { l: '批次', c: 'mono', f: d => `<b>${d.batch}</b>` },
       { l: '类型', f: d => `<span class="ftype ${d.type}">${ic(FTYPE[d.type][1])}${FTYPE[d.type][0]}</span>` },
       { l: '变动量', r: 1, f: d => `<b style="color:var(--${/^\+/.test(d.d) ? 'ok' : 'bad'})">${d.d}</b>` },
-      { l: '金额', r: 1, f: d => money(d.amt) },
       { l: '来源单据', c: 'mono', f: d => `<button class="link" data-act="jump" data-id="${d.src}">${d.src}</button>` },
-      { l: '经手人', f: d => who(d.by) }], list, '数量与金额按发生时的批次价记账');
+      { l: '经手人', f: d => who(d.by) }], list, '只追加、不允许改历史流水；金额在批次/单据上，流水本身不带金额');
   }
 };
 PG.stocktakes = {
@@ -2138,7 +2137,7 @@ function doAct(a) {
       toast(`${o.id} 已完成，已自动生成结算单 ${c.id}`);
     } else if (m.L === 'A') {
       const bid = 'P-' + (Math.max(...INV.map(x => +x.batch.slice(2))) + 1);
-      INV.unshift({ batch: bid, product: o.item, wh: '上海一号仓', keeper: '李明', inQ: n, refQ: 0, transitQ: 0, holdQ: 0, avail: n, price: Math.round(o.amount / n) });
+      INV.unshift({ batch: bid, product: o.item, wh: '星辰商贸总公司', keeper: '李明', inQ: n, refQ: 0, transitQ: 0, holdQ: 0, avail: n, price: Math.round(o.amount / n) });
       o.batch = bid; flow(bid, '+' + o.qty, o.id); log('新建批次 ' + bid + '，锁定批次价');
       toast(`${o.id} 已入库，新建批次 ${bid} 并锁定批次价`);
     } else toast(`${o.id} 已完成，成品入库并记损耗归属`);
