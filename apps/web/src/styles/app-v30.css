@@ -1355,3 +1355,214 @@ body.is-sky .wrap {
 }
 .qr-row{display:flex;flex-wrap:wrap;align-items:flex-start;gap:20px}
 .qr-meta{display:flex;flex-direction:column;gap:6px;min-width:240px;font-size:var(--fs-14,14px)}
+
+/* ============================================================
+   二、v3.0 组件层（2026-11-28，令牌口径 A · 用户拍板「一切按视觉稿来」）
+   ------------------------------------------------------------
+   第一版（#443 第 0 步）的判断是「app-v013.css 已有的类一律复用」，只搬了
+   repo 里 0 命中的 8 组。实际验收发现这条判断是错的：`.card` / `.seg` /
+   `.search` / `.note` / `.r-row` / `.st*` / `.sk` / `.tag` / `.btn` 这些类
+   v0.13 里都有，但形状完全不同（v0.13 是 16px 字号 + 44px 控件 + 999px 圆角
+   + 玻璃渐变；稿子是 12.5~13.5px + 36px 控件 + 10~12px 圆角 + 纯色卡），
+   于是「页面套了 v3.0 类，长出来还是 v0.13 的样子」。
+
+   本节把稿子 <style> 里这几组规则逐条搬进来（值一律照抄，只把变量名换成
+   现在已存在的 --surface / --ink / --line / --hover / --accent 等），
+   并对 v0.13 里带 !important 的圆角做同权覆盖（后出现者胜）。
+   逐条来源见每段注释里的稿子行号。
+   ============================================================ */
+
+/* 字号基线：稿子 html{font-size:var(--fs)} = 14px（L28）。
+   v0.13 固定 18px，会让所有 rem 尺寸整体偏大一号。 */
+html[data-fs="live"]{font-size:var(--fs, 14px)}
+
+/* ---- 卡片（稿子 L139–142） ---- */
+.card{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--r)!important;
+  box-shadow:var(--shadow);
+  overflow:hidden;
+  animation:none;
+  position:static;
+}
+.card::before{content:none}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+.card-h h3{margin:0;font-size:14px;font-weight:650}
+.card-h small{color:var(--ink-3);font-size:12px}
+
+/* ---- 表格（稿子 L218–232）：行高 --row、表头浅底 12px、左对齐 ---- */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+thead th{
+  position:static!important;
+  height:42px;padding:0 16px;
+  text-align:left;font-size:12px;font-weight:600;
+  color:var(--ink-3);background:var(--surface-2);
+  border-bottom:1px solid var(--line);
+  letter-spacing:0;box-shadow:none;
+}
+thead th:first-child{padding-left:20px}
+thead th:last-child{padding-right:20px}
+tbody td{
+  height:var(--row);padding:0 16px;
+  border-bottom:1px solid var(--line);
+  white-space:nowrap;font-size:13.5px;
+  transition:height .25s var(--ease);
+}
+tbody td:first-child{padding-left:20px}
+tbody td:last-child{padding-right:20px}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:transparent}
+tbody tr:hover td:first-child{box-shadow:none}
+tr.click{cursor:pointer;transition:background .15s}
+tr.click:hover{background:var(--surface-2)}
+tr.click:hover td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+td.r,th.r{text-align:right}
+td.neg{color:var(--bad)}
+td.pos{color:var(--ok)}
+
+/* ---- 按钮（稿子 L128–137）：36px 高、10px 圆角、纯色主按钮 ---- */
+.btn,.btn-p,.btn-primary,.btn-ghost,.btn-g,.st-btn{
+  height:36px;padding:0 14px;
+  border:1px solid var(--line-2);
+  border-radius:10px!important;
+  background:var(--surface);
+  color:var(--ink);
+  font-size:13px;font-weight:600;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  box-shadow:none;
+  white-space:nowrap;
+  transition:background .18s,border-color .18s,transform .12s,opacity .18s;
+}
+.btn:hover,.btn-p:hover,.btn-primary:hover,.btn-ghost:hover,.st-btn:hover{background:var(--hover);border-color:var(--line-2);transform:none;box-shadow:none}
+.btn:active,.st-btn:active{transform:scale(.97)}
+.btn.pri,.btn-p,.btn-primary,.st-btn.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);box-shadow:none}
+.btn.pri:hover,.btn-p:hover,.btn-primary:hover,.st-btn.primary:hover{background:var(--ink);opacity:.86;color:var(--bg)}
+.btn.danger{color:var(--bad)}
+.btn.armed{background:var(--bad);color:#fff;border-color:var(--bad)}
+.btn.sm,.btn-row{height:28px;padding:0 10px;font-size:12px;border-radius:8px!important}
+.btn svg{width:15px;height:15px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---- 状态片（稿子 L145–148、L504） ---- */
+.st{
+  --c:var(--ink-3);
+  display:inline-flex;align-items:center;gap:6px;
+  height:24px;padding:0 10px 0 8px;
+  border:0!important;border-radius:12px;
+  font-size:12px;font-weight:600;white-space:nowrap;
+  color:var(--c);
+  background:color-mix(in srgb,var(--c) 11%,transparent);
+}
+.st::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--c)}
+.st.now{--c:var(--now)}
+.st.transit{--c:var(--transit)}
+.st.ok,.st.pos{--c:var(--ok)}
+.st.warn{--c:var(--warn)}
+.st.bad,.st.low{--c:var(--bad)}
+.st.idle{--c:var(--ink-3)}
+.st.now::before,.st.transit::before{animation:pulse 2s infinite}
+
+/* ---- 分段控件（稿子 L211–213）：浅胶囊底 + 白实心选中 ---- */
+.seg{
+  display:inline-flex;
+  padding:3px;
+  border:0!important;
+  border-radius:10px!important;
+  background:color-mix(in srgb,var(--ink) 6%,transparent);
+  overflow:visible;
+}
+.seg button{
+  height:30px;padding:0 12px;
+  border:0!important;border-right:0!important;
+  border-radius:8px!important;
+  font-size:12.5px;color:var(--ink-2);
+  background:none;
+  white-space:nowrap;
+  transition:.18s;
+}
+.seg button.on{
+  background:var(--surface);
+  color:var(--ink);
+  font-weight:600;
+  box-shadow:var(--shadow);
+}
+.seg button:hover:not(.on){color:var(--ink)}
+
+/* ---- 搜索框（稿子 L110–112） ---- */
+.search,.datebox{
+  display:flex;align-items:center;gap:10px;
+  height:36px;padding:0 10px 0 12px;
+  border:1px solid var(--line);
+  border-radius:10px!important;
+  background:var(--surface);
+  color:var(--ink-3);
+  font-size:13px;
+  min-width:0;
+  transition:border-color .2s;
+}
+.search:hover,.datebox:hover{border-color:var(--line-2)}
+.search span:not(.kbd){min-width:150px;text-align:left}
+
+/* ---- 说明条 / 标签 / 提示（稿子 L215、L510–512、L33、L109） ---- */
+.note{display:inline-flex;align-items:center;gap:6px;margin-top:0;font-size:12px;color:var(--ink-3)}
+.note svg{width:14px;height:14px}
+.tag{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border:0!important;border-radius:6px!important;font-size:11.5px;font-weight:600;background:var(--hover);color:var(--ink-2)}
+.tag svg{width:12px;height:12px}
+.tag.primary{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
+.muted{color:var(--ink-3)}
+.grow{flex:1}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.rowacts{display:inline-flex;gap:6px}
+
+/* ---- 四态骨架与占位（稿子 L235–240、L548–556） ---- */
+.state{display:grid;place-items:center;text-align:center;padding:72px 20px}
+.state .ico{width:56px;height:56px;display:grid;place-items:center;margin:0 auto 16px;border-radius:16px;background:var(--hover);color:var(--ink-3)}
+.state .ico svg{width:24px;height:24px}
+.state h4{margin:0 0 6px;font-size:15px}
+.state p{margin:0 0 18px;color:var(--ink-3);font-size:13px}
+.sk{height:12px;border-radius:6px;background:linear-gradient(90deg,var(--hover) 25%,var(--line) 50%,var(--hover) 75%);background-size:200% 100%;animation:shimmer 1.3s linear infinite}
+
+/* ---- 表格内四态块（稿子 L532–547，覆盖 v0.13 的旧选择器） ---- */
+.st-wrap{padding:34px 20px}
+.st-wrap.st-skel{padding:22px 20px}
+.st-center{text-align:center}
+.st-ico{width:54px;height:54px;display:grid;place-items:center;margin:0 auto 12px;border-radius:15px;background:var(--hover);color:var(--ink-3);border:0}
+.st-ico svg{width:23px;height:23px}
+.st-title{font-size:15px;font-weight:650;color:var(--ink);margin-bottom:6px}
+.st-desc{font-size:13px;line-height:1.7;color:var(--ink-3);margin:0 0 14px}
+.st-actions{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.st-error .st-ico{color:var(--bad)}
+
+/* ---- 分页（稿子 L434–442） ---- */
+.pager{gap:3px;padding:0}
+.pager button{
+  min-width:28px;height:28px;padding:0 7px;
+  border:1px solid transparent!important;
+  border-radius:8px!important;
+  background:none;
+  font:600 12px var(--mono);
+  color:var(--ink-2);
+  display:inline-grid;place-items:center;
+  transition:.15s;
+}
+.pager button:hover:not(:disabled){background:var(--hover);color:var(--ink);border-color:transparent!important}
+.pager button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)!important}
+.pager button:disabled{opacity:.32;cursor:not-allowed}
+.pager svg{width:14px;height:14px}
+.pager .per{margin-left:8px;height:28px;padding:0 6px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:12px;color:var(--ink-2)}
+
+/* ---- 侧栏导航（稿子 L49–79）：36px 行高、9px 圆角、hover 浅底 ---- */
+.nav{position:relative;flex:1;overflow-y:auto;padding:8px 10px 16px;scrollbar-width:thin}
+.nav a{position:relative;z-index:1;display:flex;align-items:center;gap:11px;height:36px;padding:0 10px;border-radius:9px;color:var(--ink-2);text-decoration:none;font-size:13.5px;white-space:nowrap;cursor:pointer;transition:background .18s,color .18s}
+.nav a:hover{background:var(--hover);color:var(--ink)}
+.nav a.on{color:var(--ink);font-weight:650}
+.nav a.on:hover{background:none}
+.nav a.locked{opacity:.45}
+.nav a span{flex:1;overflow:hidden;text-overflow:ellipsis}
+.nav em{font:600 11px var(--mono);font-style:normal;min-width:20px;height:20px;padding:0 6px;display:grid;place-items:center;border-radius:10px;background:var(--accent);color:#fff}
+.nav em:empty{display:none}
+
+/* ---- 动效 ---- */
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
