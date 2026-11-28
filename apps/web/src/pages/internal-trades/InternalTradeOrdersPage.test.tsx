@@ -103,11 +103,10 @@ function seedClient(input: {
   client.setQueryData(internalTradeQueryKeys.batches(''), { items: [], nextCursor: null });
   client.setQueryData(
     internalTradeQueryKeys.list({
-      fromCompanyId: undefined,
-      toCompanyId: undefined,
       status: undefined,
       keyword: undefined,
       cursor: null,
+      scope: undefined,
     }),
     { items: [...input.orders], nextCursor: null },
   );
@@ -171,7 +170,7 @@ function renderDetail(order: InternalTradeOrderDetail, options: RenderDetailOpti
 }
 
 describe('内部交易单 N 页面', () => {
-  it('列表渲染单号、方向、商品、内部价与状态', () => {
+  it('列表渲染单号、对接公司、商品、金额、计价与状态', () => {
     const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
 
     expect(html).toContain('内部交易单 N');
@@ -179,9 +178,12 @@ describe('内部交易单 N 页面', () => {
     expect(html).toContain('演示公司 → 二公司');
     // 「商品」列：明细只回 productId，靠商品簿换成名字（视觉稿也有这一列）。
     expect(html).toContain('不锈钢合页 4寸');
+    // 「金额」= 行金额合计（10 × 12.5），不是内部价单价。
     expect(html).toContain('¥125.00');
+    // 「计价」是常量列：N 单只有内部价一种口径（D68① 手填，系统不算）。
+    expect(html).toContain('>内部价<');
     expect(html).toContain('在途');
-    expect(html).toContain('新建内部交易单');
+    expect(html).toContain('+ 新建内部交易单');
   });
 
   it('列表「商品」列：同一商品拆两行仍是一种货，不写「等 2 种」', () => {
@@ -198,11 +200,11 @@ describe('内部交易单 N 页面', () => {
     expect(html).toContain('>15<');
   });
 
-  it('列表把开单时间收成短格式，年份留给详情面板（否则「操作」列出卡片）', () => {
+  it('列表的日期列到天、分隔符是连字符（稿子这一列只写日期）', () => {
     const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
 
-    expect(html).toContain('11-08 10:00');
-    expect(html).not.toContain('2026-11-08 10:00');
+    expect(html).toContain('2026-11-08');
+    expect(html).not.toContain('11-08 10:00');
     // 在途量已从列表移到详情：列表里「在途」状态已经说明货在路上，具体锁多少在详情看。
     expect(html).not.toContain('>在途量<');
   });
@@ -313,12 +315,18 @@ describe('内部交易单 N 页面', () => {
     );
   });
 
-  it('「在途」单的编辑与取消都禁用：只有进行中能改（D68②）', () => {
+  it('列表行不再挂按钮：整行点进详情，动作都在详情面板里（稿子 tr.r-row.click）', () => {
     const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
 
-    expect(html).toContain('disabled');
-    // 状态筛选里必须有「在途」——有它才说明用的是四态而不是三态
-    expect(html).toContain('在途');
+    expect(html).toContain('class="r-row click"');
+    expect(html).toContain('tabindex="0"');
+    for (const label of ['编辑', '取消', '发货', '到货确认']) {
+      expect(html).not.toContain(`>${label}</button>`);
+    }
+    // 「在途」单的编辑与取消在详情里禁用（D68②：只有进行中能改单）。
+    const detail = renderDetail(DETAIL);
+    expect(detail).toContain('>修改<');
+    expect(detail).toContain('disabled');
   });
 
   it('无 create 权限时说清缺哪个 scope，空列表给下一步', () => {
@@ -333,15 +341,23 @@ describe('内部交易单 N 页面', () => {
     expect(html).toContain('暂无内部交易单');
   });
 
-  it('页面写明内部价是手填的，系统不自动算（D68①）', () => {
+  it('「计价」列说明内部价是手填的，系统不自动算（D68①）', () => {
     const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
 
-    expect(html).toContain('内部价手工填');
+    // 常量列没有数值可看，口径只能挂在 title 上——鼠标停一下就知道为什么这里不写钱数。
+    expect(html).toContain('内部价由制单人手填，系统不自动算（D68①）');
     expect(html).toContain('D68①');
   });
 
-  it('状态筛选严格按四态给选项，不混入单据三态的「已完成 / 已取消」以外的值', () => {
-    const html = renderPage(seedClient({ me: OWNER, orders: [ORDER] }));
+  it('状态统计片按四态给选项，不混入单据三态里没有的值', () => {
+    // 四种状态各来一张单：统计片只列「这一批里出现过的」，所以得让它们都出现。
+    const orders = ['进行中', '在途', '已完成', '已取消'].map((status, index) => ({
+      ...ORDER,
+      id: `n${index}`,
+      orderNo: `N-0001-2026110${index}-0001`,
+      status: status as InternalTradeOrder['status'],
+    }));
+    const html = renderPage(seedClient({ me: OWNER, orders }));
 
     for (const state of ['进行中', '在途', '已完成', '已取消']) {
       expect(html).toContain(`>${state}<`);
@@ -362,7 +378,7 @@ describe('内部交易单 N 页面', () => {
     expect(html).toContain('st-tr st-error');
     expect(html).toContain('st-tr st-empty');
     // 数据行只带 r-row：带上 st-tr 会被 `tbody > tr.st-tr{display:none}` 整行吃掉（只有表头可见）
-    expect(html).toContain('class="r-row"');
+    expect(html).toContain('class="r-row click"');
     expect(html).not.toContain('st-tr r-row');
   });
 
