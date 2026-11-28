@@ -110,7 +110,7 @@ function renderPage(client: ReturnType<typeof createQueryClient>): string {
 }
 
 describe('销售单 E 页面', () => {
-  it('列表渲染单号、客户、数量、成交额、状态与开单时间', () => {
+  it('列表渲染单号、客户、数量、成交额、状态与日期', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
     expect(html).toContain('销售单 E');
@@ -118,12 +118,12 @@ describe('销售单 E 页面', () => {
     expect(html).toContain('王记五金');
     expect(html).toContain('¥225.00');
     expect(html).toContain('进行中');
-    expect(html).toContain('+ 新建');
+    expect(html).toContain('+ 新建销售单');
     // 数量合计来自明细行，不是单头字段
     expect(html).toContain('>10<');
-    // 开单时间用短格式（`11/08 10:00`，与 A / B 页同款）：表格里塞完整年月日会把操作列挤出卡片。
-    expect(html).toContain('11/08 10:00');
-    expect(html).not.toContain('2026/11/08');
+    // 日期列照稿子到天、分隔符也是连字符（`2026-11-08`）：带时分会让 8 列挤爆卡片。
+    expect(html).toContain('2026-11-08');
+    expect(html).not.toContain('11/08 10:00');
   });
 
   it('列表「商品」列：单商品写名字，多商品补「等 N 种」', () => {
@@ -187,46 +187,40 @@ describe('销售单 E 页面', () => {
     expect(html).toContain('暂无销售单');
   });
 
-  it('页面写清「完成 = 扣库存 + 生成 C 草稿」，不把完成说成已结算（D19 / D72）', () => {
+  it('页头照稿子写清「发货与签收两个动作」，签收后才认收入（D94）', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
-    expect(html).toContain('扣批次可用量');
-    expect(html).toContain('结算单 C 草稿');
-    expect(html).toContain('不等于已结算');
+    expect(html).toContain('发货与签收拆成两个动作（D94）');
+    expect(html).toContain('签收后才认收入');
   });
 
-  it('销售身份（有 update、无 ship）看到「发货」被禁用并写明缺 sales.ship（D85）', () => {
+  it('列表行不再挂按钮：整行点进详情，动作都在详情面板里（稿子 tr.r-row.click）', () => {
     const html = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
 
-    // 列表这一格原叫「完成」，但它调的是出库（askShip）；D94 之后「完成」专指客户签收。
+    // 行内一列按钮会让 8 列挤爆卡片，稿子也早就把动作收进详情面板了。
+    expect(html).toContain('class="r-row click"');
+    expect(html).toContain('tabindex="0"');
+    for (const label of ['编辑', '发货', '取消']) {
+      expect(html).not.toContain(`>${label}</button>`);
+    }
+  });
+
+  it('销售身份（有 update、无 ship）：详情里「发货」置灰并写明缺 sales.ship（D85）', () => {
+    // D85：能改单不等于能出库——按钮仍在但禁用，并把缺的权限点说出来（不靠 title 猜）。
+    const html = renderDetailPanel({ canShip: false });
+
     expect(buttonTag(html, '发货')).toContain('disabled=""');
-    expect(html).toContain('取消');
-    // D85：能改单不等于能出库——只有 sales.update 时按钮仍在但禁用，并给出具体权限点。
     expect(html).toContain('当前身份没有 sales.ship 权限');
-    expect(html).toContain('disabled');
   });
 
   it('授予 sales.ship 后「发货」可点，也不再提示缺权限', () => {
-    const html = renderPage(
-      seedClient({
-        me: {
-          ...ME_WITH_PRICE,
-          scope: [
-            {
-              domain: 'sales',
-              actions: ['read', 'create', 'update', 'ship', 'delete', 'export', 'view_price'],
-            },
-          ],
-        },
-        orders: [ORDER],
-      }),
-    );
+    const html = renderDetailPanel({ canShip: true, status: '进行中' });
 
     expect(buttonTag(html, '发货')).not.toContain('disabled=""');
     expect(html).not.toContain('当前身份没有 sales.ship 权限');
   });
 
-  it('无 export 权限时说清导出需要 sales.export（敏感读记审计，D54②）', () => {
+  it('无 export 权限时「导出 CSV」置灰，title 写明缺 sales.export（D54②）', () => {
     const withoutExport = renderPage(
       seedClient({
         me: {
@@ -236,12 +230,13 @@ describe('销售单 E 页面', () => {
         orders: [ORDER],
       }),
     );
-    expect(withoutExport).toContain('「导出 CSV」需要 sales.export');
-    expect(withoutExport).toContain('敏感读记审计');
+    expect(buttonTag(withoutExport, '导出 CSV')).toContain('disabled=""');
+    expect(withoutExport).toContain('需要 sales.export 权限');
 
     // 有 export 时不该出现这条提示（否则等于把有权限的人也劝退了）
     const withExport = renderPage(seedClient({ me: ME_WITH_PRICE, orders: [ORDER] }));
-    expect(withExport).not.toContain('「导出 CSV」需要 sales.export');
+    expect(withExport).not.toContain('需要 sales.export 权限');
+    expect(withExport).toContain('敏感读记审计');
   });
 });
 
@@ -364,6 +359,16 @@ describe('销售单「发货 → 客户签收」两步（D94）', () => {
 /* ---------------------- v0.13 详情版式（#337 单据组） ---------------------- */
 
 describe('v0.13 详情版式（#337）', () => {
+  it('详情写清「完成 = 扣库存 + 生成 C 草稿」，不把完成说成已结算（D19 / D72）', () => {
+    // 这句话原来挂在列表页头的说明里；重做后列表只留稿子那一行说明，
+    // 口径落到详情面板（真正发生扣库存与生成草稿的地方）。
+    const html = renderDetailPanel();
+
+    expect(html).toContain('扣减批次可用量');
+    expect(html).toContain('生成结算单 C 草稿');
+    expect(html).toContain('已完成不可取消');
+  });
+
   it('详情落在 card 上，走 DetailHead + DocMeta + LinesFooter 三块公用版式', () => {
     const html = renderDetailPanel();
 
@@ -467,7 +472,7 @@ describe('v3.0 列表版式（#431）', () => {
     expect(html).toContain('class="card list-card"');
     expect(html).toContain('class="tw"');
     expect(html).toContain('class="tf"');
-    expect(html).toContain('共 1 张');
+    expect(html).toContain('共 1 条');
   });
 
   it('页脚画首 / 上 / 页码 / 下 / 末 + 每页条数，总页数取服务端 total', () => {

@@ -2,7 +2,11 @@
   "_note": "锚点由 design/v3.0/index.html 逐页实测导出（title=h1、th=表头、chips=状态统计片/分段控件标签，已去掉计数数字）。改稿子后必须重新导出。",
   "purchase-orders": { "title": "采购单 A", "file": "apps/web/src/pages/purchase/PurchaseOrdersPage.tsx", "th": ["单号", "供应商", "物料", "数量", "金额", "状态", "负责人", "日期"], "chips": ["全部", "进行中", "在途", "已完成", "全部单据", "只看我的"] },
   "processing-orders": { "title": "加工单 B", "file": "apps/web/src/pages/processing/ProcessingOrdersPage.tsx", "th": ["单号", "加工厂", "成品", "数量", "加工费", "损耗", "状态", "负责人", "日期"], "chips": ["全部", "进行中", "在途", "已完成", "全部单据", "只看我的"] },
-  "sales-orders": { "title": "销售单 E", "file": "apps/web/src/pages/sales/SalesOrdersPage.tsx", "th": ["单号", "客户", "商品", "数量", "金额", "毛利率", "状态", "负责人", "日期"], "chips": ["全部", "待审批", "进行中", "已发货", "已完成", "已取消", "全部单据", "只看我的"] },
+  "sales-orders": { "title": "销售单 E", "file": "apps/web/src/pages/sales/SalesOrdersPage.tsx", "th": ["单号", "客户", "商品", "数量", "金额", "毛利率", "状态", "负责人", "日期"], "chips": ["全部", "待审批", "进行中", "已发货", "已完成", "已取消", "全部单据", "只看我的"],
+    "waivers": {
+      "th:毛利率": "后端 SalesOrder 没有毛利字段：毛利只在 C 结算单「一单一成本」收口（D5 / D29），E 单列表算不出来，画一列横杠比不画更糟。要补得先给 sales-orders 加 grossMarginRate（动 apps/api，本批不动）。",
+      "chips:待审批": "稿子的 bad 档是「破下限待审批」；本仓破下限在保存时就 422（D20 本批无审批端点），库里不存在这个状态的单，画了永远点不出东西。"
+    } },
   "internal-trades": { "title": "内部交易单 N", "file": "apps/web/src/pages/internal-trades/InternalTradeOrdersPage.tsx", "th": ["单号", "对接公司", "商品", "数量", "金额", "计价", "状态", "负责人", "日期"], "chips": ["全部", "进行中", "在途", "已完成", "全部单据", "只看我的"] },
   "settlements": { "title": "结算单 C", "file": "apps/web/src/pages/settlements/SettlementsPage.tsx", "th": ["单号", "对接单位", "关联单据", "数量", "总售价", "毛利率", "状态", "负责人", "日期"], "chips": ["全部", "待确认", "已结算"] },
   "reversals": { "title": "冲正单据", "file": "apps/web/src/pages/reversals/ReversalsPage.tsx", "th": [], "chips": [] },
