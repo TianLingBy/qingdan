@@ -8,11 +8,20 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError } from '../../api/client';
+import { BatchPager } from '../../components/ListPager';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import {
+  DetailHead,
+  DetailMetaDot,
+  DocMeta,
+  type DocMetaItem,
+} from '../../components/OrderDetailUI';
+import { Icon } from '../../components/icons/Icon';
 import { allows, type ScopeAction } from '../../lib/access';
 import { useCompanyLabel } from '../../lib/company-directory';
 import { resolveListState } from '../../lib/list-state';
 import { ContactDrawer } from './ContactDrawer';
+import { contactsApi, type ContactKind, type ContactSummaryRow } from './contacts-api';
 import {
   extractIssues,
   formatPrice,
@@ -22,6 +31,22 @@ import {
   splitList,
   type MasterdataListFilters,
 } from './masterdata-api';
+
+/**
+ * 主数据 4 页（`/products` `/customers` `/suppliers` `/processors`，同一组件四个 kind）。
+ *
+ * 口径来自 #432 + `docs/ui/frontend-change-rules.md`：
+ * - **表头 = 稿子 = `tools/ui-parity/anchors.json`**，一列不多一列不少；
+ * - **行内不塞按钮**：点行开详情面板（稿子 `masterAttr()` 给 `<tr>` 挂 `class="click"` + `data-master`），
+ *   编辑 / 删除在面板头部，按 `allows(scope, domain, action)` 三态（必做点 1 / 6）；
+ * - **详情面板**用仓库既有的 `DetailHead` + `DocMeta` + `.ln`（`components/OrderDetailUI.tsx`，
+ *   与采购 / 加工 / 内贸同一套），分组：基本信息 / 联系方式 / 对接人 / 报价记录（必做点 2 / 3 / 4）；
+ * - 四态 `data-state` 挂 `<tbody>`，三个占位行常驻（`lib/list-state.ts`）。
+ *
+ * 三条「稿子有、后端列表没有」的列（客户「价目 / 历史销售」、供应商「历史采购」、
+ * 加工厂「加工单 / 报价」）一律显示占位 `—` + `title` 写明缺口，**不在页面上编数据、也不自己造接口**；
+ * 口径已提给负责人（#432）。
+ */
 
 export type MasterdataKind = 'products' | 'suppliers' | 'processors' | 'customers';
 type MasterdataItem = Product | Supplier | Processor | Customer;
@@ -34,13 +59,63 @@ const DOMAIN: Record<MasterdataKind, 'product' | 'supplier' | 'processor' | 'cus
   customers: 'customer',
 };
 
-/** 搜索占位按后端真实命中列写（各 `*ListQuerySchema` 的 `keyword` 口径）。 */
+/** 搜索占位按稿子 `searchField()` 原句。 */
 const SEARCH_PLACEHOLDER: Record<MasterdataKind, string> = {
-  products: '名称 / 别名',
-  customers: '名称 / 联系人',
-  suppliers: '名称 / 联系人',
-  processors: '名称 / 联系人',
+  products: '搜索编号、名称…',
+  customers: '搜索编号、名称、对接人…',
+  suppliers: '搜索编号、名称、对接人…',
+  processors: '搜索编号、名称、对接人…',
 };
+
+interface Column {
+  readonly label: string;
+  /** 数字 / 金额列：表头与单元格都右对齐（稿子 `th.r`）。 */
+  readonly right?: boolean;
+}
+
+/**
+ * 表头逐字照抄 `design/v3.0/index.html` 的四个 `simple()` 定义，
+ * 与 `tools/ui-parity/anchors.json` 完全一致（机器验收以它为锚点）。
+ */
+const COLUMNS: Record<MasterdataKind, readonly Column[]> = {
+  products: [{ label: '编号' }, { label: '名称' }, { label: '规格' }, { label: '参考价', right: true }],
+  customers: [
+    { label: '编号' },
+    { label: '名称' },
+    { label: '对接人' },
+    { label: '价目' },
+    { label: '历史销售', right: true },
+  ],
+  suppliers: [
+    { label: '编号' },
+    { label: '名称' },
+    { label: '对接人' },
+    { label: '历史采购', right: true },
+  ],
+  processors: [
+    { label: '编号' },
+    { label: '名称' },
+    { label: '对接人' },
+    { label: '加工单', right: true },
+    { label: '报价', right: true },
+  ],
+};
+
+/**
+ * 列表列的「后端缺口」说明（作为占位 `—` 的 `title`）。
+ * 只写事实 + 已提给负责人的单号，不替后端做决定。
+ */
+const GAP_TITLE = {
+  priceList: '客户档案契约里没有价目字段（客户不带任何金额口径），后端未提供；口径待负责人定（#432）',
+  histSales:
+    '销售单数只有 GET /customers/{id}/summary，列表接口不返回；一页 20 行要逐行调 20 次，口径待负责人定（#432）。点开行可在详情里看',
+  histPurchase:
+    '采购单数只有 GET /suppliers/{id}/summary，列表接口不返回；逐行调用属 N+1，口径待负责人定（#432）。点开行可在详情里看',
+  histProcessing:
+    '加工单数只有 GET /processors/{id}/summary，列表接口不返回；逐行调用属 N+1，口径待负责人定（#432）。点开行可在详情里看',
+  quotes:
+    '报价条数只有 GET /processor-quotes?processorId=，列表接口不返回；口径待负责人定（#432）。点开行可在详情里看',
+} as const;
 
 interface FormState {
   companyId: string;
@@ -72,27 +147,43 @@ const EMPTY_FORM: FormState = {
 
 const PAGE_COPY: Record<
   MasterdataKind,
-  { title: string; singular: string; description: string }
+  {
+    title: string;
+    singular: string;
+    description: string;
+    /** 稿子 `EMPTY_BY_PAGE` 的原句（空态标题 / 说明）。 */
+    empty: { title: string; hint: string };
+  }
 > = {
   products: {
     title: '商品资料',
     singular: '商品',
-    description: '维护商品名称、别名、规格、单位和默认售价。',
-  },
-  suppliers: {
-    title: '供应商档案',
-    singular: '供应商',
-    description: '维护供应商联系人、电话和供货物料。',
-  },
-  processors: {
-    title: '加工厂档案',
-    singular: '加工厂',
-    description: '维护加工厂联系人，并查询历史加工报价。',
+    description: '主数据 · 商品建档与定价。无状态列，删除为物理删除。',
+    empty: { title: '还没有商品', hint: '先建商品资料与规格，开单时才有东西可选。' },
   },
   customers: {
     title: '客户档案',
     singular: '客户',
-    description: '维护客户名称、联系人和账期（不记任何金额，售价与折扣不在这里）。',
+    description: '主数据 · 客户资料与对接人，支持查重合并（D98/D103）。',
+    empty: { title: '还没有客户', hint: '把客户档建起来并挂上对接人，才能开销售单。' },
+  },
+  suppliers: {
+    title: '供应商档案',
+    singular: '供应商',
+    description: '主数据 · 供应商资料。销售岗不可见（D4.1）。',
+    empty: {
+      title: '还没有供应商',
+      hint: '录入供应商后，采购单才有下单对象（销售岗默认不可见）。',
+    },
+  },
+  processors: {
+    title: '加工厂档案',
+    singular: '加工厂',
+    description: '主数据 · 外部加工厂与报价记录。记录报价走 processor.create（不是 update）。',
+    empty: {
+      title: '还没有加工厂',
+      hint: '登记外协加工厂后，加工单与它的报价记录都会挂在这里。',
+    },
   },
 };
 
@@ -108,22 +199,10 @@ function readContactName(item: MasterdataItem): string | null {
   return 'contactName' in item ? item.contactName : null;
 }
 
-function readExtra(item: MasterdataItem, kind: MasterdataKind): string {
-  if (kind === 'products' && 'aliases' in item) {
-    return [item.specification, item.aliases.join('、'), item.unit].filter(Boolean).join(' · ');
-  }
-  if (kind === 'suppliers' && 'suppliedMaterials' in item) {
-    return [item.contactPhone, item.suppliedMaterials.join('、')].filter(Boolean).join(' · ');
-  }
-  if (kind === 'customers' && 'creditTermDays' in item) {
-    const term = item.creditTermDays === null ? null : `账期 ${item.creditTermDays} 天`;
-    return [item.contactName, item.contactPhone, term].filter(Boolean).join(' · ');
-  }
-  return readContactName(item) ?? '—';
-}
-
-function readPrice(item: MasterdataItem, kind: MasterdataKind): string | null {
-  return kind === 'products' && 'defaultSalePrice' in item ? item.defaultSalePrice : null;
+/** 档案自身回完整 `contactPhone`；界面上统一显示后 4 位（必做点 3 的脱敏口径）。 */
+function maskPhone(phone: string | null): string {
+  if (phone === null || phone.length < 4) return '—';
+  return `****${phone.slice(-4)}`;
 }
 
 function errorText(error: unknown): string {
@@ -176,14 +255,34 @@ function formFromItem(item: MasterdataItem, kind: MasterdataKind): FormState {
   };
 }
 
+/**
+ * 金额显示（稿子 `money()`）：`¥` + decimal 字符串原样。
+ * 传 `undefined` 表示**后端没给这个键**（无 `view_price`），一律占位「—」，不拿 0 顶。
+ */
+function moneyText(value: string | undefined): string {
+  return value === undefined ? '—' : `¥${value}`;
+}
+
+function denyTitle(domain: string, action: ScopeAction): string {
+  return `需要 ${domain}.${action} 权限`;
+}
+
+function allowTitle(label: string, domain: string, action: ScopeAction): string {
+  return `执行「${label}」· 需要 ${domain}.${action} 权限`;
+}
+
+/* ------------------------------- 新建 / 编辑表单 ------------------------------- */
+
 function EntityForm({
   kind,
   form,
   editing,
   companyIds,
+  companyLabel,
   canViewPrice,
   busy,
   issues,
+  domain,
   onChange,
   onSubmit,
   onCancel,
@@ -192,175 +291,176 @@ function EntityForm({
   form: FormState;
   editing: MasterdataItem | null;
   companyIds: readonly string[];
+  companyLabel: (id: string) => string;
   canViewPrice: boolean;
   busy: boolean;
   issues: readonly { path: string; message: string }[];
+  domain: string;
   onChange: (field: keyof FormState, value: string) => void;
   onSubmit: (event: FormEvent) => void;
   onCancel: () => void;
 }) {
   const copy = PAGE_COPY[kind];
   return (
-    <form onSubmit={onSubmit} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold">{editing ? `编辑${copy.singular}` : `新增${copy.singular}`}</h2>
-        <button type="button" onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-900">
+    <form onSubmit={onSubmit} className="card form-card">
+      <div className="card-h">
+        <h3>{editing ? `编辑${copy.singular}` : `新建${copy.singular}`}</h3>
+        <button type="button" onClick={onCancel} className="btn btn-ghost">
           取消
         </button>
       </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <label className="text-sm">
-          <span className="text-slate-600">所属公司</span>
+      <div className="fm">
+        <label>
+          <span>所属公司</span>
           <select
             value={form.companyId}
             onChange={(event) => onChange('companyId', event.target.value)}
             disabled={editing !== null}
-            className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 disabled:bg-slate-100"
           >
             {companyIds.length === 0 && <option value="">当前账号没有可用公司</option>}
             {companyIds.map((id) => (
               <option key={id} value={id}>
-                {id}
+                {companyLabel(id)}
               </option>
             ))}
           </select>
         </label>
-        <label className="text-sm">
-          <span className="text-slate-600">名称</span>
+        <label>
+          <span>名称</span>
           <input
             required
             value={form.name}
             onChange={(event) => onChange('name', event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
           />
         </label>
-        <label className="text-sm">
-          <span className="text-slate-600">编号（可选，仅展示）</span>
-          <input
-            value={form.number}
-            onChange={(event) => onChange('number', event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
-          />
+        <label>
+          {/* D49：编号是自由文本、可空、不唯一、不作检索主键，只给人看和对账 */}
+          <span>编号（可选，仅展示）</span>
+          <input value={form.number} onChange={(event) => onChange('number', event.target.value)} />
         </label>
 
         {kind === 'products' && (
           <>
-            <label className="text-sm">
-              <span className="text-slate-600">单位</span>
+            <label>
+              <span>单位</span>
               <input
                 required
                 value={form.unit}
                 onChange={(event) => onChange('unit', event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
-            <label className="text-sm">
-              <span className="text-slate-600">默认售价</span>
+            <label>
+              <span>默认售价</span>
               <input
                 inputMode="decimal"
                 value={form.defaultSalePrice}
                 disabled={!canViewPrice}
                 onChange={(event) => onChange('defaultSalePrice', event.target.value)}
                 placeholder={canViewPrice ? '如 12.50' : '无看价权限'}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100"
               />
             </label>
-            <label className="text-sm sm:col-span-2">
-              <span className="text-slate-600">别名（逗号分隔）</span>
+            <label className="w">
+              <span>别名（逗号分隔）</span>
               <input
                 value={form.aliases}
                 onChange={(event) => onChange('aliases', event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
-            <label className="text-sm sm:col-span-2">
-              <span className="text-slate-600">规格</span>
+            <label className="w">
+              <span>规格</span>
               <input
                 value={form.specification}
                 onChange={(event) => onChange('specification', event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
           </>
         )}
 
         {(kind === 'suppliers' || kind === 'processors' || kind === 'customers') && (
-          <label className="text-sm">
-            <span className="text-slate-600">
-              {kind === 'customers' ? '联系人' : '主联系人'}
-            </span>
+          <label>
+            <span>{kind === 'customers' ? '联系人' : '主联系人'}</span>
             <input
               value={form.contactName}
               onChange={(event) => onChange('contactName', event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </label>
         )}
         {kind === 'customers' && (
           <>
-            <label className="text-sm">
-              <span className="text-slate-600">联系电话</span>
+            <label>
+              <span>联系电话</span>
               <input
                 value={form.contactPhone}
                 onChange={(event) => onChange('contactPhone', event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
-            <label className="text-sm">
-              <span className="text-slate-600">账期（天，可空）</span>
+            <label>
+              <span>账期（天，可空）</span>
               <input
                 inputMode="numeric"
                 value={form.creditTermDays}
                 onChange={(event) => onChange('creditTermDays', event.target.value)}
                 placeholder="如 30；留空表示未设置"
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
           </>
         )}
         {kind === 'suppliers' && (
           <>
-            <label className="text-sm">
-              <span className="text-slate-600">联系电话</span>
+            <label>
+              <span>联系电话</span>
               <input
                 value={form.contactPhone}
                 onChange={(event) => onChange('contactPhone', event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
-            <label className="text-sm sm:col-span-2">
+            <label className="w">
               {/* 上限来自契约 `SuppliedMaterialsSchema`：最多 20 项、每项 ≤64 字 */}
-              <span className="text-slate-600">供货物料（逗号分隔，最多 20 项）</span>
+              <span>供货物料（逗号分隔，最多 20 项）</span>
               <input
                 value={form.suppliedMaterials}
                 onChange={(event) => onChange('suppliedMaterials', event.target.value)}
                 placeholder="如 纸箱、胶带"
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
               />
             </label>
           </>
         )}
       </div>
+
       {issues.length > 0 && (
-        <ul className="mt-4 space-y-1 rounded-lg bg-red-50 p-3 text-sm text-red-700">
-          {issues.map((issue, index) => (
-            <li key={`${issue.path}-${index}`}>
-              {issue.path ? `${issue.path}：` : ''}
-              {issue.message}
-            </li>
-          ))}
-        </ul>
+        <div className="alert alert-bad">
+          <h4>有字段没通过校验</h4>
+          <ul>
+            {issues.map((issue, index) => (
+              <li key={`${issue.path}-${index}`}>
+                {issue.path ? `${issue.path}：` : ''}
+                {issue.message}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-      <button
-        type="submit"
-        disabled={busy || !form.companyId}
-        className="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-      >
-        {busy ? '保存中…' : editing ? '保存修改' : `新增${copy.singular}`}
-      </button>
+
+      <div className="detail-acts">
+        <button
+          type="submit"
+          disabled={busy || !form.companyId}
+          className="btn pri"
+          title={
+            editing ? allowTitle('保存修改', domain, 'update') : allowTitle('新建', domain, 'create')
+          }
+        >
+          {busy ? '保存中…' : editing ? '保存修改' : `新建${copy.singular}`}
+        </button>
+        <span className="detail-why">
+          写请求带 <span className="mono">If-Match</span>（乐观锁版本取自列表行）。
+        </span>
+      </div>
     </form>
   );
 }
+
+/* ------------------------------- 加工厂报价面板 ------------------------------- */
 
 export function ProcessorQuotes({
   processor,
@@ -400,62 +500,81 @@ export function ProcessorQuotes({
   });
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="font-semibold">{processor.name} · 历史加工报价</h2>
-      {/* 口径（改稿清单 §2.4）：价目只增不改，调价按生效日期新增一条，历史行不动 */}
-      <p className="mt-1 text-xs text-slate-500">
-        价目只增不改：调价请按新的生效日期新增一条，历史价目原样保留。
-      </p>
-      <form
-        className="mt-4 grid gap-3 sm:grid-cols-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          createQuote.mutate();
-        }}
-      >
-        <input
-          required
-          type="date"
-          value={quoteDate}
-          onChange={(event) => setQuoteDate(event.target.value)}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-        <input
-          required
-          value={processName}
-          onChange={(event) => setProcessName(event.target.value)}
-          placeholder="工序"
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-        <input
-          required
-          inputMode="decimal"
-          value={unitPrice}
-          onChange={(event) => setUnitPrice(event.target.value)}
-          placeholder="单价"
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-        <button
-          type="submit"
-          disabled={!canQuote || createQuote.isPending}
-          title={canQuote ? undefined : '需要 processor.create 权限'}
-          className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+    <div className="form-sec">
+      <div className="form-sec-h">
+        <h3>报价记录</h3>
+        {/* 口径（D64 ④）：报价只增不改，调价按新日期新增一条，历史行不动 */}
+        <span className="sub">只增不改 · 调价按新的生效日期新增一条</span>
+      </div>
+      <div className="form-sec-b">
+        <form
+          className="fm c4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            createQuote.mutate();
+          }}
         >
-          记录报价
-        </button>
-        <input
-          value={remark}
-          onChange={(event) => setRemark(event.target.value)}
-          placeholder="备注（可选）"
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm sm:col-span-2"
-        />
-      </form>
-      {createQuote.error && (
-        <p className="mt-3 text-sm text-red-700">{errorText(createQuote.error)}</p>
-      )}
-      {/* 报价子表同样走四态（data-state 驱动，状态行常驻） */}
+          <label>
+            <span>生效日期</span>
+            <input
+              required
+              type="date"
+              value={quoteDate}
+              onChange={(event) => setQuoteDate(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>工序</span>
+            <input
+              required
+              value={processName}
+              onChange={(event) => setProcessName(event.target.value)}
+              placeholder="如 烘焙"
+            />
+          </label>
+          <label>
+            <span>单价</span>
+            <input
+              required
+              inputMode="decimal"
+              value={unitPrice}
+              onChange={(event) => setUnitPrice(event.target.value)}
+              placeholder="如 1.250000"
+            />
+          </label>
+          <label>
+            <span>备注（可选）</span>
+            <input
+              value={remark}
+              onChange={(event) => setRemark(event.target.value)}
+              placeholder="如 含税"
+            />
+          </label>
+          <div className="w detail-acts">
+            <button
+              type="submit"
+              disabled={!canQuote || createQuote.isPending}
+              title={
+                canQuote
+                  ? '执行「记录报价」· 需要 processor.create 权限'
+                  : '需要 processor.create 权限'
+              }
+              className="btn pri"
+            >
+              <Icon name="check" size={14} />
+              记录报价
+            </button>
+            <span className="detail-why">一次报价一行，落表后不可改（D64 ④）。</span>
+          </div>
+        </form>
+        {createQuote.error && (
+          <p className="alert alert-bad alert-sm">{errorText(createQuote.error)}</p>
+        )}
+      </div>
+
+      {/* 报价子表同样走四态（`data-state` 驱动，四块常驻 DOM） */}
       <div
-        className="mt-4 overflow-x-auto"
+        className="form-sec-b"
         data-state={resolveListState({
           isPending: quotes.isPending,
           hasError: quotes.error !== null,
@@ -463,40 +582,380 @@ export function ProcessorQuotes({
         })}
       >
         <div className="st-block st-filled">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-slate-200 text-xs text-slate-500">
-              <tr>
-                <th className="py-2">生效日期</th>
-                <th className="py-2">工序</th>
-                <th className="py-2">单价</th>
-                <th className="py-2">备注</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(quotes.data?.items ?? []).map((quote: ProcessorQuote) => (
-                <tr key={quote.id} className="border-b border-slate-100">
-                  <td className="py-2">{quote.quoteDate}</td>
-                  <td className="py-2">{quote.processName}</td>
-                  <td className="py-2">{quote.unitPrice}</td>
-                  <td className="py-2">{quote.remark ?? '—'}</td>
+          <div className="ln">
+            <table>
+              <thead>
+                <tr>
+                  <th>生效日期</th>
+                  <th>工序</th>
+                  <th className="num">单价</th>
+                  <th>备注</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {(quotes.data?.items ?? []).map((quote: ProcessorQuote) => (
+                  <tr key={quote.id} className="r-row">
+                    <td className="mono">{quote.quoteDate}</td>
+                    <td>{quote.processName}</td>
+                    <td className="num">{quote.unitPrice}</td>
+                    <td>{quote.remark ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
         <div className="st-block st-loading">
           <ListLoading label="报价加载中…" rows={2} />
         </div>
         <div className="st-block st-error">
-          <ListError title="报价加载失败" error={quotes.error ?? null} onRetry={() => void quotes.refetch()} />
+          <ListError
+            title="报价加载失败"
+            error={quotes.error ?? null}
+            onRetry={() => void quotes.refetch()}
+          />
         </div>
         <div className="st-block st-empty">
-          <ListEmpty title="暂无报价记录。" />
+          <ListEmpty title="还没有报价记录" hint="记录一次报价后，加工单就能引用这个价格。" />
         </div>
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------- 详情面板 -------------------------------- */
+
+/**
+ * 详情面板（#432 必做点 2 / 3 / 4）。
+ *
+ * 仓库的详情一律是**页内面板**（`OrderDetailUI` 头注释：稿子的 `.drawer` 没搬进来），
+ * 所以这里跟采购 / 加工 / 内贸一样用 `<section className="card detail">`。
+ *
+ * 字段分组固定三块，**没有「备注」组**：四张档案契约都没有备注字段，
+ * 画一个空组等于画后端没有的东西。
+ */
+export function MasterDetail({
+  kind,
+  item,
+  companyLabel,
+  domain,
+  canUpdate,
+  canDelete,
+  canViewPrice,
+  canQuote,
+  onEdit,
+  onDelete,
+  onClose,
+}: {
+  kind: MasterdataKind;
+  item: MasterdataItem;
+  companyLabel: string;
+  domain: 'product' | 'supplier' | 'processor' | 'customer';
+  canUpdate: boolean;
+  canDelete: boolean;
+  canViewPrice: boolean;
+  canQuote: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const copy = PAGE_COPY[kind];
+  const [showContacts, setShowContacts] = useState(false);
+  const contactKind: ContactKind | null = kind === 'products' ? null : (kind as ContactKind);
+
+  /* 汇总（单数 / 累计金额 / 最近单据）与对接人都只在**打开一行**时才请求，
+     不是每行一次（列表 20 行 × 2 个请求会变成 N+1）。 */
+  const summary = useQuery({
+    queryKey: ['masterdata', kind, item.id, 'summary'],
+    queryFn: () => contactsApi.summary(contactKind as ContactKind, item.id),
+    enabled: contactKind !== null,
+  });
+  const contacts = useQuery({
+    queryKey: ['masterdata', kind, item.id, 'contacts'],
+    queryFn: () => contactsApi.listContacts(contactKind as ContactKind, item.id),
+    enabled: contactKind !== null,
+  });
+
+  const info: DocMetaItem[] = [
+    { label: `${copy.singular}编号`, value: readNumber(item, kind) ?? '—', mono: true },
+    { label: `${copy.singular}名称`, value: <b>{item.name}</b> },
+  ];
+  if (kind === 'products' && 'specification' in item) {
+    info.push({ label: '规格', value: item.specification ?? '—' });
+  }
+  if (kind === 'products' && 'defaultSalePrice' in item) {
+    info.push({
+      label: '参考价',
+      tone: item.defaultSalePrice === null ? 'dim' : 'money',
+      value:
+        item.defaultSalePrice === null ? (
+          // 无 view_price 时后端把金额置 null（不是 0），一律占位「—」（#432 必做点 6）
+          <span className="cell-none" title={formatPrice(null)}>
+            —
+          </span>
+        ) : (
+          `¥${item.defaultSalePrice}`
+        ),
+    });
+  }
+  if (kind === 'customers' && 'creditTermDays' in item) {
+    info.push({
+      label: '账期',
+      tone: item.creditTermDays === null ? 'dim' : undefined,
+      value: item.creditTermDays === null ? '未设置' : `${item.creditTermDays} 天`,
+    });
+  }
+  if (kind === 'suppliers' && 'suppliedMaterials' in item) {
+    info.push({
+      label: '供货物料',
+      value: item.suppliedMaterials.length > 0 ? item.suppliedMaterials.join('、') : '—',
+    });
+  }
+  info.push({ label: '所属公司', value: companyLabel });
+  info.push({ label: '最近更新', value: item.updatedAt.slice(0, 10), mono: true });
+
+  const contactGroups = summary.data?.contactGroups ?? [];
+  const groupOf = (contactId: string) =>
+    contactGroups.find((group) => group.contactId === contactId);
+  const summaryData = summary.data;
+
+  // 主数据没有状态列（#315 删了字段），详情头像稿子只给「主数据」这种中性标签，
+  // 不做成假状态徽标。
+  return (
+    <section className="card detail">
+      <DetailHead
+        docLabel={`${copy.singular}档案`}
+        orderNo={readNumber(item, kind) ?? '未编号'}
+        pill={<span className="tag">主数据</span>}
+        meta={
+          <>
+            <span>{companyLabel}</span>
+            <DetailMetaDot />
+            <span>最近更新 {item.updatedAt.slice(0, 10)}</span>
+            <DetailMetaDot />
+            <span>版本 {item.version}</span>
+          </>
+        }
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={onEdit}
+              disabled={!canUpdate}
+              title={canUpdate ? allowTitle('编辑', domain, 'update') : denyTitle(domain, 'update')}
+              className="btn btn-s"
+            >
+              <Icon name="pencil" size={14} />
+              编辑
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={!canDelete}
+              title={canDelete ? allowTitle('删除', domain, 'delete') : denyTitle(domain, 'delete')}
+              className="btn btn-s"
+            >
+              <Icon name="trash" size={14} />
+              删除
+            </button>
+          </>
+        }
+        onClose={onClose}
+        closeLabel="收起"
+      />
+
+      <h3 className="form-title">基本信息</h3>
+      <DocMeta items={info} columns={3} />
+
+      {contactKind !== null && (
+        <>
+          <h3 className="form-title">联系方式</h3>
+          <DocMeta
+            items={[
+              {
+                label: kind === 'customers' ? '联系人' : '主联系人',
+                value: readContactName(item) ?? '—',
+              },
+              {
+                label: '联系电话',
+                mono: true,
+                value:
+                  'contactPhone' in item
+                    ? maskPhone(item.contactPhone)
+                    : '—（加工厂契约无联系电话）',
+              },
+            ]}
+            columns={2}
+          />
+          <p className="detail-why">
+            档案上的电话显示后 4 位；完整号码只在编辑表单里回填，接口按{' '}
+            <span className="mono">If-Match</span> 写回。
+          </p>
+
+          <div className="detail-acts">
+            <h3 className="form-title">对接人</h3>
+            <button
+              type="button"
+              onClick={() => setShowContacts(true)}
+              className="btn btn-s act-end"
+            >
+              <Icon name="trend" size={14} />
+              按对接人看流水
+            </button>
+          </div>
+          {contacts.isPending ? (
+            <ListLoading label="对接人加载中…" rows={2} />
+          ) : contacts.error ? (
+            <ListError
+              title="对接人加载失败"
+              error={contacts.error}
+              onRetry={() => void contacts.refetch()}
+            />
+          ) : (
+            <div className="ln">
+              <table>
+                <thead>
+                  <tr>
+                    <th>对接人</th>
+                    <th>手机号</th>
+                    <th>状态</th>
+                    <th className="num">单数</th>
+                    <th className="num">累计金额</th>
+                    <th className="num">最近下单</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(contacts.data ?? []).map((contact: ContactSummaryRow) => {
+                    const group = groupOf(contact.id);
+                    return (
+                      <tr key={contact.id} className="r-row">
+                        <td>
+                          <b>{contact.name}</b>
+                          {contact.isPrimary && (
+                            <span className="tag primary">
+                              <Icon name="star" size={11} />
+                              主对接人
+                            </span>
+                          )}
+                          {contact.title && <span className="cell-sub">{contact.title}</span>}
+                        </td>
+                        {/* 手机号只用后端回的 `phoneMasked`，前端不拼明文（必做点 3） */}
+                        <td className="mono">{contact.phoneMasked ?? '—'}</td>
+                        <td>
+                          <span className={contact.status === '启用' ? 'st ok' : 'st idle'}>
+                            {contact.status}
+                          </span>
+                        </td>
+                        <td className="num">{group?.orderCount ?? '—'}</td>
+                        {/* 无 view_price 时后端不给 totalAmount 键 → 占位「—」，不拿 0 顶 */}
+                        <td className="num">{moneyText(group?.totalAmount)}</td>
+                        <td className="num mono">{group?.lastOrderAt?.slice(0, 10) ?? '—'}</td>
+                      </tr>
+                    );
+                  })}
+                  {(contacts.data ?? []).length === 0 && (
+                    <tr className="r-row">
+                      <td colSpan={6} className="cell-none">
+                        还没有对接人。可在表单里填主联系人，或等开单时自动带出。
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="detail-why">
+            对接人由服务端判定可见性与脱敏（<span className="mono">phoneMasked</span>
+            ）；停用是软停用，历史单据仍可读。
+          </p>
+
+          <h3 className="form-title">最近单据</h3>
+          {summary.error ? (
+            <ListError
+              title="汇总加载失败"
+              error={summary.error}
+              onRetry={() => void summary.refetch()}
+            />
+          ) : summaryData === undefined ? (
+            <ListLoading label="汇总加载中…" rows={2} />
+          ) : (
+            <>
+              <DocMeta
+                items={[
+                  { label: '单据数', value: summaryData.orderCount, mono: true },
+                  {
+                    label: '累计金额',
+                    tone: summaryData.totalAmount === undefined ? 'dim' : 'money',
+                    value: moneyText(summaryData.totalAmount),
+                  },
+                  {
+                    label: '最近下单',
+                    value: summaryData.lastOrderAt?.slice(0, 10) ?? '—',
+                    mono: true,
+                  },
+                ]}
+                columns={3}
+              />
+              {summaryData.recentOrders.length > 0 ? (
+                <div className="ln">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>单号</th>
+                        <th>状态</th>
+                        <th className="num">金额</th>
+                        <th className="num">下单时间</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {summaryData.recentOrders.map((order) => (
+                        <tr key={order.id} className="r-row">
+                          <td className="mono">{order.orderNo}</td>
+                          <td>{order.status}</td>
+                          <td className="num">{moneyText(order.totalAmount)}</td>
+                          <td className="num mono">{order.createdAt.slice(0, 10)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="detail-why">这家还没有历史单据。</p>
+              )}
+              <p className="detail-why">
+                后端只回最近 {summaryData.recentOrders.length} 张单（
+                <span className="mono">recentOrders</span>
+                ），不是全量；按对接人的分组流水见上面的「按对接人看流水」。
+              </p>
+            </>
+          )}
+        </>
+      )}
+
+      {kind === 'products' && (
+        <p className="detail-why">
+          商品档案没有对接人（契约无 product contacts）；关联库存批次属库存页（#433），本页不画。
+        </p>
+      )}
+
+      {kind === 'processors' && (
+        <ProcessorQuotes processor={item as Processor} canQuote={canQuote} />
+      )}
+
+      {showContacts && contactKind !== null && (
+        <ContactDrawer
+          kind={contactKind}
+          entityId={item.id}
+          entityName={item.name}
+          entityLabel={copy.singular}
+          onClose={() => setShowContacts(false)}
+        />
+      )}
     </section>
   );
 }
+
+/* -------------------------------- 列表页 -------------------------------- */
 
 export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   const copy = PAGE_COPY[kind];
@@ -509,9 +968,8 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editing, setEditing] = useState<MasterdataItem | null>(null);
   const [formOpen, setFormOpen] = useState(false);
-  const [selectedProcessor, setSelectedProcessor] = useState<Processor | null>(null);
-  /** 对接人抽屉：客户 / 供应商 / 加工厂三页共用，商品页没有（契约无 product contacts）。 */
-  const [contactTarget, setContactTarget] = useState<MasterdataItem | null>(null);
+  /** 详情面板：点行打开（稿子 `data-master`），同一时刻只有一行。 */
+  const [detail, setDetail] = useState<MasterdataItem | null>(null);
 
   const me = useQuery({ queryKey: masterdataQueryKeys.me, queryFn: masterdataApi.me });
   const companyIds = me.data?.companyIds ?? [];
@@ -521,7 +979,6 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   const canCreate = can('create');
   const canUpdate = can('update');
   const canDelete = can('delete');
-  const denyText = (action: ScopeAction) => `需要 ${domain}.${action} 权限`;
   const canViewPrice =
     me.data?.scope.some(
       (entry) => entry.domain === 'product' && entry.actions.includes('view_price'),
@@ -645,13 +1102,16 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
       if (kind === 'customers') return masterdataApi.disableCustomer(item.id, item.version);
       return masterdataApi.disableProcessor(item.id, item.version);
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, item) => {
+      // 删掉的正是当前详情的这一行：面板要跟着关，不然它显示一个已经不存在的档案
+      setDetail((current) => (current?.id === item.id ? null : current));
       await queryClient.invalidateQueries({ queryKey: ['masterdata', kind] });
     },
   });
 
   const beginCreate = () => {
     setEditing(null);
+    setDetail(null);
     setForm({ ...EMPTY_FORM, companyId: companyIds[0] ?? '' });
     setFormOpen(true);
   };
@@ -659,8 +1119,7 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
     setEditing(item);
     setForm(formFromItem(item, kind));
     setFormOpen(true);
-    setSelectedProcessor(null);
-    setContactTarget(null);
+    setDetail(item);
   };
   const askDisable = (item: MasterdataItem) => {
     if (globalThis.confirm?.(`确认删除“${item.name}”吗？删除后不能恢复。`) === false) {
@@ -672,51 +1131,61 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
   const issues = save.error instanceof ApiError ? extractIssues(save.error.details) : [];
   const rows = (list.data?.items ?? []) as MasterdataItem[];
   const nextCursor = list.data?.nextCursor ?? null;
-  /**
-   * 列表四态（v0.13）：只算一个字符串交给容器与 tbody 的 `data-state`，
-   * 三个状态行常驻 DOM、由 CSS 显隐，不写 JSX 三元分支（见 styles/README.md §四态）。
-   */
   const listState = resolveListState({
     isPending: list.isPending,
     hasError: list.error !== null,
     isEmpty: rows.length === 0,
   });
-  const isProducts = kind === 'products';
-  const isSuppliers = kind === 'suppliers';
-  /**
-   * 列结构按页不同（改稿清单 §2.1 / §2.3）：
-   * - 商品：补充信息 → 别名 / 规格 / 单位 三列，另加默认售价列
-   * - 供应商：补充信息 → 供货物料 / 主联系人（含电话）两列
-   * - 加工厂 / 客户：仍是单列补充信息
-   * 编号 + 名称 + 中间列 + 操作
-   */
-  const midColCount = isProducts ? 3 : isSuppliers ? 2 : 1;
-  const colCount = 2 + midColCount + (isProducts ? 1 : 0) + 1;
+  const columns = COLUMNS[kind];
+  const columnCount = columns.length;
+  const filtered = keyword.length > 0 || companyId.length > 0;
+
+  /** 对接人单元格：四页同构（客户 / 供应商 / 加工厂都有 contactName，商品没有该列）。 */
+  const contactCell = (item: MasterdataItem) => {
+    const name = readContactName(item);
+    return name === null || name.length === 0 ? (
+      <span className="cell-none">—</span>
+    ) : (
+      <span className="tag primary">
+        <Icon name="star" size={11} />
+        {name}
+      </span>
+    );
+  };
+  const gapCell = (title: string) => (
+    <span className="cell-none" title={title}>
+      —
+    </span>
+  );
 
   return (
-    <section className="mx-auto max-w-7xl space-y-5">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+    <section className="page-body">
+      {/* 页头（稿子 `head()`：h1 + 副标题 + 右上动作） */}
+      <div className="p-head">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{copy.title}</h1>
-          <p className="mt-1 text-sm text-slate-500">{copy.description}</p>
+          <h1>{copy.title}</h1>
+          <p className="sub">{copy.description}</p>
         </div>
         <button
           type="button"
           onClick={beginCreate}
           disabled={!canCreate}
-          title={canCreate ? undefined : denyText('create')}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+          title={canCreate ? allowTitle('新建', domain, 'create') : denyTitle(domain, 'create')}
+          className="btn pri"
         >
-          新增{copy.singular}
+          <Icon name="check" size={14} />新建{copy.singular}
         </button>
-      </header>
+      </div>
 
-      <div className="flex flex-wrap gap-3 rounded-xl border border-slate-200 bg-white p-4">
+      {/* 工具条：稿子 `.tools` 里只有搜索框；公司下拉是 repo 既有的多公司隔离入口，排在其后 */}
+      <div className="toolbar">
         <input
+          type="search"
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
           placeholder={SEARCH_PLACEHOLDER[kind]}
-          className="min-w-64 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          aria-label={`搜索${copy.title}`}
+          className="search"
         />
         {/* 公司筛选：`*ListQuerySchema` 都有 companyId 参数，后端已支持。 */}
         {companyIds.length > 1 && (
@@ -724,7 +1193,7 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
             value={companyId}
             onChange={(event) => setCompanyId(event.target.value)}
             aria-label="按公司筛选"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="sel"
           >
             <option value="">全部公司</option>
             {companyIds.map((id) => (
@@ -742,9 +1211,11 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
           form={form}
           editing={editing}
           companyIds={companyIds}
+          companyLabel={companyLabel}
           canViewPrice={canViewPrice}
           busy={save.isPending}
           issues={issues}
+          domain={domain}
           onChange={(field, value) => setForm((current) => ({ ...current, [field]: value }))}
           onSubmit={(event) => {
             event.preventDefault();
@@ -759,57 +1230,35 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
       )}
 
       {save.error && issues.length === 0 && (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errorText(save.error)}</p>
+        <p className="alert alert-bad">{errorText(save.error)}</p>
       )}
-      {disable.error && (
-        <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-          {deleteErrorText(disable.error)}
-        </p>
-      )}
+      {disable.error && <p className="alert alert-bad">{deleteErrorText(disable.error)}</p>}
 
       {/*
-        列表区（v0.13）。四态由容器与 tbody 上的 `data-state` 驱动，**不写 JSX 分支**：
-        `app-v013.css` 的 `tbody[data-state] > tr.st-tr.st-*` 负责显隐，表头宽度不随状态变。
-        数据行只带 `r-row`，**不要带 `st-tr`**（会落在「默认隐藏」规则里，见 #337）。
+        列表区（稿子 `tableCard()`）。四态由容器与 tbody 上的 `data-state` 驱动，
+        **不写 JSX 分支**：`app-v013.css` 的 `tbody[data-state] > tr.st-tr.st-*` 负责显隐，
+        表头宽度不随状态变。数据行只带 `r-row click`（稿子点行开详情），**不要带 `st-tr`**（#337）。
       */}
-      <div className="card" data-state={listState}>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left">
+      <div className="card list-card" data-state={listState}>
+        <div className="tw">
+          <table>
             <thead>
               <tr>
-                <th>编号</th>
-                <th>名称</th>
-                {isProducts ? (
-                  <>
-                    <th>别名</th>
-                    <th>规格</th>
-                    <th>单位</th>
-                  </>
-                ) : isSuppliers ? (
-                  <>
-                    <th>供货物料</th>
-                    <th>主联系人</th>
-                  </>
-                ) : kind === 'processors' ? (
-                  /* 加工厂只有 contactName，无联系电话，故本列不带电话（改稿清单 §2.4） */
-                  <th>主联系人</th>
-                ) : (
-                  /* 客户：主联系人独立成列（姓名 + 电话副标），账期只在表单里维护（改稿清单 §2.2） */
-                  <th>主联系人</th>
-                )}
-                {isProducts && <th className="num">默认售价</th>}
-                <th className="text-right">操作</th>
+                {columns.map((column) => (
+                  <th key={column.label} className={column.right ? 'r' : undefined}>
+                    {column.label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody data-state={listState}>
-              {/* 三个状态行常驻 DOM，CSS 按 data-state 只显示其中一个 */}
               <tr className="st-tr st-loading">
-                <td colSpan={colCount}>
+                <td colSpan={columnCount}>
                   <ListLoading label={`正在加载${copy.title}…`} rows={4} />
                 </td>
               </tr>
               <tr className="st-tr st-error">
-                <td colSpan={colCount}>
+                <td colSpan={columnCount}>
                   <ListError
                     title={`${copy.title}加载失败`}
                     error={list.error ?? null}
@@ -818,152 +1267,110 @@ export function MasterdataPage({ kind }: { kind: MasterdataKind }) {
                 </td>
               </tr>
               <tr className="st-tr st-empty">
-                <td colSpan={colCount}>
-                  <ListEmpty title="暂无数据。可调整筛选条件或新增一条记录。" />
+                <td colSpan={columnCount}>
+                  <ListEmpty
+                    title={filtered ? '没有符合条件的记录' : copy.empty.title}
+                    hint={filtered ? '换个关键词，或清除筛选条件。' : copy.empty.hint}
+                  />
                 </td>
               </tr>
               {rows.map((item) => (
-                <tr key={item.id} className="r-row">
-                  <td className="px-4 py-3 text-slate-500">{readNumber(item, kind) ?? '—'}</td>
-                  <td className="px-4 py-3 font-medium">{item.name}</td>
-                  {isProducts && 'aliases' in item ? (
+                <tr
+                  key={item.id}
+                  className="r-row click"
+                  tabIndex={0}
+                  aria-label={`查看${item.name}详情`}
+                  onClick={() => setDetail(item)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setDetail(item);
+                    }
+                  }}
+                >
+                  <td className="mono">{readNumber(item, kind) ?? '—'}</td>
+                  <td>
+                    <b>{item.name}</b>
+                  </td>
+                  {kind === 'products' && 'specification' in item ? (
                     <>
-                      <td className="px-4 py-3 text-slate-600">{item.aliases.join('、') || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{item.specification ?? '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{item.unit}</td>
-                    </>
-                  ) : isSuppliers && 'suppliedMaterials' in item ? (
-                    <>
-                      <td className="px-4 py-3 text-slate-600">
-                        {item.suppliedMaterials.join('、') || '—'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {item.contactName ? (
-                          <>
-                            {item.contactName}
-                            {item.contactPhone && (
-                              <span className="ml-1 font-mono text-xs text-slate-400">
-                                {item.contactPhone}
-                              </span>
-                            )}
-                          </>
+                      <td>{item.specification ?? '—'}</td>
+                      <td className="r num">
+                        {/* #432 必做点 6：没有 view_price 时金额显示「—」（与稿子 `money()` 同口径），
+                            原因放 title，不用长句撑爆 4 列里的钱列。 */}
+                        {item.defaultSalePrice === null ? (
+                          <span className="cell-none" title={formatPrice(null)}>
+                            —
+                          </span>
                         ) : (
-                          '—'
+                          `¥${item.defaultSalePrice}`
                         )}
                       </td>
                     </>
-                  ) : kind === 'customers' && 'contactPhone' in item ? (
-                    <td className="px-4 py-3 text-slate-600">
-                      {item.contactName ? (
-                        <>
-                          {item.contactName}
-                          {item.contactPhone && (
-                            <span className="ml-1 font-mono text-xs text-slate-400">
-                              {item.contactPhone}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
+                  ) : kind === 'customers' ? (
+                    <>
+                      <td>{contactCell(item)}</td>
+                      <td>{gapCell(GAP_TITLE.priceList)}</td>
+                      <td className="r num">{gapCell(GAP_TITLE.histSales)}</td>
+                    </>
+                  ) : kind === 'suppliers' ? (
+                    <>
+                      <td>{contactCell(item)}</td>
+                      <td className="r num">{gapCell(GAP_TITLE.histPurchase)}</td>
+                    </>
                   ) : (
-                    <td className="px-4 py-3 text-slate-600">{readExtra(item, kind) || '—'}</td>
+                    <>
+                      <td>{contactCell(item)}</td>
+                      <td className="r num">{gapCell(GAP_TITLE.histProcessing)}</td>
+                      <td className="r num">{gapCell(GAP_TITLE.quotes)}</td>
+                    </>
                   )}
-                  {isProducts && (
-                    <td className="px-4 py-3">{formatPrice(readPrice(item, kind))}</td>
-                  )}
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => beginEdit(item)}
-                        disabled={!canUpdate}
-                        title={canUpdate ? undefined : denyText('update')}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        编辑
-                      </button>
-                      {kind === 'processors' && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedProcessor(item as Processor)}
-                          className="rounded border border-slate-300 px-2 py-1 text-xs"
-                        >
-                          价目
-                        </button>
-                      )}
-                      {/* 对接人：客户 / 供应商 / 加工厂三页有（商品页契约里没有对接人）。
-                          读权限即可打开；写操作不在本抽屉，见 ContactDrawer 头注释。 */}
-                      {kind !== 'products' && (
-                        <button
-                          type="button"
-                          onClick={() => setContactTarget(item)}
-                          className="rounded border border-slate-300 px-2 py-1 text-xs"
-                        >
-                          对接人
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        disabled={!canDelete || disable.isPending}
-                        onClick={() => askDisable(item)}
-                        title={canDelete ? undefined : denyText('delete')}
-                        className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+
+        {/*
+          页脚条（稿子 `.tf`：左汇总、右分页）。
+          分页用共享的 `BatchPager`：主数据是 `PageQuerySchema` 游标分页、后端不返回 total，
+          所以画「上一批 / 第 N 批 / 下一批」，不编「共 N 条」与页码（TODO #341）。
+          `.list-card` 在非 filled 态会自动收起右侧分页（`app-v30.css`）。
+        */}
+        <div className="tf">
+          <span>本页 {rows.length} 条</span>
+          <BatchPager
+            batch={pageIndex + 1}
+            hasPrev={pageIndex > 0}
+            hasNext={nextCursor !== null}
+            onPrev={() => setPageIndex((index) => Math.max(0, index - 1))}
+            onNext={() => {
+              if (!nextCursor) return;
+              setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
+              setPageIndex((index) => index + 1);
+            }}
+            label={`翻${copy.title}`}
+          />
+        </div>
       </div>
 
-      {/*
-        游标分页：只保留「上一页 / 下一页」。
-        TODO(#341): 页码条——主数据仍是 `PageQuerySchema`（只有 cursor/limit），
-        后端补 total 之后再按 v0.13 的 `.pager` 画页码与总数。
-      */}
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          disabled={pageIndex === 0}
-          onClick={() => setPageIndex((index) => Math.max(0, index - 1))}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          上一页
-        </button>
-        <span className="text-sm text-slate-500">第 {pageIndex + 1} 页</span>
-        <button
-          type="button"
-          disabled={!nextCursor}
-          onClick={() => {
-            if (!nextCursor) return;
-            setCursors((items) => [...items.slice(0, pageIndex + 1), nextCursor]);
-            setPageIndex((index) => index + 1);
-          }}
-          className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          下一页
-        </button>
-      </div>
+      <p className="detail-why">
+        点击行查看详情{kind === 'processors' ? '、报价与对接人' : '与对接人'}。
+      </p>
 
-      {selectedProcessor && (
-        <ProcessorQuotes
-          processor={selectedProcessor}
-          canQuote={allows(me.data?.scope, 'processor', 'create')}
-        />
-      )}
-      {contactTarget && kind !== 'products' && (
-        <ContactDrawer
+      {detail && (
+        <MasterDetail
           kind={kind}
-          entityId={contactTarget.id}
-          entityName={contactTarget.name}
-          entityLabel={copy.singular}
-          onClose={() => setContactTarget(null)}
+          item={detail}
+          companyLabel={companyLabel(detail.companyId)}
+          domain={domain}
+          canUpdate={canUpdate}
+          canDelete={canDelete}
+          canViewPrice={canViewPrice}
+          canQuote={allows(me.data?.scope, 'processor', 'create')}
+          onEdit={() => beginEdit(detail)}
+          onDelete={() => askDisable(detail)}
+          onClose={() => setDetail(null)}
         />
       )}
     </section>
