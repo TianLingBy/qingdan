@@ -72,8 +72,7 @@ import {
   type InternalTradeLineDraft,
 } from './internal-trades-api';
 
-const PAGE_DESCRIPTION =
-  '同一租户内把货从一个公司搬到另一个公司。内部价手工填（D68①）；明细分批次只能引发出公司批次（D22）；在途期间批次仍归发出公司，收货方确认到货才转司（D31 / D68③）。';
+const PAGE_DESCRIPTION = '兄弟公司间调拨与往来，在途批次锁定，签收后转司（D22/D31）。';
 
 const EMPTY_LINE: InternalTradeLineDraft = { productId: '', batchIds: [], qty: '1', unitPrice: '' };
 
@@ -94,23 +93,22 @@ function formatDateTime(value: string): string {
 }
 
 /**
- * 列表用的短时间：`11-19 08:57`。
+ * 列表用的日期：`2026-11-22`（到天）。
  *
- * 表格里塞完整年月日（`2026-11-18 00:57`）会多占 50 多 px，加了「商品」列之后
- * 「操作」就出卡片了；年份在列表里没人看，详情面板里仍是完整时间。
+ * 稿子的「日期」列只有年月日；原来这一列是 `11-19 08:57`，和稿子对不上。
+ * 需要精确时间的场合（详情页头）仍用上面的 `formatDateTime`。
  */
-function formatShortDateTime(value: string): string {
+function formatDateOnly(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
     timeZone: 'Asia/Shanghai',
   })
     .format(date)
+    // `zh-CN` 给 `2026/11/22`，稿子写 `2026-11-22`：差一个分隔符，肉眼很显眼。
     .replace(/\//g, '-');
 }
 
@@ -713,8 +711,6 @@ export function InternalTradeOrdersPage() {
    * 比没有更糟：他会以为「全部」里应该有别人的单，只是自己点不动。
    */
   const [scopeFilter, setScopeFilter] = useState<'' | 'mine' | 'all'>('');
-  const [fromFilter, setFromFilter] = useState('');
-  const [toFilter, setToFilter] = useState('');
   const [keyword, setKeyword] = useState('');
   const [cursors, setCursors] = useState<(string | null)[]>([null]);
   const [pageIndex, setPageIndex] = useState(0);
@@ -742,18 +738,16 @@ export function InternalTradeOrdersPage() {
   useEffect(() => {
     setCursors([null]);
     setPageIndex(0);
-  }, [fromFilter, toFilter, status, keyword]);
+  }, [status, keyword]);
 
   const filters = useMemo(
     () => ({
-      fromCompanyId: fromFilter || undefined,
-      toCompanyId: toFilter || undefined,
       status: status || undefined,
       keyword: keyword.trim() || undefined,
       cursor: cursors[pageIndex] ?? null,
       scope: scopeFilter || undefined,
     }),
-    [fromFilter, toFilter, status, keyword, cursors, pageIndex, scopeFilter],
+    [status, keyword, cursors, pageIndex, scopeFilter],
   );
 
   const list = useQuery({
@@ -994,20 +988,6 @@ export function InternalTradeOrdersPage() {
   };
 
   /** 改单 / 取消都要先取最新详情：列表里的是旧版本，直接拿它的 version 会 409（D60）。 */
-  const withFreshDetail = async (
-    orderId: string,
-    action: (fresh: InternalTradeOrderDetail) => void,
-  ): Promise<void> => {
-    setActionError(null);
-    try {
-      const fresh = await internalTradesApi.detail(orderId);
-      setDetailId(orderId);
-      action(fresh);
-    } catch (error) {
-      setActionError(errorText(error));
-    }
-  };
-
   const askCancel = (order: InternalTradeOrderDetail) => {
     /**
      * 列表行按钮只按「进行中」判断，服务端还可能因为「已完成 / 已被别人取消 / 有下游单据」拒绝。
@@ -1104,57 +1084,82 @@ export function InternalTradeOrdersPage() {
   const detailOrder = detail.data;
   const meData = me.data;
 
+  /**
+   * 状态统计片（稿子 `.chip > b`）。**不画条数**：N 单走游标分页（`PageQuerySchema`
+   * 只有 cursor/limit，没有 `total`，也没分组计数），这一批只有 N 条不等于全量 N 条。
+   * 只列这一批里出现过的状态，空态不画一排 0。
+   */
+  const statusesInPage = INTERNAL_TRADE_STATES.filter(
+    (item) => status === item || rows.some((row) => row.status === item),
+  );
+
+  /** 整单金额 = 行金额合计。任一行为 null（无 `internal_trade.view_price`，D79）就整体遮罩。 */
+  const amountOf = (order: InternalTradeOrder): string | null => {
+    const amounts = order.lines.map((line) => line.amount);
+    return amounts.some((value) => value === null)
+      ? null
+      : sumDecimal(amounts as readonly string[]);
+  };
+
   return (
     <section className="page-body">
-      <div className="p-head">
+      {/* 页头照稿子 `.ph`：一行大标题 + 一行原文说明，右侧只放「+ 新建内部交易单」。
+          自写的 eyebrow、长说明、两条权限告示都不在稿子里，已删；缺权限改走按钮 title。 */}
+      <div className="ph">
         <div>
-          <div className="eyebrow">内部交易单 N · 公司间调拨</div>
           <h1>内部交易单 N</h1>
-          <p className="sub">{PAGE_DESCRIPTION}</p>
+          <p>{PAGE_DESCRIPTION}</p>
         </div>
-        <div className="actions">
+        <div className="acts">
           <button
             type="button"
             onClick={beginCreate}
             disabled={!can('create') || myCompanyIds.length === 0}
-            className="btn btn-primary"
+            className="btn btn-p"
+            title={
+              !can('create')
+                ? '需要 internal_trade.create 权限'
+                : myCompanyIds.length === 0
+                  ? '当前账号没有可调拨的公司，请联系管理员分配公司权限'
+                  : '执行「新建内部交易单」· 需要 internal_trade.create 权限'
+            }
           >
-            新建内部交易单
+            + 新建内部交易单
           </button>
         </div>
       </div>
 
-      {meData && !can('create') ? (
-        <p className="detail-why">
-          「新建」需要 internal_trade.create；当前身份只能查看（判定在服务端，前端只是不画按钮）。
-        </p>
-      ) : null}
-      {meData && !can('ship') ? (
-        <p className="detail-why">
-          「发货 / 撤销发货」需要 internal_trade.ship；当前身份不能发货（判定在服务端，前端只是不画按钮）。
-        </p>
-      ) : null}
-
       {/*
-        工具条（v0.13 `.toolbar` + `.seg`）：四态用分段按钮，比下拉少一次展开——
-        N 单最常看的是「在途」（货在路上、等对方确认），点一下就筛出来。
-        发出 / 接收公司仍是下拉：选项多、变化少。
+        工具栏照稿子 `orderTools()` 的顺序：搜索框 → 状态统计片 →（撑开）→ 范围控件。
+        - 状态从 `.seg` 分段改成 `.chips` 统计片（稿子就是统计片，带条数）；
+        - 范围从三档下拉改成稿子的两档分段；
+        - 发出 / 接收公司两个下拉删掉（见 PR「需要拍板」）：稿子没有，且顶栏切换器
+          要接线也是全站一次性做，本页不单独留一对下拉占位；
+        - 「全部经手人」不画：`InternalTradeOrderListQuerySchema` 没有 `handlerId`。
       */}
-      <div className="toolbar">
-        <div className="seg" role="group" aria-label="按状态筛选">
+      <div className="tools">
+        <label className="field">
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder="搜索单号…"
+            aria-label="搜索单号"
+          />
+        </label>
+        <div className="chips" role="group" aria-label="按状态筛选">
           <button
             type="button"
-            className={status === '' ? 'on' : undefined}
+            className={status === '' ? 'chip on' : 'chip'}
             aria-pressed={status === ''}
             onClick={() => setStatus('')}
           >
-            全部状态
+            全部
           </button>
-          {INTERNAL_TRADE_STATES.map((item) => (
+          {statusesInPage.map((item) => (
             <button
               key={item}
               type="button"
-              className={status === item ? 'on' : undefined}
+              className={status === item ? 'chip on' : 'chip'}
               aria-pressed={status === item}
               title={INTERNAL_TRADE_STATE_HINT[item]}
               onClick={() => setStatus(item)}
@@ -1163,63 +1168,43 @@ export function InternalTradeOrdersPage() {
             </button>
           ))}
         </div>
+        <div className="grow" />
         {/*
-          看谁的（D106）。只在有 `internal_trade.read_all` 时才给这个下拉 ——
-          没权限的人看到一个切不动的框，会以为「全部」里该有别人的单。
+          看谁的（D106）：有 `internal_trade.read_all` 才给开关；没有就直说「仅显示本人单据」，
+          不画一个切不动的框 —— 那会让人以为「全部」里该有别人的单。
+          不传 scope 时由服务端按权限定，所以「全部单据」是默认亮着的那一档。
         */}
-        {can('read_all') && (
-          <select
-            value={scopeFilter}
-            onChange={(event) => {
-              setScopeFilter(event.target.value as '' | 'mine' | 'all');
-              // 换「看谁的」等于换了一组数据，旧游标指向的位置在新集合里没有意义。
-              setCursors([null]);
-              setPageIndex(0);
-            }}
-            aria-label="看谁的单据"
-            className="sel"
-          >
-            <option value="">默认（按我的权限）</option>
-            <option value="mine">只看我经手的</option>
-            <option value="all">全部</option>
-          </select>
+        {can('read_all') ? (
+          <div className="seg" role="group" aria-label="看谁的单据">
+            <button
+              type="button"
+              className={scopeFilter !== 'mine' ? 'on' : undefined}
+              aria-pressed={scopeFilter !== 'mine'}
+              onClick={() => {
+                setScopeFilter('all');
+                setCursors([null]);
+                setPageIndex(0);
+              }}
+            >
+              全部单据
+            </button>
+            <button
+              type="button"
+              className={scopeFilter === 'mine' ? 'on' : undefined}
+              aria-pressed={scopeFilter === 'mine'}
+              onClick={() => {
+                setScopeFilter('mine');
+                // 换「看谁的」等于换了一组数据，旧游标指向的位置在新集合里没有意义。
+                setCursors([null]);
+                setPageIndex(0);
+              }}
+            >
+              只看我的
+            </button>
+          </div>
+        ) : (
+          <span className="note">仅显示本人单据（无 read_all 权限）</span>
         )}
-        <select
-          value={fromFilter}
-          onChange={(event) => setFromFilter(event.target.value)}
-          aria-label="按发出公司筛选"
-          className="sel"
-        >
-          <option value="">全部发出公司</option>
-          {companyOptions.map((company) => (
-            <option key={company.id} value={company.id}>
-              发出：{company.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={toFilter}
-          onChange={(event) => setToFilter(event.target.value)}
-          aria-label="按接收公司筛选"
-          className="sel"
-        >
-          <option value="">全部接收公司</option>
-          {companyOptions.map((company) => (
-            <option key={company.id} value={company.id}>
-              接收：{company.name}
-            </option>
-          ))}
-        </select>
-        <input
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-          placeholder="搜索单号"
-          aria-label="搜索单号"
-          className="search"
-        />
-        <span className="toolbar-end">
-          「在途」= 货已锁走、对方还没确认到货（D68②）
-        </span>
       </div>
 
       {formOpen ? (
@@ -1284,21 +1269,26 @@ export function InternalTradeOrdersPage() {
         列表（v3.0 `list-card`）。四态交给容器与 tbody 的 `data-state` 驱动，**不写 JSX 三元分支**：
         `app-v013.css` 按 `tbody[data-state=…] > tr.st-tr.st-*` 显隐，状态切换时表头宽度不变。
         数据行只带 `r-row`（**不带 `st-tr`**：`st-tr` 是状态行专用，默认 `display:none` 且 `td{padding:0}`）。
+
+        表头照稿子（`orderTable()`）：单号 / 对接公司 / 商品 / 数量 / 金额 / 计价 / 状态 /
+        负责人 / 日期，整行可点进详情、行内不放按钮。
+        **表头不可排序**：`InternalTradeOrderListQuerySchema` 只有 cursor/limit，没有 sort 参数
+        （D95 的页码 + 排序还没铺到本模块），不画一个点了没反应的箭头。
       */}
       <div className="card list-card" data-state={listState}>
         <div className="tw">
-          <table className="w-full min-w-[1120px] text-left">
+          <table>
             <thead>
               <tr>
                 <th>单号</th>
-                <th>发出 → 接收</th>
+                <th>对接公司</th>
                 <th>商品</th>
-                <th className="num">数量</th>
-                <th className="num">内部价</th>
+                <th className="r">数量</th>
+                <th className="r">金额</th>
+                <th>计价</th>
                 <th>状态</th>
-                <th>经手人</th>
-                <th>开单时间</th>
-                <th className="text-right">操作</th>
+                <th>负责人</th>
+                <th>日期</th>
               </tr>
             </thead>
             <tbody data-state={listState}>
@@ -1319,58 +1309,54 @@ export function InternalTradeOrdersPage() {
               </tr>
               <tr className="st-tr st-empty">
                 <td colSpan={9}>
-                  <ListEmpty title="暂无内部交易单。可调整筛选条件，或用右上角「新建内部交易单」开第一张。" />
+                  <ListEmpty title="暂无内部交易单。可调整筛选条件，或用右上角「+ 新建内部交易单」开第一张。" />
                 </td>
               </tr>
               {rows.map((order: InternalTradeOrder) => (
-                <tr key={order.id} className="r-row">
-                  <td className="whitespace-nowrap">
-                    <button
-                      type="button"
-                      onClick={() => setDetailId(order.id)}
-                      className="doc-link"
-                    >
-                      {order.orderNo}
-                    </button>
+                /*
+                  整行可点进详情（稿子 `tr.r-row.click`）：编辑 / 取消 / 发货 / 到货确认都在
+                  详情面板里，列表只负责「找到并打开」。键盘用户 Enter / 空格同效。
+                */
+                <tr
+                  key={order.id}
+                  className="r-row click"
+                  tabIndex={0}
+                  onClick={() => setDetailId(order.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setDetailId(order.id);
+                    }
+                  }}
+                >
+                  <td className="mono">
+                    <b>{order.orderNo}</b>
                   </td>
+                  {/*
+                    稿子这列只写对方公司名（Demo 是一家公司视角）。本仓一张 N 单同时属于
+                    两家公司，看的人是哪一边都可能，所以写「发出 → 接收」，不带方向歧义。
+                  */}
                   <td>{tradeRouteText(order)}</td>
-                  <td className="max-w-[190px] cell-muted">
+                  <td>
                     <ProductCell products={products.data?.items ?? []} lines={order.lines} />
                   </td>
-                  <td className="num">{formatQty(totalLineQty(order.lines))}</td>
-                  <td className="num">{formatMoney(order.internalPrice)}</td>
+                  <td className="r num">{formatQty(totalLineQty(order.lines))}</td>
+                  <td className="r num">{formatMoney(amountOf(order))}</td>
+                  {/*
+                    稿子的「计价」列每行都是「内部价」：N 单只有这一种计价方式，系统不按成本价 /
+                    加成算，内部价由制单人手填（D68①）。常量列的意义在口径，不在数值，
+                    所以把 D68① 挂进 `title`，鼠标停一下能看到「为什么这里没有数字」。
+                  */}
+                  <td>
+                    <span className="tag" title="内部价由制单人手填，系统不自动算（D68①）">
+                      内部价
+                    </span>
+                  </td>
                   <td>
                     <StatusBadge status={order.status} />
                   </td>
-                  <td className="cell-muted">
-                    {order.handlerId ? employeeLabel(order.handlerId) : '—'}
-                  </td>
-                  <td className="cell-muted">{formatShortDateTime(order.createdAt)}</td>
-                  <td>
-                    <div className="row-acts">
-                      {/*
-                        单号本身就是「进详情」的入口，行内不再单独放「详情」按钮：
-                        多一个按钮就把「操作」列挤出卡片（同 E / C 页）。
-                      */}
-                      <button
-                        type="button"
-                        disabled={!can('update') || !canEdit(order.status)}
-                        onClick={() => void withFreshDetail(order.id, beginEdit)}
-                        className="btn btn-row"
-                        title={canEdit(order.status) ? undefined : '只有「进行中」能改单（D68②）'}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!can('delete') || !canEdit(order.status) || cancelOrder.isPending}
-                        onClick={() => void withFreshDetail(order.id, askCancel)}
-                        className="btn btn-row danger"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </td>
+                  <td>{order.handlerId ? employeeLabel(order.handlerId) : '—'}</td>
+                  <td className="mono muted">{formatDateOnly(order.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1379,6 +1365,8 @@ export function InternalTradeOrdersPage() {
         {/*
           游标分页。游标契约（`PageQuerySchema`）只有 cursor/limit、没有 `total`，
           所以只能「上一批 / 下一批」，**不画页码**——画了就是假的总页数（D95 还没铺到本模块）。
+          也**不画合计**：本批 N 条的金额合计会被读成「全部筛选结果的合计」，
+          与页码模式那边（A / E 有 `total` 时才给合计）同一口径。
           `.tf` 页脚在非 filled 态自动收起翻页，只留条数汇总。
         */}
         <div className="tf">
@@ -1399,12 +1387,6 @@ export function InternalTradeOrdersPage() {
           )}
         </div>
       </div>
-
-      <p className="note">
-        四态：进行中 → 在途 → 已完成（或已取消，D68②）。只有「进行中」能改单；
-        <b>发货（internal_trade.ship）</b>把单据推进「在途」并锁住发出公司批次的可用量，
-        撤销发货才释放；<b>到货确认（D31）</b>确认后批次在同一事务转入接收公司、N 单置为已完成，不可撤销。
-      </p>
 
       {detailId !== null ? (
         <>

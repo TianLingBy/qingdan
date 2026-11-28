@@ -1167,7 +1167,9 @@ body.is-sky .wrap {
 .cell-strong{color:var(--v30-ink)}
 /* 空值占位（「—」）与单元格里的后缀小字（「等 3 种」） */
 .cell-none{color:var(--v30-ink-3)}
-.cell-sub{margin-left:4px;font-size:var(--fs-12,12px);color:var(--v30-ink-3)}
+/* `display:inline` 要显式写：`app-v013.css` L536 给的是 `display:block`（那时它当副标题用），
+   不覆盖会让「等 2 种」在单元格里另起一行，同一张表里有的行 50px 有的 68px。 */
+.cell-sub{display:inline;margin-left:4px;font-size:var(--fs-12,12px);color:var(--v30-ink-3)}
 /* 名称列限宽截断：商品名长起来能把整行撑宽，悬停给 title 看全名 */
 .cell-clip{
   display:inline-block;
