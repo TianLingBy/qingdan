@@ -1802,6 +1802,244 @@ body.is-sky .wrap {
   background: var(--v30-surface);
 }
 
+/* ============================================================
+   §10b 库存流水页（#433 第二页）
+   ------------------------------------------------------------
+   页面骨架继续复用库存数量页的 `.inv-*`；这里只补工单 D2=A 允许的
+   方向、来源与筛选结构。类型不推断锁定/调整，金额列也不存在。
+   ============================================================ */
+.flow-search input {
+  width: 260px;
+}
+
+.flow-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--v30-ink-3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.flow-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--v30-line);
+  border-radius: 12px;
+  background: var(--v30-surface);
+}
+
+.flow-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 128px;
+  color: var(--v30-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.flow-filter-wide {
+  flex: 1 1 190px;
+}
+
+.flow-select,
+.flow-input {
+  height: 34px;
+  border: 1px solid var(--v30-line);
+  border-radius: 9px;
+  outline: 0;
+  background: var(--v30-bg);
+  color: var(--v30-ink);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.flow-select {
+  min-width: 128px;
+  padding: 0 30px 0 10px;
+}
+
+.flow-input {
+  width: 100%;
+  padding: 0 10px;
+}
+
+.flow-select:focus,
+.flow-input:focus {
+  border-color: var(--v30-ink);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--v30-ink) 8%, transparent);
+}
+
+.flow-resolve {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.flow-resolve .btn {
+  flex: 0 0 auto;
+  height: 34px;
+}
+
+.flow-reset {
+  height: 34px;
+  margin-left: auto;
+}
+
+.flow-batch-chip {
+  margin: 0 0 10px;
+}
+
+.flow-current {
+  overflow: hidden;
+  margin: 0 0 10px;
+  color: var(--v30-ink-3);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-table {
+  min-width: 900px;
+}
+
+.flow-table th:nth-child(1),
+.flow-table td:nth-child(1) {
+  width: 15%;
+}
+
+.flow-table th:nth-child(2),
+.flow-table td:nth-child(2) {
+  width: 15%;
+}
+
+.flow-table th:nth-child(3),
+.flow-table td:nth-child(3) {
+  width: 12%;
+}
+
+.flow-table th:nth-child(4),
+.flow-table td:nth-child(4) {
+  width: 10%;
+}
+
+.flow-table th:nth-child(5),
+.flow-table td:nth-child(5) {
+  width: 10%;
+}
+
+.flow-table th:nth-child(6),
+.flow-table td:nth-child(6) {
+  width: 21%;
+}
+
+.flow-table th:nth-child(7),
+.flow-table td:nth-child(7) {
+  width: 17%;
+}
+
+.flow-row:hover {
+  background: var(--surf-2);
+}
+
+.flow-time {
+  color: var(--v30-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 76px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.flow-kind-positive {
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  color: var(--ok);
+}
+
+.flow-kind-negative {
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+  color: var(--bad);
+}
+
+.flow-kind-zero {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+
+.flow-delta {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-delta-positive {
+  color: var(--ok);
+}
+
+.flow-delta-negative {
+  color: var(--bad);
+}
+
+.flow-delta-zero {
+  color: var(--v30-ink-3);
+}
+
+.flow-source {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--v30-line);
+  border-radius: 7px;
+  background: var(--surf-2);
+  color: var(--v30-ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.flow-source-id {
+  overflow: hidden;
+  max-width: 0;
+  color: var(--v30-ink-2);
+  text-overflow: ellipsis;
+}
+
+.flow-handler {
+  overflow: hidden;
+  color: var(--v30-ink-2);
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 900px) {
+  .flow-note {
+    width: 100%;
+  }
+
+  .flow-reset {
+    margin-left: 0;
+  }
+}
+
 .cost-panel {
   display: flex;
   flex-direction: column;
