@@ -1,28 +1,40 @@
+import type { ScopeMatrix } from '@qingdan/contracts';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchEmployees, fetchMe, fetchPositions } from '../../api/platform';
 import { ApiError } from '../../api/client';
 import { ListEmpty, ListError, ListLoading } from '../../components/ListStates';
+import { allows } from '../../lib/access';
 import { resolveListState } from '../../lib/list-state';
 import { PermissionOverridePanel } from './PermissionOverridePanel';
 
 /**
- * 员工页（22 页之第 16 页，#6）。
+ * 员工页（22 页之第 16 页，#6 / #432 五页重做之一）。
  *
- * - 列表：**真接口** `GET /api/v1/employees`（员工列表端点已上线，原 issue 假数据前提不再成立），
- *   含加载 / 空 / 错误三态；手机号服务端已脱敏；
- * - 行内「权限」按钮 → 个人权限覆盖面板（唯一真接口联调部分，PermissionOverridePanel）；
- * - 岗位管理、公司管理入口：占位（公司/岗位端点 #156 已补，页面归 #144）。
+ * 视觉：照 v0.13 `员工.html` 与 `design/v3.0/index.html` 的 `PG.employees` 逐块搬 ——
+ * 标题区（eyebrow + h1 + sub）→ 工具条（状态分段 / 公司 / 搜索）→ `.card.list-card`
+ * 表格（工号 / 姓名 / 手机号 / 公司 · 岗位 / 状态 / 操作）→ 页脚条 `.tf`。
+ * 页面不再写任何 Tailwind 工具类，行内不加 `style=`，样式全部来自 `app-v013.css`
+ * 与 `app-v30.css`（#488 之后由负责人维护，页面 PR 不改 `styles/**`）。
  *
- * 隐私口径：手机号只展示脱敏值；数据可见范围由服务端判定（D15，前端隐藏不算数）。
+ * 数据：**真接口** `GET /api/v1/employees`；手机号服务端已脱敏；
+ * 筛选为本地过滤（`fetchEmployees()` 不带查询参数，不自造 keyword/status 参数）。
+ *
+ * 操作列只放**真接口**做得到的事：「权限」→ 个人权限覆盖面板。
+ * 稿子里的「新建 / 停用」照抄会变成假按钮，故不画（口径见页脚 note）：
+ * `POST /employees` 与 `DELETE /employees/{id}` 都是危险动作（D52.1 / D54⑥，
+ * 契约 `ai.policy = forbid`，停用还要 `reasonRequired` + If-Match），
+ * 前端 API 层尚未接线，接线需单独 issue。
  */
 
-/** 状态分段（视觉稿口径：全部 / 在职 / 停用）。 */
+/** 状态分段（与契约 `EmployeeSummary.status` 取值一致）。 */
 const STATUS_TABS = [
-  { value: '', label: '全部' },
+  { value: '', label: '全部状态' },
   { value: '在职', label: '在职' },
   { value: '停用', label: '停用' },
 ] as const;
+
+const COLUMN_COUNT = 6;
 
 export function EmployeesPage() {
   const employeesQuery = useQuery({
@@ -49,6 +61,13 @@ export function EmployeesPage() {
   const [companyFilter, setCompanyFilter] = useState('');
 
   const employees = employeesQuery.data?.items ?? [];
+  /**
+   * `/auth/me` 的 `scope` 在 `api/platform.ts` 里还是宽类型（`{ domain: string }[]`），
+   * 与服务端实际返回的 `ScopeMatrix` 一致，这里窄化一次再交给 `allows()`；
+   * 宽类型收敛进契约另开 issue，页面不自己放宽判定。
+   */
+  const scope = meQuery.data?.scope as ScopeMatrix | undefined;
+
   /**
    * 筛选一律**本地过滤**：`fetchEmployees()` 固定 `limit=100` 且不传参数，
    * 后端是否支持 keyword/status/companyId 未证实（改稿清单 §六.5），不自造查询参数。
@@ -79,7 +98,18 @@ export function EmployeesPage() {
     return [...map.entries()];
   }, [employees]);
 
-  const canOpenPanel = meQuery.data !== undefined;
+  /**
+   * 权限三态（#432 第 2 关「权限态」）：没 `employee.read` 时整页只剩提示页，
+   * 没 `employee.update` 时「权限」按钮禁用并把缺的 scope 写进 `title`，不留假可点按钮。
+   */
+  const canRead = meQuery.data === undefined || allows(scope, 'employee', 'read');
+  const canUpdate = meQuery.data === undefined || allows(scope, 'employee', 'update');
+  const panelTitle = !canUpdate
+    ? '需要 employee.update 才能改个人权限覆盖'
+    : meQuery.data === undefined
+      ? '身份信息加载中'
+      : '个人权限覆盖';
+
   /** 列表四态：交给容器与 tbody 的 `data-state` 驱动，不写 JSX 三元分支。 */
   const listState = resolveListState({
     isPending: employeesQuery.isPending,
@@ -88,18 +118,24 @@ export function EmployeesPage() {
   });
 
   return (
-    <section className="mx-auto max-w-6xl">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-baseline gap-3">
-          <h1 className="text-2xl font-semibold tracking-tight">员工</h1>
-          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-            已接真实接口
-          </span>
+    <section className="page-body">
+      <div className="p-head">
+        <div>
+          <div className="eyebrow">组织 / 员工</div>
+          <h1>员工</h1>
+          <p className="sub">工号 / 手机号（脱敏）/ 公司 · 岗位。停用即断权。</p>
         </div>
       </div>
 
-      {/* 工具条（照样板页 `.toolbar` + `.seg`）：状态分段 + 公司下拉 + 搜索，全为本地过滤 */}
-      <div className="toolbar mt-4">
+      {meQuery.data && !canRead && (
+        <p className="alert alert-warn">
+          当前身份没有员工管理权限（<code className="mono">employee.read</code>），
+          列表不会返回数据；请联系老板开通。
+        </p>
+      )}
+
+      {/* 工具条：状态分段 + 公司下拉 + 搜索（v0.13 `.toolbar` 版式，全为本地过滤） */}
+      <div className="toolbar">
         <div className="seg" role="group" aria-label="按状态筛选">
           {STATUS_TABS.map((tab) => (
             <button
@@ -118,7 +154,7 @@ export function EmployeesPage() {
             value={companyFilter}
             onChange={(event) => setCompanyFilter(event.target.value)}
             aria-label="按公司筛选"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+            className="sel"
           >
             <option value="">全部公司</option>
             {companyOptions.map(([id, name]) => (
@@ -131,34 +167,39 @@ export function EmployeesPage() {
         <input
           type="search"
           value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          placeholder="姓名 / 工号"
-          className="w-64 rounded border border-slate-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-slate-400"
+          onChange={(event) => setKeyword(event.target.value)}
+          placeholder="搜索姓名 / 工号…"
+          aria-label="搜索姓名或工号"
+          className="search"
         />
       </div>
 
-      <div className="card mt-5" data-state={listState}>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+      {/*
+        列表（v3.0 `list-card`）：容器与 tbody 挂同一个 data-state，
+        三行状态行常驻且带 `st-tr st-*`，显隐交给 `app-v013.css`；
+        `.tf` 在空 / 加载 / 错误态自动收起右侧分页（`app-v30.css`）。
+      */}
+      <div className="card list-card" data-state={listState}>
+        <div className="tw">
+          <table className="w-full min-w-[860px] text-left">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs text-slate-400">
-                <th className="px-4 py-2.5 font-medium">工号</th>
-                <th className="px-4 py-2.5 font-medium">姓名</th>
-                <th className="px-4 py-2.5 font-medium">手机号（脱敏）</th>
-                <th className="px-4 py-2.5 font-medium">公司 · 岗位</th>
-                <th className="px-4 py-2.5 font-medium">状态</th>
-                <th className="px-4 py-2.5 text-right font-medium">操作</th>
+              <tr>
+                <th>工号</th>
+                <th>姓名</th>
+                <th>手机号（脱敏）</th>
+                <th>公司 · 岗位</th>
+                <th>状态</th>
+                <th className="num">操作</th>
               </tr>
             </thead>
             <tbody data-state={listState}>
-              {/* 三个状态行常驻 DOM，CSS 按 data-state 只显示其中一个 */}
               <tr className="st-tr st-loading">
-                <td colSpan={6}>
+                <td colSpan={COLUMN_COUNT}>
                   <ListLoading label="员工列表加载中…" rows={4} />
                 </td>
               </tr>
               <tr className="st-tr st-error">
-                <td colSpan={6}>
+                <td colSpan={COLUMN_COUNT}>
                   <ListError
                     title="员工列表加载失败"
                     error={employeesQuery.error}
@@ -173,7 +214,7 @@ export function EmployeesPage() {
                 </td>
               </tr>
               <tr className="st-tr st-empty">
-                <td colSpan={6}>
+                <td colSpan={COLUMN_COUNT}>
                   <ListEmpty
                     title={
                       employees.length === 0
@@ -184,39 +225,31 @@ export function EmployeesPage() {
                 </td>
               </tr>
               {filtered.map((employee) => (
-                <tr key={employee.id} className="r-row border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{employee.employeeNo}</td>
-                  <td className="px-4 py-2.5">
-                    {employee.name}
-                    {employee.isOwner && (
-                      <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                        老板
-                      </span>
-                    )}
+                <tr key={employee.id} className="r-row">
+                  <td className="mono">{employee.employeeNo}</td>
+                  <td>
+                    <b>{employee.name}</b>
+                    {employee.isOwner && <span className="tag primary">老板</span>}
+                    {/* v0.13 员工页的副行：老板档案除本人外不可读（契约 EmployeeSchema 注释） */}
+                    {employee.isOwner && <span className="cell-sub">仅本人可见</span>}
                   </td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{employee.phoneMasked}</td>
-                  <td className="px-4 py-2.5 text-xs text-slate-600">
-                    {employee.companies.map((c) => `${c.companyName}·${c.positionName}`).join('、') || '—'}
+                  <td className="mono">{employee.phoneMasked}</td>
+                  <td>
+                    {employee.companies.map((c) => `${c.companyName} · ${c.positionName}`).join('、') ||
+                      '—'}
                   </td>
-                  <td className="px-4 py-2.5">
-                    <span
-                      className={[
-                        'rounded-full px-2 py-0.5 text-xs font-medium',
-                        employee.status === '在职'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-slate-100 text-slate-500',
-                      ].join(' ')}
-                    >
+                  <td>
+                    <span className={`st ${employee.status === '在职' ? 'ok' : 'idle'}`}>
                       {employee.status}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-right">
+                  <td className="num">
                     <button
                       type="button"
-                      disabled={!canOpenPanel}
+                      disabled={meQuery.data === undefined || !canUpdate}
                       onClick={() => setPanel({ open: true, employeeId: employee.id })}
-                      className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      title={canOpenPanel ? '个人权限覆盖' : '身份信息加载中'}
+                      className="btn btn-s"
+                      title={panelTitle}
                     >
                       权限
                     </button>
@@ -226,11 +259,16 @@ export function EmployeesPage() {
             </tbody>
           </table>
         </div>
+        <div className="tf">
+          <span>共 {filtered.length} 人</span>
+        </div>
       </div>
 
-      <p className="mt-3 text-xs text-slate-400">
-        手机号为脱敏展示（服务端口径）；数据可见范围由服务端判定（D15），前端隐藏不算数。
-        公司管理、岗位模板页面见 #144（本页只做列表与权限覆盖）。
+      {/* `.note` 在 v3.0 组件层是「图标 + 一句话」的 inline-flex，长段落用 `.detail-why` */}
+      <p className="detail-why">
+        手机号为服务端脱敏值（前 3 + **** + 后 4）；数据可见范围由服务端判定（D15），前端隐藏不算数。
+        新建与停用需 employee.create / employee.disable，属危险动作（D52.1 / D54⑥，
+        停用还要填原因 + If-Match），前端 API 层未接线前不画按钮。
       </p>
 
       {panel.open &&
