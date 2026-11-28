@@ -1457,6 +1457,12 @@ tr.click:focus-visible{outline:2px solid var(--v30-accent);outline-offset:-2px}
 /* 数字列右对齐（稿子 td.r / th.r） */
 td.r,th.r{text-align:right}
 
+/* 稿子的 `.mono` 比正文小一档（`design/v3.0/index.html` L47：`.mono{font-size:.93em}`），
+   本仓的 `.mono`（`app-v013.css` L74）只管字族不管字号，单号 / 日期列会跟正文一样大。
+   只收口列表卡内的等宽格，详情里的 `.mono`（`dd.mono` 等）不动。 */
+.list-card thead th.mono,
+.list-card tbody td.mono{font-size:.93em}
+
 /* 工具条里的状态统计片按稿子尺寸（32px / 12.5px / 圆角 16px）。
    `.chip` 本体是 26px 的表单口径（批次选择那种密排），这里只放大 `.chips` 内的，
    不动别的页面里已经在用的 26px 版本。 */
