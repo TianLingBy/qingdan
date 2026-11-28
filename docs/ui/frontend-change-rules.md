@@ -52,12 +52,13 @@
 ## 三、样式规则（怎么算「照 v3.0 做完了」）
 
 1. **视觉以 `design/v3.0/index.html` 为准**：布局、间距、字号、颜色、圆角、亮暗双模逐页对上。稿子不是参考意见，是验收基准。
-2. **样式落地方式**：把稿子里的样式成体系搬进 `apps/web/src/styles/app-v30.css`（一次 PR 完成，不要一页一个片段），页面只引类名。
-   - 复用 `app-v013.css` 已有的：`panel`、`card`、`btn` 家族、`chip`、`crumb`、`table`、`pager`、`sk`（骨架）、`r-row`、`st-tr`、`st-block`
-   - 稿子新引入、repo 里**还没有**的：`list-card`、`.tf`（列表页脚条）、`lg-form` / `lg-alert`（登录表单）—— 这些进 `app-v30.css`
-   - 禁止：行内 `style=`、新造 CSS 变量名、新引 UI 库 / 图标库 / CSS-in-JS
+2. **样式落地方式**：页面只引类名，样式全部来自两份全局样式表（**已由负责人补齐，页面 PR 里不要再改样式表**）：
+   - `apps/web/src/styles/tokens-v30.css`（2026-11-28 用户拍板「一切按视觉稿来」）：把 `design/v3.0/index.html` 的**配色令牌整套**搬进来（米白底 `#f5f4f0` / 纯白卡 / 橙红主色 `#dc4a26` / 在途紫 / 可用绿 / 告警橙 / 危险红），并把 v0.13 的变量名桥接到同一套值 —— 全站配色跟稿子一致，页面里**不许再出现自己的颜色字面量**。
+   - `apps/web/src/styles/app-v30.css`：v3.0 组件层。**与 v0.13 同名但形状不同的类已按稿子重写**：`.card`、`.card-h`、`.seg`（浅胶囊底 + 白实心选中）、`.search`、`.note`、`.tag`、`.chips`、`.st`（含 `.now/.transit/.ok/.warn/.bad/.low/.idle`）、`.st-*`（表格内四态块）、`.state`、`.sk`、`.btn` 家族（36px 高、10px 圆角、主按钮纯黑）、`table / thead th / tbody td`（行高 50px、表头 12px 浅底左对齐）、`.pager`、`.r-row`、`tr.click`、侧栏 `.nav`。稿子独有的 `list-card`、`.tf`、`.tw`、`lg-*`、`ent-*` 也在这里。
+   - 用类名就对了：**不要再引 `chip` / `pill` / `time-seg` / `wh` 这些 v0.13 专用类**（它们仍是 999px 胶囊 + 玻璃渐变，与稿子不符）。
+   - 禁止：行内 `style=`、在页面里新建 CSS 变量、新引 UI 库 / 图标库 / CSS-in-JS。
 3. **图标**：稿子里共 **23 枚**图标（`四态与组件对照-给repo.md` §五：`pg-first`/`pg-prev`/`pg-next`/`pg-last`/`clock`/`trend`/`trash`/`pencil`/`key`/`shield`/`refresh`/`calendar`/`filter`/`arrow-in`/`arrow-out`/`adjust`/`ticket`/`check`/`undo`/`copy`/`star`/`pin`/`split`）按现有 `viewBox="0 0 24 24"`、`stroke=currentColor`、`stroke-width=1.6`、默认 18px 的规范进图标组件，不许引图标库。
-4. **主题默认值**：`apps/web/src/main.tsx` 已写 `document.documentElement.dataset.mode = 'light'`（`tokens-v013.css` 的 `:root` 默认是暗色，浅色只在 `html[data-mode="light"]` 下）。**页面里不要再各自设置 `data-mode`**，将来接主题开关时只改这一处；也不要在页面上写暗色专用样式。
+4. **主题默认值**：`apps/web/src/main.tsx` 已写 `document.documentElement.dataset.mode = 'light'`（令牌层 `:root` 默认是暗色，浅色只在 `html[data-mode="light"]` 下）。**页面里不要再各自设置 `data-mode`**，将来接主题开关时只改这一处；也不要在页面上写暗色专用样式。`tokens-v30.css` 跟随同一开关，两套主题都已在里面配好。
 
 ## 四、四态与权限态（硬性）
 

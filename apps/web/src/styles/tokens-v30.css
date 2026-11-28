@@ -1,0 +1,79 @@
+/* ============================================================
+   轻单 v3.0 · 设计令牌（口径 A：整套采用 design/v3.0 的配色）
+   ------------------------------------------------------------
+   为什么单独一份：
+     v0.13 的 tokens-v013.css 是「墨黑 / 米白 / 苔绿」那套，
+     design/v3.0/index.html 自带另一套「米白底 / 纯白卡 / 橙红主色」，
+     两套变量名也不同（--ink / --surface / --hover / --transit 只有稿子有）。
+     2026-11-28 用户拍板「一切按视觉稿来」，故本文件把稿子的令牌层整套搬进来，
+     并把 v0.13 的变量名桥接到同一套值上 —— 全站（含侧栏、顶栏、登录页）
+     一起变成稿子的配色，不再出现「结构像、颜色不像」。
+
+   取值来源：design/v3.0/index.html 的 <style> 段 :root 与 [data-theme="dark"]
+   两个块，逐值照抄，未改动任何一个色值。
+
+   加载顺序：index.css 里排在 tokens-v013.css / app-v013.css 之后，
+   同名变量按 CSS 级联「后出现的同特异性声明胜出」覆盖掉 v0.13 的值。
+
+   主题开关：仓库用 html[data-mode="light"]（默认暗色），稿子用 data-theme，
+   本文件跟随仓库约定，避免两套开关打架。
+   ============================================================ */
+
+:root{
+  /* ---- 稿子暗色（仓库默认主题） ---- */
+  --bg:#0e0e0c; --surface:#171613; --surface-2:#1c1b17; --hover:#23221d;
+  --line:#2a2924; --line-2:#3b3932;
+  --ink:#f1efe8; --ink-2:#b0ada2; --ink-3:#78756b;
+  --accent:#dc4a26;
+  --now:#6b9bff; --transit:#a48cf5; --ok:#3fc493; --warn:#e0a233; --bad:#f2647a;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5);
+  --shadow-lg:0 24px 64px -16px rgba(0,0,0,.7);
+  --sb:248px; --row:50px; --fs:14px; --r:12px;
+  --mono:ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+  --ease:cubic-bezier(.2,.8,.2,1);
+
+  /* ---- v0.13 变量名桥接（同一套色，老组件不必改） ---- */
+  --bg-0:var(--bg);
+  --bg-1:var(--surface);
+  --bg-2:var(--surface);
+  --bg-3:var(--surface-2);
+  --bg-4:var(--hover);
+  --surf-1:var(--surface);
+  --surf-2:var(--surface-2);
+  --surf-3:var(--hover);
+  --text-1:var(--ink);
+  --text-2:var(--ink-2);
+  --text-3:var(--ink-3);
+  --text-decor:var(--ink-3);
+  --line-1:var(--line);
+  --line-3:var(--line-2);
+  --accent-light:var(--accent);
+  --accent-deep:var(--accent);
+  --accent-2:var(--transit);
+  --accent-2-light:var(--transit);
+  --accent-rgb:220,74,38;
+  --accent-2-rgb:116,85,214;
+  --on-accent:#ffffff;
+  --danger:var(--bad);
+  --danger-on-surface:var(--bad);
+  --sh-1:var(--shadow);
+  --sh-2:var(--shadow-lg);
+  --sh-inset:inset 0 1px 0 rgba(255,255,255,.04);
+  --page-bg:var(--bg);
+  --topbar-bg:var(--surface);
+  --batch-bg:var(--surface);
+  --track:var(--hover);
+}
+
+html[data-mode="light"]{
+  /* ---- 稿子亮色 ---- */
+  --bg:#f5f4f0; --surface:#ffffff; --surface-2:#faf9f6; --hover:#f0eee8;
+  --line:#e8e5dd; --line-2:#d7d3c8;
+  --ink:#17160f; --ink-2:#5c5a50; --ink-3:#939084;
+  --now:#2563eb; --transit:#7455d6; --ok:#12875f; --warn:#b87407; --bad:#d1344c;
+  --shadow:0 1px 2px rgba(23,22,15,.04), 0 8px 24px -12px rgba(23,22,15,.10);
+  --shadow-lg:0 24px 64px -16px rgba(23,22,15,.28);
+
+  --sh-inset:inset 0 1px 0 rgba(255,255,255,.7);
+  --topbar-bg:var(--bg);
+}

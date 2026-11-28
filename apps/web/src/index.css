@@ -9,10 +9,16 @@
 @import "./styles/tokens-v013.css";
 @import "./styles/app-v013.css";
 
-/* v3.0 底座（#443 第 0 步）：只含 v3.0 稿子新增、上述两份没有的类
- * （list-card / .tf / .tw / lg-* / ent-*），外加 --v30-* 变量桥接。
- * 必须排在 app-v013.css 之后——它只覆盖自己新写的选择器，不抢 v0.13 的类。
- * 范围与不搬清单见 styles/app-v30.css 头注释。 */
+/* v3.0 令牌层（2026-11-28 用户拍板「一切按视觉稿来」）：把
+ * design/v3.0/index.html 的配色整套搬进来，并把 v0.13 的变量名桥接到同一套值。
+ * 必须排在 tokens-v013.css 之后，同特异性下后出现者胜出。 */
+@import "./styles/tokens-v30.css";
+
+/* v3.0 组件层：稿子新增类（list-card / .tf / .tw / lg-* / ent-*）+
+ * 与 v0.13 同名但形状不同的类（.card / .seg / .search / .note / .r-row /
+ * .st* / .sk / .tag / .btn / 表格 / 分页 / 侧栏），逐条照稿子重写。
+ * 必须排在 app-v013.css 之后，否则被 v0.13 的 999px 圆角与玻璃渐变吃掉。
+ * 逐条来源与不搬清单见 styles/app-v30.css 头注释。 */
 @import "./styles/app-v30.css";
 
 /*
